@@ -1,6 +1,8 @@
 import React from 'react';
 import { Routes, Route, Outlet } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
+import BottomTabBar from './components/BottomTabBar';
+import MobileHeader from './components/MobileHeader';
 import ErrorBoundary from './components/ErrorBoundary';
 import { EventCacheProvider } from './components/EventCache';
 import Dashboard from './pages/Dashboard';
@@ -11,9 +13,9 @@ import Digest from './pages/Digest';
 import Brainstorm from './pages/Brainstorm';
 import SystemDoc from './pages/SystemDoc';
 
-function Layout() {
+function DesktopLayout() {
   return (
-    <div className="flex h-screen w-full bg-[#0B0C10] overflow-hidden font-sans">
+    <div className="hidden md:flex h-screen w-full bg-[#0B0C10] overflow-hidden font-sans">
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
         <div className="flex-1 overflow-auto custom-scrollbar">
@@ -26,20 +28,43 @@ function Layout() {
   );
 }
 
+function MobileLayout() {
+  return (
+    <div className="md:hidden flex flex-col h-screen w-full bg-[#0B0C10] overflow-hidden font-sans">
+      <MobileHeader />
+      <div className="flex-1 overflow-auto custom-scrollbar">
+        <ErrorBoundary>
+          <Outlet />
+        </ErrorBoundary>
+      </div>
+      <BottomTabBar />
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <EventCacheProvider>
-    <Routes>
-      <Route element={<Layout />}>
-        <Route index element={<Dashboard />} />
-        <Route path="ingest" element={<Ingest />} />
-        <Route path="events" element={<Events />} />
-        <Route path="sources" element={<Sources />} />
-        <Route path="digest" element={<Digest />} />
-        <Route path="brainstorm" element={<Brainstorm />} />
-        <Route path="system" element={<SystemDoc />} />
-      </Route>
-    </Routes>
+      <Routes>
+        <Route element={<DesktopLayout />}>
+          <Route index element={<Dashboard />} />
+          <Route path="ingest" element={<Ingest />} />
+          <Route path="events" element={<Events />} />
+          <Route path="sources" element={<Sources />} />
+          <Route path="digest" element={<Digest />} />
+          <Route path="brainstorm" element={<Brainstorm />} />
+          <Route path="system" element={<SystemDoc />} />
+        </Route>
+        <Route element={<MobileLayout />}>
+          <Route index element={<Dashboard />} />
+          <Route path="ingest" element={<Ingest />} />
+          <Route path="events" element={<Events />} />
+          <Route path="sources" element={<Sources />} />
+          <Route path="digest" element={<Digest />} />
+          <Route path="brainstorm" element={<Brainstorm />} />
+          <Route path="system" element={<SystemDoc />} />
+        </Route>
+      </Routes>
     </EventCacheProvider>
   );
 }
