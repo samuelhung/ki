@@ -52,7 +52,7 @@ export default function Dashboard() {
         )}
 
         {/* Metric cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
           {loading ? (
             Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="bg-[#141518] border border-[#2A2B30] rounded-xl p-6 animate-pulse">
@@ -99,6 +99,9 @@ export default function Dashboard() {
             </Link>
           </div>
         )}
+
+        {/* 手机端底部留白 — 避免被 BottomTabBar 遮挡 */}
+        <div className="md:hidden h-20" />
       </div>
     </div>
   );
