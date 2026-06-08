@@ -168,7 +168,7 @@ export default function Brainstorm() {
           </div>
 
           {/* Metric Cards */}
-          <div className="grid grid-cols-2 gap-4 mb-6">
+          <div className="md:grid md:grid-cols-2 gap-4 mb-6 max-md:w-full">
             <MetricCard icon={<Lightbulb size={18} />} label="全部问题" value={allCount} subtitle="已记录灵感" color="purple" />
           </div>
 
@@ -203,16 +203,6 @@ export default function Brainstorm() {
                 </button>
               ))}
             </div>
-            {/* 手机 tab 下拉 */}
-            <select
-              className="md:hidden w-full px-3 py-2 text-sm bg-[#141518] border border-[#2A2B30] rounded-lg text-white focus:outline-none focus:border-purple-500/50 mb-4"
-              value={tab}
-              onChange={e => { setTab(e.target.value as any); setPage(1); }}
-            >
-              <option value="all">全部问题</option>
-              <option value="open">待回答</option>
-              <option value="done">已回答</option>
-            </select>
           </div>
 
           {/* Table */}
