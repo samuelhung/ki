@@ -19,7 +19,7 @@ export default function MobileHeader() {
     <header className="md:hidden sticky top-0 z-30 bg-[#0B0C10] border-b border-[#2A2B30] flex items-center justify-between px-4 h-12 shrink-0">
       <div className="flex items-baseline gap-1.5">
         <span className="font-semibold text-white text-base">知识情报中心</span>
-        <span className="text-[10px] text-gray-500 bg-[#2A2B30] px-1 py-0.5 rounded-full leading-none">v1.0.0</span>
+        <span className="text-[10px] text-gray-500 bg-[#2A2B30] px-1 py-0.5 rounded-full leading-none">v1.0.1</span>
       </div>
       <div ref={menuRef} className="relative">
         <button
