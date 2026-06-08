@@ -226,7 +226,7 @@ export default function IngestDetailPanel({ eventId, onClose }: Props) {
           {/* Video player */}
           {toMediaUrl(detail.video_path) && (
             <div className="mt-3">
-              <video controls className="w-full rounded-lg max-h-[240px] bg-black" src={toMediaUrl(detail.video_path)!}>
+              <video controls playsInline className="w-full rounded-lg max-h-[240px] bg-black" src={toMediaUrl(detail.video_path)!}>
                 您的浏览器不支持视频播放
               </video>
             </div>
