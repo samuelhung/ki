@@ -60,6 +60,14 @@ export default function Ingest() {
   const [pollId, setPollId] = useState<string | null>(null);
   const [pollStatus, setPollStatus] = useState<IngestStatus | null>(null);
   const [progressStages, setProgressStages] = useState<ProgressStage[] | null>(null);
+  const [showMobileSearch, setShowMobileSearch] = useState(false);
+  const [mobileSelectMode, setMobileSelectMode] = useState(false);
+
+  useEffect(() => {
+    if (mobileSelectMode && selectedIds.size === 0) {
+      setMobileSelectMode(false);
+    }
+  }, [selectedIds, mobileSelectMode]);
 
   useEffect(() => {
     loadEvents();
@@ -241,7 +249,7 @@ export default function Ingest() {
               <h1 className="text-2xl font-bold">内容采集</h1>
               <p className="text-sm text-gray-400 mt-1">上传抖音分享链接、音视频或文档，自动转写并生成 AI 总结</p>
             </div>
-            <div className="flex gap-2">
+            <div className="hidden md:flex gap-2">
               <button onClick={() => openModal('douyin')} className="px-4 py-2 rounded-lg text-sm font-medium bg-pink-500/20 text-pink-400 hover:bg-pink-500/30 border border-pink-500/30 transition-colors">
                 抖音分享
               </button>
@@ -258,8 +266,8 @@ export default function Ingest() {
             <MetricCard icon={<CheckCircle size={18} />} label="已完成" value={stats.completed} subtitle="已入库" color="emerald" />
           </div>
 
-          {/* Tabs */}
-          <div className="border-b border-[#2A2B30] mb-6">
+          {/* 桌面 tab */}
+          <div className="hidden md:block border-b border-[#2A2B30] mb-6">
             <div className="flex gap-6 overflow-x-auto">
               {([
                 { key: '格局' as const, label: '格局', sub: '地缘政治·大国博弈·国际关系' },
@@ -277,6 +285,19 @@ export default function Ingest() {
               ))}
             </div>
           </div>
+
+          {/* 手机下拉 */}
+          <select
+            className="md:hidden w-full mb-4 px-3 py-2 text-sm bg-[#141518] border border-[#2A2B30] rounded-lg text-white focus:outline-none focus:border-purple-500/50"
+            value={historyTab}
+            onChange={e => { setHistoryTab(e.target.value as any); setPage(1); setExpandedId(null); }}
+          >
+            <option value="格局">格局 · 地缘政治·大国博弈·国际关系</option>
+            <option value="财富">财富 · 经济金融·商业洞察·投资理财</option>
+            <option value="认知">认知 · 思维模型·方法论·底层逻辑</option>
+            <option value="前瞻">前瞻 · 科技趋势·未来预判·前沿动态</option>
+            <option value="briefing">即时快报</option>
+          </select>
 
 
 
@@ -298,8 +319,10 @@ export default function Ingest() {
                 <div className="col-span-1 text-center">操作</div>
               </div>
               {events.map(evt => (
-                <div key={evt.id} onClick={() => { if (window.getSelection()?.toString()) return; toggleSelect(evt.id); }}
-                  className={`grid grid-cols-12 gap-4 px-5 py-3 items-center hover:bg-[#1A1B20] transition-colors cursor-pointer border-b border-[#2A2B30] last:border-b-0 ${evt.status === 'processing' ? 'opacity-60' : ''}`}>
+                <React.Fragment key={evt.id}>
+                {/* 桌面行 — 不动 */}
+                <div onClick={() => { if (window.getSelection()?.toString()) return; toggleSelect(evt.id); }}
+                  className={`hidden md:grid grid-cols-12 gap-4 px-5 py-3 items-center hover:bg-[#1A1B20] transition-colors cursor-pointer border-b border-[#2A2B30] last:border-b-0 ${evt.status === 'processing' ? 'opacity-60' : ''}`}>
                   <div className="col-span-1 flex justify-center" onClick={e => e.stopPropagation()}>
                     <Checkbox checked={selectedIds.has(evt.id)} onChange={() => toggleSelect(evt.id)} />
                   </div>
@@ -319,6 +342,29 @@ export default function Ingest() {
                     </button>
                   </div>
                 </div>
+                {/* 手机行 — 紧凑列表 */}
+                <div
+                  onClick={() => {
+                    if (mobileSelectMode) {
+                      toggleSelect(evt.id);
+                    } else {
+                      openDetail(evt.id);
+                    }
+                  }}
+                  className={`md:hidden flex items-center gap-3 px-4 py-3 hover:bg-[#1A1B20] transition-colors cursor-pointer active:bg-[#2A2B30] border-b border-[#2A2B30] last:border-b-0 ${selectedIds.has(evt.id) ? 'bg-purple-500/10' : ''} ${evt.status === 'processing' ? 'opacity-60' : ''}`}
+                >
+                  {mobileSelectMode && (
+                    <Checkbox checked={selectedIds.has(evt.id)} onChange={() => toggleSelect(evt.id)} />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-gray-200 truncate">{evt.title}</div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${sourceBadgeClass(evt.source_id)}`}>{sourceLabel(evt.source_id)}</span>
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-gray-500 shrink-0">{formatTimeBeijing(evt.created_at).slice(-8)}</div>
+                </div>
+                </React.Fragment>
               ))}
             </div>
           ))}
@@ -365,11 +411,19 @@ export default function Ingest() {
           {/* Search + Batch delete + Pagination — only for history tabs */}
           {historyTab !== 'briefing' && (
           <div className="flex items-center justify-between mt-4 text-sm">
-            <div className="relative w-52">
+            {/* 桌面搜索 */}
+            <div className="relative w-52 hidden md:block">
               <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
               <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="搜索..."
                 className="w-full pl-8 pr-3 py-1.5 text-sm bg-[#141518] border border-[#2A2B30] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50" />
             </div>
+            {/* 手机搜索图标 */}
+            <button
+              className="md:hidden p-2 rounded-lg text-gray-400 hover:text-white hover:bg-[#2A2B30]"
+              onClick={() => setShowMobileSearch(!showMobileSearch)}
+            >
+              <Search size={16} />
+            </button>
             <div>
               {selectedIds.size > 0 && (
                 <button onClick={handleBatchDelete} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500/15 text-red-400 hover:bg-red-500/25 border border-red-500/20 transition-colors">
@@ -500,6 +554,53 @@ export default function Ingest() {
           )}
         </Modal>
       )}
+
+      {/* 手机搜索展开 */}
+      {showMobileSearch && (
+        <div className="md:hidden mt-3">
+          <input
+            autoFocus
+            value={search}
+            onChange={e => { setSearch(e.target.value); setPage(1); }}
+            placeholder="搜索标题..."
+            className="w-full px-3 py-2 text-sm bg-[#141518] border border-[#2A2B30] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
+          />
+        </div>
+      )}
+
+      {/* 手机批量删除栏 */}
+      {mobileSelectMode && selectedIds.size > 0 && (
+        <div className="md:hidden fixed bottom-20 left-4 right-4 z-30 bg-[#141518] border border-[#2A2B30] rounded-xl px-4 py-3 flex items-center justify-between shadow-2xl">
+          <span className="text-sm text-gray-300">已选 {selectedIds.size} 条</span>
+          <div className="flex gap-2">
+            <button onClick={() => { setMobileSelectMode(false); setSelectedIds(new Set()); }}
+              className="px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-white">取消</button>
+            <button onClick={handleBatchDelete}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500/15 text-red-400 hover:bg-red-500/25 border border-red-500/20">
+              删除
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 手机端 FAB */}
+      <div className="md:hidden fixed bottom-20 right-4 z-30 flex flex-col gap-2">
+        <button
+          onClick={() => openModal('douyin')}
+          className="w-12 h-12 rounded-full bg-pink-500/80 text-white shadow-lg flex items-center justify-center active:scale-95 transition-transform"
+        >
+          <Upload size={18} />
+        </button>
+        <button
+          onClick={() => openModal('file')}
+          className="w-12 h-12 rounded-full bg-cyan-500/80 text-white shadow-lg flex items-center justify-center active:scale-95 transition-transform"
+        >
+          <Upload size={18} />
+        </button>
+      </div>
+
+      {/* 底部留白 — 避免被 TabBar 遮挡 */}
+      <div className="md:hidden h-16" />
     </>
   );
 }
