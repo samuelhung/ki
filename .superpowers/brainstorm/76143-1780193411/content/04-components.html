@@ -1,0 +1,96 @@
+<h2>设计 Section 2 · 统一组件语言</h2>
+<p class="subtitle">按钮、表单、列表、卡片 —— 全站一套风格，解决视觉碎片化</p>
+
+<div class="mockup">
+  <div class="mockup-header">组件规范</div>
+  <div class="mockup-body" style="display:grid;gap:16px;padding:16px;">
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <!-- 按钮 -->
+      <div style="border:1px solid rgba(148,163,184,0.15);border-radius:10px;padding:12px;">
+        <div style="font-size:10px;color:#5eead4;margin-bottom:8px;">按钮</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          <button class="mock-button" style="font-size:11px;">主要操作</button>
+          <button class="mock-button" style="font-size:11px;background:rgba(59,130,246,0.15);border-color:rgba(96,165,250,0.4);">次要操作</button>
+          <button class="mock-button" style="font-size:11px;border:1px solid rgba(148,163,184,0.12);background:transparent;color:#8fb8af;">取消</button>
+        </div>
+        <div style="font-size:9px;color:#6b8b83;margin-top:6px;">三种层级：主要(teal) / 次要(blue) / 幽灵(gray)</div>
+      </div>
+
+      <!-- 表单 -->
+      <div style="border:1px solid rgba(148,163,184,0.15);border-radius:10px;padding:12px;">
+        <div style="font-size:10px;color:#5eead4;margin-bottom:8px;">输入控件</div>
+        <div style="display:grid;gap:6px;">
+          <input class="mock-input" style="font-size:11px;" placeholder="文本输入框">
+          <textarea class="mock-input" style="font-size:11px;resize:none;height:48px;" placeholder="多行文本"></textarea>
+          <select class="mock-input" style="font-size:11px;color:#d8f7f0;">
+            <option>下拉选择</option>
+            <option>选项二</option>
+          </select>
+        </div>
+        <div style="font-size:9px;color:#6b8b83;margin-top:6px;">统一圆角 10px，统一 border + focus ring</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <!-- 列表 -->
+      <div style="border:1px solid rgba(148,163,184,0.15);border-radius:10px;padding:12px;">
+        <div style="font-size:10px;color:#5eead4;margin-bottom:8px;">列表项</div>
+        <div style="display:grid;gap:5px;">
+          <div style="border:1px solid rgba(148,163,184,0.12);border-radius:8px;padding:8px;display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:11px;color:#f8fafc;">事件标题</span>
+            <span style="font-size:9px;border:1px solid rgba(45,212,191,0.2);border-radius:99px;padding:2px 6px;color:#ccfbf1;">新增</span>
+          </div>
+          <div style="border:1px solid rgba(148,163,184,0.12);border-radius:8px;padding:8px;display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:11px;color:#f8fafc;">另一事件</span>
+            <span style="font-size:9px;border:1px solid rgba(148,163,184,0.2);border-radius:99px;padding:2px 6px;color:#8fb8af;">已处理</span>
+          </div>
+        </div>
+        <div style="font-size:9px;color:#6b8b83;margin-top:6px;">统一 8px 圆角，状态标签用 pill</div>
+      </div>
+
+      <!-- 空状态 -->
+      <div style="border:1px solid rgba(148,163,184,0.15);border-radius:10px;padding:12px;">
+        <div style="font-size:10px;color:#5eead4;margin-bottom:8px;">空状态 / 加载</div>
+        <div class="placeholder" style="padding:24px;text-align:center;">
+          <div style="font-size:24px;margin-bottom:6px;">📭</div>
+          <div style="font-size:11px;color:#8fb8af;">暂无数据</div>
+          <div style="font-size:9px;color:#6b8b83;">点击上方按钮开始</div>
+        </div>
+        <div style="font-size:9px;color:#6b8b83;margin-top:6px;">图标 + 标题 + 引导文字</div>
+      </div>
+    </div>
+
+    <!-- 指标卡片 -->
+    <div style="border:1px solid rgba(148,163,184,0.15);border-radius:10px;padding:12px;">
+      <div style="font-size:10px;color:#5eead4;margin-bottom:8px;">指标卡片</div>
+      <div style="display:flex;gap:8px;">
+        <div style="border:1px solid rgba(148,163,184,0.12);border-radius:10px;padding:10px 16px;text-align:center;">
+          <div style="font-size:9px;color:#8fb8af;">今日新增</div>
+          <div style="font-size:24px;color:#f8fafc;font-weight:700;">12</div>
+        </div>
+        <div style="border:1px solid rgba(148,163,184,0.12);border-radius:10px;padding:10px 16px;text-align:center;">
+          <div style="font-size:9px;color:#8fb8af;">待处理</div>
+          <div style="font-size:24px;color:#f8fafc;font-weight:700;">3</div>
+        </div>
+        <div style="border:1px solid rgba(148,163,184,0.12);border-radius:10px;padding:10px 16px;text-align:center;">
+          <div style="font-size:9px;color:#8fb8af;">信息源</div>
+          <div style="font-size:24px;color:#f8fafc;font-weight:700;">7</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="section" style="margin-top:16px;">
+  <h3>设计原则</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px;color:#b7d7d1;">
+    <div>🎨 统一圆角：小 8px / 中 10px / 大 14px</div>
+    <div>🎨 统一间距：4px、8px、12px、16px 四级</div>
+    <div>🎨 状态标签统一 pill 形状</div>
+    <div>🎨 空状态永远有引导文案</div>
+    <div>🎨 保持现有暗色 teal 主题</div>
+    <div>🎨 不引入第三方 UI 库，手写 CSS</div>
+  </div>
+</div>
