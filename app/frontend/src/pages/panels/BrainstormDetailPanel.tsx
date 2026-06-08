@@ -236,24 +236,21 @@ export default function BrainstormDetailPanel({ question, onClose }: Props) {
 
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div style={{
-        position: 'fixed', top: 0, right: 0, bottom: 0,
-        width: '100%', maxWidth: '42rem',
-        background: '#141518',
-        borderLeft: '1px solid #2A2B30',
-        boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
-        zIndex: 50,
-        display: 'flex', flexDirection: 'column',
-      }}>
+      {/* Backdrop — 桌面 */}
+      <div className="hidden md:block fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      {/* 面板 — 手机全屏，桌面右侧滑出 */}
+      <div className="fixed inset-0 z-50 flex flex-col bg-[#141518] md:top-0 md:right-0 md:left-auto md:max-w-[42rem] md:w-full md:border-l md:border-[#2A2B30] md:shadow-2xl">
         {/* Header */}
         <div className="p-5 pb-3 shrink-0">
           <div className="flex items-start justify-between">
+            <button onClick={onClose} className="md:hidden p-1 -ml-1 mr-2 rounded text-gray-400 hover:text-white shrink-0">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            </button>
             <div className="flex-1 min-w-0">
               <p className="text-white text-lg leading-relaxed">{question.question}</p>
             </div>
             <button onClick={onClose}
-              className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-[#2A2B30] shrink-0 ml-3">
+              className="hidden md:block p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-[#2A2B30] shrink-0 ml-3">
               <X size={18} />
             </button>
           </div>
@@ -381,6 +378,7 @@ export default function BrainstormDetailPanel({ question, onClose }: Props) {
               {availableEvents.length === 0 ? '加载文档列表中...' : '选择文档后点击上方按钮生成回答'}
             </div>
           )}
+          <div className="md:hidden h-16" />
         </div>
       </div>
     </>
