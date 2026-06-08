@@ -13,31 +13,30 @@ import Digest from './pages/Digest';
 import Brainstorm from './pages/Brainstorm';
 import SystemDoc from './pages/SystemDoc';
 
-function DesktopLayout() {
+function Layout() {
   return (
-    <div className="hidden md:flex h-screen w-full bg-[#0B0C10] overflow-hidden font-sans">
-      <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+    <div className="h-screen w-full bg-[#0B0C10] overflow-hidden font-sans">
+      {/* Desktop layout */}
+      <div className="hidden md:flex h-full">
+        <Sidebar />
+        <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+          <div className="flex-1 overflow-auto custom-scrollbar">
+            <ErrorBoundary>
+              <Outlet />
+            </ErrorBoundary>
+          </div>
+        </div>
+      </div>
+      {/* Mobile layout */}
+      <div className="md:hidden flex flex-col h-full">
+        <MobileHeader />
         <div className="flex-1 overflow-auto custom-scrollbar">
           <ErrorBoundary>
             <Outlet />
           </ErrorBoundary>
         </div>
+        <BottomTabBar />
       </div>
-    </div>
-  );
-}
-
-function MobileLayout() {
-  return (
-    <div className="md:hidden flex flex-col h-screen w-full bg-[#0B0C10] overflow-hidden font-sans">
-      <MobileHeader />
-      <div className="flex-1 overflow-auto custom-scrollbar">
-        <ErrorBoundary>
-          <Outlet />
-        </ErrorBoundary>
-      </div>
-      <BottomTabBar />
     </div>
   );
 }
@@ -46,16 +45,7 @@ export default function App() {
   return (
     <EventCacheProvider>
       <Routes>
-        <Route element={<DesktopLayout />}>
-          <Route index element={<Dashboard />} />
-          <Route path="ingest" element={<Ingest />} />
-          <Route path="events" element={<Events />} />
-          <Route path="sources" element={<Sources />} />
-          <Route path="digest" element={<Digest />} />
-          <Route path="brainstorm" element={<Brainstorm />} />
-          <Route path="system" element={<SystemDoc />} />
-        </Route>
-        <Route element={<MobileLayout />}>
+        <Route element={<Layout />}>
           <Route index element={<Dashboard />} />
           <Route path="ingest" element={<Ingest />} />
           <Route path="events" element={<Events />} />
