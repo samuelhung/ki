@@ -52,9 +52,9 @@ export default function Dashboard() {
         )}
 
         {/* Metric cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-2 gap-4 mb-8">
           {loading ? (
-            Array.from({ length: 3 }).map((_, i) => (
+            Array.from({ length: 2 }).map((_, i) => (
               <div key={i} className="bg-[#141518] border border-[#2A2B30] rounded-xl p-6 animate-pulse">
                 <div className="flex items-center gap-3 mb-4"><div className="w-8 h-8 rounded-lg bg-[#2A2B30]" /><div className="w-16 h-4 rounded bg-[#2A2B30]" /></div>
                 <div className="w-12 h-8 rounded bg-[#2A2B30] mb-1" />
@@ -64,7 +64,6 @@ export default function Dashboard() {
           ) : (
             <>
               <MetricCard icon={<Newspaper size={18} />} label="今日新增" value={summary.today_events} subtitle="今日采集+提交" color="purple" />
-              <MetricCard icon={<AlertTriangle size={18} />} label="高优先级" value={summary.high_priority_events} subtitle="重要性 ≥ 4" color="pink" />
               <MetricCard icon={<Radio size={18} />} label="信息源" value={summary.sources_enabled} subtitle="已启用 RSS 源" color="cyan" />
             </>
           )}
