@@ -168,7 +168,7 @@ export default function Brainstorm() {
           </div>
 
           {/* Metric Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
             <MetricCard icon={<Lightbulb size={18} />} label="全部问题" value={allCount} subtitle="已记录灵感" color="purple" />
             <MetricCard icon={<HelpCircle size={18} />} label="待探索" value={openCount} subtitle="尚未回答" color="pink" />
             <MetricCard icon={<CheckCircle2 size={18} />} label="已完成" value={doneCount} subtitle="已标记完成" color="cyan" />
