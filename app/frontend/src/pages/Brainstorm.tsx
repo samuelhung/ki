@@ -40,6 +40,7 @@ export default function Brainstorm() {
   const [search, setSearch] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<BrainstormQuestion | null>(null);
+  const [showSearch, setShowSearch] = useState(false);
 
   // Create modal state
   const [showCreate, setShowCreate] = useState(false);
@@ -160,7 +161,7 @@ export default function Brainstorm() {
             </div>
             <button
               onClick={() => setShowCreate(true)}
-              className="px-4 py-2 rounded-lg text-sm font-medium bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 border border-purple-500/30 transition-colors"
+              className="hidden md:inline-flex px-4 py-2 rounded-lg text-sm font-medium bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 border border-purple-500/30 transition-colors"
             >
               + 新建问题
             </button>
@@ -183,7 +184,8 @@ export default function Brainstorm() {
 
           {/* Tabs */}
           <div className="border-b border-[#2A2B30] mb-6">
-            <div className="flex gap-6">
+            {/* 桌面 tab */}
+            <div className="hidden md:flex gap-6">
               {([
                 { key: 'all' as const, label: '全部', count: allCount },
                 { key: 'open' as const, label: '待探索', count: openCount },
@@ -203,6 +205,16 @@ export default function Brainstorm() {
                 </button>
               ))}
             </div>
+            {/* 手机 tab 下拉 */}
+            <select
+              className="md:hidden w-full px-3 py-2 text-sm bg-[#141518] border border-[#2A2B30] rounded-lg text-white focus:outline-none focus:border-purple-500/50 mb-4"
+              value={tab}
+              onChange={e => { setTab(e.target.value as any); setPage(1); }}
+            >
+              <option value="all">全部问题</option>
+              <option value="open">待回答</option>
+              <option value="done">已回答</option>
+            </select>
           </div>
 
           {/* Table */}
@@ -230,9 +242,11 @@ export default function Brainstorm() {
                   </div>
                 ) : (
                   paged.map((q) => (
-                    <div key={q.id}
+                    <React.Fragment key={q.id}>
+                    {/* 桌面行 */}
+                    <div
                       onClick={() => { if (window.getSelection()?.toString()) return; toggleSelectQ(q.id); }}
-                      className={`grid grid-cols-12 gap-4 px-5 py-3 items-center hover:bg-[#1A1B20] transition-colors cursor-pointer border-b border-[#2A2B30] last:border-b-0 ${q.status === 'done' ? 'opacity-50' : ''}`}>
+                      className={`hidden md:grid grid-cols-12 gap-4 px-5 py-3 items-center hover:bg-[#1A1B20] transition-colors cursor-pointer border-b border-[#2A2B30] last:border-b-0 ${q.status === 'done' ? 'opacity-50' : ''}`}>
                       {/* Checkbox */}
                       <div className="col-span-1 flex justify-center" onClick={e => e.stopPropagation()}>
                         <Checkbox checked={selectedIds.has(q.id)} onChange={() => toggleSelectQ(q.id)} />
@@ -273,18 +287,42 @@ export default function Brainstorm() {
                         </button>
                       </div>
                     </div>
+                    {/* 手机行 — 紧凑列表 */}
+                    <div
+                      className="md:hidden flex items-center gap-3 px-4 py-3 hover:bg-[#1A1B20] border-b border-[#2A2B30] last:border-b-0 cursor-pointer"
+                      onClick={() => setSelected(q)}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm text-gray-200 truncate">{q.question}</div>
+                        <div className="flex items-center gap-2 mt-1">
+                          {q.title && <span className="text-[10px] text-gray-500 truncate">{q.title}</span>}
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                            q.status === 'done' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-500/15 text-amber-400'
+                          }`}>
+                            {q.status === 'done' ? '已回答' : '待回答'}
+                          </span>
+                        </div>
+                      </div>
+                      <ChevronRight size={14} className="text-gray-600 shrink-0" />
+                    </div>
+                    </React.Fragment>
                   ))
                 )}
               </div>
 
               {/* Bottom bar: search left | batch delete center | pagination right */}
               <div className="flex items-center justify-between mt-4 text-sm">
-                <div className="relative w-52">
+                {/* 桌面搜索 */}
+                <div className="relative w-52 hidden md:block">
                   <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
                   <input type="text" placeholder="搜索问题..."
                     value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }}
                     className="w-full pl-8 pr-3 py-1.5 text-sm bg-[#141518] border border-[#2A2B30] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50" />
                 </div>
+                {/* 手机搜索图标 */}
+                <button className="md:hidden p-2 rounded text-gray-400" onClick={() => setShowSearch(!showSearch)}>
+                  <Search size={16} />
+                </button>
                 <div>
                   {selectedIds.size > 0 && (
                     <button onClick={batchDelete}
@@ -321,6 +359,30 @@ export default function Brainstorm() {
           )}
         </div>
       </div>
+
+      {/* 手机搜索展开 */}
+      {showSearch && (
+        <div className="md:hidden mt-3">
+          <input
+            autoFocus
+            value={search}
+            onChange={e => { setSearch(e.target.value); setPage(1); }}
+            placeholder="搜索问题..."
+            className="w-full px-3 py-2 text-sm bg-[#141518] border border-[#2A2B30] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
+          />
+        </div>
+      )}
+
+      {/* 手机端 FAB */}
+      <button
+        onClick={() => setShowCreate(true)}
+        className="md:hidden fixed bottom-20 right-4 z-30 w-12 h-12 rounded-full bg-amber-500/80 text-white shadow-lg flex items-center justify-center active:scale-95 transition-transform"
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+
+      {/* 底部留白 */}
+      <div className="md:hidden h-16" />
 
       {/* ── Detail Panel ── */}
       {selected && (
