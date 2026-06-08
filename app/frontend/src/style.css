@@ -29,3 +29,10 @@ body {
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #777;
 }
+
+/* Mobile safe area — avoid content hidden behind BottomTabBar */
+@media (max-width: 767px) {
+  .pb-safe {
+    padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+  }
+}
