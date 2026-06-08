@@ -260,7 +260,7 @@ export default function Ingest() {
           </div>
 
           {/* Stats */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
             <MetricCard icon={<Upload size={18} />} label="今日提交" value={stats.today_submissions} subtitle="当天上传量" color="pink" />
             <MetricCard icon={<Clock size={18} />} label="处理中" value={stats.processing} subtitle="转写/总结中" color="amber" />
             <MetricCard icon={<CheckCircle size={18} />} label="已完成" value={stats.completed} subtitle="已入库" color="emerald" />
