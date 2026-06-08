@@ -166,8 +166,8 @@ export default function IngestDetailPanel({ eventId, onClose }: Props) {
   if (detailLoading) {
     return (
       <>
-        <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-        <div style={{ position: 'fixed', top: 0, right: 0, width: '100%', maxWidth: '42rem', height: '100dvh', background: '#141518', borderLeft: '1px solid #2A2B30', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', zIndex: 50, display: 'flex', flexDirection: 'column' }}>
+        <div className="hidden md:block fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+        <div className="fixed inset-0 z-50 flex flex-col bg-[#141518] md:top-0 md:right-0 md:left-auto md:max-w-[42rem] md:w-full md:border-l md:border-[#2A2B30] md:shadow-2xl">
           <div className="flex items-center justify-center flex-1">
             <Loader2 size={24} className="animate-spin text-purple-400" />
           </div>
@@ -180,15 +180,20 @@ export default function IngestDetailPanel({ eventId, onClose }: Props) {
 
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div style={{ position: 'fixed', top: 0, right: 0, width: '100%', maxWidth: '42rem', height: '100dvh', background: '#141518', borderLeft: '1px solid #2A2B30', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)', zIndex: 50, display: 'flex', flexDirection: 'column' }}>
+      <div className="hidden md:block fixed inset-0 z-40 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex flex-col bg-[#141518] md:top-0 md:right-0 md:left-auto md:max-w-[42rem] md:w-full md:border-l md:border-[#2A2B30] md:shadow-2xl">
         {/* Header */}
-        <div ref={headerRef} className="p-5 pb-3 shrink-0">
-          <div className="flex items-start justify-between">
+        <div ref={headerRef} className="p-4 pb-3 shrink-0">
+          <div className="flex items-start">
+            {/* 手机返回箭头 */}
+            <button onClick={onClose} className="md:hidden p-1 -ml-1 mr-2 rounded text-gray-400 hover:text-white shrink-0">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+            </button>
             <div className="flex-1 min-w-0">
-              <h2 className="text-white text-lg font-semibold leading-relaxed">{detail.title}</h2>
+              <h2 className="text-white text-base md:text-lg font-semibold leading-relaxed line-clamp-2">{detail.title}</h2>
             </div>
-            <button onClick={onClose} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-[#2A2B30] shrink-0 ml-3">
+            {/* X — 仅桌面 */}
+            <button onClick={onClose} className="hidden md:block p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-[#2A2B30] shrink-0 ml-3">
               <X size={18} />
             </button>
           </div>
@@ -322,6 +327,8 @@ export default function IngestDetailPanel({ eventId, onClose }: Props) {
           {detail.last_error && (
             <div className="px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">⚠️ {detail.last_error}</div>
           )}
+          {/* 手机底部留白 */}
+          <div className="md:hidden h-16" />
         </div>
       </div>
     </>
