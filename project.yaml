@@ -1,0 +1,41 @@
+schema_version: 1
+slug: knowledge-intelligence
+name: 知识情报中心
+description: 持续追踪外部信息源，把碎片信息采集、去重、筛选、摘要、归类、沉淀，并在需要时转化为 Hermes Projects / Kanban 行动任务的知识情报中心。
+created_at: '2026-05-21T04:07:47Z'
+updated_at: '2026-05-21T04:07:47Z'
+tenant: knowledge-intelligence
+kanban_board: default
+root: /Users/mrh/Documents/Projects/KnowledgeIntelligence
+wiki_dir: /Users/mrh/Documents/Projects/KnowledgeIntelligence/wiki
+artifacts_dir: /Users/mrh/Documents/Projects/KnowledgeIntelligence/artifacts
+orchestrator_profile: orchestrator
+profiles:
+  orchestrator: orchestrator
+  engineering: engineer
+  research: researcher
+  review: reviewer
+  writing: writer
+  teaching: teacher
+wiki:
+  required_before_orchestration:
+  - Home.md
+  - Context.md
+  - History.md
+  - Decisions.md
+  - Roadmap.md
+  - Architecture.md
+  - Agents.md
+  - Glossary.md
+  - OpenQuestions.md
+  - Sources.md
+  - DailyDigest.md
+  - Topics.md
+  - ActionCandidates.md
+  - IndependentWebMVP.md
+worker_update_policy:
+  update_history: true
+  update_decisions_if_needed: true
+  update_architecture_if_changed: true
+  write_handoff_summary: true
+  append_task_log: true
