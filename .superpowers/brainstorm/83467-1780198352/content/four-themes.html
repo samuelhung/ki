@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+body{background:#0a0a0f;color:#e2e8f0;font-family:Inter,sans-serif;margin:0;padding:24px;}
+h2{font-size:20px;margin:0 0 6px;text-align:center;}
+.preview-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;max-width:1200px;margin:0 auto;}
+.preview{border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);}
+.bar{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;font-size:11px;}
+.body{padding:16px;display:grid;gap:10px;}
+.stats{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;}
+.stat{border-radius:10px;padding:10px;text-align:center;}
+.stat .num{font-size:22px;font-weight:700;}
+.stat .label{font-size:9px;margin-top:2px;}
+.cards{display:grid;gap:6px;}
+.card{border-radius:8px;padding:8px 10px;font-size:10px;display:flex;justify-content:space-between;}
+.card .t{font-weight:600;}
+.card .m{font-size:9px;}
+.btn-bar{display:flex;gap:6px;}
+.btn{border-radius:8px;padding:5px 12px;font-size:10px;font-weight:600;border:none;cursor:default;}
+.tag{font-size:8px;border-radius:99px;padding:2px 6px;}
+.side{display:flex;gap:0;}
+.sidebar{width:80px;flex-shrink:0;padding:8px 4px;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:18px;}
+.sb-item{width:32px;height:32px;display:grid;place-items:center;border-radius:6px;}
+
+/* Theme 1 - Vercel/Linear 紫粉 */
+.t1 .bar{background:#0c0a14;border-bottom:1px solid rgba(168,85,247,0.2)}
+.t1 .body{background:#0c0a14}
+.t1 .stat{background:rgba(168,85,247,0.06);border:1px solid rgba(168,85,247,0.12)}
+.t1 .stat .num{background:linear-gradient(135deg,#c084fc,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.t1 .stat .label{color:rgba(168,85,247,0.5)}
+.t1 .card{background:rgba(168,85,247,0.04);border:1px solid rgba(168,85,247,0.1)}
+.t1 .card .t{color:#e2e8f0}
+.t1 .card .m{color:rgba(168,85,247,0.4)}
+.t1 .btn{background:linear-gradient(135deg,#9333ea,#c084fc);color:#fff}
+.t1 .tag{background:rgba(168,85,247,0.15);color:#c084fc}
+.t1 .sidebar{background:rgba(12,10,20,0.95);border-right:1px solid rgba(168,85,247,0.1)}
+.t1 .sb-item{color:rgba(168,85,247,0.4)}
+.t1 .sb-item:first-child{background:rgba(168,85,247,0.1);color:#c084fc}
+.t1 .title{background:linear-gradient(135deg,#c084fc,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+
+/* Theme 2 - Stripe 蓝靛 */
+.t2 .bar{background:#0a0e1a;border-bottom:1px solid rgba(99,102,241,0.2)}
+.t2 .body{background:#0a0e1a}
+.t2 .stat{background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.12)}
+.t2 .stat .num{background:linear-gradient(135deg,#818cf8,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.t2 .stat .label{color:rgba(99,102,241,0.5)}
+.t2 .card{background:rgba(99,102,241,0.04);border:1px solid rgba(99,102,241,0.1)}
+.t2 .card .t{color:#e2e8f0}
+.t2 .card .m{color:rgba(99,102,241,0.4)}
+.t2 .btn{background:linear-gradient(135deg,#4f46e5,#6366f1);color:#fff}
+.t2 .tag{background:rgba(99,102,241,0.15);color:#818cf8}
+.t2 .sidebar{background:rgba(10,14,26,0.95);border-right:1px solid rgba(99,102,241,0.1)}
+.t2 .sb-item{color:rgba(99,102,241,0.4)}
+.t2 .sb-item:first-child{background:rgba(99,102,241,0.1);color:#818cf8}
+.t2 .title{background:linear-gradient(135deg,#818cf8,#38bdf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+
+/* Theme 3 - Arc 琥珀金 */
+.t3 .bar{background:#0f0d0a;border-bottom:1px solid rgba(251,191,36,0.18)}
+.t3 .body{background:#0f0d0a}
+.t3 .stat{background:rgba(251,191,36,0.05);border:1px solid rgba(251,191,36,0.1)}
+.t3 .stat .num{background:linear-gradient(135deg,#fbbf24,#f59e0b);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.t3 .stat .label{color:rgba(251,191,36,0.45)}
+.t3 .card{background:rgba(251,191,36,0.03);border:1px solid rgba(251,191,36,0.08)}
+.t3 .card .t{color:#e2e8f0}
+.t3 .card .m{color:rgba(251,191,36,0.4)}
+.t3 .btn{background:linear-gradient(135deg,#b45309,#f59e0b);color:#000}
+.t3 .tag{background:rgba(251,191,36,0.12);color:#fbbf24}
+.t3 .sidebar{background:rgba(15,13,10,0.95);border-right:1px solid rgba(251,191,36,0.08)}
+.t3 .sb-item{color:rgba(251,191,36,0.35)}
+.t3 .sb-item:first-child{background:rgba(251,191,36,0.1);color:#fbbf24}
+.t3 .title{background:linear-gradient(135deg,#fbbf24,#f59e0b);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+
+/* Theme 4 - Neon Cyber */
+.t4 .bar{background:#050510;border-bottom:1px solid rgba(6,182,212,0.2)}
+.t4 .body{background:#050510}
+.t4 .stat{background:rgba(6,182,212,0.05);border:1px solid rgba(6,182,212,0.1)}
+.t4 .stat .num{background:linear-gradient(135deg,#06b6d4,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.t4 .stat .label{color:rgba(6,182,212,0.45)}
+.t4 .card{background:rgba(6,182,212,0.03);border:1px solid rgba(6,182,212,0.08)}
+.t4 .card .t{color:#e2e8f0}
+.t4 .card .m{color:rgba(6,182,212,0.35)}
+.t4 .btn{background:linear-gradient(135deg,#06b6d4,#ec4899);color:#fff}
+.t4 .tag{background:rgba(236,72,153,0.12);color:#ec4899}
+.t4 .sidebar{background:rgba(5,5,16,0.95);border-right:1px solid rgba(6,182,212,0.08)}
+.t4 .sb-item{color:rgba(6,182,212,0.35)}
+.t4 .sb-item:first-child{background:rgba(6,182,212,0.1);color:#06b6d4}
+.t4 .title{background:linear-gradient(135deg,#06b6d4,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+
+.pick-btn{margin-top:12px;padding:8px 20px;border-radius:8px;border:none;font-weight:700;font-size:13px;cursor:pointer;width:100%;}
+.p1 .pick-btn{background:linear-gradient(135deg,#9333ea,#ec4899);color:#fff}
+.p2 .pick-btn{background:linear-gradient(135deg,#4f46e5,#38bdf8);color:#fff}
+.p3 .pick-btn{background:linear-gradient(135deg,#b45309,#fbbf24);color:#000}
+.p4 .pick-btn{background:linear-gradient(135deg,#06b6d4,#ec4899);color:#fff}
+
+.label-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+.title{font-size:18px;font-weight:800;}
+.subtitle{font-size:10px;opacity:0.5;}
+</style></head><body>
+<h2 style="margin-bottom:20px;">四种潮流配色</h2>
+<div class="preview-grid">
+
+<div class="preview p1">
+<div class="t1">
+<div class="bar"><span style="color:rgba(168,85,247,0.5);font-weight:600;">KI</span><span style="color:rgba(168,85,247,0.3)">紫粉渐变 · Vercel/Linear 风</span></div>
+<div class="side"><div class="sidebar"><div class="sb-item">📊</div><div class="sb-item">📱</div><div class="sb-item">📋</div><div class="sb-item">📡</div><div class="sb-item">📝</div></div>
+<div class="body" style="flex:1">
+<div class="label-row"><span class="title">仪表盘</span><span class="subtitle">科技感 · 粉紫渐变文字</span></div>
+<div class="stats">
+<div class="stat"><div class="num">12</div><div class="label">今日新增</div></div>
+<div class="stat"><div class="num">2</div><div class="label">高优先级</div></div>
+<div class="stat"><div class="num">3</div><div class="label">待处理</div></div>
+<div class="stat"><div class="num">7</div><div class="label">信息源</div></div>
+</div>
+<div class="btn-bar"><button class="btn">📱 提交抖音</button><button class="btn" style="background:rgba(236,72,153,0.15);border:1px solid rgba(236,72,153,0.3);color:#f9a8d4;">📁 上传文件</button></div>
+<div class="cards">
+<div class="card"><span class="t">你还在琢磨话术…</span><span class="tag">新增</span></div>
+<div class="card"><span class="t">AI Agent 架构统一…</span><span class="tag">已入摘要</span></div>
+<div class="card"><span class="t">中东局势分析…</span><span class="tag">新增</span></div>
+</div>
+<button class="pick-btn">选这个 →</button>
+</div></div>
+</div></div>
+
+<div class="preview p2">
+<div class="t2">
+<div class="bar"><span style="color:rgba(99,102,241,0.5);font-weight:600;">KI</span><span style="color:rgba(99,102,241,0.3)">蓝靛渐变 · Stripe 风</span></div>
+<div class="side"><div class="sidebar"><div class="sb-item">📊</div><div class="sb-item">📱</div><div class="sb-item">📋</div><div class="sb-item">📡</div><div class="sb-item">📝</div></div>
+<div class="body" style="flex:1">
+<div class="label-row"><span class="title">仪表盘</span><span class="subtitle">高端金融感 · 蓝靛渐变</span></div>
+<div class="stats">
+<div class="stat"><div class="num">12</div><div class="label">今日新增</div></div>
+<div class="stat"><div class="num">2</div><div class="label">高优先级</div></div>
+<div class="stat"><div class="num">3</div><div class="label">待处理</div></div>
+<div class="stat"><div class="num">7</div><div class="label">信息源</div></div>
+</div>
+<div class="btn-bar"><button class="btn">📱 提交抖音</button><button class="btn" style="background:rgba(56,189,248,0.15);border:1px solid rgba(56,189,248,0.3);color:#7dd3fc;">📁 上传文件</button></div>
+<div class="cards">
+<div class="card"><span class="t">你还在琢磨话术…</span><span class="tag">新增</span></div>
+<div class="card"><span class="t">AI Agent 架构统一…</span><span class="tag">已入摘要</span></div>
+<div class="card"><span class="t">中东局势分析…</span><span class="tag">新增</span></div>
+</div>
+<button class="pick-btn">选这个 →</button>
+</div></div>
+</div></div>
+
+<div class="preview p3">
+<div class="t3">
+<div class="bar"><span style="color:rgba(251,191,36,0.5);font-weight:600;">KI</span><span style="color:rgba(251,191,36,0.3)">琥珀暗金 · Arc 风</span></div>
+<div class="side"><div class="sidebar"><div class="sb-item">📊</div><div class="sb-item">📱</div><div class="sb-item">📋</div><div class="sb-item">📡</div><div class="sb-item">📝</div></div>
+<div class="body" style="flex:1">
+<div class="label-row"><span class="title">仪表盘</span><span class="subtitle">奢华暗黑 · 琥珀金点缀</span></div>
+<div class="stats">
+<div class="stat"><div class="num">12</div><div class="label">今日新增</div></div>
+<div class="stat"><div class="num">2</div><div class="label">高优先级</div></div>
+<div class="stat"><div class="num">3</div><div class="label">待处理</div></div>
+<div class="stat"><div class="num">7</div><div class="label">信息源</div></div>
+</div>
+<div class="btn-bar"><button class="btn">📱 提交抖音</button><button class="btn" style="background:rgba(251,191,36,0.15);border:1px solid rgba(251,191,36,0.3);color:#fcd34d;">📁 上传文件</button></div>
+<div class="cards">
+<div class="card"><span class="t">你还在琢磨话术…</span><span class="tag">新增</span></div>
+<div class="card"><span class="t">AI Agent 架构统一…</span><span class="tag">已入摘要</span></div>
+<div class="card"><span class="t">中东局势分析…</span><span class="tag">新增</span></div>
+</div>
+<button class="pick-btn">选这个 →</button>
+</div></div>
+</div></div>
+
+<div class="preview p4">
+<div class="t4">
+<div class="bar"><span style="color:rgba(6,182,212,0.5);font-weight:600;">KI</span><span style="color:rgba(6,182,212,0.3)">霓虹赛博 · 电竞风</span></div>
+<div class="side"><div class="sidebar"><div class="sb-item">📊</div><div class="sb-item">📱</div><div class="sb-item">📋</div><div class="sb-item">📡</div><div class="sb-item">📝</div></div>
+<div class="body" style="flex:1">
+<div class="label-row"><span class="title">仪表盘</span><span class="subtitle">高对比 · cyan/品红撞色</span></div>
+<div class="stats">
+<div class="stat"><div class="num">12</div><div class="label">今日新增</div></div>
+<div class="stat"><div class="num">2</div><div class="label">高优先级</div></div>
+<div class="stat"><div class="num">3</div><div class="label">待处理</div></div>
+<div class="stat"><div class="num">7</div><div class="label">信息源</div></div>
+</div>
+<div class="btn-bar"><button class="btn">📱 提交抖音</button><button class="btn" style="background:rgba(236,72,153,0.15);border:1px solid rgba(236,72,153,0.3);color:#f9a8d4;">📁 上传文件</button></div>
+<div class="cards">
+<div class="card"><span class="t">你还在琢磨话术…</span><span class="tag">新增</span></div>
+<div class="card"><span class="t">AI Agent 架构统一…</span><span class="tag">已入摘要</span></div>
+<div class="card"><span class="t">中东局势分析…</span><span class="tag">新增</span></div>
+</div>
+<button class="pick-btn">选这个 →</button>
+</div></div>
+</div></div>
+
+</div></body></html>

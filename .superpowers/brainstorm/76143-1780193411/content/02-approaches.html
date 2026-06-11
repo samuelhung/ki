@@ -1,0 +1,99 @@
+<h2>三种重构方向</h2>
+<p class="subtitle">针对 A（导航）B（信息密度）C（视觉语言），各有利弊</p>
+
+<div class="cards" style="grid-template-columns: repeat(3, 1fr);">
+  <div class="card" data-choice="approach1" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:rgba(15,23,42,0.6);padding:16px;min-height:240px;">
+      <div style="font-size:11px;color:#5eead4;margin-bottom:8px;">SIDEBAR + ROUTER</div>
+      <div style="display:flex;gap:8px;">
+        <div style="width:56px;display:grid;gap:4px;">
+          <div style="font-size:9px;padding:4px;border:1px solid rgba(148,163,184,0.2);border-radius:6px;color:#8fb8af;">📊</div>
+          <div style="font-size:9px;padding:4px;border:1px solid rgba(148,163,184,0.2);border-radius:6px;color:#8fb8af;">📱</div>
+          <div style="font-size:9px;padding:4px;border:1px solid rgba(148,163,184,0.2);border-radius:6px;color:#8fb8af;">📋</div>
+          <div style="font-size:9px;padding:4px;border:1px solid rgba(148,163,184,0.2);border-radius:6px;color:#8fb8af;">📝</div>
+        </div>
+        <div style="flex:1;border:1px solid rgba(45,212,191,0.2);border-radius:8px;padding:12px;display:grid;gap:6px;">
+          <div style="font-size:10px;color:#f8fafc;font-weight:600;">📊 仪表盘</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
+            <div class="placeholder" style="padding:8px;font-size:9px;">今日 12</div>
+            <div class="placeholder" style="padding:8px;font-size:9px;">待处理 3</div>
+          </div>
+        </div>
+      </div>
+      <div style="font-size:9px;color:#6b8b83;margin-top:8px;text-align:center;">← URL 变 /dashboard →</div>
+    </div>
+    <div class="card-body">
+      <h3>方案 1 · 独立页面 + React Router</h3>
+      <p>每个导航项是独立路由页面。点左边切换，URL 跟着变，支持浏览器后退。</p>
+      <div class="pros-cons" style="margin-top:8px;">
+        <div class="pros"><h4>👍</h4><ul><li>真正的页面感</li><li>URL 可分享</li><li>信息密度可控</li></ul></div>
+        <div class="cons"><h4>👎</h4><ul><li>改动大</li><li>需装 react-router</li><li>页面间状态管理</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" data-choice="approach2" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:rgba(15,23,42,0.6);padding:16px;min-height:240px;">
+      <div style="font-size:11px;color:#5eead4;margin-bottom:8px;">TAB BAR + PANELS</div>
+      <div style="display:flex;gap:4px;margin-bottom:8px;">
+        <div style="font-size:9px;padding:4px 8px;border:1px solid rgba(45,212,191,0.4);border-radius:6px;color:#ccfbf1;">📊 概览</div>
+        <div style="font-size:9px;padding:4px 8px;border:1px solid rgba(148,163,184,0.2);border-radius:6px;color:#8fb8af;">📱 摄入</div>
+        <div style="font-size:9px;padding:4px 8px;border:1px solid rgba(148,163,184,0.2);border-radius:6px;color:#8fb8af;">📋 事件</div>
+      </div>
+      <div style="border:1px solid rgba(45,212,191,0.15);border-radius:8px;padding:16px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
+          <div class="placeholder" style="padding:10px;font-size:9px;">📊 仪表盘</div>
+          <div class="placeholder" style="padding:10px;font-size:9px;">⚠️ 告警</div>
+        </div>
+      </div>
+      <div style="font-size:9px;color:#6b8b83;margin-top:8px;text-align:center;">← 无 URL 变化，Tab 切换 →</div>
+    </div>
+    <div class="card-body">
+      <h3>方案 2 · Tab 面板切换</h3>
+      <p>保留 SPA 单页结构，用 Tab 切换代替滚动。内容按需渲染，不用全部加载。</p>
+      <div class="pros-cons" style="margin-top:8px;">
+        <div class="pros"><h4>👍</h4><ul><li>改动适中</li><li>不需要路由库</li><li>状态共享简单</li></ul></div>
+        <div class="cons"><h4>👎</h4><ul><li>无独立 URL</li><li>Tab 多了拥挤</li><li>不如真路由专业</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" data-choice="approach3" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:rgba(15,23,42,0.6);padding:16px;min-height:240px;">
+      <div style="font-size:11px;color:#5eead4;margin-bottom:8px;">DASHBOARD + DRAWER</div>
+      <div style="display:flex;gap:6px;">
+        <div style="flex:1;border:1px solid rgba(45,212,191,0.15);border-radius:8px;padding:12px;">
+          <div style="font-size:9px;color:#f8fafc;margin-bottom:6px;">📊 工作台</div>
+          <div class="placeholder" style="padding:8px;font-size:9px;">指标卡片</div>
+          <div class="placeholder" style="padding:8px;font-size:9px;margin-top:4px;">最近事件 × 5</div>
+          <div style="margin-top:6px;display:flex;gap:4px;">
+            <button class="mock-button" style="font-size:9px;padding:4px 8px;">+ 抖音摄入</button>
+            <button class="mock-button" style="font-size:9px;padding:4px 8px;">📁 上传</button>
+          </div>
+        </div>
+        <div style="width:80px;border:1px dashed rgba(148,163,184,0.2);border-radius:8px;padding:6px;">
+          <div style="font-size:8px;color:#8fb8af;text-align:center;">侧边抽屉</div>
+          <div class="placeholder" style="padding:6px;font-size:8px;margin-top:4px;">事件列表</div>
+          <div class="placeholder" style="padding:6px;font-size:8px;margin-top:4px;">信息源</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>方案 3 · 仪表盘中心 + 抽屉</h3>
+      <p>首页始终是仪表盘，复杂操作（摄入、事件列表）从侧边抽屉或 Modal 打开。</p>
+      <div class="pros-cons" style="margin-top:8px;">
+        <div class="pros"><h4>👍</h4><ul><li>主次分明</li><li>操作入口清晰</li><li>适合日常监控</li></ul></div>
+        <div class="cons"><h4>👎</h4><ul><li>深度操作不方便</li><li>抽屉内导航复杂</li><li>不适合浏览型任务</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:20px;">
+  <h3>我的建议：方案 1 做基础，吸收方案 2+3 的优点</h3>
+  <p style="color:#b7d7d1;">
+    React Router 做独立页面（解决 A），每个页面信息密度适中（解决 B），<br>
+    统一组件库（统一按钮、表单、列表风格 — 解决 C）。<br>
+    同时保留方案 3 的"快捷操作入口"放在顶部或浮动按钮。
+  </p>
+</div>
