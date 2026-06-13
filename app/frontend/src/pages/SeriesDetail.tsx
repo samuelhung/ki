@@ -146,7 +146,6 @@ export default function SeriesDetail() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [selectVersion, setSelectVersion] = useState(0); // force re-render
   const [batchAdding, setBatchAdding] = useState(false);
   const [showProgress, setShowProgress] = useState(false);
   const [progressStage, setProgressStage] = useState<'adding' | 'summary' | 'paper' | 'done'>('adding');
@@ -257,14 +256,12 @@ export default function SeriesDetail() {
       n.has(eventId) ? n.delete(eventId) : n.add(eventId);
       return n;
     });
-    setSelectVersion(v => v + 1);
   }
   function toggleSelectAll() {
     setSelectedIds(prev => {
       if (prev.size === suggestions.length) return new Set();
       return new Set(suggestions.map(s => s.event_id));
     });
-    setSelectVersion(v => v + 1);
   }
 
   async function handleBatchAdd() {
@@ -580,14 +577,11 @@ export default function SeriesDetail() {
             <>
               <div className="space-y-1.5 max-h-[60vh] overflow-y-auto custom-scrollbar">
                 {suggestions.map(s => (
-                  <div key={`${s.event_id}-${selectVersion}`}
+                  <div key={s.event_id}
                     onClick={() => toggleSelect(s.event_id)}
                     className={`bg-[#0B0C10] border rounded-lg px-3 py-2.5 transition-colors cursor-pointer ${selectedIds.has(s.event_id) ? 'border-violet-500/40 bg-violet-500/5' : 'border-[#2A2B30] hover:border-[#3A3B40]'}`}>
                     <div className="flex items-center gap-3">
-                      <div onClick={(e) => { e.stopPropagation(); toggleSelect(s.event_id); }}
-                        className={`w-4 h-4 rounded border shrink-0 flex items-center justify-center cursor-pointer transition-colors ${selectedIds.has(s.event_id) ? 'bg-violet-500 border-violet-500' : 'border-gray-500 hover:border-gray-400'}`}>
-                        {selectedIds.has(s.event_id) && <Check size={10} className="text-white" />}
-                      </div>
+                      <input type="checkbox" checked={selectedIds.has(s.event_id)} onChange={(e) => { e.stopPropagation(); toggleSelect(s.event_id); }} className="w-4 h-4 rounded accent-violet-500 shrink-0 cursor-pointer" />
                       <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 ${getTopicColor(s.topic)} bg-white/5`}>{s.topic || '未分类'}</span>
                       <span className="flex-1 min-w-0 text-sm text-white truncate">{s.title}</span>
                     </div>
@@ -599,12 +593,10 @@ export default function SeriesDetail() {
               </div>
               {/* Bottom action bar */}
               <div className="flex items-center gap-3 mt-3 pt-3 border-t border-[#2A2B30]">
-                <div className="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer select-none" onClick={toggleSelectAll}>
-                  <div className={`w-3.5 h-3.5 rounded border shrink-0 flex items-center justify-center transition-colors ${selectedIds.size === suggestions.length && suggestions.length > 0 ? 'bg-violet-500 border-violet-500' : 'border-gray-500'}`}>
-                    {selectedIds.size === suggestions.length && suggestions.length > 0 && <Check size={8} className="text-white" />}
-                  </div>
+                <label className="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer select-none">
+                  <input type="checkbox" checked={selectedIds.size === suggestions.length && suggestions.length > 0} onChange={toggleSelectAll} className="w-3.5 h-3.5 rounded accent-violet-500" />
                   全选
-                </div>
+                </label>
                 <span className="text-[11px] text-gray-500">已选 {selectedIds.size} 项</span>
                 <div className="flex-1" />
                 <button onClick={handleBatchDismiss} disabled={selectedIds.size === 0}
