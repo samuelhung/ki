@@ -257,7 +257,7 @@ export default function SeriesDetail() {
   }
   function toggleSelectAll() {
     setSelectedIds(prev =>
-      prev.length === suggestions.length ? [] : suggestions.map(s => s.event_id)
+      prev.length === suggestions.length ? [] : suggestions.map(s => s.id)
     );
   }
 
@@ -574,11 +574,11 @@ export default function SeriesDetail() {
             <>
               <div className="space-y-1.5 max-h-[60vh] overflow-y-auto custom-scrollbar">
                 {suggestions.map(s => (
-                  <div key={s.event_id}
-                    onClick={(e) => { if ((e.target as HTMLElement).tagName === 'INPUT') return; toggleSelect(s.event_id); }}
-                    className={`bg-[#0B0C10] border rounded-lg px-3 py-2.5 transition-colors cursor-pointer ${selectedIds.includes(s.event_id) ? 'border-violet-500/40 bg-violet-500/5' : 'border-[#2A2B30] hover:border-[#3A3B40]'}`}>
+                  <div key={s.id}
+                    onClick={(e) => { if ((e.target as HTMLElement).tagName === 'INPUT') return; toggleSelect(s.id); }}
+                    className={`bg-[#0B0C10] border rounded-lg px-3 py-2.5 transition-colors cursor-pointer ${selectedIds.includes(s.id) ? 'border-violet-500/40 bg-violet-500/5' : 'border-[#2A2B30] hover:border-[#3A3B40]'}`}>
                     <div className="flex items-center gap-3">
-                      <input type="checkbox" checked={selectedIds.includes(s.event_id)} onChange={() => toggleSelect(s.event_id)} className="w-4 h-4 rounded accent-violet-500 shrink-0 cursor-pointer" />
+                      <input type="checkbox" checked={selectedIds.includes(s.id)} onChange={() => toggleSelect(s.id)} className="w-4 h-4 rounded accent-violet-500 shrink-0 cursor-pointer" />
                       <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 ${getTopicColor(s.topic)} bg-white/5`}>{s.topic || '未分类'}</span>
                       <span className="flex-1 min-w-0 text-sm text-white truncate">{s.title}</span>
                     </div>
