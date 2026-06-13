@@ -4095,3 +4095,46 @@ NoneType: None
 2026-06-13 21:14:17 [INFO   ] main:81 | KI server starting — init DB + worker
 2026-06-13 21:14:17 [INFO   ] backend.task_queue:251 | Ingest task worker started
 2026-06-13 21:14:17 [INFO   ] main:85 | KI server ready
+2026-06-13 21:32:21 [INFO   ] backend.task_queue:56 | Enqueued task task-5d01de364dc4 for event evt-ingest-a3b468447aaf (douyin_share)
+2026-06-13 21:35:31 [INFO   ] tos:1060 | in-request: add cache address:douyin11.tos-cn-beijing.volces.com:443
+2026-06-13 21:35:36 [DEBUG  ] tos:5016 | in-request: method:PUT host:https://douyin11.tos-cn-beijing.volces.com/asr-upload/0bfeb325f8f240a3a6fba8ce210ab8a9.wav requestURI:/asr-upload/0bfeb325f8f240a3a6fba8ce210ab8a9.wav used time: 4.984896
+2026-06-13 21:35:36 [INFO   ] tos:1173 | after-request: put_object exec httpCode: 200, requestId: 11bf072d5ca35a026a2d5ca3-bad595e-1wYOWJ-PuO-cb-tos-1az-front-azc-16, usedTime: 4.9869616171345115 s
+2026-06-13 21:35:36 [INFO   ] tos:1060 | in-request: add cache address:openspeech.bytedance.com:443
+2026-06-13 21:35:39 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:35:43 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:35:46 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:35:49 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:35:53 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:35:56 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:36:00 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:36:03 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:36:07 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:36:10 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:36:14 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:36:17 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:36:21 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:36:24 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:36:27 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:36:31 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:36:34 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:36:38 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:36:41 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:36:44 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:36:48 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:36:51 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:36:54 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:36:58 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:37:01 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:37:05 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:37:08 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:37:11 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-13 21:37:30 [INFO   ] backend.summarizer:131 | Summary + overview generated (7410 chars transcript → 1477 chars summary, 387 chars overview), title=北美独立真相：经济冲突而非自由反抗
+2026-06-13 21:37:30 [INFO   ] backend.routes.ingest_routes:558 | AI generated title for evt-ingest-a3b468447aaf: 为了“走私”自由而反抗，英国真的压迫北美了吗？ 税负远比英国人低的北美，为什么要 → 北美独立真相：经济冲突而非自由反抗
+2026-06-13 21:37:31 [INFO   ] backend.classifier:94 | Classified event evt-ingest-a3b468447aaf as 认知
+2026-06-13 21:37:31 [INFO   ] backend.task_queue:230 | Task task-5d01de364dc4 completed for event evt-ingest-a3b468447aaf
+2026-06-13 21:37:31 [WARNING] backend.routes.series_routes:1661 | auto_suggest_series failed for evt-ingest-a3b468447aaf
+Traceback (most recent call last):
+  File "/Users/mrh/Documents/Projects/KnowledgeIntelligence/app/backend/routes/series_routes.py", line 1635, in auto_suggest_series
+    格式：[{"series_id": "xxx", "reason": "理由"}] 或 []
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: Invalid format specifier ' "xxx", "reason": "理由"' for object of type 'str'
