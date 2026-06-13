@@ -145,8 +145,10 @@ export default function SeriesDetail() {
   // Suggestions
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [addingIds, setAddingIds] = useState<Set<string>>(new Set());
-  const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchAdding, setBatchAdding] = useState(false);
+  const [showProgress, setShowProgress] = useState(false);
+  const [progressStage, setProgressStage] = useState<'adding' | 'summary' | 'paper' | 'done'>('adding');
 
   // Refresh (manual scan → populates suggestions)
   const [refreshing, setRefreshing] = useState(false);
@@ -248,39 +250,61 @@ export default function SeriesDetail() {
     catch (_) { setDeleting(false); setConfirmDelete(false); }
   }
 
-  async function handleAddSuggestion(eventId: string) {
-    setAddingIds(prev => new Set([...prev, eventId]));
-    try {
-      await fetch(`/api/ingest/series/${id}/members`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ event_ids: [eventId] }),
-      });
-      // Show success state briefly before removing
-      setAddedIds(prev => new Set([...prev, eventId]));
-      setTimeout(() => {
-        setSuggestions(prev => prev.filter(s => s.event_id !== eventId));
-        setAddedIds(prev => { const n = new Set(prev); n.delete(eventId); return n; });
-      }, 1500);
-      // Auto-regenerate structured summary and deep analysis
-      setSummaryGenerating(true);
-      setPaperGenerating(true);
-      sessionStorage.setItem(`series_${id}_gen_summary`, '1');
-      sessionStorage.setItem(`series_${id}_gen_paper`, '1');
-      await Promise.all([
-        fetch(`/api/ingest/series/${id}/summary`, { method: 'PUT' }),
-        fetch(`/api/ingest/series/${id}/paper`, { method: 'PUT' }),
-      ]);
-      await loadDetail();
-      setSummaryGenerating(false);
-      setPaperGenerating(false);
-      sessionStorage.removeItem(`series_${id}_gen_summary`);
-      sessionStorage.removeItem(`series_${id}_gen_paper`);
-    } catch (_) {}
-    setAddingIds(prev => { const n = new Set(prev); n.delete(eventId); return n; });
+  function toggleSelect(eventId: string) {
+    setSelectedIds(prev => {
+      const n = new Set(prev);
+      n.has(eventId) ? n.delete(eventId) : n.add(eventId);
+      return n;
+    });
+  }
+  function toggleSelectAll() {
+    setSelectedIds(prev => {
+      if (prev.size === suggestions.length) return new Set();
+      return new Set(suggestions.map(s => s.event_id));
+    });
   }
 
-  function handleDismissSuggestion(eventId: string) {
-    setSuggestions(prev => prev.filter(s => s.event_id !== eventId));
+  async function handleBatchAdd() {
+    if (selectedIds.size === 0) return;
+    setBatchAdding(true);
+    setShowProgress(true);
+    setProgressStage('adding');
+    try {
+      // Stage 1: Add members
+      await fetch(`/api/ingest/series/${id}/members`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event_ids: [...selectedIds] }),
+      });
+      setProgressStage('summary');
+
+      // Stage 2: Regenerate structured summary
+      setSummaryGenerating(true);
+      sessionStorage.setItem(`series_${id}_gen_summary`, '1');
+      await fetch(`/api/ingest/series/${id}/summary`, { method: 'PUT' });
+      setSummaryGenerating(false);
+      sessionStorage.removeItem(`series_${id}_gen_summary`);
+      setProgressStage('paper');
+
+      // Stage 3: Regenerate deep analysis
+      setPaperGenerating(true);
+      sessionStorage.setItem(`series_${id}_gen_paper`, '1');
+      await fetch(`/api/ingest/series/${id}/paper`, { method: 'PUT' });
+      setPaperGenerating(false);
+      sessionStorage.removeItem(`series_${id}_gen_paper`);
+      setProgressStage('done');
+
+      // Refresh
+      await loadDetail();
+      setSuggestions(prev => prev.filter(s => !selectedIds.has(s.event_id)));
+      setSelectedIds(new Set());
+    } catch (_) {}
+    setBatchAdding(false);
+  }
+
+  function handleBatchDismiss() {
+    if (selectedIds.size === 0) return;
+    setSuggestions(prev => prev.filter(s => !selectedIds.has(s.event_id)));
+    setSelectedIds(new Set());
   }
 
   async function handleRefresh() {
@@ -550,38 +574,95 @@ export default function SeriesDetail() {
           {suggestions.length === 0 ? (
             <p className="text-sm text-gray-500 text-center py-8">暂无待确认的建议</p>
           ) : (
-            <div className="space-y-1.5 max-h-[60vh] overflow-y-auto custom-scrollbar">
-              {suggestions.map(s => (
-                <div key={s.event_id} className="bg-[#0B0C10] border border-[#2A2B30] rounded-lg px-3 py-2.5 hover:border-[#3A3B40] transition-colors">
-                  <div className="flex items-center gap-3">
-                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 ${getTopicColor(s.topic)} bg-white/5`}>{s.topic || '未分类'}</span>
-                    <span className="flex-1 min-w-0 text-sm text-white truncate">{s.title}</span>
-                    <div className="flex items-center gap-1 shrink-0">
-                      {addedIds.has(s.event_id) ? (
-                        <span className="flex items-center gap-1 px-2 py-1 rounded text-[11px] text-emerald-400 bg-emerald-500/10">
-                          <Check size={12} /> 已添加
-                        </span>
-                      ) : (
-                        <>
-                          <button onClick={() => handleAddSuggestion(s.event_id)} disabled={addingIds.has(s.event_id)}
-                            className="p-1.5 rounded-lg text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-50" title="加入专题">
-                            {addingIds.has(s.event_id) ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-                          </button>
-                          <button onClick={() => handleDismissSuggestion(s.event_id)}
-                            className="p-1.5 rounded-lg text-gray-600 hover:text-gray-400 hover:bg-[#2A2B30] transition-colors" title="忽略">
-                            <X size={14} />
-                          </button>
-                        </>
-                      )}
+            <>
+              <div className="space-y-1.5 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                {suggestions.map(s => (
+                  <div key={s.event_id}
+                    onClick={() => toggleSelect(s.event_id)}
+                    className={`bg-[#0B0C10] border rounded-lg px-3 py-2.5 transition-colors cursor-pointer ${selectedIds.has(s.event_id) ? 'border-violet-500/40 bg-violet-500/5' : 'border-[#2A2B30] hover:border-[#3A3B40]'}`}>
+                    <div className="flex items-center gap-3">
+                      <input type="checkbox" checked={selectedIds.has(s.event_id)} onChange={() => {}} className="w-4 h-4 rounded accent-violet-500 shrink-0" />
+                      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 ${getTopicColor(s.topic)} bg-white/5`}>{s.topic || '未分类'}</span>
+                      <span className="flex-1 min-w-0 text-sm text-white truncate">{s.title}</span>
                     </div>
+                    {s.reason && (
+                      <p className="mt-1 ml-7 text-[11px] text-gray-500 line-clamp-2">{s.reason}</p>
+                    )}
                   </div>
-                  {s.reason && (
-                    <p className="mt-1 ml-10 text-[11px] text-gray-500 line-clamp-2">{s.reason}</p>
-                  )}
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+              {/* Bottom action bar */}
+              <div className="flex items-center gap-3 mt-3 pt-3 border-t border-[#2A2B30]">
+                <label className="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer select-none">
+                  <input type="checkbox" checked={selectedIds.size === suggestions.length && suggestions.length > 0} onChange={toggleSelectAll} className="w-3.5 h-3.5 rounded accent-violet-500" />
+                  全选
+                </label>
+                <span className="text-[11px] text-gray-500">已选 {selectedIds.size} 项</span>
+                <div className="flex-1" />
+                <button onClick={handleBatchDismiss} disabled={selectedIds.size === 0}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-gray-200 border border-gray-600 hover:border-gray-500 transition-colors disabled:opacity-40">
+                  忽略选中
+                </button>
+                <button onClick={handleBatchAdd} disabled={selectedIds.size === 0 || batchAdding}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30 transition-colors disabled:opacity-40 flex items-center gap-1.5">
+                  {batchAdding ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+                  添加选中
+                </button>
+              </div>
+            </>
           )}
+        </Modal>
+
+        {/* Progress modal */}
+        <Modal open={showProgress} onClose={() => setShowProgress(false)} title="处理进度" maxWidth="sm">
+          <div className="space-y-4">
+            {/* Stage 1: Adding members */}
+            <div className="flex items-center gap-3">
+              {progressStage === 'adding' ? (
+                <Loader2 size={16} className="animate-spin text-emerald-400 shrink-0" />
+              ) : (
+                <Check size={16} className="text-emerald-400 shrink-0" />
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-white">添加成员到专题</p>
+                {progressStage !== 'adding' && <p className="text-[11px] text-gray-500">已完成</p>}
+              </div>
+            </div>
+            {/* Stage 2: Summary */}
+            <div className="flex items-center gap-3">
+              {progressStage === 'adding' ? (
+                <div className="w-4 h-4 rounded-full border border-gray-600 shrink-0" />
+              ) : progressStage === 'summary' ? (
+                <Loader2 size={16} className="animate-spin text-amber-400 shrink-0" />
+              ) : (
+                <Check size={16} className="text-emerald-400 shrink-0" />
+              )}
+              <div className="flex-1 min-w-0">
+                <p className={`text-sm ${progressStage === 'adding' ? 'text-gray-600' : 'text-white'}`}>重新生成结构化速览</p>
+                {progressStage === 'summary' && <p className="text-[11px] text-amber-400">生成中...</p>}
+                {progressStage === 'paper' || progressStage === 'done' ? <p className="text-[11px] text-gray-500">已完成</p> : null}
+              </div>
+            </div>
+            {/* Stage 3: Paper */}
+            <div className="flex items-center gap-3">
+              {progressStage === 'done' ? (
+                <Check size={16} className="text-emerald-400 shrink-0" />
+              ) : progressStage === 'paper' ? (
+                <Loader2 size={16} className="animate-spin text-sky-400 shrink-0" />
+              ) : (
+                <div className="w-4 h-4 rounded-full border border-gray-600 shrink-0" />
+              )}
+              <div className="flex-1 min-w-0">
+                <p className={`text-sm ${progressStage === 'done' ? 'text-white' : progressStage === 'paper' ? 'text-white' : 'text-gray-600'}`}>重新生成深度分析</p>
+                {progressStage === 'paper' && <p className="text-[11px] text-sky-400">生成中...</p>}
+                {progressStage === 'done' && <p className="text-[11px] text-gray-500">已完成</p>}
+              </div>
+            </div>
+            {progressStage === 'done' && (
+              <p className="text-[11px] text-emerald-400 text-center">全部完成，页面已自动刷新</p>
+            )}
+            <p className="text-[10px] text-gray-600 text-center">关闭弹窗不会中断处理</p>
+          </div>
         </Modal>
 
         {/* Delete confirmation modal */}
