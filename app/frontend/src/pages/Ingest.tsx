@@ -60,7 +60,7 @@ export default function Ingest() {
   const [totalCounts, setTotalCounts] = useState<Record<string, number>>({ douyin: 0, file: 0 });
   const [search, setSearch] = useState('');
   const [total, setTotal] = useState(0);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [briefingTopics, setBriefingTopics] = useState<BriefingTopic[]>([]);
   const [briefingLoading, setBriefingLoading] = useState(false);
   const [bpExpanded, setBpExpanded] = useState<Set<string>>(new Set());
@@ -98,7 +98,7 @@ export default function Ingest() {
   const [queueShowAllDone, setQueueShowAllDone] = useState(false);
 
   useEffect(() => {
-    if (mobileSelectMode && selectedIds.size === 0) {
+    if (mobileSelectMode && selectedIds.length === 0) {
       setMobileSelectMode(false);
     }
   }, [selectedIds, mobileSelectMode]);
@@ -312,14 +312,14 @@ export default function Ingest() {
   }
 
   async function handleBatchDelete() {
-    if (selectedIds.size === 0) return;
-    if (!confirm(`确定要删除选中的 ${selectedIds.size} 条记录吗？`)) return;
+    if (selectedIds.length === 0) return;
+    if (!confirm(`确定要删除选中的 ${selectedIds.length} 条记录吗？`)) return;
     try {
       await fetch('/api/events/batch-delete', {
         method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ event_ids: Array.from(selectedIds) }),
+        body: JSON.stringify({ event_ids: selectedIds }),
       });
-      setSelectedIds(new Set()); loadEvents(); loadStats();
+      setSelectedIds([]); loadEvents(); loadStats();
     } catch (e: any) { console.error('批量删除事件失败', e); }
   }
 
@@ -333,7 +333,17 @@ export default function Ingest() {
   }
 
   function toggleSelect(id: string) {
-    setSelectedIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  }
+
+  function toggleSelectAll() {
+    const currentIds = events.map(e => e.id);
+    const allSelected = currentIds.every(id => selectedIds.includes(id));
+    if (allSelected) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(currentIds);
+    }
   }
 
   // ── Render ──
@@ -433,7 +443,12 @@ export default function Ingest() {
           ) : (
             <div className="bg-[#141518] border border-[#2A2B30] rounded-xl overflow-hidden">
               <div className="hidden md:grid grid-cols-12 gap-4 px-5 py-3 text-sm text-gray-500 border-b border-[#2A2B30] items-center">
-                <div className="col-span-1"></div>
+                <div className="col-span-1 flex justify-center">
+                  <Checkbox
+                    checked={events.length > 0 && selectedIds.length === events.length}
+                    onChange={toggleSelectAll}
+                  />
+                </div>
                 <div className="col-span-6">标题</div>
                 <div className="col-span-2 text-center">来源</div>
                 <div className="col-span-2 text-center">提交时间</div>
@@ -445,7 +460,7 @@ export default function Ingest() {
                 <div onClick={() => { if (window.getSelection()?.toString()) return; toggleSelect(evt.id); }}
                   className={`hidden md:grid grid-cols-12 gap-4 px-5 py-3 items-center hover:bg-[#1A1B20] transition-colors cursor-pointer border-b border-[#2A2B30] last:border-b-0 ${evt.status === 'processing' ? 'opacity-60' : ''}`}>
                   <div className="col-span-1 flex justify-center" onClick={e => e.stopPropagation()}>
-                    <Checkbox checked={selectedIds.has(evt.id)} onChange={() => toggleSelect(evt.id)} />
+                    <Checkbox checked={selectedIds.includes(evt.id)} onChange={() => toggleSelect(evt.id)} />
                   </div>
                   <div className="col-span-6 min-w-0">
                     <div className="text-sm text-gray-200 truncate font-medium">{evt.title}</div>
@@ -472,10 +487,10 @@ export default function Ingest() {
                       openDetail(evt.id);
                     }
                   }}
-                  className={`md:hidden flex items-center gap-3 px-4 py-3 hover:bg-[#1A1B20] transition-colors cursor-pointer active:bg-[#2A2B30] border-b border-[#2A2B30] last:border-b-0 ${selectedIds.has(evt.id) ? 'bg-purple-500/10' : ''} ${evt.status === 'processing' ? 'opacity-60' : ''}`}
+                  className={`md:hidden flex items-center gap-3 px-4 py-3 hover:bg-[#1A1B20] transition-colors cursor-pointer active:bg-[#2A2B30] border-b border-[#2A2B30] last:border-b-0 ${selectedIds.includes(evt.id) ? 'bg-purple-500/10' : ''} ${evt.status === 'processing' ? 'opacity-60' : ''}`}
                 >
                   {mobileSelectMode && (
-                    <Checkbox checked={selectedIds.has(evt.id)} onChange={() => toggleSelect(evt.id)} />
+                    <Checkbox checked={selectedIds.includes(evt.id)} onChange={() => toggleSelect(evt.id)} />
                   )}
                   <div className="flex-1 min-w-0">
                     <div className="text-sm text-gray-200 truncate">{evt.title}</div>
@@ -570,9 +585,9 @@ export default function Ingest() {
               <Search size={16} />
             </button>
             <div>
-              {selectedIds.size > 0 && (
+              {selectedIds.length > 0 && (
                 <button onClick={handleBatchDelete} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500/15 text-red-400 hover:bg-red-500/25 border border-red-500/20 transition-colors">
-                  删除选中 ({selectedIds.size})
+                  删除选中 ({selectedIds.length})
                 </button>
               )}
             </div>
@@ -869,11 +884,11 @@ export default function Ingest() {
       )}
 
       {/* 手机批量删除栏 */}
-      {mobileSelectMode && selectedIds.size > 0 && (
+      {mobileSelectMode && selectedIds.length > 0 && (
         <div className="md:hidden fixed bottom-20 left-4 right-4 z-30 bg-[#141518] border border-[#2A2B30] rounded-xl px-4 py-3 flex items-center justify-between shadow-2xl">
-          <span className="text-sm text-gray-300">已选 {selectedIds.size} 条</span>
+          <span className="text-sm text-gray-300">已选 {selectedIds.length} 条</span>
           <div className="flex gap-2">
-            <button onClick={() => { setMobileSelectMode(false); setSelectedIds(new Set()); }}
+            <button onClick={() => { setMobileSelectMode(false); setSelectedIds([]); }}
               className="px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-white">取消</button>
             <button onClick={handleBatchDelete}
               className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500/15 text-red-400 hover:bg-red-500/25 border border-red-500/20">
