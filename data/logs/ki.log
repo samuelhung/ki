@@ -4144,3 +4144,9 @@ ValueError: Invalid format specifier ' "xxx", "reason": "理由"' for object of 
 2026-06-13 22:26:12 [INFO   ] main:85 | KI server ready
 2026-06-13 22:26:12 [INFO   ] main:87 | KI server shutting down
 2026-06-13 22:26:12 [INFO   ] backend.task_queue:307 | Ingest task worker stopped
+2026-06-13 22:43:14 [INFO   ] main:87 | KI server shutting down
+2026-06-13 22:43:14 [INFO   ] backend.task_queue:307 | Ingest task worker stopped
+2026-06-13 22:43:15 [INFO   ] backend.config_manager:74 | Loaded system config from /Users/mrh/Documents/Projects/KnowledgeIntelligence/data/system_config.json
+2026-06-13 22:43:16 [INFO   ] main:81 | KI server starting — init DB + worker
+2026-06-13 22:43:16 [INFO   ] backend.task_queue:251 | Ingest task worker started
+2026-06-13 22:43:16 [INFO   ] main:85 | KI server ready
