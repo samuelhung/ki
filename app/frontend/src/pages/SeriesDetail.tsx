@@ -146,6 +146,7 @@ export default function SeriesDetail() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectVersion, setSelectVersion] = useState(0); // force re-render
   const [batchAdding, setBatchAdding] = useState(false);
   const [showProgress, setShowProgress] = useState(false);
   const [progressStage, setProgressStage] = useState<'adding' | 'summary' | 'paper' | 'done'>('adding');
@@ -256,12 +257,14 @@ export default function SeriesDetail() {
       n.has(eventId) ? n.delete(eventId) : n.add(eventId);
       return n;
     });
+    setSelectVersion(v => v + 1);
   }
   function toggleSelectAll() {
     setSelectedIds(prev => {
       if (prev.size === suggestions.length) return new Set();
       return new Set(suggestions.map(s => s.event_id));
     });
+    setSelectVersion(v => v + 1);
   }
 
   async function handleBatchAdd() {
@@ -577,7 +580,7 @@ export default function SeriesDetail() {
             <>
               <div className="space-y-1.5 max-h-[60vh] overflow-y-auto custom-scrollbar">
                 {suggestions.map(s => (
-                  <div key={s.event_id}
+                  <div key={`${s.event_id}-${selectVersion}`}
                     onClick={() => toggleSelect(s.event_id)}
                     className={`bg-[#0B0C10] border rounded-lg px-3 py-2.5 transition-colors cursor-pointer ${selectedIds.has(s.event_id) ? 'border-violet-500/40 bg-violet-500/5' : 'border-[#2A2B30] hover:border-[#3A3B40]'}`}>
                     <div className="flex items-center gap-3">
