@@ -26,6 +26,8 @@ def list_events(
         # FTS5 full-text search with trigram tokenizer (works for Chinese + English)
         # For very short terms (< 3 chars) use LIKE fallback since trigram needs >=3 chars
         search_term = search.strip()
+        # Quote each word to prevent FTS5 from misinterpreting AND/OR/NOT as operators
+        search = ' '.join(f'"{w}"' for w in search_term.split() if w)
         if len(search_term) < 3:
             with connect() as conn:
                 like_pattern = f"%{search_term}%"

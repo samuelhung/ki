@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Layers, Lightbulb, Loader2, ExternalLink, Search, Zap, Plus, AlertTriangle, Check } from 'lucide-react';
+import { Layers, Lightbulb, Loader2, ExternalLink, Search, Zap, Plus, AlertTriangle, Check, PenTool, ArrowRight, RefreshCw } from 'lucide-react';
 import Modal from '../components/Modal';
 
 interface SeriesMember {
@@ -37,7 +37,7 @@ interface Stage1Group {
   count: number;
 }
 
-type DiscoveryMode = 'choose' | 'global_stage1' | 'global_stage2' | 'topic_input' | 'topic_results';
+type DiscoveryMode = 'choose' | 'global_stage1' | 'global_stage2' | 'topic_input' | 'topic_results' | 'manual_create' | 'manual_suggest';
 
 export default function Series() {
   const navigate = useNavigate();
@@ -62,6 +62,20 @@ export default function Series() {
 
   // Topic input
   const [topicInput, setTopicInput] = useState('');
+
+  // Manual create state
+  const [manualTitle, setManualTitle] = useState('');
+  const [manualSelectedIds, setManualSelectedIds] = useState<Set<string>>(new Set());
+  const [availableEvents, setAvailableEvents] = useState<{ id: string; title: string; overview?: string; ai_summary?: string; topic?: string; content_type?: string; status?: string; created_at?: string }[]>([]);
+  const [eventsSearch, setEventsSearch] = useState('');
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [manualCreatedId, setManualCreatedId] = useState('');
+  const [manualCreatedName, setManualCreatedName] = useState('');
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestedName, setSuggestedName] = useState('');
+  const [suggestedDescription, setSuggestedDescription] = useState('');
+  const [suggestError, setSuggestError] = useState('');
+  const [adopting, setAdopting] = useState(false);
 
   // Save state
   const [saving, setSaving] = useState<Set<number>>(new Set());
@@ -93,6 +107,16 @@ export default function Series() {
     setStage1Message('');
     setTopicInput('');
     setDiscoverSummary('');
+    setManualTitle('');
+    setManualSelectedIds(new Set());
+    setAvailableEvents([]);
+    setEventsSearch('');
+    setManualCreatedId('');
+    setManualCreatedName('');
+    setSuggestedName('');
+    setSuggestedDescription('');
+    setSuggestError('');
+    setAdopting(false);
   }
 
   function closeDiscovery() {
@@ -238,6 +262,97 @@ export default function Series() {
   }
 
   // ═══════════════════════════════════════════
+  // Manual create
+  // ═══════════════════════════════════════════
+
+  async function openManualCreate() {
+    setDiscoveryMode('manual_create');
+    setEventsLoading(true);
+    try {
+      const r = await fetch('/api/events?limit=500');
+      const d = await r.json();
+      setAvailableEvents(Array.isArray(d) ? d : []);
+    } catch (_) { setAvailableEvents([]); }
+    setEventsLoading(false);
+  }
+
+  function toggleManualEvent(id: string) {
+    setManualSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleManualCreate() {
+    const title = manualTitle.trim();
+    const ids = Array.from(manualSelectedIds);
+    if (ids.length < 2) return;
+    if (!title) return;
+
+    setSaving(new Set([-1]));
+    try {
+      const r = await fetch('/api/ingest/series', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: title, member_ids: ids }),
+      });
+      if (r.ok) {
+        const d = await r.json();
+        setManualCreatedId(d.id);
+        setManualCreatedName(title);
+        setDiscoveryMode('manual_suggest');
+        loadSeries();
+        // 自动触发 AI 建议
+        handleSuggestName(ids, title);
+      } else {
+        setError('创建失败');
+      }
+    } catch (_) { setError('创建失败'); }
+    setSaving(new Set());
+  }
+
+  async function handleSuggestName(ids?: string[], currentName?: string) {
+    const memberIds = ids || Array.from(manualSelectedIds);
+    setSuggesting(true);
+    setSuggestError('');
+    setSuggestedName('');
+    setSuggestedDescription('');
+    try {
+      const r = await fetch('/api/ingest/series/suggest-name', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ member_ids: memberIds, current_name: currentName || manualCreatedName }),
+      });
+      const d = await r.json();
+      if (d.suggested_name) {
+        setSuggestedName(d.suggested_name);
+        setSuggestedDescription(d.suggested_description || '');
+      } else if (d.message) {
+        setSuggestError(d.message);
+      }
+    } catch (_) { setSuggestError('请求失败'); }
+    setSuggesting(false);
+  }
+
+  async function handleAdoptSuggestion() {
+    if (!manualCreatedId || !suggestedName) return;
+    setAdopting(true);
+    try {
+      await fetch(`/api/ingest/series/${manualCreatedId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: suggestedName, description: suggestedDescription }),
+      });
+      setManualCreatedName(suggestedName);
+      setSuggestedName('');
+      setSuggestedDescription('');
+      loadSeries();
+    } catch (_) {}
+    setAdopting(false);
+  }
+
+  // ═══════════════════════════════════════════
   // Render: discovery modal content
   // ═══════════════════════════════════════════
 
@@ -274,6 +389,21 @@ export default function Series() {
                 <div>
                   <h3 className="text-white font-medium text-sm group-hover:text-amber-400 transition-colors">按主题发现</h3>
                   <p className="text-xs text-gray-500 mt-0.5">输入一个主题或关键词，AI 围绕它整理相关专题。更省 token</p>
+                </div>
+              </div>
+            </button>
+
+            <button
+              onClick={openManualCreate}
+              className="w-full text-left p-4 rounded-xl bg-[#141518] border border-[#2A2B30] hover:border-emerald-500/40 transition-colors group"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-emerald-500/15 flex items-center justify-center shrink-0">
+                  <PenTool size={20} className="text-emerald-400" />
+                </div>
+                <div>
+                  <h3 className="text-white font-medium text-sm group-hover:text-emerald-400 transition-colors">自由组题</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">手动选文档、起标题，AI 帮你优化命名和副标题</p>
                 </div>
               </div>
             </button>
@@ -447,6 +577,199 @@ export default function Series() {
               className="text-xs text-gray-500 hover:text-gray-300">← 返回选择</button>
           </div>
         );
+
+      case 'manual_create': {
+        const topicColorMap: Record<string, string> = {
+          '格局': 'bg-purple-500/20 text-purple-400 border-purple-500/20',
+          '财富': 'bg-amber-500/20 text-amber-400 border-amber-500/20',
+          '认知': 'bg-blue-500/20 text-blue-400 border-blue-500/20',
+          '前瞻': 'bg-emerald-500/20 text-emerald-400 border-emerald-500/20',
+        };
+        // 过滤：仅显示已完成处理且有概述/AI 总结的事件
+        const manualEvents = availableEvents
+          .filter(ev =>
+            ev.content_type === 'event'
+            && ev.status !== 'pending' && ev.status !== 'error'
+            && ((ev.overview && ev.overview.trim() !== '') || (ev.ai_summary && ev.ai_summary.trim() !== ''))
+            && ev.title && !ev.title.includes('孤儿视频恢复')
+          )
+          .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+        const filtered = manualEvents.filter(ev => {
+          if (!eventsSearch.trim()) return true;
+          const s = eventsSearch.toLowerCase();
+          return ev.title.toLowerCase().includes(s);
+        });
+        const selectedCount = manualSelectedIds.size;
+        return (
+          <div className="space-y-3">
+            <p className="text-sm text-gray-400">手动选择关联文档，起个临时标题，AI 会帮你优化</p>
+
+            <div>
+              <label className="text-[11px] text-gray-500 block mb-1.5">专题标题（可选，后续 AI 可帮你优化）</label>
+              <input
+                type="text"
+                value={manualTitle}
+                onChange={e => setManualTitle(e.target.value)}
+                placeholder="例如：伊朗与中东地缘博弈"
+                className="w-full px-3 py-2 rounded-lg bg-[#0B0C10] border border-[#2A2B30] text-white text-sm placeholder:text-gray-600 focus:outline-none focus:border-emerald-500/50"
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-[11px] text-gray-500">选择关联文档（至少2条）</label>
+                <span className="text-[10px] text-gray-600">{eventsLoading ? '加载中...' : `${selectedCount} / ${manualEvents.length} 条`}</span>
+              </div>
+              <input
+                type="text"
+                value={eventsSearch}
+                onChange={e => setEventsSearch(e.target.value)}
+                placeholder="🔍 搜索文档标题..."
+                className="w-full px-3 py-2 mb-2 rounded-lg bg-[#0B0C10] border border-[#2A2B30] text-white text-sm placeholder:text-gray-600 focus:outline-none focus:border-emerald-500/50"
+              />
+              <div className="max-h-[40vh] overflow-y-auto custom-scrollbar space-y-1 border border-[#2A2B30] rounded-lg bg-[#141518] p-2">
+                {eventsLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 size={20} className="animate-spin text-gray-600" />
+                  </div>
+                ) : filtered.length === 0 ? (
+                  <p className="text-xs text-gray-600 text-center py-8">无匹配文档</p>
+                ) : (
+                  filtered.map(ev => {
+                    const checked = manualSelectedIds.has(ev.id);
+                    return (
+                      <label key={ev.id}
+                        className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg cursor-pointer transition-colors ${
+                          checked ? 'bg-emerald-500/10 border border-emerald-500/20' : 'hover:bg-[#1A1B20] border border-transparent'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleManualEvent(ev.id)}
+                          className="accent-emerald-500 shrink-0"
+                        />
+                        <span className="text-xs text-gray-300 truncate flex-1">{ev.title}</span>
+                        <span className="text-[9px] text-gray-600 shrink-0 w-[58px] text-right font-mono whitespace-nowrap">
+                          {ev.created_at ? (() => { const d = ev.created_at; const h = (parseInt(d.slice(11,13)) + 8) % 24; return d.slice(5,7) + '/' + d.slice(8,10) + ' ' + String(h).padStart(2,'0') + d.slice(13,16); })() : ''}
+                        </span>
+                        {ev.topic && (
+                          <span className={`text-[9px] px-1 py-0.5 rounded border shrink-0 ${topicColorMap[ev.topic] || 'bg-[#2A2B30] text-gray-600 border-transparent'}`}>{ev.topic}</span>
+                        )}
+                      </label>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t border-[#2A2B30]">
+              <span className="text-xs text-gray-500">已选 {selectedCount} 条{selectedCount < 2 ? '（至少需要2条）' : ''}</span>
+              <button
+                onClick={handleManualCreate}
+                disabled={selectedCount < 2 || !manualTitle.trim()}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30 transition-colors disabled:opacity-40 flex items-center gap-1.5"
+              >
+                <Plus size={14} /> 创建专题
+              </button>
+            </div>
+
+            <button onClick={() => setDiscoveryMode('choose')}
+              className="text-xs text-gray-500 hover:text-gray-300">← 返回选择</button>
+          </div>
+        );
+      }
+
+      case 'manual_suggest': {
+        return (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-sm">
+              <Check size={16} className="text-emerald-400" />
+              <span className="text-gray-300">专题已创建：</span>
+              <span className="text-white font-medium">{manualCreatedName}</span>
+            </div>
+
+            <div className="bg-[#141518] border border-[#2A2B30] rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <PenTool size={14} className="text-emerald-400" />
+                <span className="text-sm text-gray-300">AI 分析所选文档后的建议</span>
+              </div>
+
+              {suggesting ? (
+                <div className="flex items-center gap-3 py-4">
+                  <Loader2 size={18} className="animate-spin text-emerald-400" />
+                  <span className="text-sm text-gray-500">正在分析文档内容，生成建议名称...</span>
+                </div>
+              ) : suggestError ? (
+                <div className="text-sm">
+                  <p className="text-red-400 text-xs mb-2">{suggestError}</p>
+                  <button
+                    onClick={() => handleSuggestName()}
+                    className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300"
+                  >
+                    <RefreshCw size={12} /> 重试
+                  </button>
+                </div>
+              ) : suggestedName ? (
+                <div className="space-y-3">
+                  <div className="bg-emerald-500/5 border border-emerald-500/15 rounded-lg p-3">
+                    <label className="text-[10px] text-emerald-500/70 uppercase tracking-wider mb-1 block">AI 建议标题</label>
+                    <p className="text-sm text-white font-medium">{suggestedName}</p>
+                    {suggestedDescription && (
+                      <>
+                        <label className="text-[10px] text-emerald-500/70 uppercase tracking-wider mt-2 mb-1 block">AI 建议副标题</label>
+                        <p className="text-xs text-gray-400">{suggestedDescription}</p>
+                      </>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleAdoptSuggestion}
+                      disabled={adopting}
+                      className="flex-1 px-3 py-2 rounded-lg text-sm font-medium bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30 transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5"
+                    >
+                      {adopting ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                      采用此名称和副标题
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSuggestedName('');
+                        setSuggestedDescription('');
+                      }}
+                      className="px-3 py-2 rounded-lg text-sm text-gray-500 hover:text-gray-300 transition-colors"
+                    >
+                      保留原名
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => handleSuggestName()}
+                    className="text-xs text-gray-500 hover:text-gray-300 flex items-center gap-1"
+                  >
+                    <RefreshCw size={10} /> 重新生成建议
+                  </button>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  if (manualCreatedId) navigate(`/series/${manualCreatedId}`);
+                }}
+                className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300"
+              >
+                <ExternalLink size={12} /> 查看专题详情
+              </button>
+              <button
+                onClick={closeDiscovery}
+                className="text-xs text-gray-500 hover:text-gray-300"
+              >
+                完成
+              </button>
+            </div>
+          </div>
+        );
+      }
     }
   }
 
@@ -461,6 +784,8 @@ export default function Series() {
       case 'global_stage2': return '全局发现 · 候选专题';
       case 'topic_input': return '按主题发现';
       case 'topic_results': return `按主题发现 · 候选专题`;
+      case 'manual_create': return '自由组题';
+      case 'manual_suggest': return '自由组题 · AI 命名建议';
     }
   }
 
