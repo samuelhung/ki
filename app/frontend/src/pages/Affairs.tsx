@@ -580,14 +580,17 @@ export default function Affairs() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto px-4 md:px-0">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6 mt-6 md:mt-10">
+    <div className="flex-1 bg-[#0B0C10] text-white flex flex-col h-full overflow-hidden">
+      {/* Sticky header */}
+      <div className="shrink-0 sticky top-0 z-10 bg-[#0B0C10] px-4 md:px-8 pt-4 md:pt-8">
+        <div className="max-w-6xl mx-auto px-4 md:px-0">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <ClipboardList size={40} className="text-purple-400 shrink-0" />
           <div>
             <h1 className="text-2xl font-bold">综合事务</h1>
-            <p className="text-gray-500 text-xs mt-1">让信息服务于决策</p>
+            <p className="text-gray-400 text-sm mt-0.5">让信息服务于决策</p>
           </div>
         </div>
         <button
@@ -621,13 +624,19 @@ export default function Affairs() {
         </select>
       </div>
 
-      {/* Error */}
-      {error && (
-        <div className="mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-          {error}
-          <button onClick={loadAffairs} className="ml-3 underline hover:text-red-300">重试</button>
+        {/* Error */}
+        {error && (
+          <div className="mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+            {error}
+            <button onClick={loadAffairs} className="ml-3 underline hover:text-red-300">重试</button>
+          </div>
+        )}
         </div>
-      )}
+      </div>
+
+      {/* Scrollable content */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar px-4 md:px-8 pb-4 md:pb-8">
+        <div className="max-w-6xl mx-auto px-4 md:px-0 pt-4">
 
       {/* List */}
       {loading ? (
@@ -728,6 +737,8 @@ export default function Affairs() {
 
       {/* Detail panel */}
       {expandedId && renderDetailPanel()}
+      </div>
+    </div>
     </div>
   );
 }

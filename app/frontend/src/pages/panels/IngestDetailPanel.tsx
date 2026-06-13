@@ -9,7 +9,7 @@ const eventCache = new Map<string, Event>();
 interface Event {
   id: string; source_id: string; title: string; title_cn?: string;
   url: string; topic: string; status: string; created_at: string;
-  raw_summary?: string; ai_summary?: string; last_error?: string;
+  raw_summary?: string; ai_summary?: string; overview?: string; last_error?: string;
   summary_cn?: string; translation_status?: string;
   transcript_path?: string; summary_path?: string;
   video_path?: string; audio_path?: string; document_path?: string;
@@ -176,20 +176,49 @@ export default function IngestDetailPanel({ eventId, onClose }: Props) {
 
   function renderSummary() {
     if (!detail) return null;
-    if (!detail.ai_summary && summarizingId !== detail.id) {
-      return (
-        <div className="text-center py-8">
-          <p className="text-gray-500 mb-4 text-xs">该内容尚未生成 AI 总结</p>
-          <button onClick={() => handleSummarize(detail.id)} className="px-4 py-2 rounded-lg text-sm font-medium bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 border border-purple-500/30 transition-colors">
-            生成 AI 总结
-          </button>
-        </div>
-      );
-    }
-    if (summarizingId === detail.id) {
+    const hasOverview = !!detail.overview;
+    const hasAiSummary = !!detail.ai_summary;
+    const isSummarizing = summarizingId === detail.id;
+
+    if (isSummarizing) {
       return <div className="flex items-center justify-center py-12"><Loader2 size={24} className="animate-spin text-purple-400" /></div>;
     }
-    return <div className="text-xs">{renderMarkdown(detail.ai_summary || '')}</div>;
+    return (
+      <div className="text-xs space-y-4">
+        {/* 叙事概述 */}
+        {hasOverview && (
+          <div>
+            <div className="flex items-center gap-1.5 mb-2">
+              <span className="w-1 h-3 rounded-full bg-purple-400" />
+              <span className="text-[11px] text-purple-400 font-medium">内容概述</span>
+            </div>
+            <div className="text-gray-300 leading-relaxed whitespace-pre-wrap">{detail.overview}</div>
+          </div>
+        )}
+        {/* AI 深度总结（Q&A） */}
+        {hasAiSummary ? (
+          <div className={hasOverview ? 'pt-3 border-t border-[#2A2B30]' : ''}>
+            {hasOverview && (
+              <div className="flex items-center gap-1.5 mb-2">
+                <span className="w-1 h-3 rounded-full bg-amber-400" />
+                <span className="text-[11px] text-amber-400 font-medium">AI 深度总结</span>
+              </div>
+            )}
+            {renderMarkdown(detail.ai_summary || '')}
+          </div>
+        ) : (
+          /* 有概述但没有完整总结 → 显示生成按钮 */
+          <div className={hasOverview ? 'pt-3 border-t border-[#2A2B30]' : ''}>
+            <div className="text-center py-6">
+              <p className="text-gray-500 mb-3 text-xs">{hasOverview ? '概述已生成，可补充完整 AI 总结' : '该内容尚未生成 AI 总结'}</p>
+              <button onClick={() => handleSummarize(detail.id)} className="px-4 py-2 rounded-lg text-sm font-medium bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 border border-purple-500/30 transition-colors">
+                生成 AI 总结
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
   }
 
   function renderQuestionsSection() {

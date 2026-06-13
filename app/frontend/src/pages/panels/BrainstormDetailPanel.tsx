@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { X, Search, Sparkles, Send, MessageSquare } from 'lucide-react';
 import { renderMarkdown } from '../../components/MarkdownRenderer';
-import IngestDetailPanel from './IngestDetailPanel';
 
 interface BrainstormQuestion {
   id: string;
@@ -85,7 +85,7 @@ export default function BrainstormDetailPanel({ question, onClose }: Props) {
   const [precipitatingName, setPrecipitatingName] = useState('');
 
   // ── 引用跳转 ──────────────────────────────────────
-  const [detailEventId, setDetailEventId] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   // ── 加载 ───────────────────────────────────────────
   useEffect(() => {
@@ -436,7 +436,7 @@ export default function BrainstormDetailPanel({ question, onClose }: Props) {
             return (
               <span key={j}
                 className="text-purple-400 bg-purple-500/10 px-1 rounded cursor-pointer hover:bg-purple-500/20 transition-colors"
-                onClick={(e) => { e.stopPropagation(); setDetailEventId(eventId); }}
+                onClick={(e) => { e.stopPropagation(); navigate(`/event/${eventId}`); }}
                 title={eventTitleMap.get(eventId) || '点击查看文档详情'}
               >
                 {part}
@@ -468,6 +468,9 @@ export default function BrainstormDetailPanel({ question, onClose }: Props) {
       } else if (/^- /.test(line)) {
         listItems.push(line.replace(/^- /, ''));
       } else if (line.trim() === '') {
+        flushList();
+      } else if (/^[-*]{3,}$/.test(line.trim())) {
+        // skip markdown horizontal rule — often an AI artifact after preamble
         flushList();
       } else {
         flushList();
@@ -688,9 +691,9 @@ export default function BrainstormDetailPanel({ question, onClose }: Props) {
 
               {/* Summary tab */}
               {conceptTab === 'summary' && (
-                <div>
+                <div className="space-y-3">
                   {summaryUpdated && (
-                    <div className="mb-3 text-xs text-amber-400/80 bg-amber-500/5 border border-amber-500/15 rounded-lg px-3 py-2 flex items-center justify-between">
+                    <div className="text-xs text-amber-400/80 bg-amber-500/5 border border-amber-500/15 rounded-lg px-3 py-2 flex items-center justify-between">
                       <span>对话已更新，总结可能已过期</span>
                       <button onClick={generateSummary} disabled={summaryLoading}
                         className="ml-2 px-2 py-1 text-[10px] rounded bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 border border-amber-500/20 transition-colors disabled:opacity-40 shrink-0">
@@ -700,12 +703,16 @@ export default function BrainstormDetailPanel({ question, onClose }: Props) {
                   )}
                   {summary ? (
                     <div>
-                      <div className="bg-[#0B0C10] rounded-lg p-4">
-                        {renderMarkdownWithRefs(summary, conversationLockedIds, 'text-xs')}
-
+                      {/* 总结标题栏 — 照抄内容详情 AI 总结排版 */}
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <span className="w-1 h-3 rounded-full bg-amber-400" />
+                        <span className="text-[11px] text-amber-400 font-medium">📝 AI 深度总结</span>
                         {summaryCreatedAt && (
-                          <div className="mt-3 text-[10px] text-gray-600">{summaryCreatedAt}</div>
+                          <span className="text-[10px] text-gray-600 ml-auto">{summaryCreatedAt.slice(0, 16).replace('T', ' ')}</span>
                         )}
+                      </div>
+                      <div className="text-gray-300 leading-relaxed text-xs">
+                        {renderMarkdownWithRefs(summary, conversationLockedIds, '')}
                       </div>
                     </div>
                   ) : (
@@ -789,10 +796,6 @@ export default function BrainstormDetailPanel({ question, onClose }: Props) {
           </div>
         )}
 
-        {/* Event detail sub-panel (for reference clicks) */}
-        {detailEventId && (
-          <IngestDetailPanel eventId={detailEventId} onClose={() => setDetailEventId(null)} />
-        )}
       </div>
     </>
   );

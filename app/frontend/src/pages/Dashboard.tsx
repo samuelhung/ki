@@ -4,6 +4,7 @@ import MetricCard from '../components/MetricCard';
 import EventRow from '../components/EventRow';
 import EmptyState from '../components/EmptyState';
 import HeatmapChart from '../components/HeatmapChart';
+import UsageWidget from '../components/UsageWidget';
 import type { DashboardSummary, Event } from '../types';
 
 export default function Dashboard() {
@@ -61,31 +62,39 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="flex-1 bg-[#0B0C10] text-white p-4 md:p-8 overflow-y-auto custom-scrollbar">
-      <div className="max-w-7xl mx-auto">
+    <div className="flex-1 bg-[#0B0C10] text-white flex flex-col h-full overflow-hidden">
+      {/* Sticky header */}
+      <div className="shrink-0 sticky top-0 z-10 bg-[#0B0C10] px-4 md:px-8 pt-4 md:pt-8">
+        <div className="max-w-6xl mx-auto">
 
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-          <div>
-            <div className="flex items-center gap-3">
-              <LayoutDashboard size={40} className="text-purple-400 shrink-0" />
-              <div>
-                <h1 className="text-2xl font-bold">下午好</h1>
-                <p className="text-gray-400 text-sm mt-0.5">今天也是汲取智慧的一天</p>
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+            <div>
+              <div className="flex items-center gap-3">
+                <LayoutDashboard size={40} className="text-purple-400 shrink-0" />
+                <div>
+                  <h1 className="text-2xl font-bold">下午好</h1>
+                  <p className="text-gray-400 text-sm mt-0.5">今天也是汲取智慧的一天</p>
+                </div>
               </div>
             </div>
           </div>
-        </div>
 
-        {error && (
-          <div className="mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-            {error}
-            <button onClick={() => { loadSummary(); loadEvents(1); }} className="ml-3 underline hover:text-red-300">重试</button>
-          </div>
-        )}
+          {error && (
+            <div className="mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+              {error}
+              <button onClick={() => { loadSummary(); loadEvents(1); }} className="ml-3 underline hover:text-red-300">重试</button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Scrollable content */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar px-4 md:px-8 pb-4 md:pb-8">
+        <div className="max-w-6xl mx-auto">
 
         {/* Metric cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8 pt-4">
           {loading ? (
             Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="bg-[#141518] border border-[#2A2B30] rounded-xl p-6 animate-pulse">
@@ -107,6 +116,11 @@ export default function Dashboard() {
         {/* Heatmap */}
         <div className="mb-8">
           <HeatmapChart />
+        </div>
+
+        {/* AI 运转 */}
+        <div className="mb-8">
+          <UsageWidget />
         </div>
 
         {/* Events */}
@@ -177,6 +191,7 @@ export default function Dashboard() {
             </div>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

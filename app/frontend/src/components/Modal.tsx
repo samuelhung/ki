@@ -6,9 +6,12 @@ interface ModalProps {
   onClose: () => void;
   title: string;
   children: ReactNode;
+  maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
 }
 
-export default function Modal({ open, onClose, title, children }: ModalProps) {
+const _maxWidthClass: Record<string, string> = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-lg', xl: 'max-w-xl', '2xl': 'max-w-2xl' };
+
+export default function Modal({ open, onClose, title, children, maxWidth = 'lg' }: ModalProps) {
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -23,7 +26,7 @@ export default function Modal({ open, onClose, title, children }: ModalProps) {
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       {/* Panel */}
-      <div className="relative z-10 w-full max-w-lg mx-4 bg-[#141518] border border-[#2A2B30] rounded-xl shadow-2xl">
+      <div className={`relative z-10 w-full ${_maxWidthClass[maxWidth]} mx-4 bg-[#141518] border border-[#2A2B30] rounded-xl shadow-2xl`}>
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#2A2B30]">
           <h2 className="text-lg font-semibold text-white">{title}</h2>
           <button onClick={onClose}

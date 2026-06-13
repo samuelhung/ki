@@ -44,7 +44,8 @@ def classify_content(title: str, text: str) -> str:
         {"role": "user", "content": user_prompt},
     ]
 
-    label = chat(messages, temperature=0.1, max_tokens=16, timeout=30)
+    label = chat(messages, temperature=0.1, max_tokens=16, timeout=30,
+                 module="ingest_pipeline", task="classify")
     if label is None:
         logger.warning("Classification failed — returning default '认知'")
         return "认知"

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import urllib.request
 from typing import Any
+
+from .deepseek_client import chat
 
 logger = logging.getLogger(__name__)
 
@@ -38,12 +38,6 @@ JUDGMENT_SYSTEM_PROMPT = """你是综合事务分析助手。用户提交了一�
 }"""
 
 
-def _deepseek_client():
-    key = os.getenv("DEEPSEEK_API_KEY", "")
-    base = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com").rstrip("/")
-    return key, base
-
-
 def analyze_affair(affair_id: str, body: str) -> dict | None:
     """Run the full analysis pipeline for a given affair.
 
@@ -71,47 +65,31 @@ def analyze_affair(affair_id: str, body: str) -> dict | None:
 请基于以上信息，对该事务给出结构化判断。"""
 
     # ── Step 4: LLM call ──
-    api_key, base_url = _deepseek_client()
-    if not api_key or api_key == "***":
-        logger.warning("DEEPSEEK_API_KEY not configured, cannot analyze affair %s", affair_id)
-        return None
-
-    payload: dict[str, Any] = {
-        "model": "deepseek-chat",
-        "messages": [
+    content = chat(
+        [
             {"role": "system", "content": JUDGMENT_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ],
-        "temperature": 0.4,
-        "max_tokens": 4096,
-    }
-
-    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    url = f"{base_url}/v1/chat/completions"
-
-    req = urllib.request.Request(
-        url,
-        data=data,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        },
-        method="POST",
+        temperature=0.4,
+        max_tokens=4096,
+        timeout=180,
+        module="affairs",
+        task="judge",
     )
+    if not content:
+        logger.warning("Affair %s: AI judgment returned empty", affair_id)
+        return None
 
     try:
-        with urllib.request.urlopen(req, timeout=180) as resp:
-            body_raw = json.loads(resp.read().decode("utf-8"))
-            content = body_raw["choices"][0]["message"]["content"].strip()
-            # Strip markdown code fences if present
-            if content.startswith("```"):
-                lines = content.split("\n")
-                content = "\n".join(lines[1:]) if lines[0].startswith("```") else content
-                if content.endswith("```"):
-                    content = content[:-3].strip()
-            result = json.loads(content)
-            logger.info("Affair %s: AI judgment generated", affair_id)
-            return result
+        # Strip markdown code fences if present
+        if content.startswith("```"):
+            lines = content.split("\n")
+            content = "\n".join(lines[1:]) if lines[0].startswith("```") else content
+            if content.endswith("```"):
+                content = content[:-3].strip()
+        result = json.loads(content)
+        logger.info("Affair %s: AI judgment generated", affair_id)
+        return result
     except Exception as e:
         logger.warning("Affair %s: AI analysis failed: %s", affair_id, e)
         return None
@@ -267,11 +245,6 @@ def evaluate_affair_events(affair_id: str, body: str, events: list[dict]) -> lis
     if not events:
         return []
 
-    api_key, base_url = _deepseek_client()
-    if not api_key or api_key == "***":
-        logger.warning("DEEPSEEK_API_KEY not configured, cannot evaluate affair events")
-        return []
-
     prompt_items = []
     for i, e in enumerate(events):
         title = (e.get("title_cn") or e.get("title", ""))[:120]
@@ -279,16 +252,7 @@ def evaluate_affair_events(affair_id: str, body: str, events: list[dict]) -> lis
         prompt_items.append(f"{i+1}. [{e['id']}] {title}\n   摘要: {summary}")
     events_text = "\n".join(prompt_items)
 
-    system = """你是关联度评估助手。给定一个事务和一批内容，判断每条内容与事务的相关度。
-
-输出纯 JSON 数组，每个元素格式：
-{"event_id": "xxx", "relevance": "high|medium|low", "reason": "用中文简述为什么相关或不相关（≤30字）"}
-
-规则：
-- high: 内容直接回答或高度关联事务
-- medium: 内容部分关联或提供背景信息
-- low: 基本无关
-- 只输出 JSON 数组，不要其他内容"""
+    system = "你是一个信息关联度评估助手。你的任务是评估一组事件与一个事务的相关程度。仅输出 JSON，不含其他内容。"
 
     user = f"""事务：
 {body}
@@ -298,37 +262,29 @@ def evaluate_affair_events(affair_id: str, body: str, events: list[dict]) -> lis
 
 请逐条评估关联度。"""
 
-    payload = {
-        "model": "deepseek-chat",
-        "messages": [
+    content = chat(
+        [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        "temperature": 0.2,
-        "max_tokens": 8192,
-    }
-
-    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    url = f"{base_url}/v1/chat/completions"
-
-    req = urllib.request.Request(
-        url, data=data,
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
-        method="POST",
+        temperature=0.2,
+        max_tokens=8192,
+        timeout=180,
+        module="affairs",
+        task="relevance",
     )
+    if not content:
+        return []
 
     try:
-        with urllib.request.urlopen(req, timeout=180) as resp:
-            body_raw = json.loads(resp.read().decode("utf-8"))
-            content = body_raw["choices"][0]["message"]["content"].strip()
-            if content.startswith("```"):
-                lines = content.split("\n")
-                content = "\n".join(lines[1:]) if lines[0].startswith("```") else content
-                if content.endswith("```"):
-                    content = content[:-3].strip()
-            results = json.loads(content)
-            logger.info("Affair %s: evaluated %d events, got %d results", affair_id, len(events), len(results))
-            return results
+        if content.startswith("```"):
+            lines = content.split("\n")
+            content = "\n".join(lines[1:]) if lines[0].startswith("```") else content
+            if content.endswith("```"):
+                content = content[:-3].strip()
+        results = json.loads(content)
+        logger.info("Affair %s: evaluated %d events, got %d results", affair_id, len(events), len(results))
+        return results
     except Exception as e:
         logger.warning("Affair %s: event relevance evaluation failed: %s", affair_id, e)
         return []

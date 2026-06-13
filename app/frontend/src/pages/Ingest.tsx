@@ -1,19 +1,18 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Link } from 'react-router-dom';
-import { Upload, ChevronLeft, ChevronRight, Loader2, Trash2, Search, Maximize2, Download, Globe, Coins, Brain, Telescope, Zap } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Upload, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Loader2, Trash2, Search, Maximize2, Download, Globe, Coins, Brain, Telescope, Zap, X, List, RotateCcw } from 'lucide-react';
 import MetricCard from '../components/MetricCard';
 import Modal from '../components/Modal';
 import Checkbox from '../components/Checkbox';
 import EmptyState from '../components/EmptyState';
 import { formatTimeBeijing, sourceLabel, sourceBadgeClass } from '../utils';
-import IngestDetailPanel from './panels/IngestDetailPanel';
 
 interface IngestStats { today_submissions: number; processing: number; completed: number; }
 
 interface Event {
   id: string; source_id: string; title: string; title_cn?: string;
   url: string; topic: string; status: string; created_at: string;
-  raw_summary?: string; ai_summary?: string; last_error?: string;
+  raw_summary?: string; ai_summary?: string; overview?: string; last_error?: string;
   summary_cn?: string; translation_status?: string; transcript_path?: string; summary_path?: string;
   video_path?: string; audio_path?: string; document_path?: string;
   associated_questions?: any[];
@@ -24,8 +23,33 @@ interface IngestStatus { event_id: string; status: string; progress_stages?: Pro
 interface BriefingTopic { topic: string; topic_label?: string; summary?: string; events: Array<{ event_id: string; title_cn?: string; title?: string; highlight?: string; source_name?: string; created_at?: string; relevance?: { high: number; medium: number }; }>; }
 interface Source { id: string; name: string; type: string; url: string; topic: string; priority: string; enabled: number; }
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 15;
 const API_BASE = '/api/events';
+
+/** ingest_type → 中文标签 */
+function taskTypeLabel(ingestType: string): string {
+  switch (ingestType) {
+    case 'douyin_share': return '抖音分享';
+    case 'video_file': return '视频文件';
+    case 'audio_file': return '音频文件';
+    case 'document': return '文档';
+    default: return ingestType;
+  }
+}
+
+/** 从 task 对象提取展示标题：优先真实标题，否则取 payload 中的文本前15字 */
+function taskTitle(t: any): string {
+  if (t.title && t.title !== '待处理') return t.title;
+  try {
+    if (t.payload_json) {
+      const p = JSON.parse(t.payload_json);
+      if (p.content_text) {
+        return p.content_text.slice(0, 50) + (p.content_text.length > 50 ? '…' : '');
+      }
+    }
+  } catch (_) { /* ignore parse errors */ }
+  return taskTypeLabel(t.ingest_type);
+}
 
 export default function Ingest() {
   const [stats, setStats] = useState<IngestStats>({ today_submissions: 0, processing: 0, completed: 0 });
@@ -40,8 +64,8 @@ export default function Ingest() {
   const [briefingTopics, setBriefingTopics] = useState<BriefingTopic[]>([]);
   const [briefingLoading, setBriefingLoading] = useState(false);
   const [bpExpanded, setBpExpanded] = useState<Set<string>>(new Set());
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [modalType, setModalType] = useState<'douyin' | 'file' | 'concept' | null>(null);
+  const navigate = useNavigate();
+  const [modalType, setModalType] = useState<'douyin' | 'file' | 'concept' | 'queue' | null>(null);
   const [douyinText, setDouyinText] = useState('');
   const [douyinTopic, setDouyinTopic] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -70,6 +94,8 @@ export default function Ingest() {
   const [topicCounts, setTopicCounts] = useState<Record<string, number>>({});
   const [eventsError, setEventsError] = useState('');
   const [briefingError, setBriefingError] = useState('');
+  const [queueItems, setQueueItems] = useState<any[]>([]);
+  const [queueShowAllDone, setQueueShowAllDone] = useState(false);
 
   useEffect(() => {
     if (mobileSelectMode && selectedIds.size === 0) {
@@ -94,6 +120,36 @@ export default function Ingest() {
   }, [toast]);
 
   useEffect(() => { loadTopicCounts(); }, []);
+
+  // 轮询处理队列
+  useEffect(() => {
+    loadQueue();
+    const interval = setInterval(loadQueue, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  async function loadQueue() {
+    try {
+      const r = await fetch('/api/ingest/queue?limit=30');
+      const d = await r.json();
+      const items = d.items || [];
+      setQueueItems(items);
+    } catch (_) { /* silent */ }
+  }
+
+  async function deleteQueueTask(taskId: string) {
+    try {
+      await fetch(`/api/ingest/queue/${taskId}`, { method: 'DELETE' });
+      setQueueItems(prev => prev.filter(t => t.id !== taskId));
+    } catch (_) { /* silent */ }
+  }
+
+  async function retryQueueTask(taskId: string) {
+    try {
+      await fetch(`/api/ingest/queue/${taskId}/retry`, { method: 'POST' });
+      loadQueue();
+    } catch (_) { /* silent */ }
+  }
 
   async function loadTopicCounts() {
     try {
@@ -168,6 +224,7 @@ export default function Ingest() {
       setPollId(d.event_id); setPollStatus({ event_id: d.event_id, status: 'processing' });
       pollIngestStatus(d.event_id);
       setDouyinText(''); setDouyinTopic('');
+      loadQueue();
     } catch (e: any) { setDyError(e.message); }
     setSubmitting(false);
   }
@@ -182,7 +239,12 @@ export default function Ingest() {
         setPollStatus(d);
         setProgressStages(d.progress_stages || null);
         if (d.status === 'completed' || d.status === 'failed' || d.status === 'error') {
-          setTimeout(() => { setModalType(null); setPollId(null); setPollStatus(null); setProgressStages(null); loadEvents(); loadStats(); loadTopicCounts(); }, 1500);
+          // Don't close the queue modal — only close douyin/file submit modals
+          setTimeout(() => {
+            setModalType(prev => prev === 'queue' ? 'queue' : null);
+            setPollId(null); setPollStatus(null); setProgressStages(null);
+            loadEvents(); loadStats(); loadTopicCounts(); loadQueue();
+          }, 1500);
           return;
         }
       } catch (e: any) { console.error('轮询状态失败', e); }
@@ -205,6 +267,7 @@ export default function Ingest() {
       setPollId(d.event_id); setPollStatus({ event_id: d.event_id, status: 'processing' });
       pollIngestStatus(d.event_id);
       setSelectedFile(null); setFileTitle(''); setFileTopic('');
+      loadQueue();
     } catch (e: any) { setFlError(e.message); }
     finally { setFileSubmitting(false); }
   }
@@ -244,7 +307,6 @@ export default function Ingest() {
     if (!confirm('确定要删除这条记录吗？')) return;
     try {
       await fetch(`${API_BASE}/${eventId}`, { method: 'DELETE' });
-      if (expandedId === eventId) setExpandedId(null);
       loadEvents(); loadStats();
     } catch (e: any) { console.error('删除事件失败', e); }
   }
@@ -262,8 +324,7 @@ export default function Ingest() {
   }
 
   function openDetail(eventId: string) {
-    if (expandedId === eventId) { setExpandedId(null); return; }
-    setExpandedId(eventId);
+    navigate(`/event/${eventId}`);
   }
 
   function openModal(type: 'douyin' | 'file' | 'concept') {
@@ -278,72 +339,81 @@ export default function Ingest() {
   // ── Render ──
   return (
     <>
-      <div className="flex-1 bg-[#0B0C10] text-white p-4 md:p-6 overflow-y-auto custom-scrollbar">
-        <div className="max-w-6xl mx-auto">
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-            <div>
-              <div className="flex items-center gap-3">
-                <Download size={40} className="text-purple-400 shrink-0" />
-                <div>
-                  <h1 className="text-2xl font-bold">内容采集</h1>
-                  <p className="text-sm text-gray-400 mt-0.5">每一份内容，都是一粒思想的种子</p>
+      <div className="flex-1 bg-[#0B0C10] text-white flex flex-col h-full overflow-hidden">
+        {/* Sticky header */}
+        <div className="shrink-0 sticky top-0 z-10 bg-[#0B0C10] px-4 md:px-8 pt-4 md:pt-8">
+          <div className="max-w-6xl mx-auto">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+              <div>
+                <div className="flex items-center gap-3">
+                  <Download size={40} className="text-purple-400 shrink-0" />
+                  <div>
+                    <h1 className="text-2xl font-bold">内容采集</h1>
+                    <p className="text-sm text-gray-400 mt-0.5">每一份内容，都是一粒思想的种子</p>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="hidden md:flex gap-2">
-              <button onClick={() => openModal('douyin')} className="px-4 py-2 rounded-lg text-sm font-medium bg-pink-500/20 text-pink-400 hover:bg-pink-500/30 border border-pink-500/30 transition-colors">
-                抖音分享
-              </button>
-              <button onClick={() => openModal('file')} className="px-4 py-2 rounded-lg text-sm font-medium bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 border border-cyan-500/30 transition-colors">
-                上传文件
-              </button>
-              <button onClick={() => openModal('concept')} className="px-4 py-2 rounded-lg text-sm font-medium bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30 transition-colors">
-                沉淀概念
-              </button>
-            </div>
-          </div>
-
-          {/* 桌面 tab */}
-          <div className="hidden md:block border-b border-[#2A2B30] mb-6">
-            <div className="flex gap-6 overflow-x-auto">
-              {([
-                { key: '格局' as const, label: '格局', sub: '地缘政治·大国博弈·国际关系', icon: Globe, color: 'text-blue-400' },
-                { key: '财富' as const, label: '财富', sub: '经济金融·商业洞察·投资理财', icon: Coins, color: 'text-amber-400' },
-                { key: '认知' as const, label: '认知', sub: '思维模型·方法论·底层逻辑', icon: Brain, color: 'text-purple-400' },
-                { key: '前瞻' as const, label: '前瞻', sub: '科技趋势·未来预判·前沿动态', icon: Telescope, color: 'text-emerald-400' },
-                { key: 'briefing' as const, label: '即时快报', sub: '全球要闻·智能整理·快速浏览', icon: Zap, color: 'text-rose-400' },
-              ]).map(t => (
-                <button key={t.key} onClick={() => { setHistoryTab(t.key); setPage(1); setExpandedId(null); }}
-                  className={`pb-3 text-sm font-medium transition-colors relative whitespace-nowrap flex flex-col items-center ${historyTab === t.key ? 'text-white' : 'text-gray-500 hover:text-gray-300'}`}>
-                  <div className="flex items-center"><t.icon size={18} className={`${t.color} mr-1.5`} />{t.label}</div>
-                  {t.sub && <div className="text-[10px] text-gray-500 mt-0.5 font-normal">{t.sub}</div>}
-                  {historyTab === t.key && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-500" />}
+              <div className="hidden md:flex gap-2">
+                <button onClick={() => { loadQueue(); setQueueShowAllDone(false); openModal('queue'); }} className="px-4 py-2 rounded-lg text-sm font-medium bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 border border-purple-500/30 transition-colors">
+                  处理队列
                 </button>
-              ))}
+                <button onClick={() => openModal('douyin')} className="px-4 py-2 rounded-lg text-sm font-medium bg-pink-500/20 text-pink-400 hover:bg-pink-500/30 border border-pink-500/30 transition-colors">
+                  抖音分享
+                </button>
+                <button onClick={() => openModal('file')} className="px-4 py-2 rounded-lg text-sm font-medium bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 border border-cyan-500/30 transition-colors">
+                  上传文件
+                </button>
+                <button onClick={() => openModal('concept')} className="px-4 py-2 rounded-lg text-sm font-medium bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30 transition-colors">
+                  沉淀概念
+                </button>
+              </div>
             </div>
+
+            {/* 桌面 tab */}
+            <div className="hidden md:block border-b border-[#2A2B30]">
+              <div className="flex gap-6 overflow-x-auto">
+                {([
+                  { key: '格局' as const, label: '格局', sub: '地缘政治·大国博弈·国际关系', icon: Globe, color: 'text-blue-400' },
+                  { key: '财富' as const, label: '财富', sub: '经济金融·商业洞察·投资理财', icon: Coins, color: 'text-amber-400' },
+                  { key: '认知' as const, label: '认知', sub: '思维模型·方法论·底层逻辑', icon: Brain, color: 'text-purple-400' },
+                  { key: '前瞻' as const, label: '前瞻', sub: '科技趋势·未来预判·前沿动态', icon: Telescope, color: 'text-emerald-400' },
+                  { key: 'briefing' as const, label: '即时快报', sub: '全球要闻·智能整理·快速浏览', icon: Zap, color: 'text-rose-400' },
+                ]).map(t => (
+                  <button key={t.key} onClick={() => { setHistoryTab(t.key); setPage(1); }}
+                    className={`pb-3 text-sm font-medium transition-colors relative whitespace-nowrap flex flex-col items-center ${historyTab === t.key ? 'text-white' : 'text-gray-500 hover:text-gray-300'}`}>
+                    <div className="flex items-center"><t.icon size={18} className={`${t.color} mr-1.5`} />{t.label}</div>
+                    {t.sub && <div className="text-[10px] text-gray-500 mt-0.5 font-normal">{t.sub}</div>}
+                    {historyTab === t.key && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-500" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 手机下拉 */}
+            <select
+              className="md:hidden w-full px-3 py-2 text-sm bg-[#141518] border border-[#2A2B30] rounded-lg text-white focus:outline-none focus:border-purple-500/50 mt-4"
+              value={historyTab}
+              onChange={e => { setHistoryTab(e.target.value as any); setPage(1); }}
+            >
+              {([
+                { key: '格局' as const, label: '格局', sub: '地缘政治·大国博弈·国际关系' },
+                { key: '财富' as const, label: '财富', sub: '经济金融·商业洞察·投资理财' },
+                { key: '认知' as const, label: '认知', sub: '思维模型·方法论·底层逻辑' },
+                { key: '前瞻' as const, label: '前瞻', sub: '科技趋势·未来预判·前沿动态' },
+                { key: 'briefing' as const, label: '即时快报', sub: '全球要闻·智能整理·快速浏览' },
+              ]).map(t => (
+                <option key={t.key} value={t.key}>
+                  {t.label}{t.sub ? ` · ${t.sub}` : ''}
+                </option>
+              ))}
+            </select>
           </div>
+        </div>
 
-          {/* 手机下拉 */}
-          <select
-            className="md:hidden w-full mb-4 px-3 py-2 text-sm bg-[#141518] border border-[#2A2B30] rounded-lg text-white focus:outline-none focus:border-purple-500/50"
-            value={historyTab}
-            onChange={e => { setHistoryTab(e.target.value as any); setPage(1); setExpandedId(null); }}
-          >
-            {([
-              { key: '格局' as const, label: '格局', sub: '地缘政治·大国博弈·国际关系' },
-              { key: '财富' as const, label: '财富', sub: '经济金融·商业洞察·投资理财' },
-              { key: '认知' as const, label: '认知', sub: '思维模型·方法论·底层逻辑' },
-              { key: '前瞻' as const, label: '前瞻', sub: '科技趋势·未来预判·前沿动态' },
-              { key: 'briefing' as const, label: '即时快报', sub: '全球要闻·智能整理·快速浏览' },
-            ]).map(t => (
-              <option key={t.key} value={t.key}>
-                {t.label}{t.sub ? ` · ${t.sub}` : ''}
-              </option>
-            ))}
-          </select>
-
-
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar px-4 md:px-8 pb-4 md:pb-8">
+          <div className="max-w-6xl mx-auto pt-4">
 
           {/* Event list — only for history tabs (not briefing) */}
           {historyTab !== 'briefing' && (
@@ -517,11 +587,7 @@ export default function Ingest() {
           )}
         </div>
       </div>
-
-      {/* Detail Panel */}
-      {expandedId && (
-        <IngestDetailPanel eventId={expandedId} onClose={() => setExpandedId(null)} />
-      )}
+      </div>
 
       {/* Modals */}
       {modalType === 'douyin' && (
@@ -548,23 +614,6 @@ export default function Ingest() {
               </button>
             </div>
           </form>
-          {pollStatus && (
-            <div className="mt-4 p-3 rounded-lg bg-[#0B0C10] border border-[#2A2B30]">
-              <p className="text-xs text-gray-400 mb-2">处理状态：{pollStatus.status}</p>
-              {progressStages && (
-                <div className="space-y-1">
-                  {progressStages.map(s => (
-                    <div key={s.key} className="flex items-center gap-2 text-xs">
-                      <span className={s.status === 'done' ? 'text-emerald-400' : s.status === 'active' ? 'text-amber-400 animate-pulse' : s.status === 'error' ? 'text-red-400' : 'text-gray-600'}>
-                        {s.status === 'done' ? '✓' : s.status === 'active' ? '◉' : s.status === 'error' ? '✗' : '○'}
-                      </span>
-                      <span className={s.status === 'done' ? 'text-gray-300' : s.status === 'active' ? 'text-white' : 'text-gray-600'}>{s.label}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
         </Modal>
       )}
 
@@ -610,23 +659,6 @@ export default function Ingest() {
               </button>
             </div>
           </form>
-          {pollStatus && (
-            <div className="mt-4 p-3 rounded-lg bg-[#0B0C10] border border-[#2A2B30]">
-              <p className="text-xs text-gray-400 mb-2">处理状态：{pollStatus.status}</p>
-              {progressStages && (
-                <div className="space-y-1">
-                  {progressStages.map(s => (
-                    <div key={s.key} className="flex items-center gap-2 text-xs">
-                      <span className={s.status === 'done' ? 'text-emerald-400' : s.status === 'active' ? 'text-amber-400 animate-pulse' : s.status === 'error' ? 'text-red-400' : 'text-gray-600'}>
-                        {s.status === 'done' ? '✓' : s.status === 'active' ? '◉' : s.status === 'error' ? '✗' : '○'}
-                      </span>
-                      <span className={s.status === 'done' ? 'text-gray-300' : s.status === 'active' ? 'text-white' : 'text-gray-600'}>{s.label}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
         </Modal>
       )}
 
@@ -674,6 +706,152 @@ export default function Ingest() {
               </button>
             </div>
           </form>
+        </Modal>
+      )}
+
+      {/* 处理队列弹窗 */}
+      {modalType === 'queue' && (
+        <Modal open={true} title="处理队列" onClose={() => setModalType(null)} maxWidth="2xl">
+          <div className="max-h-[520px] overflow-y-auto custom-scrollbar -mx-5 -mb-4">
+          {(() => {
+            if (queueItems.length === 0) {
+              return <p className="text-xs text-gray-500 py-12 text-center">暂无处理任务</p>;
+            }
+            // Running task (top stepper)
+            const running = queueItems.find((t: any) => t.status === 'running');
+            // Pending tasks
+            const pending = queueItems.filter((t: any) => t.status === 'pending');
+            // Done + error (collapsed by default on first load)
+            const doneTasks = queueItems.filter((t: any) => t.status === 'done');
+            const errorTasks = queueItems.filter((t: any) => t.status === 'error');
+            return (
+              <div>
+                {/* ── 当前任务 步骤条 ── */}
+                {running && (() => {
+                  const stages = running.progress_stages || [];
+                  return (
+                    <div className="px-5 py-4 border-b border-[#2A2B30] bg-[#0B0C10]">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                        <span className="text-xs text-white truncate flex-1">
+                          {taskTitle(running)}
+                        </span>
+                      </div>
+                      {stages.length > 0 ? (
+                        <div className="flex items-start">
+                          {stages.map((s: any, i: number) => (
+                            <React.Fragment key={s.key}>
+                              <div className="flex flex-col items-center shrink-0">
+                                <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold ${
+                                  s.status === 'done' ? 'bg-emerald-500/20 text-emerald-400 ring-1 ring-emerald-500/30' :
+                                  s.status === 'active' ? 'bg-amber-500/20 text-amber-400 animate-pulse ring-1 ring-amber-500/30' :
+                                  s.status === 'error' ? 'bg-red-500/20 text-red-400 ring-1 ring-red-500/30' :
+                                  'bg-gray-800 text-gray-600'
+                                }`}>
+                                  {s.status === 'done' ? '✓' : s.status === 'active' ? '◉' : s.status === 'error' ? '✗' : i + 1}
+                                </span>
+                                <span className={`text-[8px] mt-0.5 whitespace-nowrap ${
+                                  s.status === 'active' ? 'text-amber-400 font-medium' :
+                                  s.status === 'done' ? 'text-emerald-400/80' :
+                                  s.status === 'error' ? 'text-red-400/80' :
+                                  'text-gray-600'
+                                }`}>{s.label}</span>
+                              </div>
+                              {i < stages.length - 1 && (
+                                <div className="flex-1 h-px mt-2 bg-gray-800 min-w-[6px]" />
+                              )}
+                            </React.Fragment>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-gray-500">等待进度...</p>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* ── 排队中 ── */}
+                {pending.length > 0 && (
+                  <div className={running ? '' : 'px-5 pt-4'}>
+                    <div className="px-5 pt-3 pb-1">
+                      <p className="text-[11px] text-gray-500 font-medium mb-1">排队等待（{pending.length}）</p>
+                    </div>
+                    <div className="px-2 pb-2 space-y-0.5">
+                      {pending.map((t: any) => (
+                        <div key={t.id} className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-[#1A1B20] transition-colors">
+                          <span className="text-xs w-4 text-center text-gray-500 shrink-0">⏳</span>
+                          <span className="flex-1 text-xs text-gray-300 truncate">
+                            {taskTitle(t)}
+                          </span>
+                          <span className="text-[10px] text-gray-500 shrink-0">排队中…</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── 失败 ── */}
+                {errorTasks.length > 0 && (
+                  <div>
+                    <div className="px-5 pt-3 pb-1">
+                      <p className="text-[11px] text-red-400/80 font-medium">失败（{errorTasks.length}）</p>
+                    </div>
+                    <div className="px-2 pb-2 space-y-0.5">
+                      {errorTasks.map((t: any) => (
+                        <div key={t.id} className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-[#1A1B20] transition-colors group">
+                          <span className="text-xs shrink-0 w-4 text-center text-red-400">✗</span>
+                          <span className="flex-1 text-xs text-gray-300 truncate">{taskTitle(t)}</span>
+                          {t.error && <span className="text-[10px] text-red-400/70 truncate max-w-[80px] shrink-0" title={t.error}>{t.error.slice(0, 20)}</span>}
+                          <button onClick={() => retryQueueTask(t.id)}
+                            className="p-0.5 rounded text-gray-500 hover:text-amber-400 hover:bg-amber-500/10 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" title="重试">
+                            <RotateCcw size={12} />
+                          </button>
+                          <button onClick={() => deleteQueueTask(t.id)}
+                            className="p-0.5 rounded text-gray-600 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" title="删除">
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── 已完成 ── */}
+                {doneTasks.length > 0 && (() => {
+                  const isCollapsed = doneTasks.length > 5 && !queueShowAllDone;
+                  const display = isCollapsed ? doneTasks.slice(0, 5) : doneTasks;
+                  return (
+                    <div>
+                      <div className="px-5 pt-3 pb-1 flex items-center justify-between">
+                        <p className="text-[11px] text-gray-500 font-medium">
+                          已完成（{doneTasks.length}）
+                        </p>
+                        {doneTasks.length > 5 && (
+                          <button onClick={() => setQueueShowAllDone(!queueShowAllDone)}
+                            className="text-[10px] text-purple-400 hover:text-purple-300">
+                            {queueShowAllDone ? '收起' : `展开全部 ${doneTasks.length} 条`}
+                          </button>
+                        )}
+                      </div>
+                      <div className="px-2 pb-3 space-y-0.5">
+                        {display.map((t: any) => (
+                          <div key={t.id} className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-[#1A1B20] transition-colors group">
+                            <span className="text-xs shrink-0 w-4 text-center text-emerald-400">✓</span>
+                            <span className="flex-1 text-xs text-gray-300 truncate">{taskTitle(t)}</span>
+                            <button onClick={() => deleteQueueTask(t.id)}
+                              className="p-0.5 rounded text-gray-600 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" title="删除">
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            );
+          })()}
+          </div>
         </Modal>
       )}
 

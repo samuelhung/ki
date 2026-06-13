@@ -46,7 +46,8 @@ def tag_event(title: str, text: str, title_cn: str | None = None) -> list[dict[s
         {"role": "user", "content": f"标题：{display_title}\n\n内容：{snippet}"},
     ]
 
-    content = chat(messages, temperature=0.1, max_tokens=512, response_format={"type": "json_object"}, timeout=30)
+    content = chat(messages, temperature=0.1, max_tokens=512, response_format={"type": "json_object"}, timeout=30,
+                   module="ingest_pipeline", task="tag")
     if content is None:
         return []
 

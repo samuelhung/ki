@@ -159,17 +159,19 @@ export default function DigestPage() {
   }, [sections]);
 
   return (
-    <div className="flex-1 bg-[#0B0C10] text-white p-4 md:p-6 overflow-y-auto custom-scrollbar">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+    <div className="flex-1 bg-[#0B0C10] text-white flex flex-col h-full overflow-hidden">
+      {/* Sticky header */}
+      <div className="shrink-0 sticky top-0 z-10 bg-[#0B0C10] px-4 md:px-8 pt-4 md:pt-8">
+        <div className="max-w-6xl mx-auto">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
           <div>
             <div className="flex items-center gap-3">
               <FileText size={40} className="text-purple-400 shrink-0" />
               <div>
                 <h1 className="text-2xl font-bold">每日摘要</h1>
                 {digest && (
-                  <p className="text-sm text-gray-500 mt-0.5">
+                  <p className="text-gray-400 text-sm mt-0.5">
                     {digest.date} · {digest.events_used} 条记录
                   </p>
                 )}
@@ -183,13 +185,19 @@ export default function DigestPage() {
           </button>
         </div>
 
-        {/* Error */}
-        {error && (
-          <div className="mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-            {error}
-            <button onClick={load} className="ml-3 underline hover:text-red-300">重试</button>
-          </div>
-        )}
+          {/* Error */}
+          {error && (
+            <div className="mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+              {error}
+              <button onClick={load} className="ml-3 underline hover:text-red-300">重试</button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Scrollable content */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar px-4 md:px-8 pb-4 md:pb-8">
+        <div className="max-w-6xl mx-auto pt-4">
 
         {/* Loading */}
         {loading ? (
@@ -297,6 +305,7 @@ export default function DigestPage() {
           </div>
         )}
       </div>
+    </div>
     </div>
   );
 }
