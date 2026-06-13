@@ -335,6 +335,18 @@ export default function SystemDoc() {
         <div className="space-y-8">
           {[
             {
+              version: '1.6.0',
+              date: '2026-06',
+              title: '待确认修复 + 全选重写',
+              items: [
+                '待确认弹窗修复 — 单击条目全选联动：API返回id字段，前端误用s.event_id（undefined）导致9条共享同一key',
+                '待确认弹窗修复 — 全选/取消全选失效：click事件冒泡到父div导致toggle两次（选中即时被取消），改为onClick判断e.target.tagName跳过INPUT',
+                'Ingest 全选重写 — selectedIds从Set<string>改为string[]，表头新增全选checkbox，彻底解决React Set引用相等渲染异常',
+                '版本号统一 — 前端Sidebar/API文档/系统说明统一1.6.0，后端FastAPI从0.2.0同步至1.6.0',
+                'GitHub Release 工作流 — 每次推送同步版本号+更新日志，gh release create 自动发布',
+              ],
+            },
+            {
               version: '1.5.0',
               date: '2026-06',
               title: '专题待确认与推荐理由',
