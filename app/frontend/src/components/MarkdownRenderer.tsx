@@ -74,6 +74,9 @@ export function renderMarkdown(md: string): React.ReactNode {
       listItems.push(line.replace(/^- /, ''));
     } else if (line.trim() === '') {
       flushList();
+    } else if (/^[-*]{3,}$/.test(line.trim())) {
+      // skip markdown horizontal rule — often an AI artifact after preamble
+      flushList();
     } else {
       flushList();
       nodes.push(

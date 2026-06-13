@@ -130,6 +130,13 @@ def init_db() -> None:
               decision TEXT NOT NULL DEFAULT 'digest',
               status TEXT NOT NULL DEFAULT 'new',
               content_type TEXT NOT NULL DEFAULT 'event',
+              overview TEXT,
+              video_path TEXT,
+              audio_path TEXT,
+              document_path TEXT,
+              progress_stages TEXT,
+              last_discovered_at TEXT,
+              suggested_series_json TEXT,
               last_error TEXT,
               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
               FOREIGN KEY(source_id) REFERENCES sources(id)
@@ -223,6 +230,7 @@ def init_db() -> None:
               payload_json TEXT NOT NULL,
               status TEXT NOT NULL DEFAULT 'pending',
               error TEXT,
+              retry_count INTEGER NOT NULL DEFAULT 0,
               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
               started_at TEXT,
               finished_at TEXT
@@ -241,6 +249,39 @@ def init_db() -> None:
               push_targets_json TEXT NOT NULL DEFAULT '[]',
               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
               updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            -- Thematic series — AI-discovered clusters of related content
+            CREATE TABLE IF NOT EXISTS series (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              description TEXT,
+              member_ids TEXT NOT NULL DEFAULT '[]',
+              sort_order TEXT DEFAULT '[]',
+              status TEXT NOT NULL DEFAULT 'draft',
+              intro TEXT,
+              summary TEXT,
+              paper TEXT,
+              updated_at TEXT,
+              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            -- AI usage tracking: per-call token counts and cost estimates
+            CREATE TABLE IF NOT EXISTS ai_usage (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              module TEXT DEFAULT '',
+              task TEXT DEFAULT '',
+              model TEXT DEFAULT '',
+              status TEXT NOT NULL DEFAULT 'success',
+              prompt_tokens INTEGER NOT NULL DEFAULT 0,
+              completion_tokens INTEGER NOT NULL DEFAULT 0,
+              total_tokens INTEGER NOT NULL DEFAULT 0,
+              cached_tokens INTEGER NOT NULL DEFAULT 0,
+              reasoning_tokens INTEGER NOT NULL DEFAULT 0,
+              cost_rmb REAL NOT NULL DEFAULT 0,
+              duration_ms INTEGER NOT NULL DEFAULT 0,
+              error TEXT DEFAULT ''
             );
 
             -- Sync triggers: keep events_fts in sync with events table
@@ -264,6 +305,10 @@ def init_db() -> None:
         _migrate_events_cn(conn)
         # Migration: add answered_event_ids
         _migrate_brainstorm(conn)
+        # Migration: add intro / updated_at to series
+        _migrate_series(conn)
+        # Migration: add retry_count to ingest_tasks
+        _migrate_ingest_tasks_retry(conn)
         # Performance indexes
         conn.executescript("""
             CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
@@ -287,7 +332,7 @@ def init_db() -> None:
 def _migrate_events_cn(conn: sqlite3.Connection) -> None:
     """Add title_cn, summary_cn, translation_status, translation_error, and last_error columns if missing."""
     cols = {row[1] for row in conn.execute("PRAGMA table_info(events)").fetchall()}
-    for col in ("title_cn", "summary_cn", "translation_status", "translation_error", "last_error", "progress_stages", "video_path", "audio_path", "document_path", "content_type"):
+    for col in ("title_cn", "summary_cn", "translation_status", "translation_error", "last_error", "progress_stages", "video_path", "audio_path", "document_path", "content_type", "overview", "last_discovered_at", "suggested_series_json"):
         if col not in cols:
             conn.execute(f"ALTER TABLE events ADD COLUMN {col} TEXT")
 
@@ -451,3 +496,19 @@ def seed_default_sources() -> int:
             )
             inserted += conn.total_changes - before
     return inserted
+
+
+def _migrate_series(conn: sqlite3.Connection) -> None:
+    """Add intro and updated_at columns to series table if missing."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(series)").fetchall()}
+    for col in ("intro", "updated_at", "summary"):
+        if col not in cols:
+            conn.execute(f"ALTER TABLE series ADD COLUMN {col} TEXT")
+
+
+def _migrate_ingest_tasks_retry(conn: sqlite3.Connection) -> None:
+    """Add retry_count column to ingest_tasks if missing."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(ingest_tasks)").fetchall()}
+    if "retry_count" not in cols:
+        conn.execute("ALTER TABLE ingest_tasks ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0")
+        logger.info("Migration: added retry_count column to ingest_tasks")

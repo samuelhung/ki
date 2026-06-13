@@ -12,7 +12,12 @@ import Sources from './pages/Sources';
 import Digest from './pages/Digest';
 import Brainstorm from './pages/Brainstorm';
 import Affairs from './pages/Affairs';
+import Series from './pages/Series';
+import SeriesDetail from './pages/SeriesDetail';
+import EventDetailPage from './pages/EventDetailPage';
+import BrainstormDetailPage from './pages/BrainstormDetailPage';
 import SystemDoc from './pages/SystemDoc';
+import SystemSettings from './pages/SystemSettings';
 
 function Layout() {
   return (
@@ -53,8 +58,13 @@ export default function App() {
           <Route path="sources" element={<Sources />} />
           <Route path="digest" element={<Digest />} />
           <Route path="brainstorm" element={<Brainstorm />} />
+          <Route path="brainstorm/:id" element={<BrainstormDetailPage />} />
           <Route path="affairs" element={<Affairs />} />
+          <Route path="series" element={<Series />} />
+          <Route path="series/:id" element={<SeriesDetail />} />
+          <Route path="event/:id" element={<EventDetailPage />} />
           <Route path="system" element={<SystemDoc />} />
+          <Route path="settings" element={<SystemSettings />} />
         </Route>
       </Routes>
     </EventCacheProvider>

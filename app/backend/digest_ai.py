@@ -31,7 +31,8 @@ def _call_deepseek_text(
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
-    content = chat(messages, temperature=0.5, max_tokens=max_tokens, timeout=timeout)
+    content = chat(messages, temperature=0.5, max_tokens=max_tokens, timeout=timeout,
+                   module="digest_briefing", task="digest")
     if content is None:
         raise RuntimeError("DeepSeek API not configured or call failed")
     return content

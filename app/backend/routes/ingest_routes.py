@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import shutil
 import tempfile
 import uuid
@@ -96,6 +97,36 @@ def ingest_file(
         raise
 
 
+# ── Queue endpoint ──
+
+@router.get("/queue")
+def ingest_queue(limit: int = 30):
+    """List recent ingest tasks with event info for the queue UI panel."""
+    init_db()
+    with connect() as conn:
+        rows = conn.execute(
+            """SELECT t.id, t.event_id, t.ingest_type, t.status, t.error,
+                      t.payload_json, t.created_at, t.started_at, t.finished_at,
+                      e.title, e.progress_stages
+               FROM ingest_tasks t
+               LEFT JOIN events e ON e.id = t.event_id
+               ORDER BY t.created_at DESC
+               LIMIT ?""",
+            (limit,),
+        ).fetchall()
+
+    items = []
+    for row in rows:
+        item = dict(row)
+        if item.get("progress_stages"):
+            try:
+                item["progress_stages"] = json.loads(item["progress_stages"])
+            except (json.JSONDecodeError, TypeError):
+                item["progress_stages"] = []
+        items.append(item)
+    return {"items": items}
+
+
 # ── Status endpoint ──
 
 @router.get("/status/{event_id}")
@@ -134,6 +165,67 @@ def clear_old_ingest():
         )
         deleted = result.rowcount if hasattr(result, 'rowcount') else conn.total_changes
     return {"deleted": deleted}
+
+
+@router.delete("/queue/{task_id}")
+def delete_queue_task(task_id: str):
+    """Delete a single ingest task. Also cleans up its associated event."""
+    init_db()
+    with connect() as conn:
+        # Look up the event_id before deleting
+        row = conn.execute(
+            "SELECT event_id FROM ingest_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Task not found")
+        event_id = row["event_id"]
+
+        # Delete the task
+        conn.execute("DELETE FROM ingest_tasks WHERE id = ?", (task_id,))
+
+        # Delete the associated event if no other tasks reference it
+        remaining = conn.execute(
+            "SELECT COUNT(*) as cnt FROM ingest_tasks WHERE event_id = ?", (event_id,)
+        ).fetchone()["cnt"]
+        if remaining == 0:
+            conn.execute("DELETE FROM events WHERE id = ?", (event_id,))
+
+    return {"deleted": task_id}
+
+
+@router.post("/queue/{task_id}/retry")
+def retry_queue_task(task_id: str):
+    """Retry a failed task — reset to pending. Also cleans up stuck event status."""
+    init_db()
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT id, event_id, status FROM ingest_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        if row["status"] not in ("error", "done"):
+            raise HTTPException(status_code=400, detail=f"Task is {row['status']}, not retryable")
+
+        # Reset task
+        conn.execute(
+            "UPDATE ingest_tasks SET status = 'pending', error = NULL, "
+            "started_at = NULL, finished_at = NULL, retry_count = COALESCE(retry_count, 0) + 1 WHERE id = ?",
+            (task_id,),
+        )
+
+        # Clean up orphaned event (stuck in 'processing')
+        if row["event_id"]:
+            ev = conn.execute(
+                "SELECT status FROM events WHERE id = ?", (row["event_id"],)
+            ).fetchone()
+            if ev and ev["status"] == "processing":
+                conn.execute(
+                    "UPDATE events SET status = 'pending' WHERE id = ?",
+                    (row["event_id"],),
+                )
+
+    return {"retried": task_id, "status": "pending"}
 
 
 # ── Internal helpers ──
@@ -238,7 +330,8 @@ def _create_concept(title: str, topic: str, description: str = "", force_ai: boo
                 )},
                 {"role": "user", "content": prompt},
             ]
-            ai_summary = chat(messages, temperature=0.3, max_tokens=1500)
+            ai_summary = chat(messages, temperature=0.3, max_tokens=1500,
+                              module="ingest_pipeline", task="summarize")
         except Exception as e:
             logger.warning("Concept AI auto-complete failed for %s: %s", title, e)
             ai_summary = ""
@@ -346,14 +439,18 @@ def _process_ingest(event_id: str, ingest_type: str, content, topic: str, title:
         elif ingest_type == "douyin_share":
             from ..ingest.douyin import parse_share_text, download_video
             from ..ingest.media import extract_audio
-            from ..ingest.volc_transcriber import transcribe
+            from ..ingest.volc_transcriber import upload_to_tos, submit_transcription, poll_result
 
             stages = [
                 {"key": "parse", "label": "解析链接", "status": "active"},
                 {"key": "download", "label": "下载视频", "status": "pending"},
+                {"key": "persist", "label": "保存视频", "status": "pending"},
                 {"key": "extract", "label": "提取音频", "status": "pending"},
+                {"key": "tos", "label": "上传 TOS", "status": "pending"},
                 {"key": "transcribe", "label": "语音转写", "status": "pending"},
                 {"key": "summarize", "label": "AI 总结", "status": "pending"},
+                {"key": "writedb", "label": "写入数据库", "status": "pending"},
+                {"key": "classify", "label": "自动分类", "status": "pending"},
                 {"key": "done", "label": "完成", "status": "pending"},
             ]
             _set_progress(event_id, stages)
@@ -365,31 +462,49 @@ def _process_ingest(event_id: str, ingest_type: str, content, topic: str, title:
             _set_progress(event_id, stages)
 
             video_path = work_dir / "video.mp4"
-            download_video(info["download_url"], video_path)
+            download_video(info["download_url"], video_path, session=info.get("_session"))
+            stages[1]["status"] = "done"
+            stages[2]["status"] = "active"
+            _set_progress(event_id, stages)
             
             # Persist video file (temp dir will be cleaned up)
             VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
             persistent_video = VIDEOS_DIR / f"{event_id}.mp4"
             shutil.copy2(video_path, persistent_video)
             
-            stages[1]["status"] = "done"
-            stages[2]["status"] = "active"
-            _set_progress(event_id, stages)
-
-            audio_path = work_dir / "audio.wav"
-            extract_audio(video_path, audio_path)
             stages[2]["status"] = "done"
             stages[3]["status"] = "active"
             _set_progress(event_id, stages)
 
-            text = transcribe(audio_path)
+            audio_path = work_dir / "audio.wav"
+            extract_audio(video_path, audio_path)
             stages[3]["status"] = "done"
             stages[4]["status"] = "active"
             _set_progress(event_id, stages)
 
-            # Update title from douyin metadata
+            # Upload to volc TOS
+            audio_url = upload_to_tos(audio_path)
+            stages[4]["status"] = "done"
+            stages[5]["status"] = "active"
+            _set_progress(event_id, stages)
+
+            # Submit + poll volc AUC transcription
+            req_id, logid = submit_transcription(audio_url)
+            text = poll_result(req_id, logid)
+            stages[5]["status"] = "done"
+            stages[6]["status"] = "active"
+            _set_progress(event_id, stages)
+
+            # Update title from douyin metadata — strip platform hashtags
+            raw_title = info.get("platform_title", "")
+            if raw_title:
+                # Strip trailing #hashtags and @mentions, keep the core title
+                clean = re.sub(r'\s*[#＃][^\s#＃@]+', '', raw_title)
+                clean = re.sub(r'\s*@\S+', '', clean)
+                clean = clean.strip().rstrip('，,。.')
+                title = clean if clean else ""
             if not title:
-                title = info.get("platform_title", "")
+                title = raw_title  # fallback for logging; AI will override below
 
             # Update URL with share URL
             with connect() as conn:
@@ -406,22 +521,41 @@ def _process_ingest(event_id: str, ingest_type: str, content, topic: str, title:
 
         # AI summarization for all text-producing ingest types
         ai_summary = None
+        overview = None
         if ingest_type in ("douyin_share", "video_file", "audio_file", "document"):
             try:
                 from ..summarizer import summarize_transcript
-                ai_summary = summarize_transcript(text, title=title)
-                if ai_summary is not None:
+                # If title is effectively empty or truncated, ask AI to generate one
+                title_is_empty = not title or bool(re.match(r'^[\s#＃@]+$', title or ''))
+                # For douyin_share: detect truncated titles (platform desc limited to ~55 chars)
+                title_truncated = (
+                    ingest_type == "douyin_share"
+                    and bool(title)
+                    and not re.search(r'[。！？）」\"''」』]$', title)
+                )
+                # For video_file / audio_file: title is auto-derived from filename,
+                # so ALWAYS ask AI to generate one from content
+                title_from_filename = ingest_type in ("video_file", "audio_file")
+                need_ai_title = title_is_empty or title_truncated or title_from_filename
+                result = summarize_transcript(text, title=title, need_title=need_ai_title)
+                if result is not None:
+                    ai_summary = result.get("summary", "")
+                    overview = result.get("overview", "")
+                    if need_ai_title and result.get("suggested_title"):
+                        old_title = title
+                        title = result["suggested_title"]
+                        logger.info("AI generated title for %s: %s → %s", event_id, old_title[:40], title)
                     SUMMARIES_DIR.mkdir(parents=True, exist_ok=True)
-                    (SUMMARIES_DIR / f"{event_id}.md").write_text(ai_summary, encoding="utf-8")
+                    (SUMMARIES_DIR / f"{event_id}.md").write_text(ai_summary or "", encoding="utf-8")
                 else:
                     logger.warning("AI summarization returned None for %s — API may be unavailable", event_id)
             except Exception as e:
                 logger.warning("AI summarization failed for %s (%s): %s", event_id, ingest_type, e)
 
-        # Mark summarization done, activate final stage
+        # Mark summarization done, activate write-db stage
         if ingest_type == "douyin_share":
-            stages[4]["status"] = "done"
-            stages[5]["status"] = "active"
+            stages[6]["status"] = "done"
+            stages[7]["status"] = "active"
             _set_progress(event_id, stages)
 
         # Build file path columns
@@ -456,16 +590,19 @@ def _process_ingest(event_id: str, ingest_type: str, content, topic: str, title:
         with connect() as conn:
             conn.execute(
                 """UPDATE events SET raw_summary = ?, ai_summary = COALESCE(?, ai_summary),
+                   overview = COALESCE(?, overview),
                    status = 'completed', last_error = NULL,
                    video_path = ?, audio_path = ?, document_path = ?,
                    title = CASE WHEN title = '待处理' OR title = '' THEN ? ELSE title END
                    WHERE id = ?""",
-                (text, ai_summary, video_path, audio_path_col, document_path_col, title or "待处理", event_id),
+                (text, ai_summary, overview, video_path, audio_path_col, document_path_col, title or "待处理", event_id),
             )
 
-        # Mark final stage as done
-        stages[-1]["status"] = "done"
-        _set_progress(event_id, stages)
+        # DB write done → move to classify
+        if ingest_type == "douyin_share":
+            stages[7]["status"] = "done"
+            stages[8]["status"] = "active"
+            _set_progress(event_id, stages)
 
         # Auto-classify into cognitive layer (outside the connection block —
         # classifier manages its own DB connection)
@@ -474,6 +611,10 @@ def _process_ingest(event_id: str, ingest_type: str, content, topic: str, title:
             _classify_event(event_id)
         except Exception:
             logger.warning("Classification failed for %s — non-blocking", event_id, exc_info=True)
+
+        # Mark final stage as done
+        stages[-1]["status"] = "done"
+        _set_progress(event_id, stages)
 
     except Exception as e:
         logger.exception("Ingest pipeline failed for %s (%s): %s", event_id, ingest_type, e)

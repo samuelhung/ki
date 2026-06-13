@@ -22,7 +22,8 @@ def _call_deepseek(system_prompt: str, user_prompt: str, max_tokens: int, timeou
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
-    content = chat(messages, temperature=0.3, max_tokens=max_tokens, timeout=timeout)
+    content = chat(messages, temperature=0.3, max_tokens=max_tokens, timeout=timeout,
+                   module="ingest_pipeline", task="translate")
     if content is None:
         return TranslationResult(text="", success=False, error="DeepSeek API not configured or call failed")
     return TranslationResult(text=content, success=True)

@@ -253,7 +253,8 @@ def get_answer_for_question(request: AnswerRequest) -> dict[str, object]:
             {"role": "user", "content": prompt},
         ]
 
-        answer = chat(messages, temperature=0.3, max_tokens=800, timeout=60)
+        answer = chat(messages, temperature=0.3, max_tokens=800, timeout=60,
+                      module="brainstorm", task="contemplate")
         if answer is None:
             logger.warning("Answer extraction failed for article '%s': API unavailable", art['title'])
             answer = "（AI 回答生成失败）"
@@ -309,9 +310,11 @@ class ConversationMessageRequest(BaseModel):
     content: str
 
 
-def _call_deepseek_chat(messages: list[dict], temperature: float = 0.3, max_tokens: int = 2000) -> str:
+def _call_deepseek_chat(messages: list[dict], temperature: float = 0.3, max_tokens: int = 2000,
+                        module: str = "", task: str = "") -> str:
     """Call DeepSeek chat API and return the assistant's text response."""
-    content = chat(messages, temperature=temperature, max_tokens=max_tokens, timeout=120)
+    content = chat(messages, temperature=temperature, max_tokens=max_tokens, timeout=120,
+                   module=module, task=task)
     if content is None:
         raise RuntimeError("DeepSeek API 未配置")
     return content
@@ -389,7 +392,8 @@ def start_conversation(question_id: str, request: ConversationStartRequest) -> d
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": request.question},
         ]
-        answer = _call_deepseek_chat(messages, temperature=0.3, max_tokens=2000)
+        answer = _call_deepseek_chat(messages, temperature=0.3, max_tokens=2000,
+                                     module="brainstorm", task="answer")
     except Exception as e:
         logger.warning("Conversation start failed for question %s: %s", question_id, e)
         return {"error": f"AI 回答生成失败: {e}"}
@@ -463,7 +467,8 @@ def send_conversation_message(question_id: str, request: ConversationMessageRequ
         messages = [{"role": "system", "content": system_prompt}]
         messages.extend(history)
         messages.append({"role": "user", "content": request.content})
-        answer = _call_deepseek_chat(messages, temperature=0.3, max_tokens=2000)
+        answer = _call_deepseek_chat(messages, temperature=0.3, max_tokens=2000,
+                                     module="brainstorm", task="answer")
     except Exception as e:
         logger.warning("Conversation message failed for question %s: %s", question_id, e)
         return {"error": f"AI 回答生成失败: {e}"}
@@ -590,7 +595,8 @@ def generate_conversation_summary(question_id: str) -> dict[str, object]:
             {"role": "system", "content": "你是严谨的研究总结助手，请基于对话和参考文档生成结构化总结。"},
             {"role": "user", "content": prompt},
         ]
-        summary = _call_deepseek_chat(messages, temperature=0.3, max_tokens=3000)
+        summary = _call_deepseek_chat(messages, temperature=0.3, max_tokens=3000,
+                                     module="brainstorm", task="summary")
     except Exception as e:
         logger.warning("Summary generation failed for question %s: %s", question_id, e)
         return {"error": f"AI 总结生成失败: {e}"}
@@ -850,8 +856,18 @@ def _contemplate_question_to_events(question_id: str) -> dict[str, object]:
     cached_suggestions = []
     for event_id, judgment in cached.items():
         if event_id not in linked_ids:
-            # Look up title from rows
+            # Look up title from rows, fallback to direct DB query for older events
             evt_row = next((r for r in rows if r["id"] == event_id), None)
+            if evt_row is None:
+                evt_row = conn.execute(
+                    "SELECT title, source_id FROM events WHERE id = ?", (event_id,)
+                ).fetchone()
+                # Skip RSS-sourced events from cache (source_ids like bbc-world, reuters-world, etc.)
+                if evt_row is None:
+                    # Event has been deleted from the events table — skip stale cache entry
+                    continue
+                if evt_row["source_id"] not in ("douyin", "user-upload", "user-concept"):
+                    continue
             title = evt_row["title"] if evt_row else event_id
             cached_suggestions.append({
                 "event_id": event_id,
@@ -933,7 +949,8 @@ def _call_contemplate_deepseek(prompt: str) -> list[dict]:
         {"role": "system", "content": "You are a JSON-only API. Always output valid JSON array, nothing else."},
         {"role": "user", "content": prompt},
     ]
-    raw = chat(messages, temperature=0.1, max_tokens=2048, timeout=60)
+    raw = chat(messages, temperature=0.1, max_tokens=4096, timeout=120,
+               module="brainstorm", task="concept_extract")
     if raw is None:
         return []
 
@@ -942,7 +959,23 @@ def _call_contemplate_deepseek(prompt: str) -> list[dict]:
         raw = raw.split("\n", 1)[-1]
         if raw.endswith("```"):
             raw = raw[:-3]
-    return json.loads(raw)
+
+    # Fault-tolerant JSON parse — AI output may be truncated or malformed
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        logger.warning("Contemplate JSON parse error at line %d col %d — trying partial recovery", e.lineno, e.colno)
+        # Try to recover by truncating at the error position
+        try:
+            truncated = raw[:e.pos]
+            # Find last valid '}' to close the array
+            last_brace = truncated.rfind('}')
+            if last_brace > 0:
+                partial = truncated[:last_brace + 1] + ']'
+                return json.loads(partial)
+        except Exception:
+            pass
+        return []
 
 
 # ---------------------------------------------------------------------------

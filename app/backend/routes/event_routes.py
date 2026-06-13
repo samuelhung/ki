@@ -146,7 +146,7 @@ def get_event(event_id: str) -> dict[str, object]:
             """SELECT id, source_id, title, url, published_at, raw_summary, ai_summary,
                title_cn, summary_cn, translation_status, translation_error,
                topic, importance, actionability, decision, status, tags_json,
-               last_error, progress_stages, video_path, created_at
+               last_error, progress_stages, video_path, created_at, overview
                FROM events WHERE id = ?""",
             (event_id,),
         ).fetchone()
@@ -248,12 +248,14 @@ def summarize_event(event_id: str, background_tasks: BackgroundTasks) -> dict[st
 
     def _run_summary():
         try:
-            summary = summarize_transcript(transcript, title=title)
-            if summary:
+            result = summarize_transcript(transcript, title=title)
+            if result:
+                summary = result.get("summary", "")
+                overview = result.get("overview", "")
                 with connect() as conn:
                     conn.execute(
-                        "UPDATE events SET ai_summary = ? WHERE id = ?",
-                        (summary, event_id),
+                        "UPDATE events SET ai_summary = ?, overview = COALESCE(?, overview) WHERE id = ?",
+                        (summary, overview, event_id),
                     )
                 # Also write to file system
                 summaries_dir = Path(__file__).resolve().parents[3] / "data" / "ingest" / "summaries"

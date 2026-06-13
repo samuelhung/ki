@@ -1,13 +1,51 @@
 from __future__ import annotations
 
 import os
-import logging as _logging
+import logging
+import logging.handlers
 from pathlib import Path
 from dotenv import load_dotenv
 
 _env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 if _env_path.exists():
     load_dotenv(_env_path, override=True)
+
+# ---- Logging setup ----
+_LOG_DIR = Path(__file__).resolve().parents[2] / "data" / "logs"
+_LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+# Root logger config — captures all "knowledge-intelligence" + module loggers
+_root = logging.getLogger()
+_root.setLevel(logging.DEBUG)
+
+# Console handler: INFO+ to stderr (visible in uvicorn output)
+_console = logging.StreamHandler()
+_console.setLevel(logging.INFO)
+_console.setFormatter(logging.Formatter(
+    "%(asctime)s [%(levelname)-7s] %(name)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+))
+_root.addHandler(_console)
+
+# File handler: DEBUG+ with daily rotation, keep 30 days
+_file = logging.handlers.TimedRotatingFileHandler(
+    str(_LOG_DIR / "ki.log"),
+    when="midnight",
+    interval=1,
+    backupCount=30,
+    encoding="utf-8",
+)
+_file.setLevel(logging.DEBUG)
+_file.setFormatter(logging.Formatter(
+    "%(asctime)s [%(levelname)-7s] %(name)s:%(lineno)d | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+))
+_root.addHandler(_file)
+
+# Silence noisy third-party loggers
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
@@ -27,17 +65,26 @@ from .routes.translate_routes import router as translate_router
 from .routes.brainstorm_routes import router as brainstorm_router
 from .routes.briefing_routes import router as briefing_router
 from .routes.ingest_routes import router as ingest_router
+from .routes.series_routes import router as series_router
 from .routes.affairs_routes import router as affairs_router
+from .routes.config_routes import router as config_router
+from .routes.usage_routes import router as usage_router
+from .routes.log_routes import router as log_router
+from .routes.system_routes import router as system_router
+from .routes.prompt_routes import router as prompt_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup: init DB, seed sources, start ingest task worker.
     Shutdown: gracefully stop worker."""
+    logging.getLogger("main").info("KI server starting — init DB + worker")
     init_db()
     seed_default_sources()
     start_worker()
+    logging.getLogger("main").info("KI server ready")
     yield
+    logging.getLogger("main").info("KI server shutting down")
     stop_worker()
 
 
@@ -102,7 +149,13 @@ app.include_router(translate_router)
 app.include_router(brainstorm_router)
 app.include_router(briefing_router)
 app.include_router(ingest_router)
+app.include_router(series_router)
 app.include_router(affairs_router)
+app.include_router(config_router)
+app.include_router(usage_router)
+app.include_router(log_router)
+app.include_router(system_router)
+app.include_router(prompt_router)
 
 
 # ---- Static file mounts ----

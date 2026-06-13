@@ -32,15 +32,16 @@ def parse_share_text(share_text: str) -> dict:
         raise ValueError("未找到抖音分享链接")
 
     headers = {"User-Agent": MOBILE_UA}
+    session = requests.Session()
 
     # Step 1: follow short link redirect to get video_id
-    r = requests.get(share_url, headers=headers, allow_redirects=True, timeout=30)
+    r = session.get(share_url, headers=headers, allow_redirects=True, timeout=30)
     r.raise_for_status()
     video_id = r.url.split("?")[0].rstrip("/").split("/")[-1]
 
     # Step 2: fetch iesdouyin page with _ROUTER_DATA
     page_url = f"https://www.iesdouyin.com/share/video/{video_id}"
-    page = requests.get(page_url, headers=headers, timeout=30)
+    page = session.get(page_url, headers=headers, timeout=30)
     page.raise_for_status()
 
     # Step 3: extract JSON from window._ROUTER_DATA
@@ -97,21 +98,74 @@ def parse_share_text(share_text: str) -> dict:
         "platform_title": desc,
         "download_url": play_url,
         "share_url": share_url,
+        "_session": session,
     }
 
 
-def download_video(url: str, dest: Path) -> Path:
+def download_video(url: str, dest: Path, session: requests.Session | None = None) -> Path:
     """Download a video from url and save to dest path.
 
+    Uses HTTP Range requests to download in 1 MB segments,
+    retrying each segment up to 3 times to survive CDN disconnects.
+    If session is provided, reuses its cookies (from parse_share_text).
     Returns dest path on success.
     """
-    headers = {"User-Agent": MOBILE_UA}
-    r = requests.get(url, headers=headers, stream=True, timeout=120)
-    r.raise_for_status()
+    import time as _time
+
+    headers = {
+        "User-Agent": MOBILE_UA,
+        "Referer": "https://www.douyin.com/",
+        "Accept": "*/*",
+    }
+
+    s = session or requests.Session()
+
+    # Probe total size via HEAD (抖音 CDN usually honours Content-Length)
+    total_size = 0
+    try:
+        _head = s.head(url, headers=headers, timeout=30)
+        total_size = int(_head.headers.get("Content-Length", 0))
+    except Exception:
+        pass
 
     dest.parent.mkdir(parents=True, exist_ok=True)
+
+    SEGMENT = 1 * 1024 * 1024  # 1 MB per segment
+    downloaded = 0
+
     with open(dest, "wb") as f:
-        for chunk in r.iter_content(chunk_size=8192):
-            f.write(chunk)
+        while True:
+            if total_size > 0 and downloaded >= total_size:
+                break
+
+            range_start = downloaded
+            range_end = (downloaded + SEGMENT - 1) if total_size == 0 else min(downloaded + SEGMENT, total_size - 1)
+            seg_headers = {**headers, "Range": f"bytes={range_start}-{range_end}"}
+
+            # Retry up to 3 times per segment
+            seg_ok = False
+            for attempt in range(3):
+                try:
+                    seg = s.get(url, headers=seg_headers, stream=True, timeout=(30, 120))
+                    if seg.status_code not in (200, 206):
+                        seg.raise_for_status()
+                    seg_len = 0
+                    for chunk in seg.iter_content(chunk_size=65536):
+                        f.write(chunk)
+                        seg_len += len(chunk)
+                    downloaded += seg_len
+                    seg_ok = True
+                    break
+                except Exception:
+                    if attempt == 2:
+                        raise
+                    _time.sleep(1.5 * (attempt + 1))
+
+            if not seg_ok:
+                raise RuntimeError("Segment download failed after 3 retries")
+
+            # When no total_size hint, stop after empty segment
+            if total_size == 0 and seg_len < SEGMENT * 0.9:
+                break
 
     return dest

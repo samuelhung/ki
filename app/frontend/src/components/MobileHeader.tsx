@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MoreHorizontal, BookOpen, Code2 } from 'lucide-react';
+import { MoreHorizontal, BookOpen, Code2, Settings } from 'lucide-react';
+
+import { APP_VERSION } from '../constants';
 
 export default function MobileHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -19,7 +21,7 @@ export default function MobileHeader() {
     <header className="md:hidden sticky top-0 z-30 bg-[#0B0C10] border-b border-[#2A2B30] flex items-center justify-between px-4 h-12 shrink-0">
       <div className="flex items-baseline gap-1.5">
         <span className="font-semibold text-white text-base">知识情报中心</span>
-        <span className="text-[10px] text-gray-500 bg-[#2A2B30] px-1 py-0.5 rounded-full leading-none">v1.0.2</span>
+        <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-purple-500/20 text-purple-400">v{APP_VERSION}</span>
       </div>
       <div ref={menuRef} className="relative">
         <button
@@ -39,6 +41,14 @@ export default function MobileHeader() {
             >
               <Code2 size={14} />
               <span>API 文档</span>
+            </a>
+            <a
+              href="/settings"
+              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-[#1A1B20]"
+              onClick={() => setMenuOpen(false)}
+            >
+              <Settings size={14} />
+              <span>系统设置</span>
             </a>
             <a
               href="/system"

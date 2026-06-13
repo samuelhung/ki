@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Trash2, X, ChevronLeft, ChevronRight, Lightbulb, Search, Maximize2, Globe, Coins, Brain, Telescope } from 'lucide-react';
 import EmptyState from '../components/EmptyState';
 import Checkbox from '../components/Checkbox';
 import MetricCard from '../components/MetricCard';
 import { formatTimeBeijing } from '../utils';
-import BrainstormDetailPanel from './panels/BrainstormDetailPanel';
 
 interface BrainstormQuestion {
   id: string;
@@ -30,7 +30,7 @@ interface EventItem {
   created_at: string;
 }
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 15;
 
 const TOPICS = [
   { key: '格局', label: '格局', sub: '地缘政治·大国博弈·国际关系', icon: Globe, color: 'text-blue-400' },
@@ -50,6 +50,7 @@ function topicBadgeClass(topic: string): string {
 }
 
 export default function Brainstorm() {
+  const navigate = useNavigate();
   const [questions, setQuestions] = useState<BrainstormQuestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -57,7 +58,6 @@ export default function Brainstorm() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [selected, setSelected] = useState<BrainstormQuestion | null>(null);
   const [showSearch, setShowSearch] = useState(false);
 
   // Create modal state
@@ -103,15 +103,10 @@ export default function Brainstorm() {
       .finally(() => setLoading(false));
   }
 
-  function closeDetail() {
-    setSelected(null);
-  }
-
   async function remove(id: string) {
     if (!confirm('确认删除这条问题？')) return;
     try {
       await fetch(`/api/brainstorm/${id}`, { method: 'DELETE' });
-      if (selected?.id === id) closeDetail();
       await load();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '删除失败');
@@ -170,62 +165,70 @@ export default function Brainstorm() {
 
   return (
     <>
-      <div className="flex-1 bg-[#0B0C10] text-white p-4 md:p-6 overflow-y-auto custom-scrollbar">
-        <div className="max-w-6xl mx-auto">
+      <div className="flex-1 bg-[#0B0C10] text-white flex flex-col h-full overflow-hidden">
+        {/* Sticky header */}
+        <div className="shrink-0 sticky top-0 z-10 bg-[#0B0C10] px-4 md:px-8 pt-4 md:pt-8">
+          <div className="max-w-6xl mx-auto">
 
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-            <div>
-              <div className="flex items-center gap-3">
-                <Lightbulb size={40} className="text-purple-400 shrink-0" />
-                <div>
-                  <h1 className="text-2xl font-bold">头脑风暴</h1>
-                  <p className="text-sm text-gray-400 mt-0.5">好的问题，比答案更接近真相</p>
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+              <div>
+                <div className="flex items-center gap-3">
+                  <Lightbulb size={40} className="text-purple-400 shrink-0" />
+                  <div>
+                    <h1 className="text-2xl font-bold">头脑风暴</h1>
+                    <p className="text-sm text-gray-400 mt-0.5">好的问题，比答案更接近真相</p>
+                  </div>
                 </div>
               </div>
+              <button
+                onClick={() => setShowCreate(true)}
+                className="hidden md:inline-flex px-4 py-2 rounded-lg text-sm font-medium bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 border border-purple-500/30 transition-colors"
+              >
+                + 新建问题
+              </button>
             </div>
-            <button
-              onClick={() => setShowCreate(true)}
-              className="hidden md:inline-flex px-4 py-2 rounded-lg text-sm font-medium bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 border border-purple-500/30 transition-colors"
+
+            {/* Error */}
+            {error && (
+              <div className="mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+                {error}
+                <button onClick={load} className="ml-3 underline hover:text-red-300">重试</button>
+              </div>
+            )}
+
+            {/* Tabs — Ingest style */}
+            <div className="border-b border-[#2A2B30] hidden md:block">
+              <div className="flex gap-6 overflow-x-auto">
+                {TOPICS.map(t => (
+                  <button key={t.key} onClick={() => { setTab(t.key); setPage(1); }}
+                    className={`pb-3 text-sm font-medium transition-colors relative whitespace-nowrap flex flex-col items-center ${tab === t.key ? 'text-white' : 'text-gray-500 hover:text-gray-300'}`}>
+                    <div className="flex items-center"><t.icon size={18} className={`${t.color} mr-1.5`} />{t.label}</div>
+                    {t.sub && <div className="text-[10px] text-gray-500 mt-0.5 font-normal">{t.sub}</div>}
+                    {tab === t.key && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-500" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 手机 tab 下拉 */}
+            <select
+              className="md:hidden w-full px-3 py-2 text-sm bg-[#141518] border border-[#2A2B30] rounded-lg text-white focus:outline-none focus:border-purple-500/50 mt-4"
+              value={tab}
+              onChange={e => { setTab(e.target.value); setPage(1); }}
             >
-              + 新建问题
-            </button>
-          </div>
-
-          {/* Error */}
-          {error && (
-            <div className="mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-              {error}
-              <button onClick={load} className="ml-3 underline hover:text-red-300">重试</button>
-            </div>
-          )}
-
-          {/* Tabs — Ingest style */}
-          <div className="border-b border-[#2A2B30] mb-6 hidden md:block">
-            <div className="flex gap-6 overflow-x-auto">
               {TOPICS.map(t => (
-                <button key={t.key} onClick={() => { setTab(t.key); setPage(1); }}
-                  className={`pb-3 text-sm font-medium transition-colors relative whitespace-nowrap flex flex-col items-center ${tab === t.key ? 'text-white' : 'text-gray-500 hover:text-gray-300'}`}>
-                  <div className="flex items-center"><t.icon size={18} className={`${t.color} mr-1.5`} />{t.label}</div>
-                  {t.sub && <div className="text-[10px] text-gray-500 mt-0.5 font-normal">{t.sub}</div>}
-                  {tab === t.key && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-500" />}
-                </button>
+                <option key={t.key} value={t.key}>
+                  {t.label} · {t.sub}
+                </option>
               ))}
-            </div>
+            </select>
           </div>
+        </div>
 
-          {/* 手机 tab 下拉 */}
-          <select
-            className="md:hidden w-full px-3 py-2 text-sm bg-[#141518] border border-[#2A2B30] rounded-lg text-white focus:outline-none focus:border-purple-500/50 mb-4"
-            value={tab}
-            onChange={e => { setTab(e.target.value); setPage(1); }}
-          >
-            {TOPICS.map(t => (
-              <option key={t.key} value={t.key}>
-                {t.label} · {t.sub}
-              </option>
-            ))}
-          </select>
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar px-4 md:px-8 pb-4 md:pb-8">
+          <div className="max-w-6xl mx-auto pt-4">
 
           {/* Table */}
           {loading ? (
@@ -286,7 +289,7 @@ export default function Brainstorm() {
                         {formatTimeBeijing(q.created_at)}
                       </div>
                       <div className="col-span-1 flex justify-center gap-0.5" onClick={e => e.stopPropagation()}>
-                        <button onClick={() => setSelected(q)}
+                        <button onClick={() => navigate(`/brainstorm/${q.id}`)}
                           className="p-1.5 rounded text-gray-500 hover:text-purple-400 hover:bg-[#2A2B30] transition-colors"
                           title="查看详情">
                           <Maximize2 size={15} />
@@ -301,7 +304,7 @@ export default function Brainstorm() {
                     {/* 手机行 — 紧凑列表 */}
                     <div
                       className="md:hidden flex items-center gap-3 px-4 py-3 hover:bg-[#1A1B20] border-b border-[#2A2B30] last:border-b-0 cursor-pointer"
-                      onClick={() => setSelected(q)}
+                      onClick={() => navigate(`/brainstorm/${q.id}`)}
                     >
                       <div className="flex-1 min-w-0">
                         <div className="text-sm text-gray-200 truncate">{q.question}</div>
@@ -359,6 +362,7 @@ export default function Brainstorm() {
           )}
         </div>
       </div>
+      </div>
 
       {/* 手机搜索展开 */}
       {showSearch && (
@@ -383,11 +387,6 @@ export default function Brainstorm() {
 
       {/* 底部留白 */}
       <div className="md:hidden h-16" />
-
-      {/* Detail Panel */}
-      {selected && (
-        <BrainstormDetailPanel question={selected} onClose={closeDetail} />
-      )}
 
       {/* Create Question Modal */}
       {showCreate && (

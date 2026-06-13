@@ -40,13 +40,15 @@ SOURCE_LABELS: dict[str, str] = {
 }
 
 
-def _call_deepseek(system_prompt: str, user_prompt: str, max_tokens: int = 4096, timeout: int = 120) -> str:
+def _call_deepseek(system_prompt: str, user_prompt: str, max_tokens: int = 4096, timeout: int = 120,
+                   module: str = "digest_briefing", task: str = "briefing_quick") -> str:
     """Call DeepSeek chat API and return the content string."""
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
-    content = chat(messages, temperature=0.5, max_tokens=max_tokens, response_format={"type": "json_object"}, timeout=timeout)
+    content = chat(messages, temperature=0.5, max_tokens=max_tokens, response_format={"type": "json_object"}, timeout=timeout,
+                   module=module, task=task)
     if content is None:
         raise RuntimeError("DeepSeek API not configured or call failed")
     return content
@@ -128,7 +130,8 @@ def generate_briefing(briefing_type: str = "quick", limit: int = 80) -> dict[str
 
     user_prompt = f"请根据以下新闻事件生成{'即时快报' if is_quick else '每日深度日报'}：\n\n{events_text}"
 
-    raw = _call_deepseek(system_prompt=system_prompt, user_prompt=user_prompt, max_tokens=4096, timeout=120)
+    raw = _call_deepseek(system_prompt=system_prompt, user_prompt=user_prompt, max_tokens=4096, timeout=120,
+                        task="briefing_quick" if is_quick else "briefing_daily")
 
     # Parse and validate the AI response
     try:

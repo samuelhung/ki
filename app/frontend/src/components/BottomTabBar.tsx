@@ -1,11 +1,12 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Upload, Lightbulb, FileText, ClipboardList } from 'lucide-react';
+import { LayoutDashboard, Upload, Lightbulb, FileText, ClipboardList, Layers } from 'lucide-react';
 
 const tabs = [
   { to: '/', icon: LayoutDashboard, label: '仪表盘' },
   { to: '/ingest', icon: Upload, label: '采集' },
   { to: '/brainstorm', icon: Lightbulb, label: '脑暴' },
+  { to: '/series', icon: Layers, label: '专题' },
   { to: '/affairs', icon: ClipboardList, label: '事务' },
   { to: '/digest', icon: FileText, label: '摘要' },
 ];
