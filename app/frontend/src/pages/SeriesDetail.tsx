@@ -261,7 +261,20 @@ export default function SeriesDetail() {
         setSuggestions(prev => prev.filter(s => s.event_id !== eventId));
         setAddedIds(prev => { const n = new Set(prev); n.delete(eventId); return n; });
       }, 1500);
-      loadDetail();
+      // Auto-regenerate structured summary and deep analysis
+      setSummaryGenerating(true);
+      setPaperGenerating(true);
+      sessionStorage.setItem(`series_${id}_gen_summary`, '1');
+      sessionStorage.setItem(`series_${id}_gen_paper`, '1');
+      await Promise.all([
+        fetch(`/api/ingest/series/${id}/summary`, { method: 'PUT' }),
+        fetch(`/api/ingest/series/${id}/paper`, { method: 'PUT' }),
+      ]);
+      await loadDetail();
+      setSummaryGenerating(false);
+      setPaperGenerating(false);
+      sessionStorage.removeItem(`series_${id}_gen_summary`);
+      sessionStorage.removeItem(`series_${id}_gen_paper`);
     } catch (_) {}
     setAddingIds(prev => { const n = new Set(prev); n.delete(eventId); return n; });
   }
