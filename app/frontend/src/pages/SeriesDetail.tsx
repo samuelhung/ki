@@ -145,7 +145,7 @@ export default function SeriesDetail() {
   // Suggestions
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [batchAdding, setBatchAdding] = useState(false);
   const [showProgress, setShowProgress] = useState(false);
   const [progressStage, setProgressStage] = useState<'adding' | 'summary' | 'paper' | 'done'>('adding');
@@ -251,21 +251,18 @@ export default function SeriesDetail() {
   }
 
   function toggleSelect(eventId: string) {
-    setSelectedIds(prev => {
-      const n = new Set(prev);
-      n.has(eventId) ? n.delete(eventId) : n.add(eventId);
-      return n;
-    });
+    setSelectedIds(prev =>
+      prev.includes(eventId) ? prev.filter(id => id !== eventId) : [...prev, eventId]
+    );
   }
   function toggleSelectAll() {
-    setSelectedIds(prev => {
-      if (prev.size === suggestions.length) return new Set();
-      return new Set(suggestions.map(s => s.event_id));
-    });
+    setSelectedIds(prev =>
+      prev.length === suggestions.length ? [] : suggestions.map(s => s.event_id)
+    );
   }
 
   async function handleBatchAdd() {
-    if (selectedIds.size === 0) return;
+    if (selectedIds.length === 0) return;
     setBatchAdding(true);
     setShowProgress(true);
     setProgressStage('adding');
@@ -295,16 +292,16 @@ export default function SeriesDetail() {
 
       // Refresh
       await loadDetail();
-      setSuggestions(prev => prev.filter(s => !selectedIds.has(s.event_id)));
-      setSelectedIds(new Set());
+      setSuggestions(prev => prev.filter(s => !selectedIds.includes(s.event_id)));
+      setSelectedIds([]);
     } catch (_) {}
     setBatchAdding(false);
   }
 
   function handleBatchDismiss() {
-    if (selectedIds.size === 0) return;
-    setSuggestions(prev => prev.filter(s => !selectedIds.has(s.event_id)));
-    setSelectedIds(new Set());
+    if (selectedIds.length === 0) return;
+    setSuggestions(prev => prev.filter(s => !selectedIds.includes(s.event_id)));
+    setSelectedIds([]);
   }
 
   async function handleRefresh() {
@@ -579,9 +576,9 @@ export default function SeriesDetail() {
                 {suggestions.map(s => (
                   <div key={s.event_id}
                     onClick={() => toggleSelect(s.event_id)}
-                    className={`bg-[#0B0C10] border rounded-lg px-3 py-2.5 transition-colors cursor-pointer ${selectedIds.has(s.event_id) ? 'border-violet-500/40 bg-violet-500/5' : 'border-[#2A2B30] hover:border-[#3A3B40]'}`}>
+                    className={`bg-[#0B0C10] border rounded-lg px-3 py-2.5 transition-colors cursor-pointer ${selectedIds.includes(s.event_id) ? 'border-violet-500/40 bg-violet-500/5' : 'border-[#2A2B30] hover:border-[#3A3B40]'}`}>
                     <div className="flex items-center gap-3">
-                      <input type="checkbox" checked={selectedIds.has(s.event_id)} onChange={(e) => { e.stopPropagation(); toggleSelect(s.event_id); }} className="w-4 h-4 rounded accent-violet-500 shrink-0 cursor-pointer" />
+                      <input type="checkbox" checked={selectedIds.includes(s.event_id)} onChange={(e) => { e.stopPropagation(); toggleSelect(s.event_id); }} className="w-4 h-4 rounded accent-violet-500 shrink-0 cursor-pointer" />
                       <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 ${getTopicColor(s.topic)} bg-white/5`}>{s.topic || '未分类'}</span>
                       <span className="flex-1 min-w-0 text-sm text-white truncate">{s.title}</span>
                     </div>
@@ -594,16 +591,16 @@ export default function SeriesDetail() {
               {/* Bottom action bar */}
               <div className="flex items-center gap-3 mt-3 pt-3 border-t border-[#2A2B30]">
                 <label className="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer select-none">
-                  <input type="checkbox" checked={selectedIds.size === suggestions.length && suggestions.length > 0} onChange={toggleSelectAll} className="w-3.5 h-3.5 rounded accent-violet-500" />
+                  <input type="checkbox" checked={selectedIds.length === suggestions.length && suggestions.length > 0} onChange={toggleSelectAll} className="w-3.5 h-3.5 rounded accent-violet-500" />
                   全选
                 </label>
-                <span className="text-[11px] text-gray-500">已选 {selectedIds.size} 项</span>
+                <span className="text-[11px] text-gray-500">已选 {selectedIds.length} 项</span>
                 <div className="flex-1" />
-                <button onClick={handleBatchDismiss} disabled={selectedIds.size === 0}
+                <button onClick={handleBatchDismiss} disabled={selectedIds.length === 0}
                   className="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-400 hover:text-gray-200 border border-gray-600 hover:border-gray-500 transition-colors disabled:opacity-40">
                   忽略选中
                 </button>
-                <button onClick={handleBatchAdd} disabled={selectedIds.size === 0 || batchAdding}
+                <button onClick={handleBatchAdd} disabled={selectedIds.length === 0 || batchAdding}
                   className="px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30 transition-colors disabled:opacity-40 flex items-center gap-1.5">
                   {batchAdding ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
                   添加选中
