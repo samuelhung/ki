@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Layers, ArrowLeft, Sparkles, Loader2, Trash2, ChevronDown, ExternalLink, Bell, Plus, X, RefreshCw } from 'lucide-react';
+import { Layers, ArrowLeft, Sparkles, Loader2, Trash2, ChevronDown, ExternalLink, Bell, Plus, X, RefreshCw, Check } from 'lucide-react';
 import Modal from '../components/Modal';
 import { formatTimeBeijing, sourceLabel } from '../utils';
 
@@ -146,6 +146,7 @@ export default function SeriesDetail() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [addingIds, setAddingIds] = useState<Set<string>>(new Set());
+  const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
 
   // Refresh (manual scan → populates suggestions)
   const [refreshing, setRefreshing] = useState(false);
@@ -254,7 +255,12 @@ export default function SeriesDetail() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ event_ids: [eventId] }),
       });
-      setSuggestions(prev => prev.filter(s => s.event_id !== eventId));
+      // Show success state briefly before removing
+      setAddedIds(prev => new Set([...prev, eventId]));
+      setTimeout(() => {
+        setSuggestions(prev => prev.filter(s => s.event_id !== eventId));
+        setAddedIds(prev => { const n = new Set(prev); n.delete(eventId); return n; });
+      }, 1500);
       loadDetail();
     } catch (_) {}
     setAddingIds(prev => { const n = new Set(prev); n.delete(eventId); return n; });
@@ -538,14 +544,22 @@ export default function SeriesDetail() {
                     <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 ${getTopicColor(s.topic)} bg-white/5`}>{s.topic || '未分类'}</span>
                     <span className="flex-1 min-w-0 text-sm text-white truncate">{s.title}</span>
                     <div className="flex items-center gap-1 shrink-0">
-                      <button onClick={() => handleAddSuggestion(s.event_id)} disabled={addingIds.has(s.event_id)}
-                        className="p-1.5 rounded-lg text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-50" title="加入专题">
-                        {addingIds.has(s.event_id) ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-                      </button>
-                      <button onClick={() => handleDismissSuggestion(s.event_id)}
-                        className="p-1.5 rounded-lg text-gray-600 hover:text-gray-400 hover:bg-[#2A2B30] transition-colors" title="忽略">
-                        <X size={14} />
-                      </button>
+                      {addedIds.has(s.event_id) ? (
+                        <span className="flex items-center gap-1 px-2 py-1 rounded text-[11px] text-emerald-400 bg-emerald-500/10">
+                          <Check size={12} /> 已添加
+                        </span>
+                      ) : (
+                        <>
+                          <button onClick={() => handleAddSuggestion(s.event_id)} disabled={addingIds.has(s.event_id)}
+                            className="p-1.5 rounded-lg text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-50" title="加入专题">
+                            {addingIds.has(s.event_id) ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                          </button>
+                          <button onClick={() => handleDismissSuggestion(s.event_id)}
+                            className="p-1.5 rounded-lg text-gray-600 hover:text-gray-400 hover:bg-[#2A2B30] transition-colors" title="忽略">
+                            <X size={14} />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                   {s.reason && (
