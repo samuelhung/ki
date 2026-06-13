@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Layers, ArrowLeft, Sparkles, Loader2, Trash2, ChevronDown, ExternalLink, Bell, Plus, X } from 'lucide-react';
+import { Layers, ArrowLeft, Sparkles, Loader2, Trash2, ChevronDown, ExternalLink, Bell, Plus, X, RefreshCw } from 'lucide-react';
 import Modal from '../components/Modal';
 import { formatTimeBeijing, sourceLabel } from '../utils';
 
@@ -42,6 +42,7 @@ interface Suggestion {
   title: string;
   overview?: string;
   topic: string;
+  reason?: string;
   created_at: string;
 }
 
@@ -146,11 +147,8 @@ export default function SeriesDetail() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [addingIds, setAddingIds] = useState<Set<string>>(new Set());
 
-  // Expand
-  const [expanding, setExpanding] = useState(false);
-  const [showExpand, setShowExpand] = useState(false);
-  const [expandRecs, setExpandRecs] = useState<{event_id: string; title: string; reason: string}[]>([]);
-  const [expandScanned, setExpandScanned] = useState(0);
+  // Refresh (manual scan → populates suggestions)
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => { loadDetail(); loadSuggestions(); }, [id]);
 
@@ -266,31 +264,14 @@ export default function SeriesDetail() {
     setSuggestions(prev => prev.filter(s => s.event_id !== eventId));
   }
 
-  async function handleExpand() {
+  async function handleRefresh() {
     if (!series) return;
-    setExpanding(true);
-    setShowExpand(true);
-    setExpandRecs([]);
+    setRefreshing(true);
     try {
-      const r = await fetch(`/api/ingest/series/${id}/expand`, { method: 'POST' });
-      const d = await r.json();
-      setExpandRecs(d.recommendations || []);
-      setExpandScanned(d.scanned || 0);
+      await fetch(`/api/ingest/series/${id}/expand`, { method: 'POST' });
+      await loadSuggestions();
     } catch (_) {}
-    setExpanding(false);
-  }
-
-  async function handleAddExpanded(eventId: string) {
-    setAddingIds(prev => new Set([...prev, eventId]));
-    try {
-      await fetch(`/api/ingest/series/${id}/members`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ event_ids: [eventId] }),
-      });
-      setExpandRecs(prev => prev.filter(r => r.event_id !== eventId));
-      loadDetail();
-    } catch (_) {}
-    setAddingIds(prev => { const n = new Set(prev); n.delete(eventId); return n; });
+    setRefreshing(false);
   }
 
   /** Click a [N] reference → open detail panel for member N-1 */
@@ -348,7 +329,16 @@ export default function SeriesDetail() {
               </div>
               {series.description && <p className="text-sm text-gray-400">{series.description}</p>}
               <div className="flex items-center gap-3 mt-2 text-[11px] text-gray-600 flex-wrap">
-                <span>{members.length} 条内容</span>
+                <span className="flex items-center gap-1">
+                  {members.length} 条内容
+                  {suggestions.length === 0 && (
+                    <button onClick={handleRefresh} disabled={refreshing}
+                      className="p-0.5 rounded hover:bg-[#2A2B30] transition-colors text-gray-600 hover:text-violet-400"
+                      title="扫描新内容">
+                      {refreshing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+                    </button>
+                  )}
+                </span>
                 {suggestions.length > 0 && (
                   <button onClick={() => setShowSuggestions(true)} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 transition-colors">
                     <Bell size={10} /> 待确认 ({suggestions.length})
@@ -374,13 +364,8 @@ export default function SeriesDetail() {
                 {paperGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                 <span className="hidden sm:inline">{series.paper ? '重新生成深度分析' : 'AI 深度分析'}</span>
               </button>
-              <button onClick={handleExpand} disabled={expanding || members.length < 2}
-                className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium bg-violet-500/20 text-violet-400 hover:bg-violet-500/30 border border-violet-500/30 transition-colors disabled:opacity-50 flex items-center gap-1.5">
-                {expanding ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-                <span className="hidden sm:inline">寻找新成员</span>
-              </button>
               <button onClick={() => setConfirmDelete(true)}
-                className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium text-gray-600 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-colors flex items-center gap-1.5">
+                className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium text-red-400 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 transition-colors flex items-center gap-1.5">
                 <Trash2 size={14} />
               </button>
             </div>
@@ -542,67 +527,30 @@ export default function SeriesDetail() {
         )}
 
         {/* Suggestions modal */}
-        <Modal open={showSuggestions} onClose={() => setShowSuggestions(false)} title={`待确认建议（${suggestions.length}）`} maxWidth="xl">
+        <Modal open={showSuggestions} onClose={() => setShowSuggestions(false)} title={`待确认建议（${suggestions.length}）`} maxWidth="2xl">
           {suggestions.length === 0 ? (
             <p className="text-sm text-gray-500 text-center py-8">暂无待确认的建议</p>
           ) : (
-            <div className="space-y-3 max-h-[60vh] overflow-y-auto custom-scrollbar">
+            <div className="space-y-1.5 max-h-[60vh] overflow-y-auto custom-scrollbar">
               {suggestions.map(s => (
-                <div key={s.event_id} className="bg-[#0B0C10] border border-[#2A2B30] rounded-xl p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <h4 className="text-sm font-medium text-white mb-1">{s.title}</h4>
-                      {s.overview && <p className="text-xs text-gray-400 line-clamp-3 mb-2">{s.overview}</p>}
-                      <div className="flex items-center gap-2 text-[10px]">
-                        <span className={`${getTopicColor(s.topic)} bg-white/5 px-1.5 py-0.5 rounded`}>{s.topic || '未分类'}</span>
-                        <span className="text-gray-600">{formatTimeBeijing(s.created_at)}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
+                <div key={s.event_id} className="bg-[#0B0C10] border border-[#2A2B30] rounded-lg px-3 py-2.5 hover:border-[#3A3B40] transition-colors">
+                  <div className="flex items-center gap-3">
+                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 ${getTopicColor(s.topic)} bg-white/5`}>{s.topic || '未分类'}</span>
+                    <span className="flex-1 min-w-0 text-sm text-white truncate">{s.title}</span>
+                    <div className="flex items-center gap-1 shrink-0">
                       <button onClick={() => handleAddSuggestion(s.event_id)} disabled={addingIds.has(s.event_id)}
                         className="p-1.5 rounded-lg text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-50" title="加入专题">
-                        {addingIds.has(s.event_id) ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                        {addingIds.has(s.event_id) ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
                       </button>
                       <button onClick={() => handleDismissSuggestion(s.event_id)}
                         className="p-1.5 rounded-lg text-gray-600 hover:text-gray-400 hover:bg-[#2A2B30] transition-colors" title="忽略">
-                        <X size={16} />
+                        <X size={14} />
                       </button>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Modal>
-
-        {/* Expand modal */}
-        <Modal open={showExpand} onClose={() => setShowExpand(false)} title="寻找新成员" maxWidth="xl">
-          {expanding ? (
-            <div className="flex flex-col items-center py-12">
-              <Loader2 size={28} className="animate-spin text-violet-400 mb-3" />
-              <p className="text-sm text-gray-400">AI 正在扫描 {expandScanned || ''} 条新内容，寻找可加入的成员...</p>
-            </div>
-          ) : expandRecs.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-sm text-gray-500">暂未发现可加入的新内容</p>
-              <p className="text-xs text-gray-600 mt-1">已扫描 {expandScanned} 条内容</p>
-            </div>
-          ) : (
-            <div className="space-y-3 max-h-[60vh] overflow-y-auto custom-scrollbar">
-              <p className="text-xs text-gray-500">从 {expandScanned} 条新内容中找到 {expandRecs.length} 条推荐</p>
-              {expandRecs.map(r => (
-                <div key={r.event_id} className="bg-[#0B0C10] border border-[#2A2B30] rounded-xl p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <h4 className="text-sm font-medium text-white mb-1">{r.title}</h4>
-                      <p className="text-xs text-gray-400">{r.reason}</p>
-                    </div>
-                    <button onClick={() => handleAddExpanded(r.event_id)} disabled={addingIds.has(r.event_id)}
-                      className="px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30 transition-colors shrink-0 disabled:opacity-50 flex items-center gap-1.5">
-                      {addingIds.has(r.event_id) ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-                      加入
-                    </button>
-                  </div>
+                  {s.reason && (
+                    <p className="mt-1 ml-10 text-[11px] text-gray-500 line-clamp-2">{s.reason}</p>
+                  )}
                 </div>
               ))}
             </div>

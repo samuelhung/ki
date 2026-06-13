@@ -310,6 +310,8 @@ export default function SystemDoc() {
           <div className="bg-[#141518] border border-[#2A2B30] rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-4">v{APP_VERSION} 架构特征</h2>
             <div className="space-y-2 text-xs text-gray-400">
+              <p>• <span className="text-gray-300">专题待确认流程</span> — 刷新扫描取代"寻找新成员"，建议缓存至数据库归入待确认队列，新内容采集后自动匹配追加</p>
+              <p>• <span className="text-gray-300">推荐理由系统</span> — expand/auto_suggest 返回推荐理由，存储格式升级为含理由的对象数组，向后兼容</p>
               <p>• <span className="text-gray-300">专题系列引擎</span> — AI 按主题聚类事件，候选审核→保存，结构化总结 + 论文式深度分析</p>
               <p>• <span className="text-gray-300">内容概述</span> — 每条内容 AI 生成 ≤500 字概述，用于专题聚类和快速浏览</p>
               <p>• <span className="text-gray-300">采集即匹配</span> — 新内容入库后即时 AI 匹配已有专题（方案 A），不超过 5s</p>
@@ -332,6 +334,19 @@ export default function SystemDoc() {
       {tab === 'changelog' && (
         <div className="space-y-8">
           {[
+            {
+              version: '1.5.0',
+              date: '2026-06',
+              title: '专题待确认与推荐理由',
+              items: [
+                '专题待确认流程改造 — 去掉「寻找新成员」按钮，专题卡片「N 条内容」旁新增刷新图标，点击即扫描并缓存建议至数据库',
+                '待确认队列自动积累 — 新内容采集入库后 auto_suggest 即时匹配，推荐自动追加至对应专题的待确认列表',
+                '推荐理由系统 — expand 和 auto_suggest 均返回推荐理由，存储格式从纯 ID 数组升级为带 reasons 的对象数组，向后兼容旧格式',
+                '待确认列表增强 — 单行布局（类别标签-标题-操作按钮），推荐理由两行灰色显示，弹窗宽度 xl→2xl',
+                'expand 扫描范围 30→100 条，理由 upsert 更新（已有条目刷新后更新理由不重复追加）',
+                '补齐脚本 backfill_reasons — 历史缺理由建议批量回填，含完整专题上下文的 AI prompt',
+              ],
+            },
             {
               version: '1.4.0',
               date: '2026-06',

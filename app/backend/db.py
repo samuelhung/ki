@@ -284,6 +284,14 @@ def init_db() -> None:
               error TEXT DEFAULT ''
             );
 
+            -- Series scan cache: persists expand-scan results so re-opening skips AI call
+            CREATE TABLE IF NOT EXISTS series_scan_cache (
+              series_id TEXT PRIMARY KEY,
+              scanned_count INTEGER NOT NULL,
+              recommendations_json TEXT NOT NULL DEFAULT '[]',
+              scanned_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
             -- Sync triggers: keep events_fts in sync with events table
             CREATE TRIGGER IF NOT EXISTS trg_events_fts_insert AFTER INSERT ON events BEGIN
               INSERT INTO events_fts(event_id, title, title_cn, raw_summary, summary_cn, ai_summary)
@@ -309,6 +317,7 @@ def init_db() -> None:
         _migrate_series(conn)
         # Migration: add retry_count to ingest_tasks
         _migrate_ingest_tasks_retry(conn)
+        _migrate_video_md5(conn)
         # Performance indexes
         conn.executescript("""
             CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
@@ -512,3 +521,11 @@ def _migrate_ingest_tasks_retry(conn: sqlite3.Connection) -> None:
     if "retry_count" not in cols:
         conn.execute("ALTER TABLE ingest_tasks ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0")
         logger.info("Migration: added retry_count column to ingest_tasks")
+
+
+def _migrate_video_md5(conn: sqlite3.Connection) -> None:
+    """Add video_md5 column to events if missing."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(events)").fetchall()}
+    if "video_md5" not in cols:
+        conn.execute("ALTER TABLE events ADD COLUMN video_md5 TEXT")
+        logger.info("Migration: added video_md5 column to events")

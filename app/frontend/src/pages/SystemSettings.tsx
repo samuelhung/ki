@@ -75,7 +75,7 @@ const SUGGESTIONS: Record<string, Record<string, { temp: string; tokens: string 
     intro:         { temp: '0.3–0.5', tokens: '1024' },
     summary:       { temp: '0.2–0.3', tokens: '3072' },
     paper:         { temp: '0.4–0.6', tokens: '16384' },
-    auto_suggest:  { temp: '0.1',     tokens: '256' },
+    auto_suggest:  { temp: '0.1',     tokens: '512' },
   },
   brainstorm: {
     answer:        { temp: '0.2–0.4', tokens: '8192' },
@@ -409,7 +409,7 @@ export default function SystemSettings() {
                     ['专题导言 intro', '1024', '680', '&lt;0.01 元'],
                     ['结构化总结 summary', '3072', '2000', '0.02 元'],
                     ['论文分析 paper', '16384', '11000', '0.10 元'],
-                    ['即时匹配 auto_suggest', '256', '170', '&lt;0.01 元'],
+                    ['即时匹配 auto_suggest', '512', '340', '&lt;0.01 元'],
                     ['综合回答 answer', '8192', '5500', '0.05 元'],
                     ['对话总结 summary', '3000', '2000', '0.02 元'],
                     ['凝神静思 contemplate', '800', '530', '&lt;0.01 元'],

@@ -1,6 +1,7 @@
 """Unified ingest API endpoints for douyin links, audio, video, and documents."""
 
 import json
+import hashlib
 import logging
 import re
 import shutil
@@ -230,6 +231,14 @@ def retry_queue_task(task_id: str):
 
 # ── Internal helpers ──
 
+def _md5_file(path: Path) -> str | None:
+    """Compute MD5 hash of a file. Returns hex digest or None on error."""
+    try:
+        return hashlib.md5(path.read_bytes()).hexdigest()
+    except Exception:
+        return None
+
+
 def _set_progress(event_id: str, stages: list[dict]) -> None:
     """Write progress stages to the event record."""
     with connect() as conn:
@@ -377,6 +386,7 @@ def _create_concept(title: str, topic: str, description: str = "", force_ai: boo
 def _process_ingest(event_id: str, ingest_type: str, content, topic: str, title: str):
     """Background task: run the appropriate ingest pipeline."""
     work_dir = Path(tempfile.mkdtemp())
+    video_md5 = None
     try:
         if ingest_type == "document":
             from ..ingest.document import process_document
@@ -471,6 +481,7 @@ def _process_ingest(event_id: str, ingest_type: str, content, topic: str, title:
             VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
             persistent_video = VIDEOS_DIR / f"{event_id}.mp4"
             shutil.copy2(video_path, persistent_video)
+            video_md5 = _md5_file(persistent_video)
             
             stages[2]["status"] = "done"
             stages[3]["status"] = "active"
@@ -593,9 +604,10 @@ def _process_ingest(event_id: str, ingest_type: str, content, topic: str, title:
                    overview = COALESCE(?, overview),
                    status = 'completed', last_error = NULL,
                    video_path = ?, audio_path = ?, document_path = ?,
+                   video_md5 = COALESCE(?, video_md5),
                    title = CASE WHEN title = '待处理' OR title = '' THEN ? ELSE title END
                    WHERE id = ?""",
-                (text, ai_summary, overview, video_path, audio_path_col, document_path_col, title or "待处理", event_id),
+                (text, ai_summary, overview, video_path, audio_path_col, document_path_col, video_md5, title or "待处理", event_id),
             )
 
         # DB write done → move to classify

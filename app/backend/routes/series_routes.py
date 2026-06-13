@@ -798,6 +798,22 @@ def expand_series(series_id: str):
         if not member_ids:
             raise HTTPException(status_code=400, detail="专题无成员，无法扩充")
 
+        # ── 检查缓存：member_ids 未变则直接返回 ──
+        cached = conn.execute(
+            "SELECT scanned_count, recommendations_json FROM series_scan_cache WHERE series_id = ?",
+            (series_id,),
+        ).fetchone()
+        if cached:
+            try:
+                cached_recs = json.loads(cached["recommendations_json"])
+                return {
+                    "recommendations": cached_recs,
+                    "scanned": cached["scanned_count"],
+                    "cached": True,
+                }
+            except json.JSONDecodeError:
+                pass  # corrupt cache → re-scan
+
         # 取成员标题+概述摘要（控制上下文长度）
         placeholders = ",".join(["?" for _ in member_ids])
         member_rows = conn.execute(
@@ -805,12 +821,12 @@ def expand_series(series_id: str):
             member_ids,
         ).fetchall()
 
-        # 取不在本专题的有概述事件（最近30条）
+        # 取不在本专题的有概述事件（最近100条）
         non_member_rows = conn.execute(
             "SELECT id, title, overview FROM events "
             "WHERE overview IS NOT NULL AND overview != '' AND status != 'error' "
             "AND id NOT IN ({}) "
-            "ORDER BY created_at DESC LIMIT 30".format(placeholders),
+            "ORDER BY created_at DESC LIMIT 100".format(placeholders),
             member_ids,
         ).fetchall()
 
@@ -879,11 +895,136 @@ def expand_series(series_id: str):
         for r in recommendations:
             r["title"] = title_map.get(r.get("event_id", ""), "(已删除)")
 
+        # 保存到缓存
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO series_scan_cache (series_id, scanned_count, recommendations_json, scanned_at) VALUES (?, ?, ?, datetime('now'))",
+                (series_id, len(non_member_rows), json.dumps(recommendations, ensure_ascii=False)),
+            )
+            conn.commit()
+        except Exception:
+            pass  # cache write failure is non-fatal
+
+        # 将推荐结果持久化到 suggested_series_json（与“待确认”打通）
+        # 新格式: [{"series_id": "...", "reason": "..."}]  — 带理由
+        if rec_ids:
+            # 构建 event_id → reason 映射
+            reason_map = {r.get("event_id", ""): r.get("reason", "") for r in recommendations}
+            try:
+                for eid in rec_ids:
+                    current = conn.execute(
+                        "SELECT suggested_series_json FROM events WHERE id = ?", (eid,)
+                    ).fetchone()
+                    entries = []
+                    if current and current["suggested_series_json"]:
+                        try:
+                            raw = json.loads(current["suggested_series_json"])
+                            # 兼容旧格式（纯ID数组）
+                            if raw and isinstance(raw[0], str):
+                                entries = [{"series_id": s, "reason": ""} for s in raw]
+                            else:
+                                entries = raw
+                        except (json.JSONDecodeError, TypeError):
+                            entries = []
+                    # 更新或追加（已有同系列条目则更新理由）
+                    updated = False
+                    for e in entries:
+                        if e.get("series_id") == series_id:
+                            e["reason"] = reason_map.get(eid, "")
+                            updated = True
+                            break
+                    if not updated:
+                        entries.append({"series_id": series_id, "reason": reason_map.get(eid, "")})
+                    conn.execute(
+                        "UPDATE events SET suggested_series_json = ? WHERE id = ?",
+                        (json.dumps(entries), eid),
+                    )
+                conn.commit()
+            except Exception:
+                pass  # suggestion write failure is non-fatal
+
         return {"recommendations": recommendations, "scanned": len(non_member_rows)}
 
     except (json.JSONDecodeError, Exception) as e:
         logger.exception("Expand series failed")
         return {"message": f"扩充失败: {str(e)[:200]}", "recommendations": []}
+
+
+# ══════════════════════════════════════════════════
+# 自由组题 — AI 建议名称
+# ══════════════════════════════════════════════════
+
+@router.post("/series/suggest-name")
+def suggest_series_name(data: dict):
+    """自由组题：根据用户选定的文档，AI 建议专题名称和副标题。
+
+    Expects: {member_ids: [...], current_name: "用户起的临时名（可选）"}
+    Returns: {suggested_name: "AI建议标题", suggested_description: "AI建议副标题"}
+    """
+    init_db()
+    member_ids = data.get("member_ids", [])
+    if not isinstance(member_ids, list) or len(member_ids) < 2:
+        return {"message": "至少需要 2 条文档", "suggested_name": "", "suggested_description": ""}
+
+    current_name = data.get("current_name", "").strip()
+
+    with connect() as conn:
+        placeholders = ",".join(["?" for _ in member_ids])
+        event_rows = conn.execute(
+            f"SELECT id, title, overview, ai_summary FROM events WHERE id IN ({placeholders})",
+            member_ids,
+        ).fetchall()
+
+    if len(event_rows) < 2:
+        return {"message": "有效文档不足 2 条", "suggested_name": "", "suggested_description": ""}
+
+    docs_text = ""
+    for i, ev in enumerate(event_rows):
+        ov = ev["overview"] or ev["ai_summary"] or ""
+        docs_text += f"\n### [{i + 1}] {ev['title']}\n{ov}\n"
+
+    current_hint = ""
+    if current_name:
+        current_hint = f'\n用户暂定标题：「{current_name}」（你可以在此基础上优化，也可以提出完全不同的名称）'
+
+    prompt = f"""你是知识专题策展人。请根据以下用户选定的文档内容，为这个专题建议一个精准的名称和副标题。
+
+文档内容：
+{docs_text}
+{current_hint}
+
+要求：
+- 标题（name）：≤20字，精确概括这些文档的共同主题和内在联系
+- 副标题（description）：≤80字，说明这个专题覆盖什么核心问题和分析范围
+- 输出 JSON：{{"name": "...", "description": "..."}}
+- 直接输出 JSON，不要 Markdown 包裹"""
+
+    messages = [
+        {"role": "system", "content": "你是知识专题策展人。根据文档内容建议专题名称和副标题。输出纯 JSON 对象。"},
+        {"role": "user", "content": prompt},
+    ]
+
+    try:
+        raw = _call_deepseek_chat(messages, temperature=0.4, max_tokens=512, timeout=60,
+                                  response_format={"type": "json_object"},
+                                  module="series", task="suggest_name")
+        if not raw:
+            return {"message": "AI 未返回结果", "suggested_name": "", "suggested_description": ""}
+
+        raw = raw.strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^```\w*\n?", "", raw)
+            raw = re.sub(r"\n```$", "", raw)
+
+        result = json.loads(raw)
+        return {
+            "suggested_name": result.get("name", "").strip(),
+            "suggested_description": result.get("description", "").strip(),
+        }
+
+    except (json.JSONDecodeError, Exception) as e:
+        logger.exception("Suggest name failed")
+        return {"message": f"AI 结果解析失败: {str(e)[:200]}", "suggested_name": "", "suggested_description": ""}
 
 
 @router.post("/series")
@@ -1001,6 +1142,8 @@ def merge_series(data: dict):
             (json.dumps(merged), now_ts, target_id),
         )
         conn.execute("DELETE FROM series WHERE id = ?", (source_id,))
+        # Clear scan cache for target — member set changed
+        conn.execute("DELETE FROM series_scan_cache WHERE series_id = ?", (target_id,))
 
         return {
             "merged": True,
@@ -1059,6 +1202,34 @@ def get_series_detail(series_id: str):
                     members.append(event_map[mid])
 
         s["members"] = members
+
+        # ── 未扫描新内容计数（红点角标用） ──
+        scan_cache = conn.execute(
+            "SELECT scanned_at FROM series_scan_cache WHERE series_id = ?",
+            (series_id,),
+        ).fetchone()
+        if scan_cache and scan_cache["scanned_at"]:
+            since = scan_cache["scanned_at"]
+        else:
+            since = "1970-01-01"  # never scanned → count all eligible
+
+        if member_ids:
+            m_placeholders = ",".join(["?" for _ in member_ids])
+            unscanned = conn.execute(
+                f"SELECT COUNT(*) FROM events "
+                f"WHERE overview IS NOT NULL AND overview != '' AND status != 'error' "
+                f"AND id NOT IN ({m_placeholders}) AND created_at > ?",
+                member_ids + [since],
+            ).fetchone()[0]
+        else:
+            unscanned = conn.execute(
+                "SELECT COUNT(*) FROM events "
+                "WHERE overview IS NOT NULL AND overview != '' AND status != 'error' "
+                "AND created_at > ?",
+                (since,),
+            ).fetchone()[0]
+        s["unscanned_count"] = unscanned
+
     return s
 
 
@@ -1359,25 +1530,34 @@ def get_series_suggestions(series_id: str):
             "SELECT id, suggested_series_json FROM events WHERE suggested_series_json IS NOT NULL AND suggested_series_json != '' AND suggested_series_json != '[]'"
         ).fetchall()
 
-        suggestions = []
+        suggestions = []  # list of {event_id, reason}
         for ev in candidates:
             try:
-                sids = json.loads(ev["suggested_series_json"])
-                if series_id in sids and ev["id"] not in member_ids:
-                    suggestions.append(ev["id"])
+                entries = json.loads(ev["suggested_series_json"])
+                # 兼容旧格式（纯ID数组）
+                if entries and isinstance(entries[0], str):
+                    if series_id in entries and ev["id"] not in member_ids:
+                        suggestions.append({"event_id": ev["id"], "reason": ""})
+                else:
+                    for entry in entries:
+                        if entry.get("series_id") == series_id and ev["id"] not in member_ids:
+                            suggestions.append({"event_id": ev["id"], "reason": entry.get("reason", "")})
+                            break
             except (json.JSONDecodeError, TypeError):
                 pass
 
         if not suggestions:
             return {"suggestions": []}
 
-        placeholders = ",".join(["?" for _ in suggestions])
+        suggestion_ids = [s["event_id"] for s in suggestions]
+        reason_map = {s["event_id"]: s["reason"] for s in suggestions}
+        placeholders = ",".join(["?" for _ in suggestion_ids])
         event_rows = conn.execute(
-            f"SELECT id, title FROM events WHERE id IN ({placeholders})",
-            suggestions,
+            f"SELECT id, title, topic, created_at FROM events WHERE id IN ({placeholders})",
+            suggestion_ids,
         ).fetchall()
 
-    return {"suggestions": [{"id": r["id"], "title": r["title"]} for r in event_rows]}
+    return {"suggestions": [{"id": r["id"], "title": r["title"], "topic": r["topic"] or "", "reason": reason_map.get(r["id"], ""), "created_at": r["created_at"]} for r in event_rows]}
 
 
 @router.post("/series/{series_id}/members")
@@ -1401,6 +1581,8 @@ def add_series_members(series_id: str, data: dict):
             "UPDATE series SET member_ids = ?, updated_at = ? WHERE id = ?",
             (json.dumps(merged), __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M"), series_id),
         )
+        # Clear scan cache — member set changed
+        conn.execute("DELETE FROM series_scan_cache WHERE series_id = ?", (series_id,))
     return {"id": series_id, "member_ids": merged}
 
 
@@ -1449,8 +1631,8 @@ def auto_suggest_series(event_id: str) -> None:
 {series_text}
 
 请判断这条内容是否应该归入以上某个专题。一条内容可以同时属于多个专题。
-返回 JSON 数组：只包含匹配的专题 ID。若没有匹配，返回空数组 []。
-格式：["series-id-xxx"] 或 []
+返回 JSON 数组，每项包含 series_id 和 reason（≤15字，为何匹配）。
+格式：[{"series_id": "xxx", "reason": "理由"}] 或 []
 直接输出 JSON，不要说明。"""
 
         messages = [
@@ -1458,7 +1640,7 @@ def auto_suggest_series(event_id: str) -> None:
             {"role": "user", "content": prompt},
         ]
 
-        raw = chat(messages, temperature=0.1, max_tokens=256, timeout=30,
+        raw = chat(messages, temperature=0.1, max_tokens=512, timeout=30,
                    module="series", task="auto_suggest")
         if not raw:
             return
