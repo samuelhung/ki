@@ -1632,7 +1632,7 @@ def auto_suggest_series(event_id: str) -> None:
 
 请判断这条内容是否应该归入以上某个专题。一条内容可以同时属于多个专题。
 返回 JSON 数组，每项包含 series_id 和 reason（≤15字，为何匹配）。
-格式：[{"series_id": "xxx", "reason": "理由"}] 或 []
+格式：[{{"series_id": "xxx", "reason": "理由"}}] 或 []
 直接输出 JSON，不要说明。"""
 
         messages = [
