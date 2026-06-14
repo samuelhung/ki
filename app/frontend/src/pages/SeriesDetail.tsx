@@ -156,6 +156,13 @@ export default function SeriesDetail() {
 
   useEffect(() => { loadDetail(); loadSuggestions(); }, [id]);
 
+  // Restore allProcessed from sessionStorage on mount
+  useEffect(() => {
+    if (sessionStorage.getItem(`series_${id}_all_processed`)) {
+      setAllProcessed(true);
+    }
+  }, [id]);
+
   // Restore generating state on mount (survives refresh / navigation)
   useEffect(() => {
     const genIntro = sessionStorage.getItem(`series_${id}_gen_intro`);
@@ -200,7 +207,10 @@ export default function SeriesDetail() {
       const d = await r.json();
       const items = d.suggestions || [];
       setSuggestions(items);
-      if (items.length > 0) setAllProcessed(false);
+      if (items.length > 0) {
+        setAllProcessed(false);
+        sessionStorage.removeItem(`series_${id}_all_processed`);
+      }
     } catch (_) {}
   }
 
@@ -297,7 +307,10 @@ export default function SeriesDetail() {
       await loadDetail();
       setSuggestions(prev => {
         const remaining = prev.filter(s => !selectedIds.includes(s.id));
-        if (remaining.length === 0) setAllProcessed(true);
+        if (remaining.length === 0) {
+          setAllProcessed(true);
+          sessionStorage.setItem(`series_${id}_all_processed`, '1');
+        }
         return remaining;
       });
       setSelectedIds([]);
@@ -315,7 +328,10 @@ export default function SeriesDetail() {
     if (selectedIds.length === 0) return;
     setSuggestions(prev => {
       const remaining = prev.filter(s => !selectedIds.includes(s.id));
-      if (remaining.length === 0) setAllProcessed(true);
+      if (remaining.length === 0) {
+        setAllProcessed(true);
+        sessionStorage.setItem(`series_${id}_all_processed`, '1');
+      }
       return remaining;
     });
     setSelectedIds([]);
@@ -325,6 +341,7 @@ export default function SeriesDetail() {
     if (!series) return;
     setRefreshing(true);
     setAllProcessed(false);
+    sessionStorage.removeItem(`series_${id}_all_processed`);
     try {
       await fetch(`/api/ingest/series/${id}/expand`, { method: 'POST' });
       await loadSuggestions();
