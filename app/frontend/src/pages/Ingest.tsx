@@ -662,7 +662,7 @@ export default function Ingest() {
                 <span className="text-gray-500 font-medium">支持格式：</span>
                 <span className="block"><span className="text-gray-400">视频</span>  .mp4 .mov .avi .mkv .webm</span>
                 <span className="block"><span className="text-gray-400">音频</span>  .mp3 .wav .m4a .aac .flac .ogg .opus</span>
-                <span className="block"><span className="text-gray-400">文本</span>  .md .txt .markdown .json .csv .log .pdf</span>
+                <span className="block"><span className="text-gray-400">文本</span>  .md .txt .markdown .json .csv .log .pdf .epub</span>
               </p>
             </div>
             {flError && <p className="text-red-400 text-xs">{flError}</p>}

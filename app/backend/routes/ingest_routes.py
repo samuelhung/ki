@@ -54,7 +54,7 @@ def ingest_concept(req: ConceptCreateRequest):
 
 # Supported file extensions, grouped by ingest type
 _FILE_TYPE_MAP = {
-    "document":   {".md", ".txt", ".markdown", ".json", ".csv", ".log", ".pdf"},
+    "document":   {".md", ".txt", ".markdown", ".json", ".csv", ".log", ".pdf", ".epub"},
     "audio_file": {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wma"},
     "video_file": {".mp4", ".mov", ".avi", ".mkv", ".webm", ".mts", ".ts", ".flv"},
 }
