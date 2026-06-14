@@ -109,8 +109,8 @@ def recover_stuck() -> int:
 
 
 # Per-task timeout to prevent a hung download/transcribe from blocking the queue forever.
-# 10 minutes is generous: download (2 min) + extract (1 min) + transcribe (6 min poll) + summarize (1 min).
-_TASK_TIMEOUT_SECONDS = 600
+# 15 minutes: document (2s) / audio (6 min poll) / video (8 min) / scanned PDF OCR (10 min + summarize)
+_TASK_TIMEOUT_SECONDS = 900
 
 
 def _process_one(task_id: str) -> None:

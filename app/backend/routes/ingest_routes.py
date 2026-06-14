@@ -54,7 +54,7 @@ def ingest_concept(req: ConceptCreateRequest):
 
 # Supported file extensions, grouped by ingest type
 _FILE_TYPE_MAP = {
-    "document":   {".md", ".txt", ".markdown", ".json", ".csv", ".log"},
+    "document":   {".md", ".txt", ".markdown", ".json", ".csv", ".log", ".pdf"},
     "audio_file": {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wma"},
     "video_file": {".mp4", ".mov", ".avi", ".mkv", ".webm", ".mts", ".ts", ".flv"},
 }
@@ -389,19 +389,53 @@ def _process_ingest(event_id: str, ingest_type: str, content, topic: str, title:
     video_md5 = None
     try:
         if ingest_type == "document":
-            from ..ingest.document import process_document
+            from pathlib import Path as _Path
+            doc_path = _Path(content)
+            is_pdf = doc_path.suffix.lower() == ".pdf"
 
-            stages = [
-                {"key": "parse", "label": "解析文档", "status": "active"},
-                {"key": "done", "label": "完成", "status": "pending"},
-            ]
-            _set_progress(event_id, stages)
+            if is_pdf:
+                from ..ingest.pdf_ocr import detect_pdf_type
+                pdf_type = detect_pdf_type(doc_path)
+                if pdf_type == "scan":
+                    # Scanned PDF — multi-stage with page progress
+                    stages = [
+                        {"key": "render", "label": "渲染页面", "status": "active"},
+                        {"key": "ocr", "label": "OCR 识别", "status": "pending"},
+                        {"key": "done", "label": "完成", "status": "pending"},
+                    ]
+                    _set_progress(event_id, stages)
 
-            result = process_document(content, title=title, topic=topic)
+                    def _ocr_progress(current: int, total: int):
+                        stages[0]["status"] = "done"
+                        stages[1]["status"] = "active"
+                        stages[1]["label"] = f"OCR 识别 ({current}/{total} 页)"
+                        _set_progress(event_id, stages)
+
+                    from ..ingest.document import process_document
+                    result = process_document(content, title=title, topic=topic, on_progress=_ocr_progress)
+                else:
+                    # Text PDF
+                    stages = [
+                        {"key": "parse", "label": "解析文档", "status": "active"},
+                        {"key": "done", "label": "完成", "status": "pending"},
+                    ]
+                    _set_progress(event_id, stages)
+                    from ..ingest.document import process_document
+                    result = process_document(content, title=title, topic=topic)
+            else:
+                stages = [
+                    {"key": "parse", "label": "解析文档", "status": "active"},
+                    {"key": "done", "label": "完成", "status": "pending"},
+                ]
+                _set_progress(event_id, stages)
+                from ..ingest.document import process_document
+                result = process_document(content, title=title, topic=topic)
+
             text = result["text"]
+            title = result.get("title", title) or title
 
-            stages[0]["status"] = "done"
-            stages[1]["status"] = "active"
+            for s in stages:
+                s["status"] = "done"
             _set_progress(event_id, stages)
 
         elif ingest_type in ("audio_file",):

@@ -208,3 +208,67 @@ ValueError: Invalid format specifier ' "xxx", "reason": "理由"' for object of 
 2026-06-14 18:04:12 [DEBUG  ] knowledge-intelligence:74 | trafilatura extraction failed for https://www.bbc.com/news/videos/c62132n53exo?at_medium=RSS&at_campaign=rss: No module named 'trafilatura'
 2026-06-14 18:04:12 [DEBUG  ] knowledge-intelligence:74 | trafilatura extraction failed for https://www.bbc.com/news/videos/ced48dv99lvo?at_medium=RSS&at_campaign=rss: No module named 'trafilatura'
 2026-06-14 18:04:55 [INFO   ] backend.briefing:362 | Batch contemplate done: 29 events × 8 questions → 0 high, 1 medium
+2026-06-14 19:23:17 [INFO   ] backend.task_queue:56 | Enqueued task task-e77a877aba39 for event evt-ingest-0c0b17bd227f (douyin_share)
+2026-06-14 19:23:17 [INFO   ] tos:1060 | in-request: add cache address:v.douyin.com:443
+2026-06-14 19:23:17 [INFO   ] tos:1060 | in-request: add cache address:www.iesdouyin.com:443
+2026-06-14 19:23:19 [INFO   ] tos:1060 | in-request: add cache address:aweme.snssdk.com:443
+2026-06-14 19:23:19 [INFO   ] tos:1060 | in-request: add cache address:v26-cold.douyinvod.com:443
+2026-06-14 19:23:52 [INFO   ] tos:4624 | in-request cache dns host: douyin11.tos-cn-beijing.volces.com, port: 443
+2026-06-14 19:23:55 [DEBUG  ] tos:5016 | in-request: method:PUT host:https://douyin11.tos-cn-beijing.volces.com/asr-upload/13d621f052d4438aa36dc51c0cc20f5b.wav requestURI:/asr-upload/13d621f052d4438aa36dc51c0cc20f5b.wav used time: 2.864197
+2026-06-14 19:23:55 [INFO   ] tos:1173 | after-request: put_object exec httpCode: 200, requestId: 48bf072e8f485e996a2e8f48-b4715e7-1wYiwS-PuO-cb-tos-1az-front-azc-17, usedTime: 2.8663293719291687 s
+2026-06-14 19:23:55 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-14 19:23:59 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-14 19:24:02 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-14 19:24:05 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-14 19:24:09 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-14 19:24:12 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-14 19:24:16 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-14 19:24:19 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-14 19:24:22 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-14 19:24:26 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-14 19:24:29 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-14 19:24:33 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-14 19:24:36 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-14 19:24:39 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-14 19:24:43 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-14 19:24:46 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-14 19:24:50 [INFO   ] tos:4624 | in-request cache dns host: openspeech.bytedance.com, port: 443
+2026-06-14 19:25:12 [INFO   ] backend.summarizer:131 | Summary + overview generated (3734 chars transcript → 2005 chars summary, 434 chars overview)
+2026-06-14 19:25:13 [INFO   ] backend.classifier:94 | Classified event evt-ingest-0c0b17bd227f as 认知
+2026-06-14 19:25:13 [INFO   ] backend.task_queue:230 | Task task-e77a877aba39 completed for event evt-ingest-0c0b17bd227f
+2026-06-14 19:25:13 [WARNING] backend.routes.series_routes:1661 | auto_suggest_series failed for evt-ingest-0c0b17bd227f
+Traceback (most recent call last):
+  File "/Users/mrh/Documents/Projects/KnowledgeIntelligence/app/backend/routes/series_routes.py", line 1635, in auto_suggest_series
+    格式：[{"series_id": "xxx", "reason": "理由"}] 或 []
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ValueError: Invalid format specifier ' "xxx", "reason": "理由"' for object of type 'str'
+2026-06-14 21:23:28 [INFO   ] main:87 | KI server shutting down
+2026-06-14 21:23:28 [INFO   ] backend.task_queue:307 | Ingest task worker stopped
+2026-06-14 21:23:29 [INFO   ] backend.config_manager:74 | Loaded system config from /Users/mrh/Documents/Projects/KnowledgeIntelligence/data/system_config.json
+2026-06-14 21:23:29 [INFO   ] main:81 | KI server starting — init DB + worker
+2026-06-14 21:23:29 [INFO   ] backend.task_queue:251 | Ingest task worker started
+2026-06-14 21:23:29 [INFO   ] main:85 | KI server ready
+2026-06-14 21:23:37 [INFO   ] main:87 | KI server shutting down
+2026-06-14 21:23:37 [INFO   ] backend.task_queue:307 | Ingest task worker stopped
+2026-06-14 21:23:38 [INFO   ] backend.config_manager:74 | Loaded system config from /Users/mrh/Documents/Projects/KnowledgeIntelligence/data/system_config.json
+2026-06-14 21:23:38 [INFO   ] main:81 | KI server starting — init DB + worker
+2026-06-14 21:23:38 [INFO   ] backend.task_queue:251 | Ingest task worker started
+2026-06-14 21:23:38 [INFO   ] main:85 | KI server ready
+2026-06-14 21:23:54 [INFO   ] main:87 | KI server shutting down
+2026-06-14 21:23:54 [INFO   ] backend.task_queue:307 | Ingest task worker stopped
+2026-06-14 21:23:55 [INFO   ] backend.config_manager:74 | Loaded system config from /Users/mrh/Documents/Projects/KnowledgeIntelligence/data/system_config.json
+2026-06-14 21:23:56 [INFO   ] main:81 | KI server starting — init DB + worker
+2026-06-14 21:23:56 [INFO   ] backend.task_queue:251 | Ingest task worker started
+2026-06-14 21:23:56 [INFO   ] main:85 | KI server ready
+2026-06-14 21:24:13 [INFO   ] main:87 | KI server shutting down
+2026-06-14 21:24:13 [INFO   ] backend.task_queue:307 | Ingest task worker stopped
+2026-06-14 21:24:14 [INFO   ] backend.config_manager:74 | Loaded system config from /Users/mrh/Documents/Projects/KnowledgeIntelligence/data/system_config.json
+2026-06-14 21:24:14 [INFO   ] main:81 | KI server starting — init DB + worker
+2026-06-14 21:24:14 [INFO   ] backend.task_queue:251 | Ingest task worker started
+2026-06-14 21:24:14 [INFO   ] main:85 | KI server ready
+2026-06-14 21:24:22 [INFO   ] main:87 | KI server shutting down
+2026-06-14 21:24:22 [INFO   ] backend.task_queue:307 | Ingest task worker stopped
+2026-06-14 21:24:23 [INFO   ] backend.config_manager:74 | Loaded system config from /Users/mrh/Documents/Projects/KnowledgeIntelligence/data/system_config.json
+2026-06-14 21:24:23 [INFO   ] main:81 | KI server starting — init DB + worker
+2026-06-14 21:24:23 [INFO   ] backend.task_queue:251 | Ingest task worker started
+2026-06-14 21:24:23 [INFO   ] main:85 | KI server ready
