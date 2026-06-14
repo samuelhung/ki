@@ -152,6 +152,7 @@ export default function SeriesDetail() {
 
   // Refresh (manual scan → populates suggestions)
   const [refreshing, setRefreshing] = useState(false);
+  const [allProcessed, setAllProcessed] = useState(false);
 
   useEffect(() => { loadDetail(); loadSuggestions(); }, [id]);
 
@@ -197,7 +198,9 @@ export default function SeriesDetail() {
     try {
       const r = await fetch(`/api/ingest/series/${id}/suggestions`);
       const d = await r.json();
-      setSuggestions(d.suggestions || []);
+      const items = d.suggestions || [];
+      setSuggestions(items);
+      if (items.length > 0) setAllProcessed(false);
     } catch (_) {}
   }
 
@@ -290,23 +293,38 @@ export default function SeriesDetail() {
       sessionStorage.removeItem(`series_${id}_gen_paper`);
       setProgressStage('done');
 
-      // Refresh
+      // Refresh data from server
       await loadDetail();
-      setSuggestions(prev => prev.filter(s => !selectedIds.includes(s.event_id)));
+      setSuggestions(prev => {
+        const remaining = prev.filter(s => !selectedIds.includes(s.id));
+        if (remaining.length === 0) setAllProcessed(true);
+        return remaining;
+      });
       setSelectedIds([]);
+
+      // Auto-close modals after brief pause so user sees "已完成"
+      setTimeout(() => {
+        setShowProgress(false);
+        setShowSuggestions(false);
+      }, 1500);
     } catch (_) {}
     setBatchAdding(false);
   }
 
   function handleBatchDismiss() {
     if (selectedIds.length === 0) return;
-    setSuggestions(prev => prev.filter(s => !selectedIds.includes(s.event_id)));
+    setSuggestions(prev => {
+      const remaining = prev.filter(s => !selectedIds.includes(s.id));
+      if (remaining.length === 0) setAllProcessed(true);
+      return remaining;
+    });
     setSelectedIds([]);
   }
 
   async function handleRefresh() {
     if (!series) return;
     setRefreshing(true);
+    setAllProcessed(false);
     try {
       await fetch(`/api/ingest/series/${id}/expand`, { method: 'POST' });
       await loadSuggestions();
@@ -371,7 +389,7 @@ export default function SeriesDetail() {
               <div className="flex items-center gap-3 mt-2 text-[11px] text-gray-600 flex-wrap">
                 <span className="flex items-center gap-1">
                   {members.length} 条内容
-                  {suggestions.length === 0 && (
+                  {suggestions.length === 0 && !allProcessed && (
                     <button onClick={handleRefresh} disabled={refreshing}
                       className="p-0.5 rounded hover:bg-[#2A2B30] transition-colors text-gray-600 hover:text-violet-400"
                       title="扫描新内容">
