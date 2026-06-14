@@ -210,6 +210,9 @@ export default function SeriesDetail() {
       if (items.length > 0) {
         setAllProcessed(false);
         sessionStorage.removeItem(`series_${id}_all_processed`);
+      } else {
+        // No pending suggestions — everything has been processed
+        setAllProcessed(true);
       }
     } catch (_) {}
   }
