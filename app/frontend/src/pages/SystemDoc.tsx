@@ -336,7 +336,7 @@ export default function SystemDoc() {
           {[
             {
               version: '1.7.3',
-              date: '2026-06',
+              date: '2026-06-15 12:50:37',
               title: 'EPUB 注释兼容修复',
               items: [
                 'KindleGen 生成 EPUB 的 OPF 注释含 -- 导致解析崩溃 — Expat 拒绝 XML 注释中出现双连字符',
@@ -346,7 +346,7 @@ export default function SystemDoc() {
             },
             {
               version: '1.7.2',
-              date: '2026-06',
+              date: '2026-06-15 11:37:02',
               title: '书籍总结 + 状态汉化',
               items: [
                 '书籍级智能总结 — 超过5万字自动切换书级模板（13板块：全书概述、论证架构、各章要义、思想谱系、独到之处、可商榷之处等），DeepSeek V4 65536 token 输出，全文直投不截断',
@@ -355,7 +355,7 @@ export default function SystemDoc() {
             },
             {
               version: '1.7.1',
-              date: '2026-06',
+              date: '2026-06-15 09:58:23',
               title: '抖音解析修复',
               items: [
                 '抖音下载 403 修复 — parse_share_text 从 iesdouyin.com 页面解析切换为 douyin.com 官方 API，根治 CDN 短时效签名 l= 导致的下载失败',
@@ -365,7 +365,7 @@ export default function SystemDoc() {
             },
             {
               version: '1.7.0',
-              date: '2026-06',
+              date: '2026-06-15 08:34:31',
               title: '全新总结模板',
               items: [
                 '方案A 总结模板 — 概述前置、维度标签关键洞察、数据/时间节点扫描列表、叙事脉络因果链',
@@ -378,7 +378,7 @@ export default function SystemDoc() {
             },
             {
               version: '1.6.0',
-              date: '2026-06',
+              date: '2026-06-13 22:43:33',
               title: '待确认修复 + 全选重写',
               items: [
                 '待确认弹窗修复 — 单击条目全选联动：API返回id字段，前端误用s.event_id（undefined）导致9条共享同一key',
@@ -390,7 +390,7 @@ export default function SystemDoc() {
             },
             {
               version: '1.5.0',
-              date: '2026-06',
+              date: '2026-06-13 21:31:48',
               title: '专题待确认与推荐理由',
               items: [
                 '专题待确认流程改造 — 去掉「寻找新成员」按钮，专题卡片「N 条内容」旁新增刷新图标，点击即扫描并缓存建议至数据库',
@@ -403,7 +403,7 @@ export default function SystemDoc() {
             },
             {
               version: '1.4.0',
-              date: '2026-06',
+              date: '2026-06-13 18:50:00',
               title: '交互体验升级',
               items: [
                 '详情页展示方式统一 — 内容详情和问题详情从右侧滑出面板改为全页路由视图，与专题详情排版完全一致',
@@ -417,7 +417,7 @@ export default function SystemDoc() {
             },
             {
               version: '1.3.0',
-              date: '2026-06',
+              date: '2026-06-13 09:15:00',
               title: '系统运维',
               items: [
                 'AI 调用 token 用量自动记录 — 数据库后台写入，调用方零改动，仪表盘可视化（全局卡片+模块分布+7天趋势）',
@@ -431,7 +431,7 @@ export default function SystemDoc() {
             },
             {
               version: '1.2.0',
-              date: '2026-06',
+              date: '2026-06-12 14:30:00',
               title: '专题系列',
               items: [
                 '新增专题系列引擎 — AI 按主题聚类事件，支持候选审核→保存工作流',
@@ -445,7 +445,7 @@ export default function SystemDoc() {
             },
             {
               version: '1.1.0',
-              date: '2026-05',
+              date: '2026-06-11 15:23:34',
               title: '知识结构化',
               items: [
                 '持久化任务队列 — 替换 FastAPI BackgroundTasks，服务重启不丢任务',
@@ -459,7 +459,7 @@ export default function SystemDoc() {
             },
             {
               version: '1.0.x',
-              date: '2026-04',
+              date: '2026-06-08 20:39:38',
               title: '初始发布',
               items: [
                 '抖音分享链接解析 → 视频下载 → 提取音频 → 语音转写 → AI 总结全链路',
