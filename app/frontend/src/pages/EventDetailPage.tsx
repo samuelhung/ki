@@ -85,7 +85,7 @@ export default function EventDetailPage() {
   async function handleSummarize(eventId: string) {
     setSummarizingId(eventId);
     try {
-      const res = await fetch(`${API_BASE}/${eventId}/summarize`, { method: 'POST' });
+      const res = await fetch(`${API_BASE}/${eventId}/summarize?force=true`, { method: 'POST' });
       if (!res.ok) throw new Error('总结失败');
       for (let i = 0; i < 30; i++) {
         await new Promise(r => setTimeout(r, 2000));
@@ -160,7 +160,7 @@ export default function EventDetailPage() {
       return <div className="flex items-center justify-center py-16"><Loader2 size={24} className="animate-spin text-purple-400" /></div>;
     }
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 text-sm">
         {hasOverview && (
           <div>
             <div className="flex items-center gap-2 mb-3">

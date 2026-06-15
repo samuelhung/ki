@@ -226,8 +226,11 @@ def batch_delete_events(payload: dict[str, object]) -> dict[str, object]:
 
 
 @router.post("/api/events/{event_id}/summarize")
-def summarize_event(event_id: str, background_tasks: BackgroundTasks) -> dict[str, object]:
-    """Generate an AI summary for a douyin event using the Knowledge template."""
+def summarize_event(event_id: str, background_tasks: BackgroundTasks, force: bool = False) -> dict[str, object]:
+    """Generate an AI summary for a douyin event using the Knowledge template.
+
+    Set ?force=true to bypass the cache and regenerate from scratch.
+    """
 
     with connect() as conn:
         row = conn.execute(
@@ -244,9 +247,14 @@ def summarize_event(event_id: str, background_tasks: BackgroundTasks) -> dict[st
     if not transcript.strip():
         raise HTTPException(status_code=400, detail="Event has no transcript content")
 
-    # Return cached summary if already generated
-    if row["ai_summary"]:
+    # Return cached summary if already generated (unless forced)
+    if row["ai_summary"] and not force:
         return {"event_id": event_id, "summary": row["ai_summary"], "cached": True}
+
+    # When forcing regeneration, clear the old summary so polling doesn't pick it up
+    if force and row["ai_summary"]:
+        with connect() as conn:
+            conn.execute("UPDATE events SET ai_summary = NULL, overview = NULL WHERE id = ?", (event_id,))
 
     def _run_summary():
         try:

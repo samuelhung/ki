@@ -98,7 +98,7 @@ export default function IngestDetailPanel({ eventId, onClose }: Props) {
   async function handleSummarize(eventId: string) {
     setSummarizingId(eventId);
     try {
-      const res = await fetch(`${API_BASE}/${eventId}/summarize`, { method: 'POST' });
+      const res = await fetch(`${API_BASE}/${eventId}/summarize?force=true`, { method: 'POST' });
       if (!res.ok) throw new Error('总结失败');
       for (let i = 0; i < 30; i++) {
         await new Promise(r => setTimeout(r, 2000));

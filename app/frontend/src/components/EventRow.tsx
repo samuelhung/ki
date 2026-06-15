@@ -16,7 +16,7 @@ const topicLabels: Record<string, string> = {
 };
 
 const statusLabels: Record<string, string> = {
-  new: '新增', processing: '处理中', error: '异常', digest: '已摘要',
+  new: '新增', processing: '处理中', completed: '已完成', error: '异常', digest: '已摘要',
 };
 
 function formatSource(id: string) { return sourceLabels[id] ?? id; }
