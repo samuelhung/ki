@@ -530,7 +530,7 @@ export default function BrainstormDetailPage() {
                 <span className="hidden sm:inline">凝神静思</span>
               </button>
               <button
-                onClick={() => window.open(`/tasks?source=brainstorm&source_id=${id}&source_label=来自脑暴：${question?.title || ''}`, '_blank')}
+                onClick={() => navigate(`/tasks?source=brainstorm&source_id=${id}&source_label=来自脑暴：${question?.title || ''}`)}
                 className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 border border-sky-500/30 transition-colors flex items-center gap-1.5"
               >
                 <Plus size={14} />

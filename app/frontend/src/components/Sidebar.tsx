@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { LayoutDashboard, Upload, FileText, Lightbulb, CheckSquare, Layers, BookOpen, Code2, Settings, GitBranch } from 'lucide-react';
 
@@ -19,6 +19,16 @@ const bottomItems = [
 ];
 
 export default function Sidebar() {
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/tasks/stats')
+      .then(r => r.json())
+      .then(d => { if (!cancelled) setPendingCount(d.todo || 0); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   return (
     <aside className="w-72 bg-[#141518] border-r border-[#2A2B30] flex flex-col h-full text-gray-300">
       <div className="p-4 flex flex-col items-center border-b border-[#2A2B30] gap-1">
@@ -40,7 +50,12 @@ export default function Sidebar() {
               }
             >
               <Icon size={18} className={item.color} />
-              <span>{item.label}</span>
+              <span className="flex-1">{item.label}</span>
+              {item.to === '/tasks' && pendingCount > 0 && (
+                <span className="shrink-0 min-w-[20px] h-5 flex items-center justify-center rounded-full bg-red-500 text-white text-[11px] font-semibold px-1.5">
+                  {pendingCount}
+                </span>
+              )}
             </NavLink>
           );
         })}

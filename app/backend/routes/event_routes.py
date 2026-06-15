@@ -22,6 +22,13 @@ def list_events(
     search: str | None = None, offset: int = 0, limit: int = 50,
     count: int = 0,
 ) -> list[dict[str, object]] | dict[str, object]:
+    # Lightweight columns for list views (omit large text fields: raw_summary, ai_summary)
+    _LIST_COLS = (
+        "id, source_id, title, url, published_at,"
+        " title_cn, summary_cn, translation_status, translation_error,"
+        " topic, importance, actionability, decision, status,"
+        " video_path, content_type, created_at"
+    )
     if search:
         # FTS5 full-text search with trigram tokenizer (works for Chinese + English)
         # For very short terms (< 3 chars) use LIKE fallback since trigram needs >=3 chars
@@ -32,10 +39,7 @@ def list_events(
             with connect() as conn:
                 like_pattern = f"%{search_term}%"
                 rows = conn.execute(
-                    """SELECT id, source_id, title, url, published_at, raw_summary, ai_summary,
-                       title_cn, summary_cn, translation_status, translation_error,
-                       topic, importance, actionability, decision, status, tags_json,
-                       last_error, progress_stages, video_path, content_type, created_at
+                    f"""SELECT {_LIST_COLS}
                     FROM events
                     WHERE title LIKE ? OR title_cn LIKE ? OR raw_summary LIKE ? OR summary_cn LIKE ? OR ai_summary LIKE ?
                     ORDER BY created_at DESC
@@ -44,12 +48,11 @@ def list_events(
                      max(1, min(200, limit)), max(0, offset)),
                 ).fetchall()
             return [dict(row) for row in rows]
+        # Prefix each column with 'e.' for the JOIN with events_fts
+        _fts_cols = ', '.join(f'e.{c.strip()}' for c in _LIST_COLS.split(','))
         with connect() as conn:
             rows = conn.execute(
-                """SELECT e.id, e.source_id, e.title, e.url, e.published_at, e.raw_summary, e.ai_summary,
-                   e.title_cn, e.summary_cn, e.translation_status, e.translation_error,
-                   e.topic, e.importance, e.actionability, e.decision, e.status, e.tags_json,
-                   e.last_error, e.progress_stages, e.video_path, e.content_type, e.created_at,
+                f"""SELECT {_fts_cols},
                    snippet(events_fts, 1, '<mark>', '</mark>', '...', 60) as snippet
                 FROM events e
                 INNER JOIN events_fts fts ON e.id = fts.event_id
@@ -61,10 +64,10 @@ def list_events(
         return [dict(row) for row in rows]
 
     query = (
-        "SELECT id, source_id, title, url, published_at, raw_summary, ai_summary,\n"
+        "SELECT id, source_id, title, url, published_at,\n"
         "       title_cn, summary_cn, translation_status, translation_error,\n"
-        "       topic, importance, actionability, decision, status, tags_json,\n"
-        "       last_error, progress_stages, video_path, content_type, created_at\n"
+        "       topic, importance, actionability, decision, status,\n"
+        "       video_path, content_type, created_at\n"
         "FROM events\n"
         "WHERE 1=1\n"
     )

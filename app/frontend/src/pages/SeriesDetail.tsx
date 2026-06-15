@@ -445,7 +445,7 @@ export default function SeriesDetail() {
                 <span className="hidden sm:inline">{series.paper ? '重新生成深度分析' : 'AI 深度分析'}</span>
               </button>
               <button
-                onClick={() => window.open(`/tasks?source=series&source_id=${id}&source_label=来自专题：${series?.name || ''}`, '_blank')}
+                onClick={() => navigate(`/tasks?source=series&source_id=${id}&source_label=来自专题：${series?.name || ''}`)}
                 className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 border border-sky-500/30 transition-colors flex items-center gap-1.5"
               >
                 <Plus size={14} />

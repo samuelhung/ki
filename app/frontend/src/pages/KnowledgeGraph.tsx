@@ -424,7 +424,7 @@ function EntityPanel({ detail, onClose, onEventClick }: { detail: any; onClose: 
         )}
         <div className="mt-4 pt-3 border-t border-gray-800">
           <button
-            onClick={() => window.open(`/tasks?source=content&source_id=${e.id}&source_label=来自实体：${e.name}`, '_blank')}
+            onClick={() => { window.location.href = `/tasks?source=content&source_id=${e.id}&source_label=来自实体：${e.name}`; }}
             className="text-xs text-sky-400 hover:text-sky-300 transition-colors"
           >
             → 跟进此实体
