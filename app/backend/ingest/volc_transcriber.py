@@ -38,79 +38,92 @@ def upload_to_tos(audio_path: Path) -> str:
     # Generate presigned URL for public access
     from tos.enum import HttpMethodType  # type: ignore
 
-    presigned = client.create_pre_signed_url(
-        HttpMethodType.GET,
+    presigned = client.pre_signed_url(
+        HttpMethodType.Http_Method_Get,
         TOS_BUCKET,
         object_key,
         TOS_EXPIRES,
     )
-    return presigned.signed_url if hasattr(presigned, "signed_url") else str(presigned)
+    return presigned.signed_url
 
 
-def submit_transcription(audio_url: str) -> dict:
-    """Submit audio for transcription and return response with task_id."""
-    payload = {
-        "app": {"appid": VOLC_API_KEY, "token": "placeholder", "cluster": VOLC_RESOURCE_ID},
-        "user": {"uid": "ki-user"},
-        "audio": {"url": audio_url, "format": "mp3"},
-        "request": {
-            "model_name": VOLC_MODEL_NAME,
-            "enable_itn": True,
-            "enable_punc": True,
-            "enable_speaker_info": False,
+def submit_transcription(audio_url: str) -> tuple[str, str]:
+    """Submit an audio URL to volc AUC for async transcription.
+
+    Returns (request_id, log_id) tuple.
+    """
+    req_id = str(uuid.uuid4())
+    resp = requests.post(
+        SUBMIT_URL,
+        json={
+            "user": {"uid": "ki-local"},
+            "audio": {
+                "url": audio_url,
+                "format": "wav",
+            },
+            "request": {
+                "model_name": VOLC_MODEL_NAME,
+                "enable_punc": True,
+                "enable_itn": True,
+            },
         },
-    }
+        headers={
+            "X-Api-Key": VOLC_API_KEY,
+            "X-Api-Resource-Id": VOLC_RESOURCE_ID,
+            "X-Api-Request-Id": req_id,
+            "X-Api-Sequence": "-1",
+        },
+        timeout=15,
+    )
 
-    resp = requests.post(SUBMIT_URL, json=payload, timeout=30)
-    resp.raise_for_status()
-    return resp.json()
+    status = resp.headers.get("X-Api-Status-Code")
+    msg = resp.headers.get("X-Api-Message", "")
+    if status != "20000000":
+        raise RuntimeError(f"volc AUC 提交失败：status={status}, msg={msg}")
 
-
-def query_transcription(task_id: str) -> dict:
-    """Query transcription result by task_id."""
-    payload = {
-        "app": {"appid": VOLC_API_KEY, "token": "placeholder", "cluster": VOLC_RESOURCE_ID},
-        "user": {"uid": "ki-user"},
-        "request": {"model_name": VOLC_MODEL_NAME},
-        "audio": {"task_id": task_id},
-    }
-
-    resp = requests.post(QUERY_URL, json=payload, timeout=30)
-    resp.raise_for_status()
-    return resp.json()
+    logid = resp.headers.get("X-Tt-Logid", "")
+    return req_id, logid
 
 
-def transcribe(audio_path: Path, poll_interval: int = 3, max_wait: int = 300) -> str:
-    """Full pipeline: upload → submit → poll → return transcript text."""
-    # Upload
+def poll_result(req_id: str, logid: str, max_attempts: int = 200) -> str:
+    """Poll volc AUC for transcription result.
+
+    Returns transcribed text when done.
+
+    Raises:
+        RuntimeError: On API error.
+        TimeoutError: If max_attempts exceeded.
+    """
+    for _ in range(max_attempts):
+        time.sleep(3)
+
+        resp = requests.post(
+            QUERY_URL,
+            json={},
+            headers={
+                "X-Api-Key": VOLC_API_KEY,
+                "X-Api-Resource-Id": VOLC_RESOURCE_ID,
+                "X-Api-Request-Id": req_id,
+                "X-Tt-Logid": logid,
+            },
+            timeout=15,
+        )
+
+        status = resp.headers.get("X-Api-Status-Code")
+        if status == "20000000":
+            data = resp.json()
+            return data["result"]["text"]
+        elif status != "20000001":
+            raise RuntimeError(f"volc AUC 查询失败：status={status}")
+
+    raise TimeoutError(f"转写超时（{max_attempts} 次轮询后仍未完成）")
+
+
+def transcribe(audio_path: Path) -> str:
+    """Full transcription pipeline: upload to TOS → submit to volc AUC → poll for result.
+
+    Returns transcribed text.
+    """
     audio_url = upload_to_tos(audio_path)
-
-    # Submit
-    submit_resp = submit_transcription(audio_url)
-    task_id = submit_resp.get("result", {}).get("task_id") or submit_resp.get("task_id")
-    if not task_id:
-        raise RuntimeError(f"Volc submit failed: {submit_resp}")
-
-    # Poll
-    elapsed = 0
-    while elapsed < max_wait:
-        time.sleep(poll_interval)
-        elapsed += poll_interval
-
-        result = query_transcription(task_id)
-        status = result.get("result", {}).get("status") or result.get("status", "")
-        if status == "finished":
-            # Extract text from response
-            sentences = result.get("result", {}).get("sentences", [])
-            if sentences:
-                return "\n".join(s.get("text", "") for s in sentences)
-            # Alternative field
-            text = result.get("result", {}).get("text", "")
-            if text:
-                return text
-            # Last resort
-            return str(result)
-        elif status in ("failed", "error"):
-            raise RuntimeError(f"Volc transcription failed: {result}")
-
-    raise TimeoutError(f"Volc transcription timed out after {max_wait}s")
+    req_id, logid = submit_transcription(audio_url)
+    return poll_result(req_id, logid)

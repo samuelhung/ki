@@ -110,7 +110,6 @@ def download_video(url: str, dest: Path, session: requests.Session | None = None
     If session is provided, reuses its cookies (from parse_share_text).
     Returns dest path on success.
     """
-    import time as _time
 
     headers = {
         "User-Agent": MOBILE_UA,
@@ -120,17 +119,11 @@ def download_video(url: str, dest: Path, session: requests.Session | None = None
 
     s = session or requests.Session()
 
-    # Probe total size via HEAD (抖音 CDN usually honours Content-Length)
+    # Probe total size via HEAD (抖音 365yg CDN usually honours Content-Length)
+    # Skip HEAD if it might consume a one-time signed URL — go segmented first,
+    # fall back to whole-file if Range is rejected.
     total_size = 0
     range_supported = True
-    try:
-        _head = s.head(url, headers=headers, timeout=30)
-        total_size = int(_head.headers.get("Content-Length", 0))
-        # Check if server signals Range support
-        if _head.headers.get("Accept-Ranges") == "none":
-            range_supported = False
-    except Exception:
-        pass
 
     dest.parent.mkdir(parents=True, exist_ok=True)
 
@@ -143,6 +136,7 @@ def download_video(url: str, dest: Path, session: requests.Session | None = None
 
     SEGMENT = 1 * 1024 * 1024  # 1 MB per segment
     downloaded = 0
+    range_rejected = False
 
     with open(dest, "wb") as f:
         while True:
@@ -153,29 +147,17 @@ def download_video(url: str, dest: Path, session: requests.Session | None = None
             range_end = (downloaded + SEGMENT - 1) if total_size == 0 else min(downloaded + SEGMENT, total_size - 1)
             seg_headers = {**headers, "Range": f"bytes={range_start}-{range_end}"}
 
-            # Retry up to 3 times per segment
-            seg_ok = False
-            range_rejected = False
-            for attempt in range(3):
-                try:
-                    seg = s.get(url, headers=seg_headers, stream=True, timeout=(30, 120))
-                    if seg.status_code == 416:
-                        # Server rejects Range — fall back to whole-file download
-                        range_rejected = True
-                        break
-                    if seg.status_code not in (200, 206):
-                        seg.raise_for_status()
-                    seg_len = 0
-                    for chunk in seg.iter_content(chunk_size=65536):
-                        f.write(chunk)
-                        seg_len += len(chunk)
-                    downloaded += seg_len
-                    seg_ok = True
-                    break
-                except Exception:
-                    if attempt == 2:
-                        raise
-                    _time.sleep(1.5 * (attempt + 1))
+            # One-shot: if Range fails, fall back to whole-file immediately
+            seg = s.get(url, headers=seg_headers, stream=True, timeout=(30, 120))
+            if seg.status_code not in (200, 206):
+                # CDN rejects Range → fall back to whole-file download
+                range_rejected = True
+            else:
+                seg_len = 0
+                for chunk in seg.iter_content(chunk_size=65536):
+                    f.write(chunk)
+                    seg_len += len(chunk)
+                downloaded += seg_len
 
             if range_rejected:
                 # Close current file handle and re-download whole
@@ -183,9 +165,6 @@ def download_video(url: str, dest: Path, session: requests.Session | None = None
                 if _download_whole(url, dest, headers, s):
                     return dest
                 raise RuntimeError("Whole-file fallback download failed")
-
-            if not seg_ok:
-                raise RuntimeError("Segment download failed after 3 retries")
 
             # When no total_size hint, stop after empty segment
             if total_size == 0 and seg_len < SEGMENT * 0.9:
