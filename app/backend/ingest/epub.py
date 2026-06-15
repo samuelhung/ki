@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import html.parser
 import logging
+import re
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
@@ -64,6 +65,15 @@ def _strip_html(html_text: str) -> str:
     return " ".join(stripper.parts)
 
 
+def _strip_xml_comments(xml_bytes: bytes) -> bytes:
+    """Strip XML comments to avoid '--' inside comments breaking Expat.
+
+    Some EPUB generators (e.g. KindleGen) emit meta tags with '--' inside
+    XML comment blocks, which is illegal per XML 1.0 and rejected by Expat.
+    """
+    return re.sub(rb'<!--.*?-->', b'', xml_bytes, flags=re.DOTALL)
+
+
 def _find_opf_path(zf: zipfile.ZipFile) -> str:
     """Locate the OPF root file path from META-INF/container.xml."""
     try:
@@ -71,6 +81,7 @@ def _find_opf_path(zf: zipfile.ZipFile) -> str:
     except KeyError:
         raise RuntimeError("无效 EPUB：缺少 META-INF/container.xml")
 
+    container_xml = _strip_xml_comments(container_xml)
     root = ET.fromstring(container_xml)
     elem = root.find(".//container:rootfile", _NS)
     if elem is None:
@@ -81,8 +92,12 @@ def _find_opf_path(zf: zipfile.ZipFile) -> str:
 def _extract_opf_meta(zf: zipfile.ZipFile, opf_path: str) -> tuple[str, list[str]]:
     """Extract title and ordered spine item paths from OPF."""
     opf_xml = zf.read(opf_path)
+    cleaned = opf_xml.decode("utf-8")
+    # Strip XML comments before parsing — some EPUB generators put '--' inside
+    # comments (e.g. title like 盐铁论--xxx), which is illegal in XML.
+    cleaned = re.sub(r'<!--.*?-->', '', cleaned, flags=re.DOTALL)
     # Remove default namespace so we don't have to prefix every tag
-    cleaned = opf_xml.decode("utf-8").replace('xmlns="http://www.idpf.org/2007/opf"', "")
+    cleaned = cleaned.replace('xmlns="http://www.idpf.org/2007/opf"', "")
     root = ET.fromstring(cleaned)
 
     # Title

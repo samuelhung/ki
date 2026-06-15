@@ -88,7 +88,7 @@ async def lifespan(app: FastAPI):
     stop_worker()
 
 
-app = FastAPI(title="知识情报中心", version="1.7.2", lifespan=lifespan)
+app = FastAPI(title="知识情报中心", version="1.7.3", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

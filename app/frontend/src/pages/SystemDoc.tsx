@@ -335,6 +335,16 @@ export default function SystemDoc() {
         <div className="space-y-8">
           {[
             {
+              version: '1.7.3',
+              date: '2026-06',
+              title: 'EPUB 注释兼容修复',
+              items: [
+                'KindleGen 生成 EPUB 的 OPF 注释含 -- 导致解析崩溃 — Expat 拒绝 XML 注释中出现双连字符',
+                '修复 — 解析 container.xml / OPF 前用正则剥离 <!-- ... --> 注释块，避免非法 -- 字符被 Expat 捕获',
+                '盐铁论 37.8 万字 EPUB 验证通过 — 14 章提取 + 书级总结 + 分类全链路正常',
+              ],
+            },
+            {
               version: '1.7.2',
               date: '2026-06',
               title: '书籍总结 + 状态汉化',
