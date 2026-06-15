@@ -25,6 +25,9 @@ def extract_first_url(text: str) -> str:
 def parse_share_text(share_text: str) -> dict:
     """Parse a douyin share text and return video metadata.
 
+    Uses the official douyin.com web API to get fresh CDN URLs
+    (avoids iesdouyin.com URLs with short-lived l= signatures).
+
     Returns dict with keys: video_id, platform_title, download_url, share_url
     """
     share_url = extract_first_url(share_text)
@@ -34,67 +37,48 @@ def parse_share_text(share_text: str) -> dict:
     headers = {"User-Agent": MOBILE_UA}
     session = requests.Session()
 
-    # Step 1: follow short link redirect to get video_id
+    # Step 1: follow short link redirect to get numeric aweme_id
     r = session.get(share_url, headers=headers, allow_redirects=True, timeout=30)
     r.raise_for_status()
-    video_id = r.url.split("?")[0].rstrip("/").split("/")[-1]
+    aweme_id = r.url.split("?")[0].rstrip("/").split("/")[-1]
 
-    # Step 2: fetch iesdouyin page with _ROUTER_DATA
-    page_url = f"https://www.iesdouyin.com/share/video/{video_id}"
-    page = session.get(page_url, headers=headers, timeout=30)
-    page.raise_for_status()
+    # Step 2: hit the official douyin web API for video detail
+    api_url = f"https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id={aweme_id}"
+    detail_resp = session.get(
+        api_url,
+        headers={**headers, "Referer": "https://www.douyin.com/"},
+        timeout=30,
+    )
+    detail_resp.raise_for_status()
 
-    # Step 3: extract JSON from window._ROUTER_DATA
-    marker = "window._ROUTER_DATA ="
-    idx = page.text.find(marker)
-    if idx < 0:
-        raise RuntimeError("页面中未找到 window._ROUTER_DATA（抖音页面结构可能已变化）")
+    data = detail_resp.json()
+    aweme = data.get("aweme_detail") or {}
+    if not aweme:
+        raise RuntimeError("API 返回中未找到 aweme_detail")
 
-    start = page.text.find("{", idx)
-    if start < 0:
-        raise RuntimeError("window._ROUTER_DATA 后未找到 JSON 起始 {")
-
-    depth = 0
-    end = -1
-    for i in range(start, len(page.text)):
-        ch = page.text[i]
-        if ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                end = i + 1
-                break
-
-    if end < 0:
-        raise RuntimeError("未能从页面中截取完整的 window._ROUTER_DATA JSON")
-
-    data = json.loads(page.text[start:end])
-    loader = data.get("loaderData") or {}
-    info_res = None
-    for k in ("video_(id)/page", "note_(id)/page"):
-        if k in loader and isinstance(loader[k], dict) and "videoInfoRes" in loader[k]:
-            info_res = loader[k]["videoInfoRes"]
-            break
-
-    if not info_res:
-        raise RuntimeError("未在 loaderData 中找到 videoInfoRes")
-
-    item_list = info_res.get("item_list") or []
-    if not item_list:
-        raise RuntimeError("videoInfoRes.item_list 为空")
-
-    item0 = item_list[0]
-    desc = (item0.get("desc") or "").strip() or f"douyin_{video_id}"
-    url_list = ((item0.get("video") or {}).get("play_addr") or {}).get("url_list") or []
+    desc = (aweme.get("desc") or "").strip() or f"douyin_{aweme_id}"
+    video_info = aweme.get("video") or {}
+    play_addr = video_info.get("play_addr") or {}
+    url_list = play_addr.get("url_list") or []
 
     if not url_list:
         raise RuntimeError("未解析到 video.play_addr.url_list")
 
-    play_url = str(url_list[0]).replace("playwm", "play")
+    # Prefer 365yg CDN URLs (no short-lived signature); use api-play as fallback
+    play_url = ""
+    for u in url_list:
+        u_str = str(u)
+        if "365yg.com" in u_str:
+            play_url = u_str
+            break
+    if not play_url:
+        play_url = str(url_list[-1])  # fallback: last URL (api-play redirect)
+
+    # Replace playwm with play for direct download
+    play_url = play_url.replace("playwm", "play")
 
     return {
-        "video_id": video_id,
+        "video_id": aweme_id,
         "platform_title": desc,
         "download_url": play_url,
         "share_url": share_url,

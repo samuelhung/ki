@@ -335,6 +335,16 @@ export default function SystemDoc() {
         <div className="space-y-8">
           {[
             {
+              version: '1.7.1',
+              date: '2026-06',
+              title: '抖音解析修复',
+              items: [
+                '抖音下载 403 修复 — parse_share_text 从 iesdouyin.com 页面解析切换为 douyin.com 官方 API，根治 CDN 短时效签名 l= 导致的下载失败',
+                '重试真正生效 — 失败任务重新解析分享文本时走 douyin.com API 获取新 CDN 链接，不再反复拿同一个过期 URL',
+                '代码简化 — 删除 ~40 行 _ROUTER_DATA JSON 手动解析（brace-counting），改为 resp.json() 直读',
+              ],
+            },
+            {
               version: '1.7.0',
               date: '2026-06',
               title: '全新总结模板',
