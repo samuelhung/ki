@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Upload, FileText, Lightbulb, ClipboardList, Layers, BookOpen, Code2, Settings } from 'lucide-react';
+import { LayoutDashboard, Upload, FileText, Lightbulb, ClipboardList, Layers, BookOpen, Code2, Settings, GitBranch } from 'lucide-react';
 
 import { APP_VERSION } from '../constants';
 
@@ -9,6 +9,7 @@ const navItems = [
   { to: '/ingest', icon: Upload, label: '内容采集' },
   { to: '/brainstorm', icon: Lightbulb, label: '头脑风暴' },
   { to: '/series', icon: Layers, label: '专题系列' },
+  { to: '/knowledge-graph', icon: GitBranch, label: '知识图谱' },
   { to: '/affairs', icon: ClipboardList, label: '综合事务' },
   { to: '/digest', icon: FileText, label: '摘要' },
 ];

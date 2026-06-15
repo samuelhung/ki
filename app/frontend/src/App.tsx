@@ -18,6 +18,7 @@ import EventDetailPage from './pages/EventDetailPage';
 import BrainstormDetailPage from './pages/BrainstormDetailPage';
 import SystemDoc from './pages/SystemDoc';
 import SystemSettings from './pages/SystemSettings';
+import KnowledgeGraph from './pages/KnowledgeGraph';
 
 function Layout() {
   return (
@@ -65,6 +66,7 @@ export default function App() {
           <Route path="event/:id" element={<EventDetailPage />} />
           <Route path="system" element={<SystemDoc />} />
           <Route path="settings" element={<SystemSettings />} />
+          <Route path="knowledge-graph" element={<KnowledgeGraph />} />
         </Route>
       </Routes>
     </EventCacheProvider>

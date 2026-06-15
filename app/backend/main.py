@@ -72,6 +72,7 @@ from .routes.usage_routes import router as usage_router
 from .routes.log_routes import router as log_router
 from .routes.system_routes import router as system_router
 from .routes.prompt_routes import router as prompt_router
+from .routes.entity_routes import router as entity_router
 
 
 @asynccontextmanager
@@ -156,6 +157,7 @@ app.include_router(usage_router)
 app.include_router(log_router)
 app.include_router(system_router)
 app.include_router(prompt_router)
+app.include_router(entity_router)
 
 
 # ---- Static file mounts ----

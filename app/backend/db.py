@@ -292,6 +292,47 @@ def init_db() -> None:
               scanned_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
+            -- ============================================================
+            -- Knowledge Graph tables
+            -- ============================================================
+
+            -- Entities extracted from content: people, orgs, locations, concepts, etc.
+            CREATE TABLE IF NOT EXISTS entities (
+              id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              type TEXT NOT NULL CHECK(type IN ('person','organization','location','concept','event','theory','book','metric')),
+              aliases_json TEXT NOT NULL DEFAULT '[]',
+              summary TEXT,
+              category TEXT,
+              first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            -- Event-to-entity mention links (many-to-many)
+            CREATE TABLE IF NOT EXISTS event_entities (
+              event_id TEXT NOT NULL,
+              entity_id TEXT NOT NULL,
+              relevance TEXT NOT NULL DEFAULT 'medium',
+              context_quote TEXT,
+              confidence REAL NOT NULL DEFAULT 1.0,
+              PRIMARY KEY (event_id, entity_id),
+              FOREIGN KEY (event_id) REFERENCES events(id),
+              FOREIGN KEY (entity_id) REFERENCES entities(id)
+            );
+
+            -- Semantic relations between entities, with evidence from content
+            CREATE TABLE IF NOT EXISTS entity_relations (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              source_entity_id TEXT NOT NULL,
+              target_entity_id TEXT NOT NULL,
+              relation_type TEXT NOT NULL CHECK(relation_type IN ('claims','refutes','extends','causes','belongs_to','contrasts','cites','synergizes')),
+              evidence_json TEXT NOT NULL DEFAULT '[]',
+              weight REAL NOT NULL DEFAULT 1.0,
+              first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY (source_entity_id) REFERENCES entities(id),
+              FOREIGN KEY (target_entity_id) REFERENCES entities(id)
+            );
+
             -- Sync triggers: keep events_fts in sync with events table
             CREATE TRIGGER IF NOT EXISTS trg_events_fts_insert AFTER INSERT ON events BEGIN
               INSERT INTO events_fts(event_id, title, title_cn, raw_summary, summary_cn, ai_summary)
@@ -333,6 +374,12 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_affairs_status ON affairs(status);
             CREATE INDEX IF NOT EXISTS idx_affairs_created_at ON affairs(created_at);
             CREATE INDEX IF NOT EXISTS idx_affair_event_rel_affair ON affair_event_relevance(affair_id);
+            CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(type);
+            CREATE INDEX IF NOT EXISTS idx_entities_name ON entities(name);
+            CREATE INDEX IF NOT EXISTS idx_event_entities_event ON event_entities(event_id);
+            CREATE INDEX IF NOT EXISTS idx_event_entities_entity ON event_entities(entity_id);
+            CREATE INDEX IF NOT EXISTS idx_entity_relations_src ON entity_relations(source_entity_id);
+            CREATE INDEX IF NOT EXISTS idx_entity_relations_tgt ON entity_relations(target_entity_id);
         """)
         # Backfill FTS5 index: sync any events not yet in the index
         _backfill_fts(conn)
