@@ -60,6 +60,9 @@ def _defaults() -> dict:
         "concept": {
             "auto_complete": {"temperature": 0.3, "max_tokens": 1500, "thinking": False},
         },
+        "knowledge_graph": {
+            "entity_insight": {"temperature": 0.5, "max_tokens": 2048, "thinking": False},
+        },
     }
 
 
