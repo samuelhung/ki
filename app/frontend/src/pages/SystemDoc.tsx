@@ -277,6 +277,7 @@ export default function SystemDoc() {
                 { name: '每日摘要', desc: 'AI 生成要闻 + QA 对 + 可拓展问题' },
                 { name: '事件列表', desc: 'FTS5 全文检索 + 分页 + 批量操作' },
                 { name: '信息源管理', desc: '8 源 RSS，采集页卡片 + 弹窗启停' },
+                { name: '知识图谱', desc: '实体关系提取、力导向图可视化、深度分析' },
               ].map(m => (
                 <div key={m.name} className="bg-[#0B0C10] rounded-lg p-3">
                   <div className="text-sm font-medium text-white">{m.name}</div>
@@ -297,6 +298,7 @@ export default function SystemDoc() {
                 { label: '语音', value: '火山引擎 ASR' },
                 { label: '搜索', value: 'FTS5 全文检索' },
                 { label: '图标', value: 'lucide-react' },
+                { label: '图谱', value: 'vis-network' },
                 { label: '构建', value: 'Vite + Rolldown' },
               ].map(t => (
                 <div key={t.label} className="bg-[#0B0C10] rounded-lg p-3">
@@ -325,6 +327,7 @@ export default function SystemDoc() {
               <p>• <span className="text-gray-300">综合事务引擎</span> — 纯手工输入 → AI 结构化判断 → 关联内容展示</p>
               <p>• <span className="text-gray-300">FTS5 全文检索</span> — 事件搜索 + 相似事件预筛选，O(n) → O(log n)</p>
               <p>• <span className="text-gray-300">组件化 + 统一标签</span> — 侧边面板独立组件，sourceLabel/statusLabel 集中管理</p>
+              <p>• <span className="text-gray-300">知识图谱</span> — AI 提取人物/组织/概念/事件实体及关系，vis-network 力导向图可视化，实体详情+关联内容弹窗预览，深度 AI 分析</p>
             </div>
           </div>
         </div>
@@ -334,6 +337,17 @@ export default function SystemDoc() {
       {tab === 'changelog' && (
         <div className="space-y-8">
           {[
+            {
+              version: '1.8.1',
+              date: '2026-06-15 15:03:28',
+              title: '系统设置完善',
+              items: [
+                '知识图谱 tab 新增实体深度分析 prompt — 变量名 system → system_prompt 适配动态提取规则，前端可查看只读模板',
+                '成本估算表补齐 entity_insight（实体深度分析）— 2048 tokens / 0.01 元，20 任务全量覆盖无遗漏',
+                '成本估算表 auto_suggest max_tokens 修正 — 表头 512→256，与专题引擎实际配置统一',
+                '侧边栏版本号修复 — 1.7.1 → 1.8.0 起已滞后，本次更新至 1.8.1',
+              ],
+            },
             {
               version: '1.8.0',
               date: '2026-06-15 14:30:00',

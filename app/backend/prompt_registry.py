@@ -46,6 +46,9 @@ MODULE_MAP: dict[str, dict[str, tuple[str, list[str]]]] = {
     "concept": {
         "auto_complete": ("classifier.py", ["classify_content"]),
     },
+    "knowledge_graph": {
+        "entity_insight": ("routes/entity_routes.py", ["get_entity_insight"]),
+    },
 }
 
 

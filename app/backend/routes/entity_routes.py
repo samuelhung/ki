@@ -511,7 +511,7 @@ def get_entity_insight(entity_id: str):
 
     context = "\n".join(lines)
 
-    system = """你是一位知识分析专家。请基于提供的实体信息及其关联内容和关联实体，进行建设性思考，输出结构化分析。
+    system_prompt = """你是一位知识分析专家。请基于提供的实体信息及其关联内容和关联实体，进行建设性思考，输出结构化分析。
 
 要求：
 1. 使用 Markdown 格式
@@ -524,7 +524,7 @@ def get_entity_insight(entity_id: str):
 4. 每个洞察要有具体内容支撑，不要泛泛而谈"""
 
     raw = chat(
-        [{"role": "system", "content": system}, {"role": "user", "content": context}],
+        [{"role": "system", "content": system_prompt}, {"role": "user", "content": context}],
         temperature=0.5,
         max_tokens=2048,
         timeout=90,

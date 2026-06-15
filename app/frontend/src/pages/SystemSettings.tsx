@@ -28,6 +28,7 @@ interface SystemConfig {
   digest_briefing: ModuleConfig;
   affairs: ModuleConfig;
   concept: ModuleConfig;
+  knowledge_graph: ModuleConfig;
 }
 
 /* ── 中文翻译 ── */
@@ -40,6 +41,7 @@ const TAB_LABELS: Record<string, string> = {
   digest_briefing: '摘要快报',
   affairs: '综合事务',
   concept: '概念沉淀',
+  knowledge_graph: '知识图谱',
 };
 
 const TASK_NAMES: Record<string, Record<string, string>> = {
@@ -61,6 +63,9 @@ const TASK_NAMES: Record<string, Record<string, string>> = {
   concept: {
     auto_complete: 'AI 补全',
   },
+  knowledge_graph: {
+    entity_insight: '实体深度分析',
+  },
 };
 
 const SUGGESTIONS: Record<string, Record<string, { temp: string; tokens: string }>> = {
@@ -75,7 +80,7 @@ const SUGGESTIONS: Record<string, Record<string, { temp: string; tokens: string 
     intro:         { temp: '0.3–0.5', tokens: '1024' },
     summary:       { temp: '0.2–0.3', tokens: '3072' },
     paper:         { temp: '0.4–0.6', tokens: '16384' },
-    auto_suggest:  { temp: '0.1',     tokens: '512' },
+    auto_suggest:  { temp: '0.1',     tokens: '256' },
   },
   brainstorm: {
     answer:        { temp: '0.2–0.4', tokens: '8192' },
@@ -94,6 +99,9 @@ const SUGGESTIONS: Record<string, Record<string, { temp: string; tokens: string 
   },
   concept: {
     auto_complete: { temp: '0.2–0.3', tokens: '1500' },
+  },
+  knowledge_graph: {
+    entity_insight: { temp: '0.4–0.6', tokens: '2048' },
   },
 };
 
@@ -409,7 +417,7 @@ export default function SystemSettings() {
                     ['专题导言 intro', '1024', '680', '&lt;0.01 元'],
                     ['结构化总结 summary', '3072', '2000', '0.02 元'],
                     ['论文分析 paper', '16384', '11000', '0.10 元'],
-                    ['即时匹配 auto_suggest', '512', '340', '&lt;0.01 元'],
+                    ['即时匹配 auto_suggest', '256', '170', '&lt;0.01 元'],
                     ['综合回答 answer', '8192', '5500', '0.05 元'],
                     ['对话总结 summary', '3000', '2000', '0.02 元'],
                     ['凝神静思 contemplate', '800', '530', '&lt;0.01 元'],
@@ -420,6 +428,7 @@ export default function SystemSettings() {
                     ['事务判断 judge', '16384', '11000', '0.10 元'],
                     ['事件关联 relevance', '8192', '5500', '0.05 元'],
                     ['AI 补全 auto_complete', '1500', '1000', '0.01 元'],
+                    ['实体深度分析 entity_insight', '2048', '1300', '0.01 元'],
                   ].map(([name, tokens, chars, cost]) => (
                     <tr key={name} className="border-b border-[#1E2025]">
                       <td className="py-1.5 pr-4">{name}</td>
