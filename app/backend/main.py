@@ -66,8 +66,8 @@ from .routes.brainstorm_routes import router as brainstorm_router
 from .routes.briefing_routes import router as briefing_router
 from .routes.ingest_routes import router as ingest_router
 from .routes.series_routes import router as series_router
-from .routes.affairs_routes import router as affairs_router
 from .routes.config_routes import router as config_router
+from .routes.task_routes import router as task_router
 from .routes.usage_routes import router as usage_router
 from .routes.log_routes import router as log_router
 from .routes.system_routes import router as system_router
@@ -151,8 +151,8 @@ app.include_router(brainstorm_router)
 app.include_router(briefing_router)
 app.include_router(ingest_router)
 app.include_router(series_router)
-app.include_router(affairs_router)
 app.include_router(config_router)
+app.include_router(task_router)
 app.include_router(usage_router)
 app.include_router(log_router)
 app.include_router(system_router)

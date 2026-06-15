@@ -205,16 +205,6 @@ def init_db() -> None:
               FOREIGN KEY (question_id) REFERENCES brainstorm_questions(id)
             );
 
-            -- Affair-to-event relevance cache — AI-evaluated relevance of each event to a given affair
-            CREATE TABLE IF NOT EXISTS affair_event_relevance (
-              affair_id TEXT NOT NULL,
-              event_id TEXT NOT NULL,
-              relevance TEXT NOT NULL,
-              reason TEXT,
-              judged_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-              PRIMARY KEY (affair_id, event_id)
-            );
-
             -- FTS5 full-text search (standalone table, trigram tokenizer for Chinese + English)
             CREATE VIRTUAL TABLE IF NOT EXISTS events_fts USING fts5(
               event_id UNINDEXED,
@@ -236,17 +226,17 @@ def init_db() -> None:
               finished_at TEXT
             );
 
-            -- Comprehensive affairs — user-submitted tasks with AI-assisted judgment
-            CREATE TABLE IF NOT EXISTS affairs (
+            -- Unified task management — manual tasks + KI-linked action items
+            CREATE TABLE IF NOT EXISTS tasks (
               id TEXT PRIMARY KEY,
-              title TEXT NOT NULL DEFAULT '',
-              body TEXT NOT NULL,
-              status TEXT NOT NULL DEFAULT 'pending',
-              ai_judgment_json TEXT,
-              related_events_json TEXT,
-              related_questions_json TEXT,
-              push_enabled INTEGER NOT NULL DEFAULT 0,
-              push_targets_json TEXT NOT NULL DEFAULT '[]',
+              title TEXT NOT NULL,
+              description TEXT NOT NULL DEFAULT '',
+              source TEXT NOT NULL DEFAULT 'manual',
+              source_id TEXT,
+              source_label TEXT,
+              priority TEXT NOT NULL DEFAULT 'medium',
+              due_date TEXT,
+              status TEXT NOT NULL DEFAULT 'todo',
               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
               updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
@@ -371,9 +361,9 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_brainstorm_links_question ON brainstorm_event_links(question_id);
             CREATE INDEX IF NOT EXISTS idx_brainstorm_links_event ON brainstorm_event_links(event_id);
             CREATE INDEX IF NOT EXISTS idx_brainstorm_messages_question ON brainstorm_messages(question_id, created_at);
-            CREATE INDEX IF NOT EXISTS idx_affairs_status ON affairs(status);
-            CREATE INDEX IF NOT EXISTS idx_affairs_created_at ON affairs(created_at);
-            CREATE INDEX IF NOT EXISTS idx_affair_event_rel_affair ON affair_event_relevance(affair_id);
+            CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+            CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
+            CREATE INDEX IF NOT EXISTS idx_tasks_source ON tasks(source);
             CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(type);
             CREATE INDEX IF NOT EXISTS idx_entities_name ON entities(name);
             CREATE INDEX IF NOT EXISTS idx_event_entities_event ON event_entities(event_id);

@@ -415,20 +415,21 @@ function EntityPanel({ detail, onClose, onEventClick }: { detail: any; onClose: 
           <div>
             <div className="flex items-center gap-2 mb-3">
               <span className="w-1 h-4 rounded-full bg-purple-400" />
-              <span className="text-xs text-purple-400 font-medium">深度分析</span>
-              <button
-                onClick={loadInsight}
-                className="ml-auto text-xs text-gray-500 hover:text-purple-400 transition-colors"
-                title="重新生成"
-              >
-                刷新
-              </button>
+              <span className="text-sm font-semibold text-gray-200">深度分析</span>
             </div>
             <div className="text-sm text-gray-300 leading-relaxed">
               {renderMarkdown(insight)}
             </div>
           </div>
         )}
+        <div className="mt-4 pt-3 border-t border-gray-800">
+          <button
+            onClick={() => window.open(`/tasks?source=content&source_id=${e.id}&source_label=来自实体：${e.name}`, '_blank')}
+            className="text-xs text-sky-400 hover:text-sky-300 transition-colors"
+          >
+            → 跟进此实体
+          </button>
+        </div>
       </div>
     </div>
   );

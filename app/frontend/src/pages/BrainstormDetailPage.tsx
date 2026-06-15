@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, Sparkles, Send, MessageSquare, Loader2, Lightbulb } from 'lucide-react';
+import { ArrowLeft, Search, Sparkles, Send, MessageSquare, Loader2, Lightbulb, Plus } from 'lucide-react';
 import { renderMarkdown } from '../components/MarkdownRenderer';
 import { formatTimeBeijing } from '../utils';
 
@@ -497,9 +497,11 @@ export default function BrainstormDetailPage() {
       <div className="max-w-6xl mx-auto">
 
         {/* Breadcrumb */}
-        <button onClick={() => navigate('/brainstorm')} className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors mb-6">
-          <ArrowLeft size={14} /> 头脑风暴
-        </button>
+        <div className="flex items-center mb-6">
+          <button onClick={() => navigate('/brainstorm')} className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors">
+            <ArrowLeft size={14} /> 头脑风暴
+          </button>
+        </div>
 
         {/* Header */}
         <div className="mb-6">
@@ -526,6 +528,13 @@ export default function BrainstormDetailPage() {
                 className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 border border-amber-500/30 transition-colors disabled:opacity-50 flex items-center gap-1.5">
                 {contemplating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                 <span className="hidden sm:inline">凝神静思</span>
+              </button>
+              <button
+                onClick={() => window.open(`/tasks?source=brainstorm&source_id=${id}&source_label=来自脑暴：${question?.title || ''}`, '_blank')}
+                className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 border border-sky-500/30 transition-colors flex items-center gap-1.5"
+              >
+                <Plus size={14} />
+                <span className="hidden sm:inline">添加待办</span>
               </button>
             </div>
           </div>

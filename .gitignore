@@ -1,36 +1,31 @@
-# 密钥
-.env
-
-# Python
-__pycache__/
-*.pyc
-*.pyo
-.pytest_cache/
-
-# 数据库
-*.sqlite
-*.sqlite-wal
-*.sqlite-shm
-ki.db
-
-# 前端构建
-app/frontend/dist/
-app/frontend/node_modules/
-
-# 大文件 - 视频不进 git
-data/ingest/videos/
-data/ingest/audio/
-
-# macOS
-.DS_Store
-.AppleDouble
-
-# 临时/缓存
-.superpowers/
-.hermes-*
 
 # IDE
-.idea/
-.vscode/
-*.swp
+# Python
+# macOS
+# 临时/缓存
+# 前端构建
+# 大文件 - 视频不进 git
+# 密钥
+# 数据库
+*.pyc
+*.pyo
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 *.swo
+*.swp
+.AppleDouble
+.DS_Store
+.env
+.hermes-*
+.idea/
+.pytest_cache/
+.superpowers/
+.vscode/
+__pycache__/
+app/frontend/dist/
+app/frontend/node_modules/
+data/ingest/audio/
+data/ingest/videos/
+data/logs/
+ki.db

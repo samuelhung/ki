@@ -53,9 +53,8 @@ def _defaults() -> dict:
             "briefing_quick": {"temperature": 0.3, "max_tokens": 3072,  "thinking": False},
             "briefing_daily": {"temperature": 0.3, "max_tokens": 8192,  "thinking": False},
         },
-        "affairs": {
+        "tasks": {
             "judge":     {"temperature": 0.4, "max_tokens": 16384, "thinking": False},
-            "relevance": {"temperature": 0.2, "max_tokens": 8192,  "thinking": False},
         },
         "concept": {
             "auto_complete": {"temperature": 0.3, "max_tokens": 1500, "thinking": False},

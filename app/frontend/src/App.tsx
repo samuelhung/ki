@@ -11,7 +11,7 @@ import Events from './pages/Events';
 import Sources from './pages/Sources';
 import Digest from './pages/Digest';
 import Brainstorm from './pages/Brainstorm';
-import Affairs from './pages/Affairs';
+import Tasks from './pages/Tasks';
 import Series from './pages/Series';
 import SeriesDetail from './pages/SeriesDetail';
 import EventDetailPage from './pages/EventDetailPage';
@@ -60,7 +60,7 @@ export default function App() {
           <Route path="digest" element={<Digest />} />
           <Route path="brainstorm" element={<Brainstorm />} />
           <Route path="brainstorm/:id" element={<BrainstormDetailPage />} />
-          <Route path="affairs" element={<Affairs />} />
+          <Route path="tasks" element={<Tasks />} />
           <Route path="series" element={<Series />} />
           <Route path="series/:id" element={<SeriesDetail />} />
           <Route path="event/:id" element={<EventDetailPage />} />

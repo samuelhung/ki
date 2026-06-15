@@ -26,7 +26,7 @@ interface SystemConfig {
   series: ModuleConfig;
   brainstorm: ModuleConfig;
   digest_briefing: ModuleConfig;
-  affairs: ModuleConfig;
+  tasks: ModuleConfig;
   concept: ModuleConfig;
   knowledge_graph: ModuleConfig;
 }
@@ -39,7 +39,7 @@ const TAB_LABELS: Record<string, string> = {
   series: '专题引擎',
   brainstorm: '头脑风暴',
   digest_briefing: '摘要快报',
-  affairs: '综合事务',
+  tasks: '待办事务',
   concept: '概念沉淀',
   knowledge_graph: '知识图谱',
 };
@@ -57,8 +57,8 @@ const TASK_NAMES: Record<string, Record<string, string>> = {
   digest_briefing: {
     digest: '每日摘要', briefing_quick: '即时快报', briefing_daily: '深度日报',
   },
-  affairs: {
-    judge: '事务判断', relevance: '事件关联',
+  tasks: {
+    judge: '事务判断',
   },
   concept: {
     auto_complete: 'AI 补全',
@@ -93,9 +93,8 @@ const SUGGESTIONS: Record<string, Record<string, { temp: string; tokens: string 
     briefing_quick:{ temp: '0.2–0.3', tokens: '3072' },
     briefing_daily:{ temp: '0.2–0.3', tokens: '8192' },
   },
-  affairs: {
+  tasks: {
     judge:         { temp: '0.3–0.4', tokens: '16384' },
-    relevance:     { temp: '0.1–0.2', tokens: '8192' },
   },
   concept: {
     auto_complete: { temp: '0.2–0.3', tokens: '1500' },
@@ -425,9 +424,8 @@ export default function SystemSettings() {
                     ['每日摘要 digest', '8192', '5500', '0.05 元'],
                     ['即时快报 briefing_quick', '3072', '2000', '0.02 元'],
                     ['深度日报 briefing_daily', '8192', '5500', '0.05 元'],
-                    ['事务判断 judge', '16384', '11000', '0.10 元'],
-                    ['事件关联 relevance', '8192', '5500', '0.05 元'],
                     ['AI 补全 auto_complete', '1500', '1000', '0.01 元'],
+                    ['事务判断 judge', '16384', '11000', '0.10 元'],
                     ['实体深度分析 entity_insight', '2048', '1300', '0.01 元'],
                   ].map(([name, tokens, chars, cost]) => (
                     <tr key={name} className="border-b border-[#1E2025]">

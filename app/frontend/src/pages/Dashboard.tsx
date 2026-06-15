@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { LayoutDashboard, Newspaper, Upload, Lightbulb, Radio, X, Globe, ChevronLeft, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, Newspaper, Upload, Lightbulb, Radio, X, Globe, ChevronLeft, ChevronRight, CheckSquare } from 'lucide-react';
 import MetricCard from '../components/MetricCard';
 import EventRow from '../components/EventRow';
 import EmptyState from '../components/EmptyState';
@@ -18,6 +18,7 @@ export default function Dashboard() {
   const [eventPage, setEventPage] = useState(1);
   const [eventTotal, setEventTotal] = useState(0);
   const EVENT_PAGE_SIZE = 5;
+  const [taskStats, setTaskStats] = useState({ todo: 0, in_progress: 0, done: 0, overdue: 0, total: 0 });
 
   function loadSummary() {
     setLoading(true); setError('');
@@ -42,11 +43,18 @@ export default function Dashboard() {
       .finally(() => setEventLoading(false));
   }
 
-  useEffect(() => { loadSummary(); loadEvents(1); }, []);
+  useEffect(() => { loadSummary(); loadEvents(1); loadTaskStats(); }, []);
   useEffect(() => { loadEvents(eventPage); }, [eventPage]);
 
   const [showSourcesModal, setShowSourcesModal] = useState(false);
   const [sources, setSources] = useState<any[]>([]);
+
+  function loadTaskStats() {
+    fetch('/api/tasks/stats')
+      .then(r => r.json())
+      .then(s => setTaskStats(s))
+      .catch(() => {});
+  }
 
   async function loadSources() {
     try {
@@ -109,6 +117,7 @@ export default function Dashboard() {
               <MetricCard icon={<Newspaper size={18} />} label="今日新增" value={summary.today_new} subtitle="内容采集 + 新增问题" color="purple" />
               <MetricCard icon={<Upload size={18} />} label="内容采集" value={summary.ingest_total} subtitle="累计采集内容" color="pink" />
               <MetricCard icon={<Lightbulb size={18} />} label="头脑风暴" value={summary.brainstorm_total} subtitle="累计提出问题" color="amber" />
+              <MetricCard icon={<CheckSquare size={18} />} label="待办事务" value={taskStats.total} subtitle={`${taskStats.todo} 待处理 · ${taskStats.overdue} 逾期`} color="blue" />
             </>
           )}
         </div>

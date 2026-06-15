@@ -39,9 +39,8 @@ MODULE_MAP: dict[str, dict[str, tuple[str, list[str]]]] = {
         "briefing_quick": ("briefing.py", ["generate_briefing"]),
         "briefing_daily": ("briefing.py", ["generate_briefing"]),
     },
-    "affairs": {
-        "judge": ("affairs_ai.py", ["analyze_affair"]),
-        "relevance": ("affairs_ai.py", ["_find_related_questions"]),
+    "tasks": {
+        "judge": ("routes/task_routes.py", ["_run_task_ai_judge"]),
     },
     "concept": {
         "auto_complete": ("classifier.py", ["classify_content"]),

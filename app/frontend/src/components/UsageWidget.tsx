@@ -41,7 +41,7 @@ const MODULE_NAMES: Record<string, string> = {
   series: '专题引擎',
   brainstorm: '头脑风暴',
   digest_briefing: '摘要快报',
-  affairs: '综合事务',
+  tasks: '待办事务',
   concept: '概念沉淀',
 };
 
@@ -50,7 +50,7 @@ const MODULE_COLORS: Record<string, string> = {
   series: 'bg-purple-500',
   brainstorm: 'bg-amber-500',
   digest_briefing: 'bg-emerald-500',
-  affairs: 'bg-pink-500',
+  tasks: 'bg-sky-500',
   concept: 'bg-blue-500',
 };
 
