@@ -335,6 +335,15 @@ export default function SystemDoc() {
         <div className="space-y-8">
           {[
             {
+              version: '1.7.2',
+              date: '2026-06',
+              title: '书籍总结 + 状态汉化',
+              items: [
+                '书籍级智能总结 — 超过5万字自动切换书级模板（13板块：全书概述、论证架构、各章要义、思想谱系、独到之处、可商榷之处等），DeepSeek V4 65536 token 输出，全文直投不截断',
+                '内容详情状态标签汉化 — completed → 已完成，digest → 已摘要，标题栏不再显示英文状态',
+              ],
+            },
+            {
               version: '1.7.1',
               date: '2026-06',
               title: '抖音解析修复',

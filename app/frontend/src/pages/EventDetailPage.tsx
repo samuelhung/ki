@@ -6,8 +6,8 @@ import { formatTimeBeijing, sourceLabel, statusLabel } from '../utils';
 
 const API_BASE = '/api/events';
 
-const STATUS_LABEL: Record<string, string> = { ready: '就绪', processing: '处理中', failed: '失败', done: '已完成' };
-const STATUS_COLOR: Record<string, string> = { ready: 'text-gray-400', processing: 'text-amber-400', failed: 'text-red-400', done: 'text-emerald-400' };
+const STATUS_LABEL: Record<string, string> = { ready: '就绪', processing: '处理中', failed: '失败', done: '已完成', completed: '已完成', digest: '已摘要' };
+const STATUS_COLOR: Record<string, string> = { ready: 'text-gray-400', processing: 'text-amber-400', failed: 'text-red-400', done: 'text-emerald-400', completed: 'text-emerald-400', digest: 'text-purple-400' };
 
 interface Event {
   id: string; source_id: string; title: string; title_cn?: string;

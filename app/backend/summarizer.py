@@ -1,4 +1,4 @@
-"""Generate structured summaries from douyin transcripts using DeepSeek API.
+"""Generate structured summaries from transcripts and documents using DeepSeek API.
 """
 
 from __future__ import annotations
@@ -8,6 +8,8 @@ import logging
 from .deepseek_client import chat
 
 logger = logging.getLogger(__name__)
+
+# ── 视频/短文模板 ──
 
 SUMMARY_TEMPLATE = """你是中文内容总结助手。请严格基于原文，按以下结构输出 Markdown。
 
@@ -71,23 +73,143 @@ SUMMARY_TEMPLATE = """你是中文内容总结助手。请严格基于原文，�
 （基于原文自然延伸但未回答的问题，3-5 条，只出问题不下结论）"""
 
 
-def summarize_transcript(transcript: str, title: str = "", timeout: int = 180, need_title: bool = False) -> dict | None:
-    """Generate a structured Chinese summary + plain overview from a transcript.
+# ── 书籍/长文档模板 ──
 
-    Returns dict with keys 'summary' (markdown body) and 'overview' (≤500 chars narrative),
+BOOK_TEMPLATE = """你是一位资深学术书评人。以下内容来自一本完整书籍的全文。你的任务是撰写一份详尽、有深度的书评式总结。请严格基于原文，按以下结构输出 Markdown。
+
+规则：
+- 只基于原文，不得引入外部知识或常识补全
+- 所有判断需有原文事实/引语支撑，引用原文关键句时标注所在章
+- 写一份"配得上一本书的总结"——每个板块都要充实，不要蜻蜓点水
+- 不适用就写"该书不涉及此维度"
+
+---
+
+## 全书概述（800-1200字）
+
+叙事式概述，回答三个问题：
+- 这本书要回答什么核心问题？作者站在什么立场、用什么方法？
+- 全书读完最应该被记住的三件事是什么？
+- 不逐章复述目录，而是抓住论证主线和思想贡献
+
+## 论证架构
+
+展示全书如何组织论证——分几条主线、各线之间是什么关系、在何处交汇形成核心判断。
+
+格式：
+1. **主线一：……**（涵盖第 X-Y 章）——这条线解决什么问题？
+2. **主线二：……**（涵盖第 Z-W 章）——与前一条线的关系是对比/递进/补证？
+   ↳ 两条线在何处交汇，形成什么判断？
+
+## 核心论点（3-5条）
+
+不是复述章节标题，而是读完后的独立判断。每条包含：**论点 + 论据**（引用原文关键句或数据，标注所在章）。
+
+## 各章要义
+
+每章一段，包含三个要素：
+- **定位**：这章在全书论证中起什么作用（铺垫/转折/高潮/收束）
+- **核心内容**：200-300字的概括
+- **关键判断**：这章最值得记住的一个判断
+
+## 关键人物/概念/事件
+
+全书反复出现的重要实体，分三组呈现。每组每个实体附带一句话角色说明。
+
+### 人物谱系
+### 核心概念
+### 关键事件
+
+## 思想谱系
+
+- 作者在跟谁对话？（继承谁的思路、反驳谁的观点、填补什么空白）
+- 引用了哪些著作/学派/理论框架作为论据？
+- 这本书在其所属领域的知识地图中处于什么位置？
+
+## 独到之处
+
+这本书跟同类题材/同领域著作相比，最不一样的三点是什么？可以是独特立场、少见史料、创新写法、有争议的判断——不一定是优点，但一定是特点。
+
+## 可商榷之处
+
+以独立思考的读者视角审视：
+- 哪些论证所依赖的假设值得推敲？
+- 哪些关键问题作者回避或轻轻带过？
+- 哪些史料/数据的解读可以有不同看法？
+- 作者的立场是否在某个议题上导致系统性偏差？
+确实没有明显可商榷的就写"该书论证严密，未发现明显可商榷之处"
+
+## 机会透镜
+
+不强行找关联，但一本书的价值往往在于能否跨越时空提供启发。
+
+### 中国市场关联
+- 如果书中讨论的机制/模式/规律可以迁移到理解中国市场，具体怎么迁移？为什么能/不能？
+
+### 国际视角
+- 这本书对理解当前全球格局有哪些启发？哪些判断经得起时间检验？
+
+## 拓展问题（5-8条）
+
+基于全书内容自然延伸、但作者没有直接回答的深层问题。问题要有思辨深度——不是"XXXX是什么"的信息性提问，而是"如果X成立，Y是否必然？"这种推演式提问。
+
+## 延伸阅读
+
+基于本书推荐 3-5 本相关的书或论文，每本附一句（≤30字）说明推荐理由。可以是对照、补充、思想源头或对立面。"""
+
+
+# ── 主函数 ──
+
+BOOK_THRESHOLD = 50000       # 超过此字符数走书级模板
+BOOK_INPUT_CAP = 600000      # 硬天花板，防止超 1M token
+VIDEO_MAX_INPUT = 8000       # 视频/短文的截断上限
+
+
+def summarize_transcript(
+    transcript: str,
+    title: str = "",
+    timeout: int = 180,
+    need_title: bool = False,
+) -> dict | None:
+    """Generate a structured Chinese summary + overview.
+
+    Auto-detects book-length content (>50K chars) and switches to a
+    detailed book-review template with full-text input and expanded output.
+
+    Returns dict with keys 'summary' (markdown body) and 'overview' (narrative),
     plus 'suggested_title' when need_title=True.  Returns None on failure.
     """
     if not transcript or len(transcript.strip()) < 100:
         logger.warning("Transcript too short for summarization")
         return None
 
-    # Truncate very long transcripts
-    max_input = 8000
-    truncated = transcript[:max_input] if len(transcript) > max_input else transcript
+    text_len = len(transcript)
 
-    user_prompt = f"原文标题：{title}\n\n原文内容：\n{truncated}"
+    # ── Auto-detect: book-length content → book template ──
+    use_book_template = text_len > BOOK_THRESHOLD
 
-    system_prompt = SUMMARY_TEMPLATE
+    if use_book_template:
+        max_input = BOOK_INPUT_CAP
+        system_prompt = BOOK_TEMPLATE
+        max_tokens = 65536
+        overview_label = "全书概述"
+    else:
+        max_input = VIDEO_MAX_INPUT
+        system_prompt = SUMMARY_TEMPLATE
+        max_tokens = 4096
+        overview_label = "概述"
+
+    truncated = transcript[:max_input] if text_len > max_input else transcript
+
+    if use_book_template:
+        user_prompt = (
+            f"书名：{title}\n\n"
+            f"以下为全书全文（约 {text_len} 字符）。请撰写详尽书评式总结。\n\n"
+            f"{truncated}"
+        )
+    else:
+        user_prompt = f"原文标题：{title}\n\n原文内容：\n{truncated}"
+
     if need_title:
         system_prompt += "\n\n此外，请根据内容生成一个简洁的标题（≤30字），用 `## 建议标题` 标注在全文末尾。"
 
@@ -96,69 +218,70 @@ def summarize_transcript(transcript: str, title: str = "", timeout: int = 180, n
         {"role": "user", "content": user_prompt},
     ]
 
-    content = chat(messages, temperature=0.4, max_tokens=4096, timeout=timeout,
-                   module="ingest_pipeline", task="summarize")
+    content = chat(
+        messages,
+        temperature=0.4,
+        max_tokens=max_tokens,
+        timeout=timeout,
+        module="ingest_pipeline",
+        task="summarize",
+    )
     if not content:
         return None
 
-    # ── Parse the new template structure ──
-    # Structure: ## 概述 (narrative) → ## 核心论点 → ... → ## 深挖问题 → [## 建议标题]
+    # ── Parse: extract overview and summary body ──
+    overview_marker = f"## {overview_label}"
+    thesis_marker = "## 论证架构" if use_book_template else "## 核心论点"
+    title_marker = "## 建议标题"
+
     overview = ""
     summary = content
     suggested_title = ""
 
-    overview_marker = "## 概述"
-    thesis_marker = "## 核心论点"
-    title_marker = "## 建议标题"
-
     if overview_marker in content and thesis_marker in content:
-        # Split: everything before ## 核心论点 is overview, everything from ## 核心论点 onward is summary body
         ov_start = content.index(overview_marker)
         th_start = content.index(thesis_marker)
-
         if ov_start < th_start:
-            # Extract overview text between ## 概述 and ## 核心论点
-            ov_raw = content[ov_start + len(overview_marker):th_start].strip()
-            overview = ov_raw
-
-            # Summary body starts from ## 核心论点
+            overview = content[ov_start + len(overview_marker):th_start].strip()
             summary = content[th_start:]
 
-            # If need_title, strip ## 建议标题 from end of summary
             if need_title and title_marker in summary:
                 ti_pos = summary.index(title_marker)
                 title_text = summary[ti_pos + len(title_marker):].strip()
                 summary = summary[:ti_pos].strip()
-                # Extract title: first non-empty line, strip markers
                 for line in title_text.split("\n"):
                     clean = line.strip().lstrip("-* ").strip()
                     if clean:
                         suggested_title = clean
                         break
 
-    # ── Limit overview to ~500 chars at sentence boundary ──
-    if len(overview) > 500:
-        cut = overview[:500]
-        last_period = max(cut.rfind('。'), cut.rfind('！'), cut.rfind('？'))
-        overview = cut[:last_period + 1] if last_period >= 0 else cut[:500]
+    # ── Trim overview to length ──
+    ov_limit = 1200 if use_book_template else 500
+    if len(overview) > ov_limit:
+        cut = overview[:ov_limit]
+        last_period = max(cut.rfind("。"), cut.rfind("！"), cut.rfind("？"))
+        overview = cut[:last_period + 1] if last_period >= 0 else cut[:ov_limit]
 
-    # ── Fallback: if markers not found, treat whole as summary ──
-    if not overview and overview_marker not in content:
-        # Old format or unexpected output — extract overview from end as before
-        if overview_marker in content:
-            parts = content.split(overview_marker, 1)
-            summary = parts[0].strip()
-            overview = parts[1].strip()
-            if len(overview) > 500:
-                cut = overview[:500]
-                last_period = max(cut.rfind('。'), cut.rfind('！'), cut.rfind('？'))
-                overview = cut[:last_period + 1] if last_period >= 0 else cut[:500]
+    # ── Fallback: markers not found ──
+    if not overview and overview_marker in content:
+        parts = content.split(overview_marker, 1)
+        summary = parts[0].strip()
+        overview = parts[1].strip()
+        if len(overview) > ov_limit:
+            cut = overview[:ov_limit]
+            last_period = max(cut.rfind("。"), cut.rfind("！"), cut.rfind("？"))
+            overview = cut[:last_period + 1] if last_period >= 0 else cut[:ov_limit]
 
     result = {"summary": summary, "overview": overview}
     if suggested_title:
         result["suggested_title"] = suggested_title
 
-    logger.info("Summary + overview generated (%d chars transcript → %d chars summary, %d chars overview)%s",
-                len(transcript), len(summary), len(overview),
-                f", title={suggested_title}" if suggested_title else "")
+    logger.info(
+        "Summary + overview generated (%d chars input, %s → %d chars summary, %d chars overview)%s",
+        text_len,
+        "book" if use_book_template else "video",
+        len(summary),
+        len(overview),
+        f", title={suggested_title}" if suggested_title else "",
+    )
     return result
