@@ -5,17 +5,17 @@ import { LayoutDashboard, Upload, FileText, Lightbulb, ClipboardList, Layers, Bo
 import { APP_VERSION } from '../constants';
 
 const navItems = [
-  { to: '/', icon: LayoutDashboard, label: '仪表盘' },
-  { to: '/ingest', icon: Upload, label: '内容采集' },
-  { to: '/brainstorm', icon: Lightbulb, label: '头脑风暴' },
-  { to: '/series', icon: Layers, label: '专题系列' },
-  { to: '/knowledge-graph', icon: GitBranch, label: '知识图谱' },
-  { to: '/affairs', icon: ClipboardList, label: '综合事务' },
-  { to: '/digest', icon: FileText, label: '摘要' },
+  { to: '/', icon: LayoutDashboard, label: '仪表盘', color: 'text-blue-400' },
+  { to: '/ingest', icon: Upload, label: '内容采集', color: 'text-emerald-400' },
+  { to: '/brainstorm', icon: Lightbulb, label: '头脑风暴', color: 'text-amber-400' },
+  { to: '/series', icon: Layers, label: '专题系列', color: 'text-purple-400' },
+  { to: '/knowledge-graph', icon: GitBranch, label: '知识图谱', color: 'text-cyan-400' },
+  { to: '/affairs', icon: ClipboardList, label: '综合事务', color: 'text-orange-400' },
+  { to: '/digest', icon: FileText, label: '摘要', color: 'text-rose-400' },
 ];
 
 const bottomItems = [
-  { to: '/system', icon: BookOpen, label: '系统说明' },
+  { to: '/system', icon: BookOpen, label: '系统说明', color: 'text-teal-400' },
 ];
 
 export default function Sidebar() {
@@ -39,7 +39,7 @@ export default function Sidebar() {
                 }`
               }
             >
-              <Icon size={18} />
+              <Icon size={18} className={item.color} />
               <span>{item.label}</span>
             </NavLink>
           );
@@ -54,7 +54,7 @@ export default function Sidebar() {
             }`
           }
         >
-          <Settings size={18} />
+          <Settings size={18} className="text-gray-400" />
           <span>系统设置</span>
         </NavLink>
         <a
@@ -63,7 +63,7 @@ export default function Sidebar() {
           rel="noopener noreferrer"
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-gray-200 hover:bg-[#1A1B20] transition-colors"
         >
-          <Code2 size={18} />
+          <Code2 size={18} className="text-indigo-400" />
           <span>API 文档</span>
         </a>
         {bottomItems.map((item) => {
@@ -78,7 +78,7 @@ export default function Sidebar() {
                 }`
               }
             >
-              <Icon size={18} />
+              <Icon size={18} className={item.color} />
               <span>{item.label}</span>
             </NavLink>
           );
