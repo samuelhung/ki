@@ -9,7 +9,7 @@ CHINESE_STUDY_HTML = """<!DOCTYPE html>
 <title>{title}</title>
 <style>
   @page {{ size: A4; margin: 16mm 14mm; }}
-  body {{ font-family: "PingFang SC", "Hiragino Sans GB", sans-serif; font-size: 14px; line-height: 1.9; color: #1a1a1a; max-width: 700px; margin: 0 auto; }}
+  body {{ font-family: "PingFang SC", "Hiragino Sans GB", sans-serif; font-size: 14px; line-height: 1.9; color: #1a1a1a; background: #fff; max-width: 700px; margin: 0 auto; }}
   h1 {{ font-size: 22px; text-align: center; margin: 24px 0 32px; color: #111; }}
   h2 {{ font-size: 18px; margin: 28px 0 14px; padding-bottom: 6px; border-bottom: 2px solid #e0e0e0; color: #333; }}
   h3 {{ font-size: 16px; margin: 20px 0 10px; color: #444; }}
@@ -43,7 +43,7 @@ MATH_STUDY_HTML = """<!DOCTYPE html>
 <title>{title}</title>
 <style>
   @page {{ size: A4; margin: 16mm 14mm; }}
-  body {{ font-family: "PingFang SC", "Hiragino Sans GB", sans-serif; font-size: 14px; line-height: 1.9; color: #1a1a1a; max-width: 700px; margin: 0 auto; }}
+  body {{ font-family: "PingFang SC", "Hiragino Sans GB", sans-serif; font-size: 14px; line-height: 1.9; color: #1a1a1a; background: #fff; max-width: 700px; margin: 0 auto; }}
   h1 {{ font-size: 22px; text-align: center; margin: 24px 0 32px; }}
   h2 {{ font-size: 18px; margin: 28px 0 14px; padding-bottom: 6px; border-bottom: 2px solid #e0e0e0; }}
   h3 {{ font-size: 16px; margin: 20px 0 10px; }}
@@ -73,7 +73,7 @@ ENGLISH_STUDY_HTML = """<!DOCTYPE html>
 <title>{title}</title>
 <style>
   @page {{ size: A4; margin: 12mm 11mm; }}
-  body {{ font-family: "Times New Roman", "PingFang SC", sans-serif; font-size: 13px; line-height: 1.8; color: #1a1a1a; max-width: 750px; margin: 0 auto; }}
+  body {{ font-family: "Times New Roman", "PingFang SC", sans-serif; font-size: 13px; line-height: 1.8; color: #1a1a1a; background: #fff; max-width: 750px; margin: 0 auto; }}
   h1 {{ font-size: 20px; text-align: center; margin: 20px 0 24px; color: #16829c; }}
   h2 {{ font-size: 16px; margin: 24px 0 12px; color: #16829c; border-bottom: 1px solid #95d8e1; padding-bottom: 4px; }}
   h3 {{ font-size: 14px; margin: 16px 0 8px; color: #0d5c6e; }}

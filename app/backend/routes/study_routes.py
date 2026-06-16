@@ -27,12 +27,14 @@ class StudyCreateRequest(BaseModel):
     title: str = ""
     raw_content: str = ""
     grade: str = ""
+    textbook: str = ""
     source_type: str = "manual"
 
 class StudyUpdateRequest(BaseModel):
     title: str | None = None
     subject: str | None = None
     grade: str | None = None
+    textbook: str | None = None
     study_type: str | None = None
     score: int | None = None
     is_correct: int | None = None
@@ -80,7 +82,7 @@ def list_materials(
         ).fetchone()[0]
 
         rows = conn.execute(
-            f"""SELECT id, subject, grade, study_type, title, source_type,
+            f"""SELECT id, subject, grade, textbook, study_type, title, source_type,
                        status, score, is_correct, created_at, updated_at
                 FROM study_materials
                 WHERE {where}
@@ -112,7 +114,7 @@ def get_material(material_id: str):
         raise HTTPException(status_code=404, detail="资料不存在")
 
     d = dict(row)
-    for field in ("formats_json", "mistake_tags", "tags_json"):
+    for field in ("formats_json", "mistake_tags", "tags_json", "lessons_json"):
         try:
             d[field] = json.loads(d[field])
         except (json.JSONDecodeError, TypeError):
@@ -131,9 +133,9 @@ def create_material(req: StudyCreateRequest):
     with connect() as conn:
         conn.execute(
             """INSERT INTO study_materials
-               (id, subject, grade, study_type, title, source_type, raw_content, status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'draft')""",
-            (material_id, req.subject, req.grade, req.study_type,
+               (id, subject, grade, textbook, study_type, title, source_type, raw_content, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft')""",
+            (material_id, req.subject, req.grade, req.textbook, req.study_type,
              req.title or "未命名", req.source_type, req.raw_content),
         )
 
@@ -150,7 +152,7 @@ def update_material(material_id: str, req: StudyUpdateRequest):
     """更新学习资料（批改、标注对错等）"""
     init_db()
     updates = {}
-    for field in ("title", "subject", "grade", "study_type", "score", "is_correct", "status"):
+    for field in ("title", "subject", "grade", "textbook", "study_type", "score", "is_correct", "status"):
         val = getattr(req, field, None)
         if val is not None:
             updates[field] = val
@@ -183,6 +185,95 @@ def delete_material(material_id: str):
     with connect() as conn:
         conn.execute("DELETE FROM study_materials WHERE id = ?", (material_id,))
     return {"deleted": material_id}
+
+
+# ── 文件上传 + OCR ──
+
+@router.post("/upload")
+def upload_and_ocr(
+    file: UploadFile = File(...),
+    category: str = Form(""),
+    subject: str = Form(""),
+    study_type: str = Form(""),
+    grade: str = Form(""),
+    title: str = Form(""),
+):
+    """上传 PDF/图片。教材类保留原文件；其他类型 OCR 提取文字。"""
+    import base64
+    import tempfile
+
+    ext = Path(file.filename or "upload.pdf").suffix.lower()
+    if ext not in (".pdf", ".png", ".jpg", ".jpeg", ".webp"):
+        raise HTTPException(status_code=400, detail=f"不支持的文件类型: {ext}")
+
+    # 保存文件
+    raw_bytes = file.file.read()
+
+    # 教材类：直接保存原文件 + 自动创建记录
+    if category == "教材/课本":
+        material_id = str(uuid.uuid4())
+        material_dir = STUDY_DATA_DIR / material_id
+        material_dir.mkdir(parents=True, exist_ok=True)
+        raw_dir = material_dir / "raw"
+        raw_dir.mkdir(exist_ok=True)
+        dest = raw_dir / f"original{ext}"
+        dest.write_bytes(raw_bytes)
+
+        init_db()
+        with connect() as conn:
+            conn.execute(
+                """INSERT INTO study_materials
+                   (id, subject, grade, textbook, study_type, title, source_type, raw_content, status)
+                   VALUES (?, ?, ?, ?, ?, ?, 'pdf', ?, 'draft')""",
+                (material_id, subject, grade, title or "", "教材/课本",
+                 title or file.filename.rsplit(".", 1)[0], str(dest.relative_to(STUDY_DATA_DIR.parent))),
+            )
+
+        return {
+            "material_id": material_id,
+            "text": "",
+            "file_saved": str(dest.relative_to(STUDY_DATA_DIR.parent)),
+            "skip_ocr": True,
+            "auto_created": True,
+        }
+
+    # 其他类型：OCR 提取文字
+    tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
+    tmp.write(raw_bytes)
+    tmp.close()
+    tmp_path = Path(tmp.name)
+
+    try:
+        text = ""
+        if ext == ".pdf":
+            from ..ingest.pdf_ocr import process_pdf
+            try:
+                result = process_pdf(tmp_path)
+                text = result.get("text", "")
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"PDF 解析失败: {e}")
+        else:
+            from ..ingest.pdf_ocr import ocr_page
+            b64 = base64.b64encode(raw_bytes).decode()
+            text = ocr_page(b64)
+
+        # 存到 data/study/ 下
+        material_id = str(uuid.uuid4())
+        material_dir = STUDY_DATA_DIR / material_id
+        material_dir.mkdir(parents=True, exist_ok=True)
+        raw_dir = material_dir / "raw"
+        raw_dir.mkdir(exist_ok=True)
+        dest = raw_dir / f"uploaded{ext}"
+        tmp_path.rename(dest)
+
+        return {
+            "material_id": material_id,
+            "text": text.strip(),
+            "file_saved": str(dest.relative_to(STUDY_DATA_DIR.parent)),
+        }
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink(missing_ok=True)
 
 
 # ── AI 生成讲题稿 ──
@@ -252,9 +343,20 @@ def get_study_file(material_id: str, fmt: str):
         "md": "讲题稿版.md",
         "html": "讲题稿打印版.html",
         "pdf": "讲题稿版.pdf",
+        "original": None,  # 动态查找原始文件
     }
     if fmt not in file_map:
         raise HTTPException(status_code=400, detail=f"不支持的格式: {fmt}")
+    if fmt == "original":
+        # 教材原始PDF：raw_content 存的是文件路径
+        with connect() as conn:
+            row = conn.execute("SELECT raw_content FROM study_materials WHERE id = ?", (material_id,)).fetchone()
+        if not row or not row["raw_content"]:
+            raise HTTPException(status_code=404, detail="原始文件不存在")
+        orig_path = STUDY_DATA_DIR.parent / row["raw_content"]
+        if not orig_path.exists():
+            raise HTTPException(status_code=404, detail="原始文件已丢失")
+        return FileResponse(orig_path)
     path = md_dir / file_map[fmt]
     if not path.exists():
         raise HTTPException(status_code=404, detail="文件尚未生成")

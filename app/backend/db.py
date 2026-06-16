@@ -328,6 +328,7 @@ def init_db() -> None:
               id              TEXT PRIMARY KEY,
               subject         TEXT NOT NULL DEFAULT '',
               grade           TEXT DEFAULT '',
+              textbook        TEXT DEFAULT '',
               study_type      TEXT NOT NULL DEFAULT '',
               title           TEXT NOT NULL DEFAULT '',
               source_type     TEXT DEFAULT 'manual',
@@ -340,6 +341,7 @@ def init_db() -> None:
               is_correct      INTEGER,
               mistake_tags    TEXT DEFAULT '[]',
               tags_json       TEXT DEFAULT '[]',
+              lessons_json    TEXT DEFAULT '[]',
               created_at      TEXT NOT NULL DEFAULT (datetime('now')),
               updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
             );
@@ -397,6 +399,10 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_study_status ON study_materials(status);
             CREATE INDEX IF NOT EXISTS idx_study_created ON study_materials(created_at);
         """)
+        # Migration: add textbook column for existing installs
+        _migrate_textbook(conn)
+        # Migration: add lessons_json column for textbook lesson analysis
+        _migrate_lessons_json(conn)
         # Backfill FTS5 index: sync any events not yet in the index
         _backfill_fts(conn)
 
@@ -407,6 +413,20 @@ def _migrate_events_cn(conn: sqlite3.Connection) -> None:
     for col in ("title_cn", "summary_cn", "translation_status", "translation_error", "last_error", "progress_stages", "video_path", "audio_path", "document_path", "content_type", "overview", "last_discovered_at", "suggested_series_json"):
         if col not in cols:
             conn.execute(f"ALTER TABLE events ADD COLUMN {col} TEXT")
+
+
+def _migrate_textbook(conn: sqlite3.Connection) -> None:
+    """Add textbook column to study_materials if missing."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(study_materials)").fetchall()}
+    if "textbook" not in cols:
+        conn.execute("ALTER TABLE study_materials ADD COLUMN textbook TEXT DEFAULT ''")
+
+
+def _migrate_lessons_json(conn: sqlite3.Connection) -> None:
+    """Add lessons_json column to study_materials if missing."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(study_materials)").fetchall()}
+    if "lessons_json" not in cols:
+        conn.execute("ALTER TABLE study_materials ADD COLUMN lessons_json TEXT DEFAULT '[]'")
 
 
 def _backfill_fts(conn: sqlite3.Connection) -> None:
