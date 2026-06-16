@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Upload, FileText, Lightbulb, CheckSquare, Layers, BookOpen, Code2, Settings, GitBranch } from 'lucide-react';
+import { LayoutDashboard, Upload, FileText, Lightbulb, CheckSquare, Layers, BookOpen, Code2, Settings, GitBranch, GraduationCap } from 'lucide-react';
 
 import { APP_VERSION } from '../constants';
 
@@ -12,6 +12,7 @@ const navItems = [
   { to: '/knowledge-graph', icon: GitBranch, label: '知识图谱', color: 'text-cyan-400' },
   { to: '/tasks', icon: CheckSquare, label: '待办事务', color: 'text-sky-400' },
   { to: '/digest', icon: FileText, label: '摘要', color: 'text-rose-400' },
+  { to: '/study', icon: GraduationCap, label: '辅导中心', color: 'text-amber-400' },
 ];
 
 const bottomItems = [

@@ -19,6 +19,9 @@ import BrainstormDetailPage from './pages/BrainstormDetailPage';
 import SystemDoc from './pages/SystemDoc';
 import SystemSettings from './pages/SystemSettings';
 import KnowledgeGraph from './pages/KnowledgeGraph';
+import Study from './pages/Study';
+import StudyDetail from './pages/StudyDetail';
+import StudyMistakes from './pages/StudyMistakes';
 
 function Layout() {
   return (
@@ -67,6 +70,9 @@ export default function App() {
           <Route path="system" element={<SystemDoc />} />
           <Route path="settings" element={<SystemSettings />} />
           <Route path="knowledge-graph" element={<KnowledgeGraph />} />
+          <Route path="study" element={<Study />} />
+          <Route path="study/:id" element={<StudyDetail />} />
+          <Route path="study/mistakes" element={<StudyMistakes />} />
         </Route>
       </Routes>
     </EventCacheProvider>

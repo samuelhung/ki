@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Upload, Lightbulb, FileText, CheckSquare, Layers } from 'lucide-react';
+import { LayoutDashboard, Upload, Lightbulb, FileText, CheckSquare, Layers, GraduationCap } from 'lucide-react';
 
 const tabs = [
   { to: '/', icon: LayoutDashboard, label: '仪表盘' },
@@ -9,6 +9,7 @@ const tabs = [
   { to: '/series', icon: Layers, label: '专题' },
   { to: '/tasks', icon: CheckSquare, label: '待办' },
   { to: '/digest', icon: FileText, label: '摘要' },
+  { to: '/study', icon: GraduationCap, label: '辅导' },
 ];
 
 export default function BottomTabBar() {
