@@ -62,6 +62,12 @@ def _defaults() -> dict:
         "knowledge_graph": {
             "entity_insight": {"temperature": 0.5, "max_tokens": 2048, "thinking": False},
         },
+        "study": {
+            "math_应用题":        {"temperature": 0.3, "max_tokens": 16384, "thinking": False},
+            "英语_阅读理解":      {"temperature": 0.3, "max_tokens": 16384, "thinking": False},
+            "语文_阅读理解":      {"temperature": 0.3, "max_tokens": 16384, "thinking": False},
+            "study_mistake_review": {"temperature": 0.3, "max_tokens": 4096,  "thinking": False},
+        },
     }
 
 

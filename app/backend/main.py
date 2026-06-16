@@ -70,6 +70,7 @@ from .routes.config_routes import router as config_router
 from .routes.task_routes import router as task_router
 from .routes.usage_routes import router as usage_router
 from .routes.log_routes import router as log_router
+from .routes.study_routes import router as study_router
 from .routes.system_routes import router as system_router
 from .routes.prompt_routes import router as prompt_router
 from .routes.entity_routes import router as entity_router
@@ -158,6 +159,7 @@ app.include_router(log_router)
 app.include_router(system_router)
 app.include_router(prompt_router)
 app.include_router(entity_router)
+app.include_router(study_router)
 
 
 # ---- Static file mounts ----
