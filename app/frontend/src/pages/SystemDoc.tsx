@@ -278,6 +278,7 @@ export default function SystemDoc() {
                 { name: '事件列表', desc: 'FTS5 全文检索 + 分页 + 批量操作' },
                 { name: '信息源管理', desc: '8 源 RSS，采集页卡片 + 弹窗启停' },
                 { name: '知识图谱', desc: '实体关系提取、力导向图可视化、深度分析' },
+                { name: '辅导中心', desc: '教材PDF上传→逐课解读，支持孩子版/家长版/教材解读三种模式，课文目录+附录' },
               ].map(m => (
                 <div key={m.name} className="bg-[#0B0C10] rounded-lg p-3">
                   <div className="text-sm font-medium text-white">{m.name}</div>
@@ -328,6 +329,7 @@ export default function SystemDoc() {
               <p>• <span className="text-gray-300">FTS5 全文检索</span> — 事件搜索 + 相似事件预筛选，O(n) → O(log n)</p>
               <p>• <span className="text-gray-300">组件化 + 统一标签</span> — 侧边面板独立组件，sourceLabel/statusLabel 集中管理</p>
               <p>• <span className="text-gray-300">知识图谱</span> — AI 提取人物/组织/概念/事件实体及关系，vis-network 力导向图可视化，实体详情+关联内容弹窗预览，深度 AI 分析</p>
+              <p>• <span className="text-gray-300">辅导中心</span> — 独立模块 study_materials 表隔离存储，教材 PDF 上传→PyMuPDF 提取→DeepSeek 目录识别→逐课解读，孩子版/家长版/教材解读三种模式</p>
             </div>
           </div>
         </div>
@@ -337,6 +339,25 @@ export default function SystemDoc() {
       {tab === 'changelog' && (
         <div className="space-y-8">
           {[
+            {
+              version: '1.8.4',
+              date: '2026-06-16',
+              title: '辅导中心 P0-P2 修复 + 多版本支持',
+              items: [
+                'P0 — 恢复孩子版/家长版版本切换 tab（非教材类），初始 null 崩溃修复',
+                'P0 — UNIT_REGISTRY 按书名动态匹配单元结构 + resolveUnits 回退，不再硬编码',
+                'P0 — 附录按 subject===\'语文\' 条件显示，不误判其他学科',
+                'P1 — MD tab 统一使用 mdToHtml 渲染器，prose 样式不再不一致',
+                'P1 — 编号列表 1. 2. 3. 渲染为灰色编号+缩进',
+                'P2 — sanitizeHtml 过滤 script/style/on* 防 XSS，移除 ReactMarkdown 依赖',
+                'P2 — 课文解析改用自定义 dangerouslySetInnerHTML，样式与专题详情深度分析一致',
+                '新增辅导中心模块 — 学习讲稿作为独立模块集成，教材 PDF 上传→逐课 AI 解读',
+                '教材提取链路 — PyMuPDF 提取文本 → DeepSeek 识别目录页码 → 按页码切分课文 → 逐课生成解读',
+                '课文目录 — 按单元分组折叠展开，附录（识字表/写字表/词语表）拼音-汉字网格对齐',
+                '讲稿渲染 — HTML 模板固化（Python 模板引擎），自定义 mdToHtml 加紫色主题样式',
+                'OCR 验证 — 火山 OCR 识别两页教材截图均准确，ocr_textbook.py 批量脚本就绪',
+              ],
+            },
             {
               version: '1.8.3',
               date: '2026-06-15 15:50:00',

@@ -1,6 +1,9 @@
 {
   "source_id": "bbc-technology",
   "seen_ids": [
+    "https://www.bbc.com/news/articles/cddl65dp0rdo#0",
+    "https://www.bbc.com/news/articles/c2kydl0zqeko#0",
+    "https://www.bbc.com/news/articles/ceqdny4l3jdo#0",
     "https://www.bbc.com/news/articles/c4gyp523ly8o#0",
     "https://www.bbc.com/news/articles/c0r1975ded7o#0",
     "https://www.bbc.com/news/articles/c9q39l447l4o#0",
@@ -11,9 +14,6 @@
     "https://www.bbc.com/news/articles/cd958eqg1n5o#0",
     "https://www.bbc.com/news/articles/cedpxwe26l1o#0",
     "https://www.bbc.com/news/articles/cnv9dr996v8o#0",
-    "https://www.bbc.com/news/articles/cjwgd6jqd5do#0",
-    "https://www.bbc.com/news/articles/cly752ydjw6o#0",
-    "https://www.bbc.com/news/articles/c8e8e7g0r82o#0",
     "https://www.bbc.co.uk/sounds/play/w3ct8jxz#2",
     "https://www.bbc.co.uk/sounds/play/w3ct8jxy#2",
     "https://www.bbc.co.uk/sounds/play/w3ct8jxx#2",
@@ -21,7 +21,10 @@
     "https://www.bbc.co.uk/iplayer/episode/m002xbvq#3",
     "https://www.bbc.co.uk/iplayer/episode/m002x058#3",
     "https://www.bbc.co.uk/iplayer/episode/m002wp83#3",
-    "https://www.bbc.co.uk/iplayer/episode/m002wcyp#3"
+    "https://www.bbc.co.uk/iplayer/episode/m002wcyp#3",
+    "https://www.bbc.com/news/articles/cjwgd6jqd5do#0",
+    "https://www.bbc.com/news/articles/cly752ydjw6o#0",
+    "https://www.bbc.com/news/articles/c8e8e7g0r82o#0"
   ],
-  "updated_at": "2026-06-15T04:01:06.026546+00:00"
+  "updated_at": "2026-06-15T22:04:14.021932+00:00"
 }
