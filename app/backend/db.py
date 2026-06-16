@@ -323,6 +323,27 @@ def init_db() -> None:
               FOREIGN KEY (target_entity_id) REFERENCES entities(id)
             );
 
+            -- 辅导中心 — 学习资料（独立模块，与 events 无关）
+            CREATE TABLE IF NOT EXISTS study_materials (
+              id              TEXT PRIMARY KEY,
+              subject         TEXT NOT NULL DEFAULT '',
+              grade           TEXT DEFAULT '',
+              study_type      TEXT NOT NULL DEFAULT '',
+              title           TEXT NOT NULL DEFAULT '',
+              source_type     TEXT DEFAULT 'manual',
+              raw_content     TEXT DEFAULT '',
+              child_version   TEXT DEFAULT '',
+              parent_version  TEXT DEFAULT '',
+              formats_json    TEXT DEFAULT '{}',
+              status          TEXT DEFAULT 'draft',
+              score           INTEGER,
+              is_correct      INTEGER,
+              mistake_tags    TEXT DEFAULT '[]',
+              tags_json       TEXT DEFAULT '[]',
+              created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+              updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
             -- Sync triggers: keep events_fts in sync with events table
             CREATE TRIGGER IF NOT EXISTS trg_events_fts_insert AFTER INSERT ON events BEGIN
               INSERT INTO events_fts(event_id, title, title_cn, raw_summary, summary_cn, ai_summary)
@@ -371,6 +392,10 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_event_entities_entity ON event_entities(entity_id);
             CREATE INDEX IF NOT EXISTS idx_entity_relations_src ON entity_relations(source_entity_id);
             CREATE INDEX IF NOT EXISTS idx_entity_relations_tgt ON entity_relations(target_entity_id);
+            CREATE INDEX IF NOT EXISTS idx_study_subject ON study_materials(subject);
+            CREATE INDEX IF NOT EXISTS idx_study_type ON study_materials(study_type);
+            CREATE INDEX IF NOT EXISTS idx_study_status ON study_materials(status);
+            CREATE INDEX IF NOT EXISTS idx_study_created ON study_materials(created_at);
         """)
         # Backfill FTS5 index: sync any events not yet in the index
         _backfill_fts(conn)
