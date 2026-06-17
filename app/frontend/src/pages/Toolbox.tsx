@@ -6,6 +6,8 @@ type Mode = 'forward' | 'reverse';
 interface LoanResult {
   // 正向 + 反向 共有
   monthlyPayment: number;     // 月供
+  monthlyPrincipal: number;   // 月供本金
+  monthlyInterest: number;    // 月供利息
   totalInterest: number;      // 总利息
   nominalAnnualRate: number;  // 名义年化 %（月利率×12）
   realAnnualRate: number;     // IRR 真实年化 %
@@ -35,6 +37,8 @@ function calcForward(principal: number, periods: number, flatMonthlyRate: number
 
   return {
     monthlyPayment,
+    monthlyPrincipal,
+    monthlyInterest,
     totalInterest,
     nominalAnnualRate,
     realAnnualRate,
@@ -50,6 +54,8 @@ function calcForward(principal: number, periods: number, flatMonthlyRate: number
  */
 function calcReverse(principal: number, periods: number, monthlyPayment: number): LoanResult {
   const derivedFlatRate = ((monthlyPayment * periods - principal) / (principal * periods)) * 100;
+  const monthlyPrincipal = principal / periods;
+  const monthlyInterest = monthlyPayment - monthlyPrincipal;
   const totalInterest = monthlyPayment * periods - principal;
   const nominalAnnualRate = derivedFlatRate * 12;
   const realAnnualRate = irrAnnual(principal, monthlyPayment, periods);
@@ -58,6 +64,8 @@ function calcReverse(principal: number, periods: number, monthlyPayment: number)
 
   return {
     monthlyPayment,
+    monthlyPrincipal,
+    monthlyInterest,
     totalInterest,
     nominalAnnualRate,
     realAnnualRate,
@@ -271,9 +279,19 @@ export default function Toolbox() {
                   </thead>
                   <tbody className="divide-y divide-[#1A1B20]">
                     <tr>
-                      <td className="py-3 px-4 text-gray-400">月供</td>
-                      <td className="py-3 px-4 text-right font-mono text-white">{fmt(result.monthlyPayment)} 元</td>
+                      <td className="py-3 px-4 text-gray-400">月供（合计）</td>
+                      <td className="py-3 px-4 text-right font-mono text-white font-semibold">{fmt(result.monthlyPayment)} 元</td>
                       <td className="py-3 px-4 text-right text-gray-600 text-[11px]">—</td>
+                    </tr>
+                    <tr className="bg-[#0B0C10]/50">
+                      <td className="py-2 px-4 text-gray-600 text-[11px] pl-7">　本金</td>
+                      <td className="py-2 px-4 text-right font-mono text-gray-500 text-[11px]">{fmt(result.monthlyPrincipal)} 元</td>
+                      <td className="py-2 px-4 text-right text-gray-700 text-[10px]">—</td>
+                    </tr>
+                    <tr className="bg-[#0B0C10]/50">
+                      <td className="py-2 px-4 text-gray-600 text-[11px] pl-7">　利息</td>
+                      <td className="py-2 px-4 text-right font-mono text-amber-400/80 text-[11px]">{fmt(result.monthlyInterest)} 元</td>
+                      <td className="py-2 px-4 text-right text-gray-700 text-[10px]">—</td>
                     </tr>
                     <tr>
                       <td className="py-3 px-4 text-gray-400">总利息</td>
