@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { Wrench, Calculator, ArrowRightLeft } from 'lucide-react';
+import { Wrench, Calculator, ArrowRightLeft, ChevronDown, ChevronUp } from 'lucide-react';
 
 type Mode = 'forward' | 'reverse';
 
@@ -146,6 +146,7 @@ export default function Toolbox() {
   const [years, setYears] = useState('5');
   const [flatRate, setFlatRate] = useState('0.2');     // 正向：月分期利率 %
   const [revInterest, setRevInterest] = useState('200'); // 反向：月供利息
+  const [showWhy, setShowWhy] = useState(false);
 
   const periods = useMemo(() => {
     const y = parseFloat(years);
@@ -367,6 +368,39 @@ export default function Toolbox() {
                 <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">
                   <p className="text-xs text-red-300 leading-relaxed">
                     💡 {summary}
+                  </p>
+                </div>
+              )}
+
+              {/* Why different */}
+              <button
+                onClick={() => setShowWhy(!showWhy)}
+                className="flex items-center gap-1.5 text-[10px] text-gray-500 hover:text-gray-300 transition-colors"
+              >
+                {showWhy ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                为什么「销售说的」和「真实成本」不一样？
+              </button>
+              {showWhy && (
+                <div className="bg-[#0B0C10] border border-[#2A2B30] rounded-lg px-4 py-3 text-[11px] text-gray-400 leading-relaxed space-y-2">
+                  <p>
+                    <span className="text-white font-medium">等本等息的陷阱：</span>
+                    每月利息按<span className="text-amber-400">最初的贷款总额</span>计算，固定不变。
+                  </p>
+                  <p>
+                    但你每月都在还本金——实际占用的资金越来越少，利息却没有减少。
+                    以 10 万 60 期为例：
+                  </p>
+                  <div className="bg-[#141518] rounded p-2.5 font-mono text-[10px] space-y-1">
+                    <p>第 1 个月：欠 100,000，利息 200 → <span className="text-gray-400">月利率 0.20%</span></p>
+                    <p>第 30 个月：欠 50,000，利息 200 → <span className="text-amber-400">月利率 0.40%</span></p>
+                    <p>第 60 个月：欠 1,667，利息 200 → <span className="text-red-400">月利率 12%</span></p>
+                  </div>
+                  <p>
+                    <span className="text-white">IRR 真实年化</span>是把 60 期不等的实际利率加权平均后换算的年化值，
+                    反映了你<span className="text-red-400">真正的资金成本</span>。
+                  </p>
+                  <p className="text-gray-600">
+                    签合同前，请认准合同上的「年化利率」或「IRR」数值，不要被「分期利率」或「几厘」迷惑。
                   </p>
                 </div>
               )}
