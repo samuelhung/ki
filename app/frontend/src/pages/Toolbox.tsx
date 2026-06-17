@@ -145,12 +145,20 @@ export default function Toolbox() {
   const [principal, setPrincipal] = useState('100000');
   const [years, setYears] = useState('5');
   const [flatRate, setFlatRate] = useState('0.2');     // 正向：月分期利率 %
-  const [monthlyPay, setMonthlyPay] = useState('1867'); // 反向：月供
+  const [revInterest, setRevInterest] = useState('200'); // 反向：月供利息
 
   const periods = useMemo(() => {
     const y = parseFloat(years);
     return isNaN(y) || y <= 0 ? 60 : Math.round(y * 12);
   }, [years]);
+
+  // 反向模式：月供 = 本金/期数 + 利息
+  const revMonthlyPay = useMemo(() => {
+    const p = parseFloat(principal);
+    const i = parseFloat(revInterest);
+    if (isNaN(p) || isNaN(i) || p <= 0 || periods <= 0) return NaN;
+    return p / periods + i;
+  }, [principal, periods, revInterest]);
 
   const result = useMemo((): LoanResult | null => {
     const p = parseFloat(principal);
@@ -161,14 +169,14 @@ export default function Toolbox() {
       if (isNaN(r) || r < 0) return null;
       return calcForward(p, periods, r);
     } else {
-      const m = parseFloat(monthlyPay);
+      const m = revMonthlyPay;
       if (isNaN(m) || m <= 0) return null;
       // 月供不能小于本金/期数
       if (m < p / periods) return null;
       return calcReverse(p, periods, m);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [principal, periods, flatRate, monthlyPay, mode]);
+  }, [principal, periods, flatRate, revMonthlyPay, mode]);
 
   const summary = result ? generateSummary(result) : '';
 
@@ -176,13 +184,12 @@ export default function Toolbox() {
   const reverseSplit = useMemo(() => {
     if (mode !== 'reverse') return null;
     const p = parseFloat(principal);
-    const m = parseFloat(monthlyPay);
-    if (isNaN(p) || isNaN(m) || p <= 0 || periods <= 0) return null;
+    if (isNaN(p) || p <= 0 || periods <= 0) return null;
     const monthlyPrincipal = p / periods;
-    const monthlyInterest = m - monthlyPrincipal;
-    if (monthlyInterest < 0) return null;
+    const monthlyInterest = revMonthlyPay - monthlyPrincipal;
+    if (isNaN(monthlyInterest) || monthlyInterest < 0) return null;
     return { principal: monthlyPrincipal, interest: monthlyInterest };
-  }, [principal, periods, monthlyPay, mode]);
+  }, [principal, periods, revMonthlyPay, mode]);
 
   const inputCls = "w-full bg-[#0B0C10] border border-[#2A2B30] rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50 font-mono";
 
@@ -255,14 +262,41 @@ export default function Toolbox() {
               </div>
             ) : (
               <div>
-                <label className="block text-xs text-gray-500 mb-1.5">月供（元）</label>
-                <input type="number" step="0.01" value={monthlyPay}
-                  onChange={e => setMonthlyPay(e.target.value)}
-                  className={inputCls} placeholder="1867" />
+                <label className="block text-xs text-gray-500 mb-1.5">月供拆分（元）</label>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <div className="relative">
+                      <input type="number" step="0.01"
+                        value={fmt(parseFloat(principal) / periods)}
+                        readOnly
+                        className={`${inputCls} text-gray-500 cursor-default pr-10`} />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-gray-600">本金</span>
+                    </div>
+                  </div>
+                  <span className="text-gray-600 text-xs shrink-0">+</span>
+                  <div className="flex-1">
+                    <div className="relative">
+                      <input type="number" step="0.01" value={revInterest}
+                        onChange={e => setRevInterest(e.target.value)}
+                        className={`${inputCls} text-amber-400 pr-10`} placeholder="200" />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-amber-400/60">利息</span>
+                    </div>
+                  </div>
+                  <span className="text-gray-600 text-xs shrink-0">=</span>
+                  <div className="flex-1">
+                    <div className="relative">
+                      <input type="text"
+                        value={isNaN(revMonthlyPay) ? '—' : fmt(revMonthlyPay)}
+                        readOnly
+                        className={`${inputCls} text-white font-semibold cursor-default pr-10`} />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-gray-500">月供</span>
+                    </div>
+                  </div>
+                </div>
                 <p className="text-[10px] text-gray-600 mt-1">
                   {reverseSplit
-                    ? <>每期实际还款额 <span className="text-gray-500">= 本金 {fmt(reverseSplit.principal)} + 利息 {fmt(reverseSplit.interest)} 元</span></>
-                    : '每期实际还款额'}
+                    ? <>本金固定 = 总金额 ÷ 期数，调整利息即可反推利率</>
+                    : '本金固定 = 总金额 ÷ 期数，调整利息即可反推利率'}
                 </p>
               </div>
             )}
