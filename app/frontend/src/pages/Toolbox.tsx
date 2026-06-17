@@ -172,6 +172,18 @@ export default function Toolbox() {
 
   const summary = result ? generateSummary(result) : '';
 
+  // 反向模式：即时展示月供拆分
+  const reverseSplit = useMemo(() => {
+    if (mode !== 'reverse') return null;
+    const p = parseFloat(principal);
+    const m = parseFloat(monthlyPay);
+    if (isNaN(p) || isNaN(m) || p <= 0 || periods <= 0) return null;
+    const monthlyPrincipal = p / periods;
+    const monthlyInterest = m - monthlyPrincipal;
+    if (monthlyInterest < 0) return null;
+    return { principal: monthlyPrincipal, interest: monthlyInterest };
+  }, [principal, periods, monthlyPay, mode]);
+
   const inputCls = "w-full bg-[#0B0C10] border border-[#2A2B30] rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50 font-mono";
 
   return (
@@ -247,7 +259,11 @@ export default function Toolbox() {
                 <input type="number" step="0.01" value={monthlyPay}
                   onChange={e => setMonthlyPay(e.target.value)}
                   className={inputCls} placeholder="1867" />
-                <p className="text-[10px] text-gray-600 mt-1">每期实际还款额</p>
+                <p className="text-[10px] text-gray-600 mt-1">
+                  {reverseSplit
+                    ? <>每期实际还款额 <span className="text-gray-500">= 本金 {fmt(reverseSplit.principal)} + 利息 {fmt(reverseSplit.interest)} 元</span></>
+                    : '每期实际还款额'}
+                </p>
               </div>
             )}
           </div>
