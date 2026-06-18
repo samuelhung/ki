@@ -435,6 +435,10 @@ export default function Toolbox() {
                       <td className="py-3 px-4 text-right font-mono text-amber-400/80">{fmt(annuityData.result.totalInterest)} 元</td>
                     </tr>
                     <tr>
+                      <td className="py-3 px-4 text-gray-400">月息</td>
+                      <td className="py-3 px-4 text-right font-mono text-gray-400">{fmtLi(parseFloat(annualRate) / 12 / 0.1)}</td>
+                    </tr>
+                    <tr>
                       <td className="py-3 px-4 text-gray-400">利息占比</td>
                       <td className="py-3 px-4 text-right font-mono text-gray-400">{fmtPct(annuityData.result.interestRatio)}</td>
                     </tr>
