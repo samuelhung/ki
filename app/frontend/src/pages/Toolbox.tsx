@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Wrench, Calculator, ArrowRightLeft, ChevronDown, ChevronUp, Table } from 'lucide-react';
 
-type LoanType = 'flat' | 'annuity';      // 等本等息 | 等额本息
+type LoanType = 'flat' | 'annuity' | 'compare';      // 等本等息 | 等额本息 | 方案对比
 type FlatMode = 'forward' | 'reverse';   // 等本等息子模式
 
 interface FlatResult {
@@ -154,6 +154,8 @@ export default function Toolbox() {
   const [flatRate, setFlatRate] = useState('0.2');        // 等本等息 正向
   const [revInterest, setRevInterest] = useState('200');  // 等本等息 反向
   const [annualRate, setAnnualRate] = useState('3');      // 等额本息 年化利率
+  const [cmpFlatRate, setCmpFlatRate] = useState('0.18'); // 对比：等本等息月分期利率
+  const [cmpAnnualRate, setCmpAnnualRate] = useState('3');// 对比：等额本息年化利率
   const [showWhy, setShowWhy] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
 
@@ -197,6 +199,38 @@ export default function Toolbox() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loanType, principal, periods, annualRate]);
 
+  // 方案对比 结果
+  const compareData = useMemo(() => {
+    if (loanType !== 'compare') return null;
+    const p = parseFloat(principal);
+    const fr = parseFloat(cmpFlatRate);
+    const ar = parseFloat(cmpAnnualRate);
+    if (isNaN(p) || isNaN(fr) || isNaN(ar) || p <= 0 || fr <= 0 || ar <= 0 || periods <= 0) return null;
+    // 等本等息
+    const fMonthly = p / periods + p * (fr / 100);
+    const fPrincipal = p / periods;
+    const fInterest = p * (fr / 100);
+    const fTotalInt = fInterest * periods;
+    const fIrr = irrAnnual(p, fMonthly, periods);
+    // 等额本息
+    const aMr = ar / 100 / 12;
+    const aMonthly = p * aMr * Math.pow(1+aMr, periods) / (Math.pow(1+aMr, periods) - 1);
+    const aTotalInt = aMonthly * periods - p;
+    const aBal = (m: number) => p * Math.pow(1+aMr, m) - aMonthly * (Math.pow(1+aMr, m) - 1) / aMr;
+    // 各时间点总支出
+    const checkpoints = [12, 24, 36, 48, 60].filter(m => m <= periods);
+    const rows = checkpoints.map(m => {
+      const fPaid = m * fMonthly, fBal = p - m * fPrincipal, fTotal = fPaid + fBal;
+      const aPaid = m * aMonthly, aBal_ = aBal(m), aTotal = aPaid + aBal_;
+      const diff = fTotal - aTotal;
+      return { month: m, fTotal, aTotal, diff, winner: diff < 0 ? 'flat' : diff > 0 ? 'annuity' : 'tie' };
+    });
+    // 拐点：第一个 diff >= 0 （即等本等息不再便宜）
+    const tipping = rows.find(r => r.diff >= 0);
+    return { fMonthly, fPrincipal, fInterest, fTotalInt, fIrr, aMonthly, aTotalInt, rows, tipping };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loanType, principal, periods, cmpFlatRate, cmpAnnualRate]);
+
   const inputCls = "w-full bg-[#0B0C10] border border-[#2A2B30] rounded-lg px-3 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50 font-mono";
 
   return (
@@ -234,6 +268,12 @@ export default function Toolbox() {
                     loanType === 'annuity' ? 'bg-emerald-500/20 text-emerald-400' : 'text-gray-500 hover:text-gray-300'
                   }`}
                 >等额本息</button>
+                <button
+                  onClick={() => setLoanType('compare')}
+                  className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                    loanType === 'compare' ? 'bg-sky-500/20 text-sky-400' : 'text-gray-500 hover:text-gray-300'
+                  }`}
+                >方案对比</button>
               </div>
               {/* Forward/reverse only for flat */}
               {loanType === 'flat' && (
@@ -497,6 +537,119 @@ export default function Toolbox() {
             </div>
           )}
 
+          {/* ═══════════ 方案对比 ═══════════ */}
+          {loanType === 'compare' && (
+            <>
+              <div className="px-5 pb-2">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-red-400 mb-1.5">等本等息 · 月分期利率（%）</label>
+                    <input type="number" step="0.01" value={cmpFlatRate}
+                      onChange={e => setCmpFlatRate(e.target.value)}
+                      className={inputCls} placeholder="0.18" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-emerald-400 mb-1.5">等额本息 · 年化利率（%）</label>
+                    <input type="number" step="0.01" value={cmpAnnualRate}
+                      onChange={e => setCmpAnnualRate(e.target.value)}
+                      className={inputCls} placeholder="3" />
+                  </div>
+                </div>
+              </div>
+
+              {compareData && (
+                <div className="px-5 pb-5 space-y-4">
+                  {/* 基本信息对比 */}
+                  <div className="overflow-hidden rounded-lg border border-[#2A2B30]">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-[#0B0C10]">
+                          <th className="py-2.5 px-4 text-left text-gray-500 font-medium">项目</th>
+                          <th className="py-2.5 px-4 text-right text-gray-500 font-medium"><span className="text-red-400">等本等息</span></th>
+                          <th className="py-2.5 px-4 text-right text-gray-500 font-medium"><span className="text-emerald-400">等额本息</span></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#1A1B20]">
+                        <tr>
+                          <td className="py-3 px-4 text-gray-400">月供</td>
+                          <td className="py-3 px-4 text-right font-mono text-white font-semibold">{fmt(compareData.fMonthly)}</td>
+                          <td className="py-3 px-4 text-right font-mono text-white font-semibold">{fmt(compareData.aMonthly)}</td>
+                        </tr>
+                        <tr>
+                          <td className="py-3 px-4 text-gray-400">其中本金</td>
+                          <td className="py-3 px-4 text-right font-mono text-gray-500">{fmt(compareData.fPrincipal)}</td>
+                          <td className="py-3 px-4 text-right font-mono text-gray-500">—</td>
+                        </tr>
+                        <tr>
+                          <td className="py-3 px-4 text-gray-400">利息（首期→末期）</td>
+                          <td className="py-3 px-4 text-right font-mono text-amber-400/80">{fmt(compareData.fInterest)}（固定）</td>
+                          <td className="py-3 px-4 text-right font-mono text-amber-400/80">{fmt(compareData.aMonthly - compareData.fPrincipal)}→递减</td>
+                        </tr>
+                        <tr>
+                          <td className="py-3 px-4 text-gray-400">借满总利息</td>
+                          <td className="py-3 px-4 text-right font-mono text-amber-400/80">{fmt(compareData.fTotalInt)}</td>
+                          <td className="py-3 px-4 text-right font-mono text-amber-400/80">{fmt(compareData.aTotalInt)}</td>
+                        </tr>
+                        <tr>
+                          <td className="py-3 px-4 text-gray-400">IRR 真实年化</td>
+                          <td className="py-3 px-4 text-right font-mono text-red-400 font-semibold">{fmtPct(compareData.fIrr)}</td>
+                          <td className="py-3 px-4 text-right font-mono text-emerald-400">{fmtPct(parseFloat(cmpAnnualRate))}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* 各时间点总支出对比 */}
+                  <div className="overflow-hidden rounded-lg border border-[#2A2B30]">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-[#0B0C10]">
+                          <th className="py-2.5 px-4 text-left text-gray-500 font-medium">提前还清时间</th>
+                          <th className="py-2.5 px-4 text-right text-gray-500 font-medium"><span className="text-red-400">等本等息</span></th>
+                          <th className="py-2.5 px-4 text-right text-gray-500 font-medium"><span className="text-emerald-400">等额本息</span></th>
+                          <th className="py-2.5 px-4 text-right text-gray-500 font-medium">差额</th>
+                          <th className="py-2.5 px-4 text-right text-gray-500 font-medium w-16">结果</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#1A1B20]">
+                        {compareData.rows.map(r => (
+                          <tr key={r.month}>
+                            <td className="py-3 px-4 text-gray-400">{r.month} 期（{r.month/12} 年）</td>
+                            <td className="py-3 px-4 text-right font-mono text-gray-300">{fmt(r.fTotal)}</td>
+                            <td className="py-3 px-4 text-right font-mono text-gray-300">{fmt(r.aTotal)}</td>
+                            <td className={`py-3 px-4 text-right font-mono font-semibold ${r.diff < 0 ? 'text-red-400' : r.diff > 0 ? 'text-emerald-400' : 'text-gray-500'}`}>
+                              {r.diff < 0 ? '-' : '+'}{fmt(Math.abs(r.diff))}
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                r.winner === 'flat' ? 'bg-red-500/15 text-red-400' :
+                                r.winner === 'annuity' ? 'bg-emerald-500/15 text-emerald-400' :
+                                'bg-gray-500/10 text-gray-500'
+                              }`}>
+                                {r.winner === 'flat' ? '等本等息' : r.winner === 'annuity' ? '等额本息' : '持平'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* 拐点提示 */}
+                  {compareData.tipping && (
+                    <div className="bg-sky-500/10 border border-sky-500/20 rounded-lg px-4 py-3">
+                      <p className="text-xs text-sky-300 leading-relaxed">
+                        💡 拐点约在第 <span className="text-white font-bold">{compareData.tipping.month}</span> 期（{compareData.tipping.month/12} 年）：
+                        在此之前<span className="text-red-400 font-medium">等本等息</span>更划算，
+                        之后<span className="text-emerald-400 font-medium">等额本息</span>优势越来越大。
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
           {/* Empty state */}
           {loanType === 'flat' && !flatResult && (
             <div className="px-5 pb-8 text-center">
@@ -506,6 +659,11 @@ export default function Toolbox() {
           {loanType === 'annuity' && !annuityData && (
             <div className="px-5 pb-8 text-center">
               <p className="text-xs text-gray-600">请输入参数查看计算结果</p>
+            </div>
+          )}
+          {loanType === 'compare' && !compareData && (
+            <div className="px-5 pb-8 text-center">
+              <p className="text-xs text-gray-600">请输入两种方案的利率参数</p>
             </div>
           )}
         </div>
