@@ -2,15 +2,51 @@
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime, timezone
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from ..db import connect, init_db
 
 router = APIRouter()
 
+# Server start timestamp for uptime calculation
+_start_time = time.time()
+
+
 @router.get("/api/health")
 def health() -> dict[str, object]:
-    return {"ok": True, "service": "knowledge-intelligence"}
+    uptime_sec = time.time() - _start_time
+    db_ok = True
+    db_error = None
+    db_size_mb = 0
+    db_event_count = 0
+    try:
+        with connect() as conn:
+            db_size_mb = round(
+                conn.execute("PRAGMA page_count").fetchone()[0]
+                * conn.execute("PRAGMA page_size").fetchone()[0]
+                / 1024 / 1024,
+                2,
+            )
+            db_event_count = conn.execute(
+                "SELECT COUNT(*) FROM events"
+            ).fetchone()[0]
+    except Exception as e:
+        db_ok = False
+        db_error = str(e)
+
+    return {
+        "ok": db_ok,
+        "service": "knowledge-intelligence",
+        "version": "1.7.4",
+        "uptime_sec": round(uptime_sec, 1),
+        "database": {
+            "ok": db_ok,
+            "size_mb": db_size_mb,
+            "event_count": db_event_count,
+            "error": db_error,
+        },
+    }
 
 
 @router.get("/api/ingest/stats")

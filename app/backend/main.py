@@ -5,13 +5,24 @@ import logging
 import logging.handlers
 from pathlib import Path
 from dotenv import load_dotenv
+from .paths import PROJECT_ROOT, FRONTEND_DIST
 
-_env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+# ---- KI_HOME: data directory ----
+# In Tauri release: Rust sets KI_HOME=~/Documents/KI/
+# In dev: falls back to project root's data/ directory
+_IS_TAURI = os.getenv("KI_TAURI", "").strip() == "1"
+KI_HOME = PROJECT_ROOT
+KI_HOME.mkdir(parents=True, exist_ok=True)
+
+# ---- .env loading ----
+_env_path = KI_HOME / ".env"
+if not _env_path.exists():
+    _env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 if _env_path.exists():
     load_dotenv(_env_path, override=True)
 
 # ---- Logging setup ----
-_LOG_DIR = Path(__file__).resolve().parents[2] / "data" / "logs"
+_LOG_DIR = KI_HOME / "data" / "logs"
 _LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 # Root logger config — captures all "knowledge-intelligence" + module loggers
@@ -111,8 +122,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# SPA fallback: any non-API 404 gets index.html
-FRONTEND_DIST = Path(__file__).resolve().parents[1] / "frontend" / "dist"
+# ---- Frontend serving (dev mode only) ----
+# In Tauri mode, the frontend is embedded in the Tauri binary — no need to serve.
+# FRONTEND_DIST is imported from paths.py
+_HAS_FRONTEND = FRONTEND_DIST.exists() and not _IS_TAURI
 
 # Optional API token authentication (set KI_API_TOKEN env var to enable)
 _API_TOKEN = os.getenv("KI_API_TOKEN", "").strip()
@@ -141,9 +154,10 @@ async def api_auth(request: Request, call_next):
 
 @app.middleware("http")
 async def spa_fallback(request: Request, call_next):
-    """Serve index.html for non-API paths (SPA client-side routing)."""
+    """Serve index.html for non-API paths (SPA client-side routing).
+    Only active when frontend dist exists (dev/browser mode)."""
     response = await call_next(request)
-    if response.status_code == 404 and not request.url.path.startswith("/api"):
+    if _HAS_FRONTEND and response.status_code == 404 and not request.url.path.startswith("/api"):
         return FileResponse(FRONTEND_DIST / "index.html")
     return response
 
@@ -172,8 +186,9 @@ app.include_router(chain_router)
 
 # ---- Static file mounts ----
 
-INGEST_ROOT = Path(__file__).resolve().parents[2] / "data" / "ingest"
+INGEST_ROOT = KI_HOME / "data" / "ingest"
 INGEST_ROOT.mkdir(parents=True, exist_ok=True)
-
 app.mount("/ingest", StaticFiles(directory=str(INGEST_ROOT)), name="ingest")
-app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
+
+if _HAS_FRONTEND:
+    app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")

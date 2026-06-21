@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+logger = logging.getLogger(__name__)
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]  # dev fallback
+_KI_HOME = os.getenv("KI_HOME", "").strip()
+if _KI_HOME:
+    PROJECT_ROOT = Path(_KI_HOME).expanduser().resolve()
 DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "intelligence.sqlite"
 
 DEFAULT_SOURCES = [
@@ -550,7 +556,8 @@ def _migrate_brainstorm_answers_to_messages(conn: sqlite3.Connection) -> None:
 
     import logging
     log = logging.getLogger("knowledge-intelligence")
-    brainstorm_dir = _Path(__file__).resolve().parents[2] / "data" / "brainstorm"
+    from .paths import BRAINSTORM_DIR as _bd
+    brainstorm_dir = _bd
 
     for row in pending:
         qid = row["id"]

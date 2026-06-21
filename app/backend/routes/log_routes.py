@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/api/logs", tags=["logs"])
 
-LOG_DIR = Path(__file__).resolve().parents[3] / "data" / "logs"
+from ..paths import LOG_DIR
 LOG_FILE = LOG_DIR / "ki.log"
 
 # Log line pattern: 2026-06-13 14:05:30 [WARNING] module:line | message

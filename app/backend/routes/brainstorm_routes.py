@@ -15,7 +15,7 @@ from ..classifier import classify_content
 from ..translator import translate
 from ..deepseek_client import chat
 
-BRAINSTORM_DIR = Path(__file__).resolve().parents[3] / "data" / "brainstorm"
+from ..paths import BRAINSTORM_DIR
 logger = logging.getLogger(__name__)
 
 router = APIRouter()

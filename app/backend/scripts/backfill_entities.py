@@ -11,10 +11,15 @@ import argparse
 import json as _json
 import logging
 import sys
+import os as _os
 from pathlib import Path
 
 # Ensure the project root is on sys.path
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_KI_HOME = _os.getenv("KI_HOME", "").strip()
+if _KI_HOME:
+    PROJECT_ROOT = Path(_KI_HOME).expanduser().resolve()
+else:
+    PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(PROJECT_ROOT / "app"))
 
 # Load .env before importing backend modules that need API keys

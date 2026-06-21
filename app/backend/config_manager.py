@@ -13,7 +13,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-CONFIG_PATH = Path(__file__).resolve().parents[2] / "data" / "system_config.json"
+from .paths import CONFIG_PATH
 _config: dict[str, Any] = {}
 
 

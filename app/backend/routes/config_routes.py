@@ -52,7 +52,8 @@ def write_config(config: dict):
 
 def _update_env_key(key: str) -> None:
     """Optionally sync the API key back to .env file."""
-    env_path = __import__("pathlib").Path(__file__).resolve().parents[3] / ".env"
+    from ..paths import PROJECT_ROOT as _pr
+    env_path = _pr / ".env"
     if not env_path.exists():
         return
     lines = env_path.read_text("utf-8").splitlines()

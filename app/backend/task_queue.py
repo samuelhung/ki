@@ -21,7 +21,7 @@ from .db import connect, init_db
 
 logger = logging.getLogger(__name__)
 
-INGEST_ROOT = Path(__file__).resolve().parents[3] / "data" / "ingest"
+from .paths import INGEST_ROOT
 PENDING_DIR = INGEST_ROOT / "pending"
 
 _worker: threading.Thread | None = None

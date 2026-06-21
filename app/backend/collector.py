@@ -20,7 +20,7 @@ from .db import connect, init_db
 
 logger = logging.getLogger("knowledge-intelligence")
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+from .paths import PROJECT_ROOT
 DEFAULT_DATA_DIR = PROJECT_ROOT / "data"
 MAX_WATERMARK_IDS = 500
 

@@ -22,6 +22,7 @@ import urllib.request
 from typing import Any
 
 from .config_manager import get_config
+from .paths import DEFAULT_DB_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -53,8 +54,7 @@ def _record_usage(
     def _write() -> None:
         try:
             import sqlite3
-            from pathlib import Path
-            db_path = Path(__file__).resolve().parents[2] / "data" / "intelligence.sqlite"
+            db_path = str(DEFAULT_DB_PATH)
             conn = sqlite3.connect(str(db_path))
             conn.execute(
                 """INSERT INTO ai_usage

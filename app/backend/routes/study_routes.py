@@ -12,11 +12,11 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from ..db import connect, init_db
+from ..paths import STUDY_DATA_DIR
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/study", tags=["study"])
 
-STUDY_DATA_DIR = Path(__file__).resolve().parents[3] / "data" / "study"
 STUDY_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── 请求模型 ──

@@ -161,7 +161,8 @@ def get_event(event_id: str) -> dict[str, object]:
         raise HTTPException(status_code=404, detail="Event not found")
     result = dict(row)
     # Add ingest file paths
-    ingest_root = Path(__file__).resolve().parents[3] / "data" / "ingest"
+    from ..paths import INGEST_ROOT as _ir
+    ingest_root = _ir
     result["transcript_path"] = str(ingest_root / "transcripts" / f"{event_id}.md")
     result["summary_path"] = str(ingest_root / "summaries" / f"{event_id}.md")
     # Add associated brainstorm questions
@@ -190,7 +191,8 @@ def delete_event(event_id: str) -> dict[str, object]:
         raise HTTPException(status_code=404, detail="Event not found")
 
     # Clean up ingest files
-    ingest_root = Path(__file__).resolve().parents[3] / "data" / "ingest"
+    from ..paths import INGEST_ROOT as _ir
+    ingest_root = _ir
     (ingest_root / "transcripts" / f"{event_id}.md").unlink(missing_ok=True)
     (ingest_root / "summaries" / f"{event_id}.md").unlink(missing_ok=True)
 
@@ -210,7 +212,8 @@ def batch_delete_events(payload: dict[str, object]) -> dict[str, object]:
     event_ids = payload.get("event_ids", [])
     if not isinstance(event_ids, list) or not event_ids:
         raise HTTPException(status_code=400, detail="event_ids must be a non-empty list")
-    ingest_root = Path(__file__).resolve().parents[3] / "data" / "ingest"
+    from ..paths import INGEST_ROOT as _ir
+    ingest_root = _ir
     deleted = 0
     for event_id in event_ids:
         eid = str(event_id)
@@ -273,7 +276,8 @@ def summarize_event(event_id: str, background_tasks: BackgroundTasks, force: boo
                         (summary, overview, event_id),
                     )
                 # Also write to file system
-                summaries_dir = Path(__file__).resolve().parents[3] / "data" / "ingest" / "summaries"
+                from ..paths import INGEST_ROOT as _ir2
+                summaries_dir = _ir2 / "summaries"
                 summaries_dir.mkdir(parents=True, exist_ok=True)
                 (summaries_dir / f"{event_id}.md").write_text(summary, encoding="utf-8")
                 # 触发产业链新链检测

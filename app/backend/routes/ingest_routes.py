@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ingest", tags=["ingest"])
 
-INGEST_ROOT = Path(__file__).resolve().parents[3] / "data" / "ingest"
+from ..paths import INGEST_ROOT
 TRANSCRIPTS_DIR = INGEST_ROOT / "transcripts"
 SUMMARIES_DIR   = INGEST_ROOT / "summaries"
 VIDEOS_DIR      = INGEST_ROOT / "videos"

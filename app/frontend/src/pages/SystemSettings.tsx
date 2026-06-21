@@ -3,13 +3,8 @@ import { Settings, Save, Wifi, WifiOff, Globe, Server, Activity } from 'lucide-r
 import { getBackendUrl, setBackendUrl } from '../main';
 import { APP_VERSION } from '../constants';
 
-// ── Tauri desktop version ──
-let _tauriVersion = APP_VERSION; // fallback for dev/web
-try {
-  const { invoke } = await import('@tauri-apps/api/core');
-  _tauriVersion = await invoke('get_desktop_version');
-} catch { /* not in Tauri */ }
-const DESKTOP_VERSION = _tauriVersion;
+// ── 统一使用 APP_VERSION 作为客户端版本号显示 ──
+const CLIENT_VERSION = APP_VERSION;
 
 interface TaskConfig {
   temperature: number;
@@ -644,7 +639,7 @@ export default function SystemSettings() {
                 </div>
                 <div className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs bg-purple-500/5 text-purple-400">
                   <Globe size={12} />
-                  <span>桌面版 v{DESKTOP_VERSION}</span>
+                  <span>客户端 v{CLIENT_VERSION}</span>
                   <span className="text-gray-600">→</span>
                   <span className="text-gray-300">{backendUrl}</span>
                 </div>

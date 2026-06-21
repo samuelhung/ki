@@ -24,7 +24,7 @@ from .templates import render_html
 
 logger = logging.getLogger(__name__)
 
-STUDY_DATA_DIR = Path(__file__).resolve().parents[3] / "data" / "study"
+from ..paths import STUDY_DATA_DIR
 STUDY_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
