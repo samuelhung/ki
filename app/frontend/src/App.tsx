@@ -23,6 +23,8 @@ import Study from './pages/Study';
 import StudyDetail from './pages/StudyDetail';
 import StudyMistakes from './pages/StudyMistakes';
 import Toolbox from './pages/Toolbox';
+import IndustryChains from './pages/IndustryChains';
+import IndustryFlow from './pages/IndustryFlow';
 
 function Layout() {
   return (
@@ -75,6 +77,8 @@ export default function App() {
           <Route path="study/:id" element={<StudyDetail />} />
           <Route path="study/mistakes" element={<StudyMistakes />} />
           <Route path="tools" element={<Toolbox />} />
+          <Route path="chains" element={<IndustryChains />} />
+          <Route path="chains/flow" element={<IndustryFlow />} />
         </Route>
       </Routes>
     </EventCacheProvider>

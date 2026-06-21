@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MoreHorizontal, BookOpen, Code2, Settings } from 'lucide-react';
+import { MoreHorizontal, BookOpen, Code2, Settings, FileText, GitBranch, Lightbulb, Wrench, GraduationCap } from 'lucide-react';
 
 import { APP_VERSION } from '../constants';
 
@@ -32,6 +32,47 @@ export default function MobileHeader() {
         </button>
         {menuOpen && (
           <div className="absolute right-0 top-full mt-1 w-36 bg-[#141518] border border-[#2A2B30] rounded-lg shadow-xl py-1 z-50">
+            <a
+              href="/brainstorm"
+              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-[#1A1B20]"
+              onClick={() => setMenuOpen(false)}
+            >
+              <Lightbulb size={14} />
+              <span>头脑风暴</span>
+            </a>
+            <a
+              href="/tools"
+              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-[#1A1B20]"
+              onClick={() => setMenuOpen(false)}
+            >
+              <Wrench size={14} />
+              <span>工具箱</span>
+            </a>
+            <a
+              href="/study"
+              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-[#1A1B20]"
+              onClick={() => setMenuOpen(false)}
+            >
+              <GraduationCap size={14} />
+              <span>辅导中心</span>
+            </a>
+            <a
+              href="/digest"
+              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-[#1A1B20]"
+              onClick={() => setMenuOpen(false)}
+            >
+              <FileText size={14} />
+              <span>摘要</span>
+            </a>
+            <a
+              href="/knowledge-graph"
+              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-[#1A1B20]"
+              onClick={() => setMenuOpen(false)}
+            >
+              <GitBranch size={14} />
+              <span>知识图谱</span>
+            </a>
+            <div className="border-t border-[#2A2B30] my-1" />
             <a
               href="/docs"
               target="_blank"

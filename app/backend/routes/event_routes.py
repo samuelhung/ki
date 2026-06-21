@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
@@ -13,6 +14,7 @@ from ..classifier import classify_event, classify_batch
 from ..models import CollectRequest
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/api/events")
@@ -151,7 +153,7 @@ def get_event(event_id: str) -> dict[str, object]:
             """SELECT id, source_id, title, url, published_at, raw_summary, ai_summary,
                title_cn, summary_cn, translation_status, translation_error,
                topic, importance, actionability, decision, status, tags_json,
-               last_error, progress_stages, video_path, created_at, overview
+               last_error, progress_stages, video_path, created_at, overview, chain_analysis
                FROM events WHERE id = ?""",
             (event_id,),
         ).fetchone()
@@ -274,6 +276,12 @@ def summarize_event(event_id: str, background_tasks: BackgroundTasks, force: boo
                 summaries_dir = Path(__file__).resolve().parents[3] / "data" / "ingest" / "summaries"
                 summaries_dir.mkdir(parents=True, exist_ok=True)
                 (summaries_dir / f"{event_id}.md").write_text(summary, encoding="utf-8")
+                # 触发产业链新链检测
+                try:
+                    from ..chain_detector import detect_new_chains
+                    detect_new_chains(event_id)
+                except Exception:
+                    logger.warning("detect_new_chains failed for %s during summarize", event_id, exc_info=True)
         except Exception as e:
             logger.exception("Background summary failed for %s: %s", event_id, e)
 

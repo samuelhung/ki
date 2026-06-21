@@ -236,6 +236,18 @@ def _process_one(task_id: str) -> None:
     except Exception:
         logger.warning("auto_suggest_series failed for %s", event_id, exc_info=True)
 
+    # Chain data detection: check if content contains chain node data updates
+    try:
+        from .chain_detector import detect_chain_data_hints, detect_new_chains
+        hints_found = detect_chain_data_hints(event_id)
+        if hints_found:
+            logger.info("chain_detector: found %d hint(s) for event %s", hints_found, event_id)
+        new_chains = detect_new_chains(event_id)
+        if new_chains:
+            logger.info("chain_detector: found %d new chain suggestion(s) for event %s", new_chains, event_id)
+    except Exception:
+        logger.warning("chain_detector failed for %s", event_id, exc_info=True)
+
 
 def _worker_loop() -> None:
     """Background worker: poll for pending tasks and process them one at a time.

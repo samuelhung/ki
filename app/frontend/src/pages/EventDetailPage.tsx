@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Loader2, Sparkles, Globe, FileText, Lightbulb, Plus } from 'lucide-react';
+import { ArrowLeft, Loader2, Sparkles, Globe, FileText, Lightbulb, Plus, Link2 } from 'lucide-react';
 import { renderMarkdown } from '../components/MarkdownRenderer';
 import { formatTimeBeijing, sourceLabel, statusLabel } from '../utils';
 
@@ -41,10 +41,17 @@ export default function EventDetailPage() {
 
   const [detail, setDetail] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'body' | 'summary' | 'questions'>('body');
+  const [tab, setTab] = useState<'body' | 'summary' | 'questions' | 'chain'>('body');
   const [summarizingId, setSummarizingId] = useState<string | null>(null);
   const [contemplating, setContemplating] = useState(false);
   const [contemplateError, setContemplateError] = useState('');
+  const [chainAnalysis, setChainAnalysis] = useState('');
+  const [chainLoading, setChainLoading] = useState(false);
+  const [chainError, setChainError] = useState('');
+  const [chainHints, setChainHints] = useState<any[]>([]);
+  const [syncingHints, setSyncingHints] = useState(false);
+  const [syncResult, setSyncResult] = useState('');
+  const [chainSuggestionsCount, setChainSuggestionsCount] = useState(0);
   const [contemplateResults, setContemplateResults] = useState<any[]>([]);
   const [contemplateSelected, setContemplateSelected] = useState<Set<string>>(new Set());
   const [contemplateLinking, setContemplateLinking] = useState(false);
@@ -61,12 +68,19 @@ export default function EventDetailPage() {
         if (data) {
           setDetail(data);
           setTab(data.source_id === 'user-concept' ? 'summary' : 'body');
+          // 加载缓存的产业链分析
+          if (data.chain_analysis) { setChainAnalysis(data.chain_analysis); }
           const linked = (data.associated_questions || []).map((q: any) => ({
             question_id: q.id, question_text: q.question,
             link_status: 'linked', relevance: 'medium',
           }));
           setContemplateResults(linked);
         }
+        // 加载产业链建议计数
+        fetch('/api/chains/suggestions/count')
+          .then(r => r.ok ? r.json() : { pending: 0 })
+          .then(d => setChainSuggestionsCount(d.pending || 0))
+          .catch(() => {});
         setLoading(false);
       });
   }, [id]);
@@ -92,7 +106,15 @@ export default function EventDetailPage() {
         const dRes = await fetch(`${API_BASE}/${eventId}`);
         if (!dRes.ok) break;
         const d = await dRes.json();
-        if (d.ai_summary) { setDetail(d); break; }
+        if (d.ai_summary) {
+          setDetail(d);
+          // 总结完成后刷新产业链建议计数
+          fetch('/api/chains/suggestions/count')
+            .then(r => r.ok ? r.json() : { pending: 0 })
+            .then(d2 => setChainSuggestionsCount(d2.pending || 0))
+            .catch(() => {});
+          break;
+        }
       }
     } catch (e: any) { console.error('总结轮询失败', e); }
     finally { setSummarizingId(null); }
@@ -132,6 +154,39 @@ export default function EventDetailPage() {
       handleContemplate();
     } catch (e: any) { setContemplateError(e.message || '关联失败'); }
     finally { setContemplateLinking(false); }
+  }
+
+  async function handleChainAnalyze() {
+    if (!detail) return;
+    setChainLoading(true); setChainError(''); setChainAnalysis(''); setChainHints([]); setSyncResult('');
+    try {
+      const res = await fetch('/api/chains/analyze', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event_id: detail.id }),
+      });
+      const data = await res.json();
+      if (data.error) { setChainError(data.error); return; }
+      setChainAnalysis(data.analysis || '');
+      setChainHints(data.extracted_hints || []);
+    } catch (e: any) { setChainError(e.message || '分析失败'); }
+    finally { setChainLoading(false); }
+  }
+
+  async function handleSyncHints() {
+    if (chainHints.length === 0) return;
+    setSyncingHints(true); setSyncResult('');
+    try {
+      const res = await fetch('/api/chains/hints/sync', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hints: chainHints }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setSyncResult(`已同步 ${data.saved_hints} 条更新 + ${data.new_suggestions} 条新链建议`);
+        setChainHints([]);
+      }
+    } catch (e: any) { setSyncResult('同步失败: ' + e.message); }
+    finally { setSyncingHints(false); }
   }
 
   // ── Render helpers ──
@@ -285,6 +340,63 @@ export default function EventDetailPage() {
     );
   }
 
+  function renderChain() {
+    if (!detail) return null;
+    if (chainLoading) {
+      return <div className="flex items-center justify-center py-16"><Loader2 size={24} className="animate-spin text-purple-400" /></div>;
+    }
+    if (chainError) {
+      return <div className="px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">{chainError}</div>;
+    }
+    if (!chainAnalysis) {
+      return (
+        <div className="text-center py-10">
+          <p className="text-gray-500 mb-4 text-sm">基于知识库分析事件对各产业链的影响</p>
+          <button onClick={handleChainAnalyze}
+            className="px-5 py-2.5 rounded-lg text-sm font-medium bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 border border-purple-500/30 transition-colors">
+            开始分析
+          </button>
+        </div>
+      );
+    }
+    return <div className="text-sm leading-relaxed text-gray-300 space-y-3">
+      {renderMarkdown(chainAnalysis)}
+      {/* Extracted hints + sync button */}
+      {chainHints.length > 0 && (
+        <div className="mt-4 bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2 text-xs font-medium text-emerald-400">
+              <Link2 size={14} />
+              从分析中提取到 {chainHints.length} 个数据点
+            </div>
+            <button
+              onClick={handleSyncHints}
+              disabled={syncingHints}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 border border-emerald-500/20 disabled:opacity-50 transition-colors"
+            >
+              {syncingHints ? '同步中…' : '同步到产业链'}
+            </button>
+          </div>
+          <div className="space-y-1.5">
+            {chainHints.slice(0, 5).map((h: any, i: number) => (
+              <div key={i} className="flex items-center gap-2 text-[11px] bg-[#0B0C10] rounded-lg px-3 py-2">
+                <span className="text-emerald-400 font-medium">{h.node_name}</span>
+                <span className="text-gray-600">·</span>
+                <span className="text-gray-400">{h.field}</span>
+                <span className="text-gray-600">→</span>
+                <span className="text-emerald-300">{h.value}</span>
+              </div>
+            ))}
+            {chainHints.length > 5 && <div className="text-[10px] text-gray-600 pl-2">…及其他 {chainHints.length - 5} 条</div>}
+          </div>
+        </div>
+      )}
+      {syncResult && (
+        <div className="px-4 py-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm">{syncResult}</div>
+      )}
+    </div>;
+  }
+
   // ── Loading / Not Found ──
 
   if (loading) {
@@ -408,6 +520,10 @@ export default function EventDetailPage() {
                 className={`px-3 py-2 rounded text-xs font-medium transition-colors border-b-2 -mb-px ${tab === 'questions' ? 'text-purple-400 border-purple-400' : 'text-gray-500 border-transparent hover:text-gray-300'}`}>
                 关联问题
               </button>
+              <button onClick={() => { setTab('chain'); if (!chainAnalysis && !chainLoading) handleChainAnalyze(); }}
+                className={`px-3 py-2 rounded text-xs font-medium transition-colors border-b-2 -mb-px ${tab === 'chain' ? 'text-purple-400 border-purple-400' : 'text-gray-500 border-transparent hover:text-gray-300'}`}>
+                {chainLoading ? '分析中…' : <>产业分析{chainSuggestionsCount > 0 && <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-red-500/20 text-red-400 text-[10px]">{chainSuggestionsCount}</span>}</>}
+              </button>
             </div>
           </div>
         )}
@@ -419,6 +535,7 @@ export default function EventDetailPage() {
               {tab === 'body' && renderBody()}
               {tab === 'summary' && renderSummary()}
               {tab === 'questions' && renderQuestionsSection()}
+              {tab === 'chain' && renderChain()}
             </>
           ) : (
             <>

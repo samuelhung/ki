@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Upload, FileText, Lightbulb, CheckSquare, Layers, BookOpen, Code2, Settings, GitBranch, GraduationCap, Wrench } from 'lucide-react';
+import { LayoutDashboard, Upload, FileText, Lightbulb, CheckSquare, Layers, BookOpen, Code2, Settings, GitBranch, GraduationCap, Wrench, Link2 } from 'lucide-react';
 
 import { APP_VERSION } from '../constants';
 
@@ -10,6 +10,7 @@ const navItems = [
   { to: '/brainstorm', icon: Lightbulb, label: '头脑风暴', color: 'text-amber-400' },
   { to: '/series', icon: Layers, label: '专题系列', color: 'text-purple-400' },
   { to: '/knowledge-graph', icon: GitBranch, label: '知识图谱', color: 'text-cyan-400' },
+  { to: '/chains', icon: Link2, label: '产业链', color: 'text-emerald-400' },
   { to: '/tasks', icon: CheckSquare, label: '待办事务', color: 'text-sky-400' },
   { to: '/tools', icon: Wrench, label: '工具箱', color: 'text-orange-400' },
   { to: '/digest', icon: FileText, label: '摘要', color: 'text-rose-400' },
@@ -22,14 +23,24 @@ const bottomItems = [
 
 export default function Sidebar() {
   const [pendingCount, setPendingCount] = useState(0);
+  const [chainHintsCount, setChainHintsCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/tasks/stats')
-      .then(r => r.json())
-      .then(d => { if (!cancelled) setPendingCount(d.todo || 0); })
-      .catch(() => {});
-    return () => { cancelled = true; };
+    const refresh = () => {
+      Promise.all([
+        fetch('/api/tasks/stats').then(r => r.json()),
+        fetch('/api/chains/hints/count').then(r => r.json())
+      ]).then(([taskData, hintData]) => {
+        if (!cancelled) {
+          setPendingCount(taskData.todo || 0);
+          setChainHintsCount(hintData.pending || 0);
+        }
+      }).catch(() => {});
+    };
+    refresh();
+    const interval = setInterval(refresh, 30000);
+    return () => { cancelled = true; clearInterval(interval); };
   }, []);
   return (
     <aside className="w-72 bg-[#141518] border-r border-[#2A2B30] flex flex-col h-full text-gray-300">
@@ -56,6 +67,11 @@ export default function Sidebar() {
               {item.to === '/tasks' && pendingCount > 0 && (
                 <span className="shrink-0 min-w-[20px] h-5 flex items-center justify-center rounded-full bg-red-500 text-white text-[11px] font-semibold px-1.5">
                   {pendingCount}
+                </span>
+              )}
+              {item.to === '/chains' && chainHintsCount > 0 && (
+                <span className="shrink-0 min-w-[20px] h-5 flex items-center justify-center rounded-full bg-amber-500 text-white text-[11px] font-semibold px-1.5 animate-pulse">
+                  {chainHintsCount}
                 </span>
               )}
             </NavLink>

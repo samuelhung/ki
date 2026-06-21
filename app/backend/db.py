@@ -344,9 +344,7 @@ def init_db() -> None:
               lessons_json    TEXT DEFAULT '[]',
               created_at      TEXT NOT NULL DEFAULT (datetime('now')),
               updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-
-            -- Sync triggers: keep events_fts in sync with events table
+            );\n\n            CREATE TABLE IF NOT EXISTS industry_chain_nodes (\n              id              TEXT PRIMARY KEY,\n              chain           TEXT NOT NULL DEFAULT '',\n              name            TEXT NOT NULL DEFAULT '',\n              node_type       TEXT NOT NULL DEFAULT '',\n              description     TEXT DEFAULT '',\n              parent_id       TEXT DEFAULT '',\n              global_shares   TEXT DEFAULT '[]',\n              substitutes     TEXT DEFAULT '[]',\n              upstream_ids    TEXT DEFAULT '[]',\n              data_sources    TEXT DEFAULT '{}',\n              last_updated    TEXT DEFAULT '',\n              sort_order      INTEGER DEFAULT 0,\n              created_at      TEXT NOT NULL DEFAULT (datetime('now'))\n            );\n\n            -- 产业链数据更新提示 — 采集内容中检测到的潜在数据更新\n            CREATE TABLE IF NOT EXISTS chain_data_hints (\n              id              TEXT PRIMARY KEY,\n              event_id        TEXT NOT NULL,\n              node_id         TEXT NOT NULL,\n              chain           TEXT NOT NULL DEFAULT '',\n              field           TEXT NOT NULL DEFAULT '',\n              current_value   TEXT DEFAULT '',\n              suggested_value TEXT NOT NULL DEFAULT '',\n              source_quote    TEXT DEFAULT '',\n              confidence      REAL NOT NULL DEFAULT 0.5,\n              status          TEXT NOT NULL DEFAULT 'pending',\n              resolved_value  TEXT DEFAULT '',\n              created_at      TEXT NOT NULL DEFAULT (datetime('now')),\n              reviewed_at     TEXT,\n              FOREIGN KEY (event_id) REFERENCES events(id),\n              FOREIGN KEY (node_id) REFERENCES industry_chain_nodes(id)\n            );\n\n            -- 新产业链建议 — AI 从采集内容中发现的新链条（尚未收录）\n            CREATE TABLE IF NOT EXISTS chain_suggestions (\n              id              TEXT PRIMARY KEY,\n              chain_name      TEXT NOT NULL DEFAULT '',\n              event_id        TEXT NOT NULL,\n              nodes_json      TEXT NOT NULL DEFAULT '[]',\n              reason          TEXT DEFAULT '',\n              source_quote    TEXT DEFAULT '',\n              confidence      REAL NOT NULL DEFAULT 0.5,\n              status          TEXT NOT NULL DEFAULT 'pending',\n              created_at      TEXT NOT NULL DEFAULT (datetime('now')),\n              reviewed_at     TEXT,\n              FOREIGN KEY (event_id) REFERENCES events(id)\n            );\n\n            -- Sync triggers: keep events_fts in sync with events table
             CREATE TRIGGER IF NOT EXISTS trg_events_fts_insert AFTER INSERT ON events BEGIN
               INSERT INTO events_fts(event_id, title, title_cn, raw_summary, summary_cn, ai_summary)
               VALUES (NEW.id, NEW.title, NEW.title_cn, NEW.raw_summary, NEW.summary_cn, NEW.ai_summary);
@@ -403,6 +401,10 @@ def init_db() -> None:
         _migrate_textbook(conn)
         # Migration: add lessons_json column for textbook lesson analysis
         _migrate_lessons_json(conn)
+        # Migration: add chain_reports table
+        _migrate_chain_reports(conn)
+        # Migration: add chain_meta table
+        _migrate_chain_meta(conn)
         # Backfill FTS5 index: sync any events not yet in the index
         _backfill_fts(conn)
 
@@ -410,7 +412,7 @@ def init_db() -> None:
 def _migrate_events_cn(conn: sqlite3.Connection) -> None:
     """Add title_cn, summary_cn, translation_status, translation_error, and last_error columns if missing."""
     cols = {row[1] for row in conn.execute("PRAGMA table_info(events)").fetchall()}
-    for col in ("title_cn", "summary_cn", "translation_status", "translation_error", "last_error", "progress_stages", "video_path", "audio_path", "document_path", "content_type", "overview", "last_discovered_at", "suggested_series_json"):
+    for col in ("title_cn", "summary_cn", "translation_status", "translation_error", "last_error", "progress_stages", "video_path", "audio_path", "document_path", "content_type", "overview", "last_discovered_at", "suggested_series_json", "chain_analysis"):
         if col not in cols:
             conn.execute(f"ALTER TABLE events ADD COLUMN {col} TEXT")
 
@@ -427,6 +429,35 @@ def _migrate_lessons_json(conn: sqlite3.Connection) -> None:
     cols = {row[1] for row in conn.execute("PRAGMA table_info(study_materials)").fetchall()}
     if "lessons_json" not in cols:
         conn.execute("ALTER TABLE study_materials ADD COLUMN lessons_json TEXT DEFAULT '[]'")
+
+
+def _migrate_chain_reports(conn: sqlite3.Connection) -> None:
+    """Create chain_reports table if not exists."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS chain_reports (
+            chain_name      TEXT PRIMARY KEY,
+            report          TEXT NOT NULL DEFAULT '',
+            created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
+
+
+def _migrate_chain_meta(conn: sqlite3.Connection) -> None:
+    """Create chain_meta table — stores per-chain metadata like icon and flow summary."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS chain_meta (
+            chain_name      TEXT PRIMARY KEY,
+            icon            TEXT NOT NULL DEFAULT '',
+            flow_summary    TEXT NOT NULL DEFAULT '',
+            created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
+    # Migration: add flow_summary column to existing chain_meta tables
+    try:
+        conn.execute("ALTER TABLE chain_meta ADD COLUMN flow_summary TEXT NOT NULL DEFAULT ''")
+    except:
+        pass  # column already exists
 
 
 def _backfill_fts(conn: sqlite3.Connection) -> None:
