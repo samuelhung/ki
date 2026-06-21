@@ -35,21 +35,26 @@ async fn check_updates(app: tauri::AppHandle) -> Result<String, String> {
             eprintln!("[知几更新] 发现新版本 v{}", new_ver);
             let app_handle = app.clone();
             tauri::async_runtime::spawn(async move {
+                let app_handle1 = app_handle.clone();
                 match update
                     .download_and_install(
-                        |chunk, total| {
-                            let (pct, msg) = if let Some(t) = total {
-                                let p = if t > 0 { (chunk as f64 / t as f64 * 100.0) as u32 } else { 0 };
-                                (p, format!("下载中 {}%", p))
-                            } else {
-                                let mb = chunk as f64 / 1_048_576.0;
-                                (0, format!("下载中 {:.1} MB", mb))
-                            };
-                            let _ = app_handle.emit("update-progress", serde_json::json!({
-                                "stage": "downloading",
-                                "percent": pct,
-                                "message": msg
-                            }));
+                        {
+                            let mut downloaded: u64 = 0;
+                            move |chunk, total| {
+                                downloaded += chunk as u64;
+                                let (pct, msg) = if let Some(t) = total {
+                                    let p = if t > 0 { (downloaded as f64 / t as f64 * 100.0) as u32 } else { 0 };
+                                    (p, format!("下载中 {}%", p))
+                                } else {
+                                    let mb = downloaded as f64 / 1_048_576.0;
+                                    (0, format!("下载中 {:.1} MB", mb))
+                                };
+                                let _ = app_handle1.emit("update-progress", serde_json::json!({
+                                    "stage": "downloading",
+                                    "percent": pct,
+                                    "message": msg
+                                }));
+                            }
                         },
                         || {
                             let _ = app_handle.emit("update-progress", serde_json::json!({
@@ -277,21 +282,26 @@ fn spawn_update_check(handle: tauri::AppHandle) {
             "message": format!("发现新版本 v{}，正在下载...", update.version)
         }));
 
+        let handle1 = handle.clone();
         match update
             .download_and_install(
-                |chunk, total| {
-                    let (pct, msg) = if let Some(t) = total {
-                        let p = if t > 0 { (chunk as f64 / t as f64 * 100.0) as u32 } else { 0 };
-                        (p, format!("下载中 {}%", p))
-                    } else {
-                        let mb = chunk as f64 / 1_048_576.0;
-                        (0, format!("下载中 {:.1} MB", mb))
-                    };
-                    let _ = handle.emit("update-progress", serde_json::json!({
-                        "stage": "downloading",
-                        "percent": pct,
-                        "message": msg
-                    }));
+                {
+                    let mut downloaded: u64 = 0;
+                    move |chunk, total| {
+                        downloaded += chunk as u64;
+                        let (pct, msg) = if let Some(t) = total {
+                            let p = if t > 0 { (downloaded as f64 / t as f64 * 100.0) as u32 } else { 0 };
+                            (p, format!("下载中 {}%", p))
+                        } else {
+                            let mb = downloaded as f64 / 1_048_576.0;
+                            (0, format!("下载中 {:.1} MB", mb))
+                        };
+                        let _ = handle1.emit("update-progress", serde_json::json!({
+                            "stage": "downloading",
+                            "percent": pct,
+                            "message": msg
+                        }));
+                    }
                 },
                 || {
                     let _ = handle.emit("update-progress", serde_json::json!({
