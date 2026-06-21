@@ -33,7 +33,7 @@ export function setBackendUrl(url: string): void {
 
 if (!_isViteDev) {
   const BACKEND = getBackendUrl();
-  console.log('[KI] Production/Tauri mode — API →', BACKEND);
+  console.log('[知几] Production/Tauri mode — API →', BACKEND);
   const _origFetch = window.fetch;
   window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
     if (typeof input === 'string' && input.startsWith('/api/')) {
@@ -43,7 +43,7 @@ if (!_isViteDev) {
     return _origFetch(input, init);
   };
 } else {
-  console.log('[KI] Vite dev mode — using proxy');
+  console.log('[知几] Vite dev mode — using proxy');
 }
 
 createRoot(document.getElementById('root')!).render(

@@ -1,7 +1,7 @@
 [package]
 name = "knowledge-intelligence"
 version = "0.1.0"
-description = "Knowledge Intelligence Desktop"
+description = "知几 — 知几其神乎，见微知著"
 authors = ["samuelhung"]
 edition = "2021"
 
@@ -18,6 +18,8 @@ tauri-plugin-shell = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-updater = "2"
+tauri-plugin-window-state = "2"
+tauri-plugin-notification = "2"
 dirs = "5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

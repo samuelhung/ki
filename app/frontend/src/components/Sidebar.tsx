@@ -45,7 +45,10 @@ export default function Sidebar() {
   return (
     <aside className="w-72 bg-[#141518] border-r border-[#2A2B30] flex flex-col h-full text-gray-300">
       <div className="p-4 flex flex-col items-center border-b border-[#2A2B30] gap-1">
-        <span className="font-semibold text-white text-2xl tracking-wide">知识情报中心</span>
+        <div className="text-center">
+          <span className="font-semibold text-white text-2xl tracking-wide">知几</span>
+          <p className="text-gray-500 text-[10px] mt-0.5 leading-tight">知几其神乎<br/>见微知著</p>
+        </div>
         <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-purple-500/20 text-purple-400">v{APP_VERSION}</span>
       </div>
       <nav className="px-2 pt-5 pb-2 space-y-1 flex-1">

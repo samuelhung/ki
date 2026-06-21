@@ -20,7 +20,7 @@ export default function MobileHeader() {
   return (
     <header className="md:hidden sticky top-0 z-30 bg-[#0B0C10] border-b border-[#2A2B30] flex items-center justify-between px-4 h-12 shrink-0">
       <div className="flex items-baseline gap-1.5">
-        <span className="font-semibold text-white text-base">知识情报中心</span>
+        <span className="font-semibold text-white text-base">知几</span>
         <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-purple-500/20 text-purple-400">v{APP_VERSION}</span>
       </div>
       <div ref={menuRef} className="relative">

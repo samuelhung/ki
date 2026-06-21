@@ -3,7 +3,7 @@
 // 1. desktop/src-tauri/tauri.conf.json   → version（热更新判断用）
 // 2. desktop-latest.json                 → version（更新端点）
 // 3. 本文件                              → APP_VERSION（前端显示用）
-export const APP_VERSION = "1.8.6";
+export const APP_VERSION = "1.8.7";
 
 // Backend URL for API calls
 export const DEFAULT_BACKEND_URL = "http://127.0.0.1:9120";

@@ -5,16 +5,105 @@ use std::time::Duration;
 use tauri::{
     menu::{MenuBuilder, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager, WebviewWindow,
+    Emitter, Manager, WebviewWindow,
 };
 use tauri_plugin_updater::UpdaterExt;
 
 struct BackendProcess(Mutex<Option<Child>>);
 
-/// Tauri command: expose desktop app version to frontend.
+/// Tauri command: expose app version to frontend.
 #[tauri::command]
 fn get_desktop_version(app: tauri::AppHandle) -> String {
     app.package_info().version.to_string()
+}
+
+/// Tauri command: manually check for updates from frontend.
+#[tauri::command]
+async fn check_updates(app: tauri::AppHandle) -> Result<String, String> {
+    let updater = app.updater().map_err(|e| format!("Updater init failed: {}", e))?;
+    match updater.check().await {
+        Ok(Some(update)) => {
+            let new_ver = update.version.clone();
+            eprintln!("[知几更新] 发现新版本 v{}", new_ver);
+            let app_handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                match update
+                    .download_and_install(
+                        |chunk, total| {
+                            if let Some(t) = total {
+                                let pct = if t > 0 {
+                                    (chunk as f64 / t as f64 * 100.0) as u32
+                                } else {
+                                    0
+                                };
+                                let _ = app_handle.emit("update-progress", serde_json::json!({
+                                    "stage": "downloading",
+                                    "percent": pct,
+                                    "message": format!("下载中 {}%", pct)
+                                }));
+                            }
+                        },
+                        || {
+                            let _ = app_handle.emit("update-progress", serde_json::json!({
+                                "stage": "installing",
+                                "percent": 100,
+                                "message": "安装中..."
+                            }));
+                        },
+                    )
+                    .await
+                {
+                    Ok(()) => {
+                        let _ = app_handle.emit("update-progress", serde_json::json!({
+                            "stage": "done",
+                            "percent": 100,
+                            "message": "更新完成，即将重启"
+                        }));
+                        app_handle.restart();
+                    }
+                    Err(e) => {
+                        let _ = app_handle.emit("update-progress", serde_json::json!({
+                            "stage": "error",
+                            "percent": 0,
+                            "message": format!("安装失败: {}", e)
+                        }));
+                    }
+                }
+            });
+            Ok(format!("v{}", new_ver))
+        }
+        Ok(None) => Ok("latest".into()),
+        Err(e) => Err(format!("检查失败: {}", e)),
+    }
+}
+
+/// Tauri command: get latest crash log if any.
+#[tauri::command]
+fn get_crash_logs(_app: tauri::AppHandle) -> Vec<serde_json::Value> {
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let crash_dir = home.join("Documents/KI/crashes");
+    if !crash_dir.exists() {
+        return vec![];
+    }
+    let mut logs = vec![];
+    if let Ok(entries) = std::fs::read_dir(&crash_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().map(|e| e == "log").unwrap_or(false) {
+                if let Ok(content) = std::fs::read_to_string(&path) {
+                    let name = path.file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    logs.push(serde_json::json!({
+                        "name": name,
+                        "content": content.chars().take(2000).collect::<String>(),
+                    }));
+                }
+            }
+        }
+    }
+    logs.sort_by(|a, b| b["name"].as_str().cmp(&a["name"].as_str()));
+    logs
 }
 
 /// Migrate data from old project directory to ~/Documents/KI/ on first launch.
@@ -24,7 +113,6 @@ fn migrate_data_if_needed(ki_home: &PathBuf) {
         return;
     }
 
-    // Check known old data locations
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     let old_data = home.join("Documents/Projects/KnowledgeIntelligence/data");
     let old_db = old_data.join("intelligence.sqlite");
@@ -33,26 +121,24 @@ fn migrate_data_if_needed(ki_home: &PathBuf) {
         let new_data = ki_home.join("data");
         let new_db = new_data.join("intelligence.sqlite");
 
-        // Only migrate if new DB is missing or smaller than old DB
         let should_migrate = !new_db.exists()
             || (old_db.metadata().map(|m| m.len()).unwrap_or(0)
                 > new_db.metadata().map(|m| m.len()).unwrap_or(0)
-                && new_db.metadata().map(|m| m.len()).unwrap_or(0) < 10_000_000); // < 10MB = likely empty
+                && new_db.metadata().map(|m| m.len()).unwrap_or(0) < 10_000_000);
 
         if should_migrate {
             eprintln!(
-                "[ki-setup] Migrating data: {:?} → {:?}",
+                "[知几] 迁移数据: {:?} → {:?}",
                 old_db, new_db
             );
             let _ = std::fs::create_dir_all(&new_data);
             if let Err(e) = std::fs::copy(&old_db, &new_db) {
-                eprintln!("[ki-setup] Failed to copy database: {}", e);
+                eprintln!("[知几] 数据库迁移失败: {}", e);
             } else {
-                eprintln!("[ki-setup] ✅ Database migrated ({:.0} MB)",
+                eprintln!("[知几] ✅ 数据库已迁移 ({:.0} MB)",
                     old_db.metadata().map(|m| m.len()).unwrap_or(0) as f64 / 1_048_576.0);
             }
 
-            // Copy ingest subdirectories (audio, videos, summaries, transcripts)
             for sub in &["audio", "videos", "summaries", "transcripts"] {
                 let old_sub = old_data.join("ingest").join(sub);
                 let new_sub = new_data.join("ingest").join(sub);
@@ -66,14 +152,10 @@ fn migrate_data_if_needed(ki_home: &PathBuf) {
         }
     }
 
-    // Create marker so we don't try again
     let _ = std::fs::write(&marker, "migrated");
 }
 
-/// Resolve the Python executable and app directory.
-///
-/// In debug builds: uses the project's `app/.venv/bin/python3` and `app/` directory.
-/// In release builds: resolves paths relative to the .app bundle's `Resources/backend/`.
+/// Resolve Python executable and app directory.
 fn backend_paths() -> (PathBuf, PathBuf) {
     if cfg!(debug_assertions) {
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -82,11 +164,6 @@ fn backend_paths() -> (PathBuf, PathBuf) {
         let app_dir = project_root.join("app");
         (python, app_dir)
     } else {
-        // Release: resolve relative to the .app bundle
-        // current_exe() → /Applications/KI.app/Contents/MacOS/knowledge-intelligence
-        // parent()      → Contents/MacOS
-        // parent()      → Contents
-        // Resources/backend/python/bin/python3
         let exe_dir = std::env::current_exe()
             .ok()
             .and_then(|p| p.parent().map(|p| p.to_path_buf()))
@@ -100,8 +177,7 @@ fn backend_paths() -> (PathBuf, PathBuf) {
     }
 }
 
-/// Resolve KI_HOME (data directory). Uses ~/Documents/KI/ in release,
-/// falls back to the app_dir parent in debug.
+/// Resolve KI_HOME (data directory).
 fn dirs_next(app_dir: &PathBuf) -> PathBuf {
     if cfg!(debug_assertions) {
         app_dir.join("../data")
@@ -111,7 +187,7 @@ fn dirs_next(app_dir: &PathBuf) -> PathBuf {
     }
 }
 
-/// Escape a string for safe injection into a JS single-quoted string inside eval().
+/// Escape string for JS injection.
 fn js_escape(s: &str) -> String {
     s.replace('\\', "\\\\")
         .replace('\'', "\\'")
@@ -119,7 +195,7 @@ fn js_escape(s: &str) -> String {
         .replace('\r', "\\r")
 }
 
-/// Show a formatted error box on the splash screen.
+/// Show error on splash screen.
 fn show_splash_error(splash: &WebviewWindow, title: &str, detail: &str) {
     let title_esc = js_escape(title);
     let detail_esc = js_escape(detail);
@@ -142,16 +218,28 @@ fn show_splash_error(splash: &WebviewWindow, title: &str, detail: &str) {
     let _ = splash.eval(&js);
 }
 
-/// Spawn a background task to check for updates.
-/// Runs silently — if an update is found, downloads, installs, and restarts.
+/// Save backend crash log to ~/Documents/KI/crashes/
+fn save_crash_log(ki_home: &PathBuf, stderr: &str, _exit_code: &str) {
+    let crash_dir = ki_home.join("crashes");
+    let _ = std::fs::create_dir_all(&crash_dir);
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs().to_string())
+        .unwrap_or_else(|_| "unknown".into());
+    let path = crash_dir.join(format!("backend_crash_{}.log", ts));
+    let _ = std::fs::write(&path, stderr);
+    eprintln!("[知几] 崩溃日志已保存: {:?}", path);
+}
+
+/// Spawn background update check with progress events.
 fn spawn_update_check(handle: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
-        eprintln!("[ki-updater] Checking for updates...");
+        eprintln!("[知几更新] 后台检查更新...");
 
         let updater = match handle.updater() {
             Ok(u) => u,
             Err(e) => {
-                eprintln!("[ki-updater] Updater init failed: {}", e);
+                eprintln!("[知几更新] Updater init failed: {}", e);
                 return;
             }
         };
@@ -159,44 +247,62 @@ fn spawn_update_check(handle: tauri::AppHandle) {
         let update = match updater.check().await {
             Ok(Some(u)) => u,
             Ok(None) => {
-                eprintln!("[ki-updater] Already up to date");
+                eprintln!("[知几更新] 已是最新版本");
                 return;
             }
             Err(e) => {
-                eprintln!("[ki-updater] Check failed (network/endpoint): {}", e);
+                eprintln!("[知几更新] 检查失败: {}", e);
                 return;
             }
         };
 
-        eprintln!(
-            "[ki-updater] Update found: current → v{}",
-            update.version
-        );
+        eprintln!("[知几更新] 发现新版本 v{}", update.version);
+        let _ = handle.emit("update-available", serde_json::json!({
+            "version": update.version,
+            "message": format!("发现新版本 v{}，正在下载...", update.version)
+        }));
 
         match update
             .download_and_install(
-                |chunk_length, content_length| {
-                    if let Some(total) = content_length {
-                        let pct = if total > 0 {
-                            (chunk_length as f64 / total as f64 * 100.0) as u32
+                |chunk, total| {
+                    if let Some(t) = total {
+                        let pct = if t > 0 {
+                            (chunk as f64 / t as f64 * 100.0) as u32
                         } else {
                             0
                         };
-                        eprintln!("[ki-updater] Download: {}%", pct);
+                        let _ = handle.emit("update-progress", serde_json::json!({
+                            "stage": "downloading",
+                            "percent": pct,
+                            "message": format!("下载中 {}%", pct)
+                        }));
                     }
                 },
                 || {
-                    eprintln!("[ki-updater] Download complete, installing...");
+                    let _ = handle.emit("update-progress", serde_json::json!({
+                        "stage": "installing",
+                        "percent": 100,
+                        "message": "安装中，即将重启..."
+                    }));
                 },
             )
             .await
         {
             Ok(()) => {
-                eprintln!("[ki-updater] Update installed, restarting...");
+                let _ = handle.emit("update-progress", serde_json::json!({
+                    "stage": "done",
+                    "percent": 100,
+                    "message": "更新完成，即将重启"
+                }));
                 handle.restart();
             }
             Err(e) => {
-                eprintln!("[ki-updater] Install failed: {}", e);
+                eprintln!("[知几更新] 安装失败: {}", e);
+                let _ = handle.emit("update-progress", serde_json::json!({
+                    "stage": "error",
+                    "percent": 0,
+                    "message": format!("安装失败: {}", e)
+                }));
             }
         }
     });
@@ -209,7 +315,13 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![get_desktop_version])
+        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_notification::init())
+        .invoke_handler(tauri::generate_handler![
+            get_desktop_version,
+            check_updates,
+            get_crash_logs
+        ])
         .setup(|app| {
             let (venv_python, app_dir) = backend_paths();
 
@@ -223,7 +335,7 @@ pub fn run() {
             };
 
             let splash = tauri::WebviewWindowBuilder::new(app, "splash", splash_url)
-                .title("Knowledge Intelligence")
+                .title("知几")
                 .inner_size(500.0, 340.0)
                 .resizable(false)
                 .decorations(false)
@@ -241,10 +353,7 @@ pub fn run() {
                 .and_then(|o| {
                     if o.status.success() && !o.stdout.is_empty() {
                         let pids = String::from_utf8_lossy(&o.stdout);
-                        eprintln!(
-                            "[ki-setup] Stale backend PIDs on :9120 — killing: {}",
-                            pids.trim()
-                        );
+                        eprintln!("[知几] 清理旧后端 PID: {}", pids.trim());
                         let _ = Command::new("kill")
                             .args(["-9"])
                             .args(pids.split_whitespace())
@@ -254,16 +363,13 @@ pub fn run() {
                 });
             std::thread::sleep(Duration::from_millis(500));
 
-            eprintln!(
-                "[ki-setup] Python: {:?}  cwd: {:?}",
-                venv_python, app_dir
-            );
+            eprintln!("[知几] Python: {:?}  cwd: {:?}", venv_python, app_dir);
 
             // --- Spawn Python backend ---
             let python_home = app_dir.join("python");
             let ki_home = dirs_next(&app_dir);
-            // Migrate data from old project location on first launch
             migrate_data_if_needed(&ki_home);
+
             let child = Command::new(&venv_python)
                 .args([
                     "-m", "uvicorn", "backend.main:app",
@@ -283,11 +389,9 @@ pub fn run() {
 
             let backend_ok = match child {
                 Ok(mut child) => {
-                    // Wait longer on first launch — Rosetta 2 translation can be slow
                     std::thread::sleep(Duration::from_secs(8));
                     match child.try_wait() {
                         Ok(Some(status)) => {
-                            // Backend died — collect full diagnostics
                             let mut stderr_out = String::new();
                             let mut stdout_out = String::new();
                             if let Some(ref mut s) = child.stderr {
@@ -298,40 +402,33 @@ pub fn run() {
                                 use std::io::Read;
                                 let _ = s.read_to_string(&mut stdout_out);
                             }
-                            let exit_code = status.code().map(|c| c.to_string()).unwrap_or_else(|| "signal".into());
-                            eprintln!(
-                                "[ki-setup] ❌ BACKEND DIED (exit {})\n\
-                                 Python: {:?}\n\
-                                 cwd: {:?}\n\
-                                 PYTHONHOME: {:?}\n\
-                                 stdout: {}\n\
-                                 stderr: {}",
-                                exit_code, venv_python, app_dir, python_home, stdout_out, stderr_out
-                            );
+                            let exit_code = status.code()
+                                .map(|c| c.to_string())
+                                .unwrap_or_else(|| "signal".into());
 
-                            // Show diagnostic info on splash
-                            let detail = if stderr_out.is_empty() && stdout_out.is_empty() {
-                                format!("进程异常退出 (exit {})\nPython: {:?}\n请检查依赖是否完整", exit_code, venv_python)
-                            } else {
-                                // Show last 500 chars of combined output
-                                let combined = format!("stdout:\n{}\nstderr:\n{}", stdout_out, stderr_out);
-                                let tail: String = if combined.len() > 500 {
-                                    format!("...\n{}", combined.chars().rev().take(500).collect::<String>().chars().rev().collect::<String>())
-                                } else {
-                                    combined
-                                };
-                                format!("进程异常退出 (exit {})\n{}", exit_code, tail)
-                            };
-                            show_splash_error(&splash, "启动失败 — 后端进程异常退出", &detail);
+                            // Save crash log
+                            let combined = format!("stdout:\n{}\nstderr:\n{}", stdout_out, stderr_out);
+                            save_crash_log(&ki_home, &combined, &exit_code);
+
+                            eprintln!(
+                                "[知几] ❌ 后端异常退出 (exit {})\nstderr: {}",
+                                exit_code, stderr_out
+                            );
+                            let detail = format!(
+                                "进程异常退出 (exit {})\n\n崩溃日志已保存到 ~/Documents/KI/crashes/\n\n{}",
+                                exit_code,
+                                stderr_out.chars().take(400).collect::<String>()
+                            );
+                            show_splash_error(&splash, "启动失败 — 后端异常退出", &detail);
                             false
                         }
                         Ok(None) => {
                             app.manage(BackendProcess(Mutex::new(Some(child))));
-                            eprintln!("[ki-setup] ✅ Backend running on http://127.0.0.1:9120");
+                            eprintln!("[知几] ✅ 后端运行中 http://127.0.0.1:9120");
                             true
                         }
                         Err(e) => {
-                            eprintln!("[ki-setup] try_wait error: {}", e);
+                            eprintln!("[知几] try_wait error: {}", e);
                             show_splash_error(&splash, "启动失败 — 进程状态异常", &e.to_string());
                             false
                         }
@@ -340,32 +437,22 @@ pub fn run() {
                 Err(e) => {
                     let err_str = e.to_string();
                     eprintln!(
-                        "[ki-setup] ❌ Failed to spawn backend\n\
-                         Python: {:?}\n\
-                         Error: {}\n\
-                         Does the Python binary exist? {:?}",
+                        "[知几] ❌ 后端启动失败\nPython: {:?}\nError: {}\nExists: {:?}",
                         venv_python, err_str, venv_python.exists()
                     );
-
-                    // Build diagnostic message
                     let mut detail = format!("无法启动 Python 后端\n{}", err_str);
-
-                    // Check for Rosetta 2 hint
-                    if err_str.contains("bad CPU") || err_str.contains("Bad CPU") || err_str.contains("EBADARCH") {
+                    if err_str.contains("bad CPU") || err_str.contains("Bad CPU") {
                         detail.push_str("\n\n可能需要 Rosetta 2：\nsoftwareupdate --install-rosetta");
                     }
-                    // Check if Python binary missing
                     if !venv_python.exists() {
                         detail.push_str(&format!("\n\nPython 二进制不存在:\n{:?}", venv_python));
                     }
-
                     show_splash_error(&splash, "启动失败 — 无法启动后端", &detail);
                     false
                 }
             };
 
             if backend_ok {
-                // Spawn background update check (non-blocking, silent)
                 spawn_update_check(app.handle().clone());
 
                 splash.close()?;
@@ -374,17 +461,40 @@ pub fn run() {
                     main.set_focus()?;
                 }
 
+                // --- Drag-drop: handled in frontend via native HTML5 DnD API ---
+
                 // --- System tray ---
                 let icon = app.default_window_icon().cloned().unwrap();
+                let about = MenuItemBuilder::with_id("about", "关于知几").build(app)?;
                 let toggle = MenuItemBuilder::with_id("toggle", "显示/隐藏").build(app)?;
                 let quit = MenuItemBuilder::with_id("quit", "退出").build(app)?;
-                let menu = MenuBuilder::new(app).items(&[&toggle, &quit]).build()?;
+                let menu = MenuBuilder::new(app)
+                    .items(&[&about, &toggle, &quit])
+                    .build()?;
 
                 let _tray = TrayIconBuilder::new()
                     .icon(icon)
                     .menu(&menu)
-                    .tooltip("Knowledge Intelligence")
+                    .tooltip("知几")
                     .on_menu_event(|app, event| match event.id().as_ref() {
+                        "about" => {
+                            if let Some(w) = app.get_webview_window("about") {
+                                w.show().ok();
+                                w.set_focus().ok();
+                            } else {
+                                let _ = tauri::WebviewWindowBuilder::new(
+                                    app,
+                                    "about",
+                                    tauri::WebviewUrl::App("about.html".into()),
+                                )
+                                .title("关于知几")
+                                .inner_size(380.0, 320.0)
+                                .resizable(false)
+                                .decorations(true)
+                                .center()
+                                .build();
+                            }
+                        }
                         "toggle" => {
                             if let Some(w) = app.get_webview_window("main") {
                                 if w.is_visible().unwrap_or(false) {
