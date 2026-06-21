@@ -1,14 +1,16 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
+import { HashRouter } from 'react-router-dom';
 import App from './App';
 import './style.css';
 
-// In Tauri production, prepend backend URL to all /api/ requests
-// (dev mode relies on Vite proxy, Tauri webview has no proxy)
-const _isTauri = !!(window as any).__TAURI_INTERNALS__;
-if (_isTauri) {
-  const BACKEND = 'http://127.0.0.1:9120';
+// Detect Tauri production (not dev via Vite on :5173)
+const _origin = window.location.origin;
+const _isDev = _origin.includes('5173') || _origin.includes('localhost');
+const BACKEND = 'http://127.0.0.1:9120';
+
+if (!_isDev) {
+  console.log('[KI] Tauri production mode — API →', BACKEND);
   const _origFetch = window.fetch;
   window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
     if (typeof input === 'string' && input.startsWith('/api/')) {
@@ -16,10 +18,12 @@ if (_isTauri) {
     }
     return _origFetch(input, init);
   };
+} else {
+  console.log('[KI] Dev mode — using Vite proxy');
 }
 
 createRoot(document.getElementById('root')!).render(
-  <BrowserRouter>
+  <HashRouter>
     <App />
-  </BrowserRouter>
+  </HashRouter>
 );
