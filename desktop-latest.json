@@ -1,18 +1,18 @@
 {
   "version": "1.8.11",
-  "notes": "切换为 .app.tar.gz 格式 — Tauri macOS updater 需要 gzip 压缩的 .app 包而非 DMG",
-  "pub_date": "2026-06-21T18:02:00Z",
+  "notes": "修复 AppleDouble 资源分支 — COPYFILE_DISABLE=1 打包避免 ._ 前缀文件",
+  "pub_date": "2026-06-21T18:10:35Z",
   "platforms": {
     "darwin-universal": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSNjdBVUVYL0haRndnelhQaC9RSTEzUk16TjFDT1d1eldCVFRuS05LdzArcDVCUkNLdlpwUFpnVkFLMmxuS0h4dFNXUWYwTHREOVRPRFJaZjVQem1NbHUxaGc5cFcxNFFrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMDY0OTEyCWZpbGU6WmhpSmlfMS44LjExX3VuaXZlcnNhbC5hcHAudGFyLmd6ClA4MFJCMmcyNmtjUzBCSTN1cklDYXJuUDhXZkkrUEcwUFJka0xSRlhSL2x3MTR3dk5MUTdndnBpWWVVeVZoUzZ2b0MyNFFGbDVsUGRQaWh5MkFBSkN3PT0K",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSNjdBVUVYL0haRjZ4MVh2OG5scXZYK3VWOFJqa0RBWnZzTmV6c1NxSXVGNmxqNlJKZ09oc05LVi9YRVhDc01PZ2VSV0QyeE5mcDJHT0h0SVVBdFJIWGFhMklKSVBMUkFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMDY1NDI3CWZpbGU6WmhpSmlfMS44LjExX3VuaXZlcnNhbC5hcHAudGFyLmd6CnFiWVljNXFuUmpOMHBjYnAxZnZ3QkJQb0ZIV2dmdkRlU1VaUUxWeUVNbWJyVm5sWDFHQmlMVkVNYUlUaHIvTzF4dFVacWQ3NW1JRnFpYXBySWh1VkFnPT0K",
       "url": "https://github.com/samuelhung/ki/releases/download/desktop-v1.8.11/ZhiJi_1.8.11_universal.app.tar.gz"
     },
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSNjdBVUVYL0haRndnelhQaC9RSTEzUk16TjFDT1d1eldCVFRuS05LdzArcDVCUkNLdlpwUFpnVkFLMmxuS0h4dFNXUWYwTHREOVRPRFJaZjVQem1NbHUxaGc5cFcxNFFrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMDY0OTEyCWZpbGU6WmhpSmlfMS44LjExX3VuaXZlcnNhbC5hcHAudGFyLmd6ClA4MFJCMmcyNmtjUzBCSTN1cklDYXJuUDhXZkkrUEcwUFJka0xSRlhSL2x3MTR3dk5MUTdndnBpWWVVeVZoUzZ2b0MyNFFGbDVsUGRQaWh5MkFBSkN3PT0K",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSNjdBVUVYL0haRjZ4MVh2OG5scXZYK3VWOFJqa0RBWnZzTmV6c1NxSXVGNmxqNlJKZ09oc05LVi9YRVhDc01PZ2VSV0QyeE5mcDJHT0h0SVVBdFJIWGFhMklKSVBMUkFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMDY1NDI3CWZpbGU6WmhpSmlfMS44LjExX3VuaXZlcnNhbC5hcHAudGFyLmd6CnFiWVljNXFuUmpOMHBjYnAxZnZ3QkJQb0ZIV2dmdkRlU1VaUUxWeUVNbWJyVm5sWDFHQmlMVkVNYUlUaHIvTzF4dFVacWQ3NW1JRnFpYXBySWh1VkFnPT0K",
       "url": "https://github.com/samuelhung/ki/releases/download/desktop-v1.8.11/ZhiJi_1.8.11_universal.app.tar.gz"
     },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSNjdBVUVYL0haRndnelhQaC9RSTEzUk16TjFDT1d1eldCVFRuS05LdzArcDVCUkNLdlpwUFpnVkFLMmxuS0h4dFNXUWYwTHREOVRPRFJaZjVQem1NbHUxaGc5cFcxNFFrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMDY0OTEyCWZpbGU6WmhpSmlfMS44LjExX3VuaXZlcnNhbC5hcHAudGFyLmd6ClA4MFJCMmcyNmtjUzBCSTN1cklDYXJuUDhXZkkrUEcwUFJka0xSRlhSL2x3MTR3dk5MUTdndnBpWWVVeVZoUzZ2b0MyNFFGbDVsUGRQaWh5MkFBSkN3PT0K",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSNjdBVUVYL0haRjZ4MVh2OG5scXZYK3VWOFJqa0RBWnZzTmV6c1NxSXVGNmxqNlJKZ09oc05LVi9YRVhDc01PZ2VSV0QyeE5mcDJHT0h0SVVBdFJIWGFhMklKSVBMUkFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMDY1NDI3CWZpbGU6WmhpSmlfMS44LjExX3VuaXZlcnNhbC5hcHAudGFyLmd6CnFiWVljNXFuUmpOMHBjYnAxZnZ3QkJQb0ZIV2dmdkRlU1VaUUxWeUVNbWJyVm5sWDFHQmlMVkVNYUlUaHIvTzF4dFVacWQ3NW1JRnFpYXBySWh1VkFnPT0K",
       "url": "https://github.com/samuelhung/ki/releases/download/desktop-v1.8.11/ZhiJi_1.8.11_universal.app.tar.gz"
     }
   }
