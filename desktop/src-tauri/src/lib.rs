@@ -38,18 +38,18 @@ async fn check_updates(app: tauri::AppHandle) -> Result<String, String> {
                 match update
                     .download_and_install(
                         |chunk, total| {
-                            if let Some(t) = total {
-                                let pct = if t > 0 {
-                                    (chunk as f64 / t as f64 * 100.0) as u32
-                                } else {
-                                    0
-                                };
-                                let _ = app_handle.emit("update-progress", serde_json::json!({
-                                    "stage": "downloading",
-                                    "percent": pct,
-                                    "message": format!("下载中 {}%", pct)
-                                }));
-                            }
+                            let (pct, msg) = if let Some(t) = total {
+                                let p = if t > 0 { (chunk as f64 / t as f64 * 100.0) as u32 } else { 0 };
+                                (p, format!("下载中 {}%", p))
+                            } else {
+                                let mb = chunk as f64 / 1_048_576.0;
+                                (0, format!("下载中 {:.1} MB", mb))
+                            };
+                            let _ = app_handle.emit("update-progress", serde_json::json!({
+                                "stage": "downloading",
+                                "percent": pct,
+                                "message": msg
+                            }));
                         },
                         || {
                             let _ = app_handle.emit("update-progress", serde_json::json!({
@@ -280,18 +280,18 @@ fn spawn_update_check(handle: tauri::AppHandle) {
         match update
             .download_and_install(
                 |chunk, total| {
-                    if let Some(t) = total {
-                        let pct = if t > 0 {
-                            (chunk as f64 / t as f64 * 100.0) as u32
-                        } else {
-                            0
-                        };
-                        let _ = handle.emit("update-progress", serde_json::json!({
-                            "stage": "downloading",
-                            "percent": pct,
-                            "message": format!("下载中 {}%", pct)
-                        }));
-                    }
+                    let (pct, msg) = if let Some(t) = total {
+                        let p = if t > 0 { (chunk as f64 / t as f64 * 100.0) as u32 } else { 0 };
+                        (p, format!("下载中 {}%", p))
+                    } else {
+                        let mb = chunk as f64 / 1_048_576.0;
+                        (0, format!("下载中 {:.1} MB", mb))
+                    };
+                    let _ = handle.emit("update-progress", serde_json::json!({
+                        "stage": "downloading",
+                        "percent": pct,
+                        "message": msg
+                    }));
                 },
                 || {
                     let _ = handle.emit("update-progress", serde_json::json!({
