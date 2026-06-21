@@ -1,11 +1,11 @@
 {
   "version": "1.8.7",
   "notes": "知几重命名 + 增量热更新 + 进度条 + 手动检查更新 + 窗口记忆 + 离线模式 + 拖拽导入 + 崩溃上报 + 关于窗口",
-  "pub_date": "2026-06-21T16:51:55Z",
+  "pub_date": "2026-06-21T16:52:47Z",
   "platforms": {
     "darwin-universal": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSNjdBVUVYL0haRjJVOTJ2NVV2RlYxNXAvRTExekswUzNoL1BBQ1dmOGlpc2QrRzlLQXY1R0ZsTklpcWJXYWRCY011MWJjemtUUGtNdlJ2UC9JQnVqdlAwUGNCd0xEWFFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMDYwNzE1CWZpbGU655+l5YegXzEuOC43X3VuaXZlcnNhbC5kbWcKY3E5UDhYbVBXemNzUmZrV2M1R0gwSWd6TFJFbTl2NFVEWlhkOS94b0hsSFh3ejlXZnlxYTBiUHFPWjFYaVN1R1RuUCtpMUxFU2JuL1dBNDN0M0N1QWc9PQo=",
-      "url": "https://github.com/samuelhung/ki/releases/download/desktop-v1.8.7/知几_1.8.7_universal.dmg"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSNjdBVUVYL0haRjJBR1RWT09vRTUyRm5hSWg5QTdCcVNMeWNLOURQTTVjcU1jYUtCZEJjdEVHTFU4UGpqU1NaMEFmUVJJKzdVUHN5azY5QXUyNllsTnI5MFhGaUppaHdrPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMDYwNzY3CWZpbGU6WmhpSmlfMS44LjdfdW5pdmVyc2FsLmRtZwphSW9TdUhJVGNGYTZWQlRTN0tvR0YwMGVZTGVUN3RwZ0xFM1Z5dGxJMGVVVkdFMXl6K1JTN010dlMyWk5KRmMxQmxvWTBaZlN3MHoyRDVVUkF0L01Cdz09Cg==",
+      "url": "https://github.com/samuelhung/ki/releases/download/desktop-v1.8.7/ZhiJi_1.8.7_universal.dmg"
     }
   }
 }
