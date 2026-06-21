@@ -11,6 +11,65 @@ use tauri_plugin_updater::UpdaterExt;
 
 struct BackendProcess(Mutex<Option<Child>>);
 
+/// Tauri command: expose desktop app version to frontend.
+#[tauri::command]
+fn get_desktop_version(app: tauri::AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
+/// Migrate data from old project directory to ~/Documents/KI/ on first launch.
+fn migrate_data_if_needed(ki_home: &PathBuf) {
+    let marker = ki_home.join(".migrated");
+    if marker.exists() {
+        return;
+    }
+
+    // Check known old data locations
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let old_data = home.join("Documents/Projects/KnowledgeIntelligence/data");
+    let old_db = old_data.join("intelligence.sqlite");
+
+    if old_db.exists() {
+        let new_data = ki_home.join("data");
+        let new_db = new_data.join("intelligence.sqlite");
+
+        // Only migrate if new DB is missing or smaller than old DB
+        let should_migrate = !new_db.exists()
+            || (old_db.metadata().map(|m| m.len()).unwrap_or(0)
+                > new_db.metadata().map(|m| m.len()).unwrap_or(0)
+                && new_db.metadata().map(|m| m.len()).unwrap_or(0) < 10_000_000); // < 10MB = likely empty
+
+        if should_migrate {
+            eprintln!(
+                "[ki-setup] Migrating data: {:?} → {:?}",
+                old_db, new_db
+            );
+            let _ = std::fs::create_dir_all(&new_data);
+            if let Err(e) = std::fs::copy(&old_db, &new_db) {
+                eprintln!("[ki-setup] Failed to copy database: {}", e);
+            } else {
+                eprintln!("[ki-setup] ✅ Database migrated ({:.0} MB)",
+                    old_db.metadata().map(|m| m.len()).unwrap_or(0) as f64 / 1_048_576.0);
+            }
+
+            // Copy ingest subdirectories (audio, videos, summaries, transcripts)
+            for sub in &["audio", "videos", "summaries", "transcripts"] {
+                let old_sub = old_data.join("ingest").join(sub);
+                let new_sub = new_data.join("ingest").join(sub);
+                if old_sub.exists() && !new_sub.exists() {
+                    let _ = std::fs::create_dir_all(new_sub.parent().unwrap_or(&new_sub));
+                    let _ = Command::new("cp")
+                        .args(["-R", &old_sub.to_string_lossy(), &new_sub.to_string_lossy()])
+                        .output();
+                }
+            }
+        }
+    }
+
+    // Create marker so we don't try again
+    let _ = std::fs::write(&marker, "migrated");
+}
+
 /// Resolve the Python executable and app directory.
 ///
 /// In debug builds: uses the project's `app/.venv/bin/python3` and `app/` directory.
@@ -150,6 +209,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![get_desktop_version])
         .setup(|app| {
             let (venv_python, app_dir) = backend_paths();
 
@@ -202,6 +262,8 @@ pub fn run() {
             // --- Spawn Python backend ---
             let python_home = app_dir.join("python");
             let ki_home = dirs_next(&app_dir);
+            // Migrate data from old project location on first launch
+            migrate_data_if_needed(&ki_home);
             let child = Command::new(&venv_python)
                 .args([
                     "-m", "uvicorn", "backend.main:app",
