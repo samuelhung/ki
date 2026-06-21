@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Save } from 'lucide-react';
+import { Settings, Save, Wifi, WifiOff, Globe, Server, Activity } from 'lucide-react';
+import { getBackendUrl, setBackendUrl } from '../main';
+import { APP_VERSION } from '../constants';
 
 interface TaskConfig {
   temperature: number;
@@ -42,6 +44,7 @@ const TAB_LABELS: Record<string, string> = {
   tasks: '待办事务',
   concept: '概念沉淀',
   knowledge_graph: '知识图谱',
+  connection: '连接',
 };
 
 const TASK_NAMES: Record<string, Record<string, string>> = {
@@ -180,11 +183,69 @@ function TaskRow({ name, cnName, config, suggestion, onChange }: {
 
 /* ── 主组件 ── */
 
+/** Format seconds into human-readable uptime string. */
+function formatUptime(sec: number): string {
+  if (sec < 60) return `${Math.floor(sec)}秒`;
+  if (sec < 3600) return `${Math.floor(sec / 60)}分`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}时${Math.floor((sec % 3600) / 60)}分`;
+  return `${Math.floor(sec / 86400)}天${Math.floor((sec % 86400) / 3600)}时`;
+}
+
 export default function SystemSettings() {
   const [config, setConfig] = useState<SystemConfig | null>(null);
   const [tab, setTab] = useState('params_info');
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
+
+  // ── Connection tab state ──
+  interface HealthData { ok: boolean; service: string; version: string; uptime_sec: number; database: { ok: boolean; size_mb: number; event_count: number; error: string | null } }
+  const [backendUrl, setBackendUrlState] = useState(getBackendUrl());
+  const [urlMode, setUrlMode] = useState<'auto' | 'manual'>(getBackendUrl() === 'http://127.0.0.1:9120' ? 'auto' : 'manual');
+  const [urlInput, setUrlInput] = useState(getBackendUrl() === 'http://127.0.0.1:9120' ? '' : getBackendUrl());
+  const [health, setHealth] = useState<{ data: HealthData | null; latency_ms: number; error: string | null }>({ data: null, latency_ms: 0, error: null });
+  const [testing, setTesting] = useState(false);
+  const [connSaved, setConnSaved] = useState(false);
+
+  // Heartbeat: poll /api/health every 5 seconds
+  useEffect(() => {
+    const check = async () => {
+      const t0 = performance.now();
+      try {
+        const r = await fetch('/api/health');
+        const json = await r.json();
+        setHealth({ data: json, latency_ms: Math.round(performance.now() - t0), error: null });
+      } catch (e: any) {
+        setHealth({ data: null, latency_ms: 0, error: e.message || '连接失败' });
+      }
+    };
+    check(); // immediate
+    const interval = setInterval(check, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const testConnection = async () => {
+    const target = urlMode === 'auto' ? 'http://127.0.0.1:9120' : urlInput.trim();
+    setTesting(true);
+    const t0 = performance.now();
+    try {
+      const r = await fetch(target + '/api/health');
+      const json = await r.json();
+      setHealth({ data: json, latency_ms: Math.round(performance.now() - t0), error: null });
+      setConnSaved(false);
+    } catch (e: any) {
+      setHealth({ data: null, latency_ms: 0, error: e.message || '无法连接' });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const saveConnection = () => {
+    const target = urlMode === 'auto' ? '' : urlInput.trim(); // empty = revert to default
+    setBackendUrl(target);
+    setBackendUrlState(getBackendUrl());
+    setConnSaved(true);
+    setTimeout(() => setConnSaved(false), 3000);
+  };
 
   useEffect(() => {
     fetch('/api/system-config')
@@ -532,8 +593,185 @@ export default function SystemSettings() {
         </div>
       )}
 
+      {/* Tab: 连接 */}
+      {tab === 'connection' && (
+        <div className="space-y-6">
+          {/* Status panel */}
+          <div className="bg-[#141518] border border-[#2A2B30] rounded-xl p-5">
+            <h2 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+              <Activity size={16} className="text-purple-400" />
+              连接状态
+            </h2>
+            {health.error ? (
+              <div className="flex items-center gap-3 p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
+                <WifiOff size={20} className="text-red-400 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-red-400">未连接</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{health.error}</p>
+                  <p className="text-xs text-gray-600 mt-0.5">目标: {backendUrl}</p>
+                </div>
+              </div>
+            ) : health.data ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-3 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+                  <Wifi size={20} className="text-emerald-400 shrink-0" />
+                  <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-2">
+                    <div>
+                      <span className="text-[10px] text-gray-500">状态</span>
+                      <p className="text-sm text-emerald-400 font-medium">已连接</p>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-gray-500">延迟</span>
+                      <p className="text-sm text-white">{health.latency_ms}ms</p>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-gray-500">后端版本</span>
+                      <p className="text-sm text-white">{health.data.version}</p>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-gray-500">运行时间</span>
+                      <p className="text-sm text-white">{formatUptime(health.data.uptime_sec)}</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs bg-purple-500/5 text-purple-400">
+                  <Globe size={12} />
+                  <span>客户端 v{APP_VERSION}</span>
+                  <span className="text-gray-600">→</span>
+                  <span className="text-gray-300">{backendUrl}</span>
+                </div>
+                {/* Database sub-status */}
+                <div className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs ${
+                  health.data.database?.ok
+                    ? 'bg-emerald-500/5 text-emerald-400'
+                    : 'bg-red-500/5 text-red-400'
+                }`}>
+                  <Server size={12} />
+                  <span>数据库：{health.data.database?.ok ? '正常' : '异常'}</span>
+                  {health.data.database?.ok && (
+                    <>
+                      <span className="text-gray-600">|</span>
+                      <span>{health.data.database.event_count} 条事件</span>
+                      <span className="text-gray-600">|</span>
+                      <span>{health.data.database.size_mb} MB</span>
+                    </>
+                  )}
+                  {!health.data.database?.ok && health.data.database?.error && (
+                    <>
+                      <span className="text-gray-600">|</span>
+                      <span className="text-red-300">{health.data.database.error}</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 p-4 bg-[#0B0C10] border border-[#2A2B30] rounded-lg">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-500" />
+                <p className="text-sm text-gray-500">检测中...</p>
+              </div>
+            )}
+          </div>
+
+          {/* Backend URL config */}
+          <div className="bg-[#141518] border border-[#2A2B30] rounded-xl p-5">
+            <h2 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+              <Globe size={16} className="text-purple-400" />
+              后端地址
+            </h2>
+
+            {/* Mode selector */}
+            <div className="flex gap-4 mb-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio" name="urlMode" value="auto"
+                  checked={urlMode === 'auto'}
+                  onChange={() => setUrlMode('auto')}
+                  className="accent-purple-500"
+                />
+                <span className="text-xs text-gray-300">自动检测（默认连本地）</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio" name="urlMode" value="manual"
+                  checked={urlMode === 'manual'}
+                  onChange={() => setUrlMode('manual')}
+                  className="accent-purple-500"
+                />
+                <span className="text-xs text-gray-300">手动指定</span>
+              </label>
+            </div>
+
+            {urlMode === 'manual' && (
+              <div className="flex gap-3">
+                <input
+                  type="text"
+                  value={urlInput}
+                  onChange={(e) => setUrlInput(e.target.value)}
+                  placeholder="http://10.8.0.105:9120"
+                  className="flex-1 bg-[#0B0C10] border border-[#2A2B30] rounded-lg px-3 py-2 text-sm text-white
+                    placeholder-gray-600 focus:outline-none focus:border-purple-500"
+                />
+                <button
+                  onClick={testConnection}
+                  disabled={testing || !urlInput.trim()}
+                  className="px-4 py-2 rounded-lg text-xs font-medium bg-[#2A2B30] text-gray-300
+                    hover:bg-[#3A3B40] disabled:opacity-40 transition-colors shrink-0"
+                >
+                  {testing ? '测试中...' : '测试连接'}
+                </button>
+              </div>
+            )}
+
+            {urlMode === 'auto' && (
+              <div className="flex gap-3">
+                <div className="flex-1 bg-[#0B0C10] border border-[#2A2B30] rounded-lg px-3 py-2 text-sm text-gray-500">
+                  http://127.0.0.1:9120（自动）
+                </div>
+                <button
+                  onClick={testConnection}
+                  disabled={testing}
+                  className="px-4 py-2 rounded-lg text-xs font-medium bg-[#2A2B30] text-gray-300
+                    hover:bg-[#3A3B40] disabled:opacity-40 transition-colors shrink-0"
+                >
+                  {testing ? '测试中...' : '测试连接'}
+                </button>
+              </div>
+            )}
+
+            {/* Save / Reset */}
+            <div className="flex items-center gap-3 mt-4">
+              <button
+                onClick={saveConnection}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
+                  bg-purple-500 text-white hover:bg-purple-600 transition-colors"
+              >
+                <Save size={14} />
+                保存
+              </button>
+              {urlMode === 'manual' && (
+                <button
+                  onClick={() => { setUrlMode('auto'); setUrlInput(''); }}
+                  className="px-3 py-2 rounded-lg text-xs text-gray-400 hover:text-white hover:bg-[#2A2B30] transition-colors"
+                >
+                  恢复默认
+                </button>
+              )}
+              {connSaved && (
+                <span className="text-xs text-emerald-400">✓ 已保存，下次请求生效</span>
+              )}
+            </div>
+
+            <p className="text-[11px] text-gray-600 mt-4 leading-relaxed">
+              本地模式：后端运行在本机 127.0.0.1:9120，数据存在本地。<br />
+              远程模式：填入 VPN 地址（如 <code className="text-gray-500 bg-[#0B0C10] px-1 rounded">http://10.8.0.105:9120</code>），
+              多设备共享同一后端和数据。切换后即刻生效。
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Tab: 业务模块 */}
-      {tab !== 'general' && tab !== 'params_info' && (
+      {tab !== 'general' && tab !== 'params_info' && tab !== 'connection' && (
         <div className="bg-[#141518] border border-[#2A2B30] rounded-xl p-5">
           <h2 className="text-sm font-semibold text-white mb-4">
             {TAB_LABELS[tab]} — 任务参数

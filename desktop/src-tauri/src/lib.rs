@@ -164,11 +164,13 @@ pub fn run() {
 
             let splash = tauri::WebviewWindowBuilder::new(app, "splash", splash_url)
                 .title("Knowledge Intelligence")
-                .inner_size(360.0, 280.0)
+                .inner_size(500.0, 340.0)
                 .resizable(false)
                 .decorations(false)
                 .always_on_top(true)
+                .skip_taskbar(true)
                 .center()
+                .visible(true)
                 .build()?;
 
             // --- Kill stale backend ---

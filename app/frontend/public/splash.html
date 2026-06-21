@@ -7,17 +7,18 @@
 body {
   background:#12161C; display:flex; align-items:center; justify-content:center;
   height:100vh; font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif;
-  overflow:hidden;
+  overflow:hidden; user-select:none; -webkit-user-select:none;
 }
-.container { text-align:center; }
+.container { text-align:center; padding:20px; }
 .logo {
-  width:80px; height:80px; background:linear-gradient(135deg,#6366f1,#38bdf8);
-  border-radius:18px; display:flex; align-items:center; justify-content:center;
-  margin:0 auto 20px; font-size:32px; font-weight:700; color:#fff;
+  width:96px; height:96px; background:linear-gradient(135deg,#6366f1,#38bdf8);
+  border-radius:22px; display:flex; align-items:center; justify-content:center;
+  margin:0 auto 24px; font-size:38px; font-weight:700; color:#fff;
+  box-shadow:0 8px 32px rgba(99,102,241,0.3);
 }
-.title { font-size:20px; font-weight:600; color:#e2e8f0; margin-bottom:6px; }
-.subtitle { font-size:13px; color:#64748b; margin-bottom:24px; }
-.loader { width:120px; height:3px; background:#1e293b; border-radius:2px; margin:0 auto; overflow:hidden; }
+.title { font-size:22px; font-weight:600; color:#e2e8f0; margin-bottom:8px; }
+.subtitle { font-size:14px; color:#64748b; margin-bottom:28px; min-height:20px; }
+.loader { width:160px; height:4px; background:#1e293b; border-radius:2px; margin:0 auto; overflow:hidden; }
 .loader-bar { width:30%; height:100%; background:linear-gradient(90deg,#6366f1,#38bdf8); border-radius:2px; animation:slide 1.5s ease-in-out infinite; }
 @keyframes slide { 0%{transform:translateX(-100%)} 100%{transform:translateX(400%)} }
 </style>
