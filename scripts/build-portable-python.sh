@@ -79,6 +79,12 @@ for lib in libssl.3 libcrypto.3 libmpdec.4 liblzma.5 libsqlite3.0; do
     install_name_tool -id "@rpath/${lib}.dylib" "$PYTHON_DIR/lib/${lib}.dylib" 2>/dev/null || true
 done
 
+# Fix inter-dylib references (libssl.3 depends on libcrypto.3)
+install_name_tool -change \
+  "${OPENSSL_LIB}/libcrypto.3.dylib" \
+  "@loader_path/libcrypto.3.dylib" \
+  "$PYTHON_DIR/lib/libssl.3.dylib" 2>/dev/null || true
+
 echo "  ✅ 5 dylibs copied"
 
 # --------------- 4. Fix stdlib .so references ---------------

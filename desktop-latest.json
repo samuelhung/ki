@@ -1,10 +1,10 @@
 {
   "version": "0.1.2",
   "notes": "新功能：自动热更新（启动时静默检查GitHub Releases）、启动报错日志增强（splash展示详细诊断）、dylib修复脚本固化",
-  "pub_date": "2026-06-21T14:57:01Z",
+  "pub_date": "2026-06-21T15:05:24Z",
   "platforms": {
     "darwin-universal": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSNjdBVUVYL0haRis1ZmhSNlJ2SUZFZUJkbkhTd0IvdWZxYjRHY1J6eGxFRzcwcHdDQU5SUTBZM1NsK2J5OWZpQ3A2NzY4Q09WRURxcGIrM3FDeGM3dGs0RVl2d3hFRndNPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMDUzODE0CWZpbGU6S25vd2xlZGdlIEludGVsbGlnZW5jZV8wLjEuMl91bml2ZXJzYWwuZG1nClpTQjcrVTVtOWdmNCtWZkh3MmxMS1E5WUNpa012Y3V5cjJHdmQ3VjBJOCt1ZUM5MFNRL1QzaGZrSzc5T0p4YnlvVVJYMUEvWUF0YVJyUzFGVDdHakFRPT0K",
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSNjdBVUVYL0haRjIreGkwaSt1NXVudmJuN1BnM1lUV0V3Z1JKMG1yckhJcktBN292L1hQQ3hMSzJoV2JmV2Z5TkdKdzVLOU9nNUpvZWs1S2E5WlJUQzhKWUVlcDZscHc0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMDU0MzIxCWZpbGU6S25vd2xlZGdlIEludGVsbGlnZW5jZV8wLjEuMl91bml2ZXJzYWwuZG1nCkNiTytMK0pGcVZMQXh4RzVGdkc2U1YrWFRiMXBuOW9iZTFtK0tqS0xLb0NFRW9jdFNMUnlPb2xIQk9TRmd4REk0WmF2UmJ0dWlPY0NjOHlHYk5wZkRBPT0K",
       "url": "https://github.com/samuelhung/ki/releases/download/desktop-v0.1.2/KI_0.1.2_universal.dmg"
     }
   }
