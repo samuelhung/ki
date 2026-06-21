@@ -4,13 +4,14 @@ import { HashRouter } from 'react-router-dom';
 import App from './App';
 import './style.css';
 
-// Detect Tauri production (not dev via Vite on :5173)
+// In Tauri production OR non-Vite origins, prepend backend URL
+// Dev mode (Vite on :5173) has proxy — don't intercept
 const _origin = window.location.origin;
-const _isDev = _origin.includes('5173') || _origin.includes('localhost');
+const _isViteDev = _origin === 'http://127.0.0.1:5173' || _origin === 'http://localhost:5173';
 const BACKEND = 'http://127.0.0.1:9120';
 
-if (!_isDev) {
-  console.log('[KI] Tauri production mode — API →', BACKEND);
+if (!_isViteDev) {
+  console.log('[KI] Production/Tauri mode — API →', BACKEND);
   const _origFetch = window.fetch;
   window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
     if (typeof input === 'string' && input.startsWith('/api/')) {
@@ -19,7 +20,7 @@ if (!_isDev) {
     return _origFetch(input, init);
   };
 } else {
-  console.log('[KI] Dev mode — using Vite proxy');
+  console.log('[KI] Vite dev mode — using proxy');
 }
 
 createRoot(document.getElementById('root')!).render(
