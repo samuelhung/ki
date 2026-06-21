@@ -29,3 +29,8 @@ data/ingest/audio/
 data/ingest/videos/
 data/logs/
 ki.db
+
+# Tauri desktop build
+desktop/src-tauri/target/
+desktop/src-tauri/icons/
+
