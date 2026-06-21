@@ -53,7 +53,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .db import init_db, seed_default_sources
+from .db import get_db_path, init_db, seed_default_sources
+from .migrations import ensure_migrations
 from .task_queue import start_worker, stop_worker
 
 # Route modules
@@ -82,6 +83,7 @@ async def lifespan(app: FastAPI):
     """Startup: init DB, seed sources, start ingest task worker.
     Shutdown: gracefully stop worker."""
     logging.getLogger("main").info("KI server starting — init DB + worker")
+    ensure_migrations(get_db_path())
     init_db()
     seed_default_sources()
     start_worker()
