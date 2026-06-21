@@ -83,7 +83,9 @@ export default function SystemDoc() {
       // The progress events will update the UI
     } catch (e: any) {
       setUpdateStatus('error');
-      setUpdateMessage(e.message || '检查失败');
+      // Tauri returns the error string directly, not as Error.message
+      const errMsg = typeof e === 'string' ? e : (e?.message || e?.toString() || '检查失败');
+      setUpdateMessage(errMsg);
     }
   };
 

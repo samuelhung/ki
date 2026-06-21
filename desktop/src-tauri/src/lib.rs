@@ -20,7 +20,15 @@ fn get_desktop_version(app: tauri::AppHandle) -> String {
 /// Tauri command: manually check for updates from frontend.
 #[tauri::command]
 async fn check_updates(app: tauri::AppHandle) -> Result<String, String> {
-    let updater = app.updater().map_err(|e| format!("Updater init failed: {}", e))?;
+    let updater = match app.updater() {
+        Ok(u) => u,
+        Err(e) => {
+            let msg = format!("初始化更新器失败: {}", e);
+            eprintln!("[知几更新] {}", msg);
+            return Err(msg);
+        }
+    };
+    eprintln!("[知几更新] 手动检查更新... endpoint: {:?}", std::env::var("KI_DESKTOP_ENDPOINT"));
     match updater.check().await {
         Ok(Some(update)) => {
             let new_ver = update.version.clone();
@@ -72,8 +80,15 @@ async fn check_updates(app: tauri::AppHandle) -> Result<String, String> {
             });
             Ok(format!("v{}", new_ver))
         }
-        Ok(None) => Ok("latest".into()),
-        Err(e) => Err(format!("检查失败: {}", e)),
+        Ok(None) => {
+            eprintln!("[知几更新] 已是最新版本");
+            Ok("latest".into())
+        }
+        Err(e) => {
+            let msg = format!("检查失败: {}", e);
+            eprintln!("[知几更新] {}", msg);
+            Err(msg)
+        }
     }
 }
 
