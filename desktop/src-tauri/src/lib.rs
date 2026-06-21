@@ -40,6 +40,7 @@ async fn check_updates(app: tauri::AppHandle) -> Result<String, String> {
                     .download_and_install(
                         {
                             let mut downloaded: u64 = 0;
+                            let mut last_pct: u32 = 0;
                             move |chunk, total| {
                                 downloaded += chunk as u64;
                                 let (pct, msg) = if let Some(t) = total {
@@ -49,11 +50,15 @@ async fn check_updates(app: tauri::AppHandle) -> Result<String, String> {
                                     let mb = downloaded as f64 / 1_048_576.0;
                                     (0, format!("下载中 {:.1} MB", mb))
                                 };
-                                let _ = app_handle1.emit("update-progress", serde_json::json!({
-                                    "stage": "downloading",
-                                    "percent": pct,
-                                    "message": msg
-                                }));
+                                // throttle: only emit when percent changes
+                                if pct != last_pct || last_pct == 0 {
+                                    last_pct = pct;
+                                    let _ = app_handle1.emit("update-progress", serde_json::json!({
+                                        "stage": "downloading",
+                                        "percent": pct,
+                                        "message": msg
+                                    }));
+                                }
                             }
                         },
                         || {
@@ -287,6 +292,7 @@ fn spawn_update_check(handle: tauri::AppHandle) {
             .download_and_install(
                 {
                     let mut downloaded: u64 = 0;
+                    let mut last_pct: u32 = 0;
                     move |chunk, total| {
                         downloaded += chunk as u64;
                         let (pct, msg) = if let Some(t) = total {
@@ -296,11 +302,14 @@ fn spawn_update_check(handle: tauri::AppHandle) {
                             let mb = downloaded as f64 / 1_048_576.0;
                             (0, format!("下载中 {:.1} MB", mb))
                         };
-                        let _ = handle1.emit("update-progress", serde_json::json!({
-                            "stage": "downloading",
-                            "percent": pct,
-                            "message": msg
-                        }));
+                        if pct != last_pct || last_pct == 0 {
+                            last_pct = pct;
+                            let _ = handle1.emit("update-progress", serde_json::json!({
+                                "stage": "downloading",
+                                "percent": pct,
+                                "message": msg
+                            }));
+                        }
                     }
                 },
                 || {
