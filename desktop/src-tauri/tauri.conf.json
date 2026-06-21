@@ -44,7 +44,8 @@
     "updater": {
       "endpoints": [
         "https://raw.githubusercontent.com/samuelhung/ki/main/desktop-latest.json"
-      ]
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDE3RDlGMTVGMDQwNUVDN0EKUldSNjdBVUVYL0haRnhGSVdZK0RNUzNSTm9NbXpZNGZXZlhTUDlIL2NwdzNVK2pGNTJ3L0d4eW0K"
     }
   }
 }

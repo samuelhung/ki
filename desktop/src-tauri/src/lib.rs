@@ -83,45 +83,38 @@ fn show_splash_error(splash: &WebviewWindow, title: &str, detail: &str) {
     let _ = splash.eval(&js);
 }
 
-/// Check for updates from GitHub Releases.
-/// Returns true if an update was found and installed (app will restart).
-fn check_and_install_update(app: &mut tauri::App, splash: &WebviewWindow) -> bool {
-    let handle = app.handle().clone();
+/// Spawn a background task to check for updates.
+/// Runs silently — if an update is found, downloads, installs, and restarts.
+fn spawn_update_check(handle: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        eprintln!("[ki-updater] Checking for updates...");
 
-    eprintln!("[ki-updater] Checking for updates...");
+        let updater = match handle.updater() {
+            Ok(u) => u,
+            Err(e) => {
+                eprintln!("[ki-updater] Updater init failed: {}", e);
+                return;
+            }
+        };
 
-    let updater = match handle.updater() {
-        Ok(u) => u,
-        Err(e) => {
-            eprintln!("[ki-updater] Updater init failed: {}", e);
-            return false;
-        }
-    };
+        let update = match updater.check().await {
+            Ok(Some(u)) => u,
+            Ok(None) => {
+                eprintln!("[ki-updater] Already up to date");
+                return;
+            }
+            Err(e) => {
+                eprintln!("[ki-updater] Check failed (network/endpoint): {}", e);
+                return;
+            }
+        };
 
-    let update = match tauri::async_runtime::block_on(async { updater.check().await }) {
-        Ok(Some(u)) => u,
-        Ok(None) => {
-            eprintln!("[ki-updater] Already up to date");
-            return false;
-        }
-        Err(e) => {
-            eprintln!("[ki-updater] Check failed (network/endpoint): {}", e);
-            return false;
-        }
-    };
+        eprintln!(
+            "[ki-updater] Update found: current → v{}",
+            update.version
+        );
 
-    eprintln!(
-        "[ki-updater] Update found: v{} → v{}",
-        app.package_info().version,
-        update.version
-    );
-
-    let _ = splash.eval(
-        "document.querySelector('.subtitle').textContent='发现新版本，正在下载更新...'",
-    );
-
-    let result = tauri::async_runtime::block_on(async {
-        update
+        match update
             .download_and_install(
                 |chunk_length, content_length| {
                     if let Some(total) = content_length {
@@ -138,25 +131,16 @@ fn check_and_install_update(app: &mut tauri::App, splash: &WebviewWindow) -> boo
                 },
             )
             .await
+        {
+            Ok(()) => {
+                eprintln!("[ki-updater] Update installed, restarting...");
+                handle.restart();
+            }
+            Err(e) => {
+                eprintln!("[ki-updater] Install failed: {}", e);
+            }
+        }
     });
-
-    match result {
-        Ok(()) => {
-            eprintln!("[ki-updater] Update installed successfully, restarting...");
-            let _ = splash.eval(
-                "document.querySelector('.subtitle').textContent='更新完成，正在重启...'",
-            );
-            // Brief pause so the user sees the "restarting" message
-            std::thread::sleep(Duration::from_millis(800));
-            app.handle().restart();
-        }
-        Err(e) => {
-            let msg = format!("更新失败: {}", e);
-            eprintln!("[ki-updater] Install failed: {}", e);
-            show_splash_error(splash, "更新失败", &msg);
-            false
-        }
-    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -317,13 +301,8 @@ pub fn run() {
             };
 
             if backend_ok {
-                // --- Check for updates BEFORE showing main window ---
-                // If an update is found, download + install + restart happens here.
-                // If no update or check fails, we silently proceed.
-                if check_and_install_update(app, &splash) {
-                    // App will restart — don't continue with main window setup
-                    return Ok(());
-                }
+                // Spawn background update check (non-blocking, silent)
+                spawn_update_check(app.handle().clone());
 
                 splash.close()?;
                 if let Some(main) = app.get_webview_window("main") {
