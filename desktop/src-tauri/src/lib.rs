@@ -203,7 +203,7 @@ pub fn run() {
             let child = Command::new(&venv_python)
                 .args([
                     "-m", "uvicorn", "backend.main:app",
-                    "--host", "127.0.0.1", "--port", "9120",
+                    "--host", "0.0.0.0", "--port", "9120",
                 ])
                 .current_dir(&app_dir)
                 .env("PYTHONHOME", &python_home)
