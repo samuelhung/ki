@@ -1,19 +1,19 @@
 {
-  "version": "1.8.8",
-  "notes": "热更新测试 — 修复进度条卡0%（无论有无Content-Length都发进度事件）",
-  "pub_date": "2026-06-21T17:22:22Z",
+  "version": "1.8.9",
+  "notes": "热更新测试 — 验证进度条修复效果（无论有无Content-Length都发进度事件）",
+  "pub_date": "2026-06-21T17:29:52Z",
   "platforms": {
     "darwin-universal": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSNjdBVUVYL0haRjZ4M2lQRHlzbHVXYTNPTXN3YUlGcjlsNkhNK0NtR1h1NjJsYmh6R0NnY1lpdjN3cmJLWTBBdk1TeEdOUGlSY2xnekdvRnlqWVBqY3NmNEsvcDVhR3d3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMDYyNTQyCWZpbGU6WmhpSmlfMS44LjhfdW5pdmVyc2FsLmRtZwp5UTdTanZNakREaUFTY1gzQ2NxS0ZZTmtZYUNlZ3BPVFZIb1E2V3liS2hraitGZzhpa1RIbjB0UGFJbHV6MmxWeHBOSjJZTEpGeFBpbEdnazFlaXdEZz09Cg==",
-      "url": "https://github.com/samuelhung/ki/releases/download/desktop-v1.8.8/ZhiJi_1.8.8_universal.dmg"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSNjdBVUVYL0haRitadUlsTkpmbFVvcFkvUWF6b0VmYXg0Zk9BUGdFeXF3aGtmTFNIOEttaGxCMDd6OTkvRlNacDNTV0g1OTVJZTdFU1VhMFlDWkkvQUJNY0M2RDlTY3cwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMDYyOTg3CWZpbGU6WmhpSmlfMS44LjlfdW5pdmVyc2FsLmRtZwp6T1F4ZlNFNHpxbUZVS3Q0bjA1NWNDYTJ6VHcycWFVR2pnZ2xJM2hjaWdpbTVTRGFBZm9aT3BZdkIvU1ViOXU1aTVWOVJNZXE5ckhacURXOFdWcXpEdz09Cg==",
+      "url": "https://github.com/samuelhung/ki/releases/download/desktop-v1.8.9/ZhiJi_1.8.9_universal.dmg"
     },
     "darwin-aarch64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSNjdBVUVYL0haRjZ4M2lQRHlzbHVXYTNPTXN3YUlGcjlsNkhNK0NtR1h1NjJsYmh6R0NnY1lpdjN3cmJLWTBBdk1TeEdOUGlSY2xnekdvRnlqWVBqY3NmNEsvcDVhR3d3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMDYyNTQyCWZpbGU6WmhpSmlfMS44LjhfdW5pdmVyc2FsLmRtZwp5UTdTanZNakREaUFTY1gzQ2NxS0ZZTmtZYUNlZ3BPVFZIb1E2V3liS2hraitGZzhpa1RIbjB0UGFJbHV6MmxWeHBOSjJZTEpGeFBpbEdnazFlaXdEZz09Cg==",
-      "url": "https://github.com/samuelhung/ki/releases/download/desktop-v1.8.8/ZhiJi_1.8.8_universal.dmg"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSNjdBVUVYL0haRitadUlsTkpmbFVvcFkvUWF6b0VmYXg0Zk9BUGdFeXF3aGtmTFNIOEttaGxCMDd6OTkvRlNacDNTV0g1OTVJZTdFU1VhMFlDWkkvQUJNY0M2RDlTY3cwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMDYyOTg3CWZpbGU6WmhpSmlfMS44LjlfdW5pdmVyc2FsLmRtZwp6T1F4ZlNFNHpxbUZVS3Q0bjA1NWNDYTJ6VHcycWFVR2pnZ2xJM2hjaWdpbTVTRGFBZm9aT3BZdkIvU1ViOXU1aTVWOVJNZXE5ckhacURXOFdWcXpEdz09Cg==",
+      "url": "https://github.com/samuelhung/ki/releases/download/desktop-v1.8.9/ZhiJi_1.8.9_universal.dmg"
     },
     "darwin-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSNjdBVUVYL0haRjZ4M2lQRHlzbHVXYTNPTXN3YUlGcjlsNkhNK0NtR1h1NjJsYmh6R0NnY1lpdjN3cmJLWTBBdk1TeEdOUGlSY2xnekdvRnlqWVBqY3NmNEsvcDVhR3d3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMDYyNTQyCWZpbGU6WmhpSmlfMS44LjhfdW5pdmVyc2FsLmRtZwp5UTdTanZNakREaUFTY1gzQ2NxS0ZZTmtZYUNlZ3BPVFZIb1E2V3liS2hraitGZzhpa1RIbjB0UGFJbHV6MmxWeHBOSjJZTEpGeFBpbEdnazFlaXdEZz09Cg==",
-      "url": "https://github.com/samuelhung/ki/releases/download/desktop-v1.8.8/ZhiJi_1.8.8_universal.dmg"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSNjdBVUVYL0haRitadUlsTkpmbFVvcFkvUWF6b0VmYXg0Zk9BUGdFeXF3aGtmTFNIOEttaGxCMDd6OTkvRlNacDNTV0g1OTVJZTdFU1VhMFlDWkkvQUJNY0M2RDlTY3cwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMDYyOTg3CWZpbGU6WmhpSmlfMS44LjlfdW5pdmVyc2FsLmRtZwp6T1F4ZlNFNHpxbUZVS3Q0bjA1NWNDYTJ6VHcycWFVR2pnZ2xJM2hjaWdpbTVTRGFBZm9aT3BZdkIvU1ViOXU1aTVWOVJNZXE5ckhacURXOFdWcXpEdz09Cg==",
+      "url": "https://github.com/samuelhung/ki/releases/download/desktop-v1.8.9/ZhiJi_1.8.9_universal.dmg"
     }
   }
 }
