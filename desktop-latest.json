@@ -1,0 +1,11 @@
+{
+  "version": "0.1.2",
+  "notes": "新功能：自动热更新（启动时静默检查GitHub Releases）、启动报错日志增强（splash展示详细诊断）、dylib修复脚本固化",
+  "pub_date": "2026-06-21T14:39:43Z",
+  "platforms": {
+    "darwin-universal": {
+      "signature": "",
+      "url": "https://github.com/samuelhung/ki/releases/download/desktop-v0.1.2/KI_0.1.2_universal.dmg"
+    }
+  }
+}
