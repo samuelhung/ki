@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background:#12161C; display:flex; align-items:center; justify-content:center;
+  height:100vh; font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display',sans-serif;
+  overflow:hidden;
+}
+.container { text-align:center; }
+.logo {
+  width:80px; height:80px; background:linear-gradient(135deg,#6366f1,#38bdf8);
+  border-radius:18px; display:flex; align-items:center; justify-content:center;
+  margin:0 auto 20px; font-size:32px; font-weight:700; color:#fff;
+}
+.title { font-size:20px; font-weight:600; color:#e2e8f0; margin-bottom:6px; }
+.subtitle { font-size:13px; color:#64748b; margin-bottom:24px; }
+.loader { width:120px; height:3px; background:#1e293b; border-radius:2px; margin:0 auto; overflow:hidden; }
+.loader-bar { width:30%; height:100%; background:linear-gradient(90deg,#6366f1,#38bdf8); border-radius:2px; animation:slide 1.5s ease-in-out infinite; }
+@keyframes slide { 0%{transform:translateX(-100%)} 100%{transform:translateX(400%)} }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="logo">KI</div>
+  <div class="title">Knowledge Intelligence</div>
+  <div class="subtitle">正在启动...</div>
+  <div class="loader"><div class="loader-bar"></div></div>
+</div>
+</body>
+</html>
