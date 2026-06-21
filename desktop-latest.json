@@ -1,11 +1,11 @@
 {
-  "version": "0.1.2",
-  "notes": "新功能：自动热更新、启动报错诊断增强、dylib修复脚本固化。修复：后端监听0.0.0.0支持远程连接、libssl→libcrypto dylib可移植性",
-  "pub_date": "2026-06-21T15:14:31Z",
+  "version": "0.1.3",
+  "notes": "后端监听 0.0.0.0 支持远程设备连接；修复 libssl→libcrypto dylib 跨架构引用",
+  "pub_date": "2026-06-21T15:19:48Z",
   "platforms": {
     "darwin-universal": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSNjdBVUVYL0haRjhLSDA2RzlwVE8wbzM2RnR5L2RzcTl5Z2R4QkE5L3gzLzZGd1dTa3NEbHpRMUtxN1UvTlBDN3I1dk5hR0dHSEROVHVMVTBESTg3ZmYwWUJWRlBXQkFzPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMDU0ODY4CWZpbGU6S25vd2xlZGdlIEludGVsbGlnZW5jZV8wLjEuMl91bml2ZXJzYWwuZG1nCjdzUzBoMVZpUHhFbTA2QWw5akQwSVMwdlEvQ0JmanQvQm1uZ0o3KzlZRmZKUUhlQmY3Z1N3dzI3M1Q5WXJKYUU2RlBERDVMdzJGaGdHRmpVUFExekNBPT0K",
-      "url": "https://github.com/samuelhung/ki/releases/download/desktop-v0.1.2/KI_0.1.2_universal.dmg"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSNjdBVUVYL0haRjEvcEg1YmZ6eks4c3hpbXo1OUQrQ25LSTBXNDhUQmZ0ZDladzV0N1JGTDRtRjRvWHAyeWd1bGtYdVpZN3g0NWVkeHJHeDgvc2JkYU96SFhKU0l5ZXdBPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMDU1MTg1CWZpbGU6S25vd2xlZGdlIEludGVsbGlnZW5jZV8wLjEuM191bml2ZXJzYWwuZG1nCm9Gc1FIUGlFNDVySldCN1RRY2hpYXlmT0k1djBJd0c2TE5Ud3JiZWJ2Z2s3MUFSV0ZFNXhxN3VqYWRpSDhocXJZdEhQMUErTm5ES2pUSkNkekpJb0N3PT0K",
+      "url": "https://github.com/samuelhung/ki/releases/download/desktop-v0.1.3/KI_0.1.3_universal.dmg"
     }
   }
 }
