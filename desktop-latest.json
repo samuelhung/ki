@@ -1,11 +1,11 @@
 {
-  "version": "1.8.6",
-  "notes": "版本号统一：壳版本即功能版本，tauri.conf.json 为唯一真源。导航栏、系统说明、连接面板三处统一显示 v1.8.6。",
-  "pub_date": "2026-06-21T16:07:47Z",
+  "version": "1.8.7",
+  "notes": "知几重命名 + 增量热更新 + 进度条 + 手动检查更新 + 窗口记忆 + 离线模式 + 拖拽导入 + 崩溃上报 + 关于窗口",
+  "pub_date": "2026-06-21T16:51:55Z",
   "platforms": {
     "darwin-universal": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSNjdBVUVYL0haRjRiL2NPdHFIdDNwUnhYTGhDU01Nc3lmNTladGRxa2pWRVJBa0VDd3dlTVB6c1pUbldtbmVVaXRLVkZTNUVqTTV3UVdtSVYrTFYxWGVLZXJIWGFzdUE4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMDU4MDY3CWZpbGU6S25vd2xlZGdlIEludGVsbGlnZW5jZV8xLjguNl91bml2ZXJzYWwuZG1nCmU1S0ZXT09GblFuQTd3ZlVyK3EwY3BXSTZ3NmRIZmsyRitZR1NyS0dsYTd1RUlzeGIwck5lT201RC9lYXJJa1dUU0k0emN4WjAvOHBJREQ2NWtqUkJRPT0K",
-      "url": "https://github.com/samuelhung/ki/releases/download/desktop-v1.8.6/Knowledge.Intelligence_1.8.6_universal.dmg"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSNjdBVUVYL0haRjJVOTJ2NVV2RlYxNXAvRTExekswUzNoL1BBQ1dmOGlpc2QrRzlLQXY1R0ZsTklpcWJXYWRCY011MWJjemtUUGtNdlJ2UC9JQnVqdlAwUGNCd0xEWFFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyMDYwNzE1CWZpbGU655+l5YegXzEuOC43X3VuaXZlcnNhbC5kbWcKY3E5UDhYbVBXemNzUmZrV2M1R0gwSWd6TFJFbTl2NFVEWlhkOS94b0hsSFh3ejlXZnlxYTBiUHFPWjFYaVN1R1RuUCtpMUxFU2JuL1dBNDN0M0N1QWc9PQo=",
+      "url": "https://github.com/samuelhung/ki/releases/download/desktop-v1.8.7/知几_1.8.7_universal.dmg"
     }
   }
 }
