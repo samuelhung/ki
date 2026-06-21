@@ -1,7 +1,11 @@
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
-use tauri::Manager;
+use tauri::{
+    menu::{MenuBuilder, MenuItemBuilder},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Manager,
+};
 
 struct BackendProcess(Mutex<Option<Child>>);
 
@@ -10,6 +14,7 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
             let project_root = manifest_dir.parent().unwrap().parent().unwrap().to_path_buf();
@@ -19,7 +24,7 @@ pub fn run() {
             // --- Splash screen ---
             let splash_url = if cfg!(debug_assertions) {
                 tauri::WebviewUrl::External(
-                    "http://127.0.0.1:5173/splash.html".parse().unwrap()
+                    "http://127.0.0.1:5173/splash.html".parse().unwrap(),
                 )
             } else {
                 tauri::WebviewUrl::App("splash.html".into())
@@ -66,10 +71,9 @@ pub fn run() {
                 .stderr(Stdio::piped())
                 .spawn();
 
-            match child {
+            let backend_ok = match child {
                 Ok(mut child) => {
                     std::thread::sleep(Duration::from_secs(2));
-
                     match child.try_wait() {
                         Ok(Some(status)) => {
                             let mut stderr = String::new();
@@ -78,32 +82,91 @@ pub fn run() {
                                 let _ = s.read_to_string(&mut stderr);
                             }
                             eprintln!(
-                                "[ki-setup] BACKEND DIED IMMEDIATELY: {:?}\nstderr: {}",
+                                "[ki-setup] BACKEND DIED: {:?}\nstderr: {}",
                                 status, stderr
                             );
-                            // Show error on splash
-                            let _ = splash.eval(r#"document.querySelector('.subtitle').textContent='启动失败，请检查日志';document.querySelector('.loader').style.display='none'"#);
+                            let _ = splash.eval(
+                                r#"document.querySelector('.subtitle').textContent='启动失败，请检查日志';document.querySelector('.loader').style.display='none'"#,
+                            );
+                            false
                         }
                         Ok(None) => {
                             app.manage(BackendProcess(Mutex::new(Some(child))));
                             eprintln!("[ki-setup] ✅ Backend running on http://127.0.0.1:9120");
-
-                            // Close splash, show main window
-                            splash.close()?;
-                            if let Some(main) = app.get_webview_window("main") {
-                                main.show()?;
-                                main.set_focus()?;
-                            }
+                            true
                         }
                         Err(e) => {
                             eprintln!("[ki-setup] try_wait error: {}", e);
+                            false
                         }
                     }
                 }
                 Err(e) => {
                     eprintln!("[ki-setup] ❌ Failed to spawn backend: {}", e);
-                    let _ = splash.eval(r#"document.querySelector('.subtitle').textContent='启动失败';document.querySelector('.loader').style.display='none'"#);
+                    let _ = splash.eval(
+                        r#"document.querySelector('.subtitle').textContent='启动失败';document.querySelector('.loader').style.display='none'"#,
+                    );
+                    false
                 }
+            };
+
+            if backend_ok {
+                splash.close()?;
+                if let Some(main) = app.get_webview_window("main") {
+                    main.show()?;
+                    main.set_focus()?;
+                }
+
+                // --- System tray ---
+                let icon = app.default_window_icon().cloned().unwrap();
+                let toggle = MenuItemBuilder::with_id("toggle", "显示/隐藏").build(app)?;
+                let quit = MenuItemBuilder::with_id("quit", "退出").build(app)?;
+                let menu = MenuBuilder::new(app).items(&[&toggle, &quit]).build()?;
+
+                let _tray = TrayIconBuilder::new()
+                    .icon(icon)
+                    .menu(&menu)
+                    .tooltip("Knowledge Intelligence")
+                    .on_menu_event(|app, event| match event.id().as_ref() {
+                        "toggle" => {
+                            if let Some(w) = app.get_webview_window("main") {
+                                if w.is_visible().unwrap_or(false) {
+                                    w.hide().ok();
+                                } else {
+                                    w.show().ok();
+                                    w.set_focus().ok();
+                                }
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            let app = tray.app_handle();
+                            if let Some(w) = app.get_webview_window("main") {
+                                if w.is_visible().unwrap_or(false) {
+                                    w.hide().ok();
+                                } else {
+                                    w.show().ok();
+                                    w.set_focus().ok();
+                                }
+                            }
+                        }
+                    })
+                    .build(app)?;
+
+                // --- Global shortcut: Cmd+K ---
+                use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
+                let shortcut = Shortcut::new(Some(Modifiers::SUPER), Code::KeyK);
+                let _ = app.global_shortcut().register(shortcut);
             }
 
             Ok(())

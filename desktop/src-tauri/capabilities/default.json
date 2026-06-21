@@ -1,0 +1,14 @@
+{
+  "identifier": "default",
+  "description": "Capability for all windows",
+  "windows": ["main", "splash"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open",
+    "opener:default",
+    "global-shortcut:default",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
+    "global-shortcut:allow-is-registered"
+  ]
+}
