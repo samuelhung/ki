@@ -98,8 +98,12 @@ app = FastAPI(title="知识情报中心", version="1.7.4", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
         "http://127.0.0.1:9120",
         "http://localhost:9120",
+        "tauri://localhost",
+        "https://tauri.localhost",
         *([f"http://{ip}:9120" for ip in os.getenv("KI_EXTRA_ORIGINS", "").split(",") if ip.strip()]),
     ],
     allow_credentials=True,
