@@ -44,3 +44,11 @@ desktop/src-tauri/resources/
 
 docs/
 .hermes/plans/
+
+# Python 包构建产物
+build/
+dist/
+*.egg-info/
+
+# app/data — 开发时误写入的空数据
+app/data/

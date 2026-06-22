@@ -1,0 +1,4 @@
+graft src/zhiji_backend/routes
+graft src/zhiji_backend/ingest
+include src/zhiji_backend/frontend_dist/index.html
+recursive-include src/zhiji_backend/frontend_dist *

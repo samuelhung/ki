@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zhiji-backend"
+version = "1.9.0"
+description = "知几 —— 个人情报中心后端服务"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.109",
+    "uvicorn[standard]>=0.27",
+    "python-dotenv>=1.0",
+    "python-multipart>=0.0.6",
+    "requests>=2.31",
+    "beautifulsoup4>=4.12",
+    "feedparser>=6.0",
+    "openai>=1.12",
+    "yt-dlp>=2024",
+    "trafilatura>=1.6",
+    "pyyaml>=6.0",
+    "aiofiles>=23.2",
+    "pydantic>=2.5",
+]
+
+[project.optional-dependencies]
+volc = ["tos>=2.9"]
+all = ["zhiji-backend[volc]"]
+
+[project.scripts]
+zhiji = "zhiji_backend.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
