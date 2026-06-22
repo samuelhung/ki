@@ -5,11 +5,14 @@ import App from './App';
 import './style.css';
 
 // ── Backend URL resolver ──
-// Priority: localStorage override > default localhost
-// Dev mode (Vite on :5173) has proxy — don't intercept
+// Priority: localStorage override > same-origin (relative) > default localhost
+// In production: frontend + backend served from same port → relative paths work.
+// In Tauri / remote-BFF mode: explicit backend URL needed.
 const _origin = window.location.origin;
 const _isViteDev = _origin === 'http://127.0.0.1:5173' || _origin === 'http://localhost:5173';
-const DEFAULT_BACKEND = 'http://127.0.0.1:9120';
+// If frontend is served from 9120 (same as backend), use empty string → relative paths
+const _sameOrigin = _origin.endsWith(':9120') || _origin === 'tauri://localhost' || _origin === 'https://tauri.localhost';
+const DEFAULT_BACKEND = _sameOrigin ? '' : 'http://127.0.0.1:9120';
 
 /** Read backend URL from localStorage, fall back to default. */
 export function getBackendUrl(): string {
@@ -33,15 +36,17 @@ export function setBackendUrl(url: string): void {
 
 if (!_isViteDev) {
   const BACKEND = getBackendUrl();
-  console.log('[知几] Production/Tauri mode — API →', BACKEND);
-  const _origFetch = window.fetch;
-  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
-    if (typeof input === 'string' && input.startsWith('/api/')) {
-      // Re-read every call so settings changes take effect without reload
-      input = getBackendUrl() + input;
-    }
-    return _origFetch(input, init);
-  };
+  console.log('[知几] Production mode — API →', BACKEND || '(relative)');
+  if (BACKEND) {
+    const _origFetch = window.fetch;
+    window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+      if (typeof input === 'string' && input.startsWith('/api/')) {
+        // Re-read every call so settings changes take effect without reload
+        input = getBackendUrl() + input;
+      }
+      return _origFetch(input, init);
+    };
+  }
 } else {
   console.log('[知几] Vite dev mode — using proxy');
 }
