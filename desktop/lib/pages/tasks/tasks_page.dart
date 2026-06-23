@@ -162,8 +162,8 @@ class _TasksPageState extends State<TasksPage> {
     body: SafeArea(child: Stack(children: [
       Column(children: [
         _buildHeader(), _buildViewToggle(),
-        if (_view == 'list') _buildFilters(),
         Divider(height: 1, color: AppTheme.border),
+        if (_view == 'list') _buildFilters(),
         Expanded(child: _buildContent()),
       ]),
       if (_detail != null) _buildDetailOverlay(),
@@ -235,7 +235,7 @@ class _TasksPageState extends State<TasksPage> {
 
   // ── Filters ──
   Widget _buildFilters() => Padding(
-    padding: EdgeInsets.fromLTRB(32, 0, 32, 10),
+    padding: EdgeInsets.fromLTRB(32, 8, 32, 8),
     child: Row(children: [
       Expanded(flex: 2, child: _filterInput('搜索...', _search, _onSearch)),
       SizedBox(width: 8),
@@ -249,9 +249,8 @@ class _TasksPageState extends State<TasksPage> {
     ]),
   );
 
-  Widget _filterInput(String h, String v, Function(String) cb) => Container(
-    height: 32, padding: EdgeInsets.symmetric(horizontal: 10),
-    decoration: BoxDecoration(color: Color(0xFF141518), borderRadius: BorderRadius.circular(8), border: Border.all(color: Color(0xFF2A2B30))),
+  Widget _filterInput(String h, String v, Function(String) cb) => SizedBox(
+    height: 32,
     child: Row(children: [
       Icon(Icons.search, size: 14, color: AppTheme.textMuted),
       SizedBox(width: 6),
