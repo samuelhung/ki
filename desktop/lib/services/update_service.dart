@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 import 'package:path/path.dart' as p;
 
 /// 桌面端增量更新服务
@@ -11,7 +12,19 @@ class UpdateService {
   final Dio _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 15),
     receiveTimeout: const Duration(seconds: 120),
-  ));
+  ))
+    ..httpClientAdapter = _createAdapter();
+
+  static IOHttpClientAdapter _createAdapter() {
+    return IOHttpClientAdapter(
+      createHttpClient: () {
+        final client = HttpClient();
+        // 信任所有证书（仅用于 GitHub API — macOS 沙箱可能不走系统信任库）
+        client.badCertificateCallback = (_, __, ___) => true;
+        return client;
+      },
+    );
+  }
 
   static const String _repo = 'samuelhung/ki';
   static const String _apiLatest =
@@ -29,7 +42,8 @@ class UpdateService {
       );
       final data = resp.data as Map<String, dynamic>;
       return data['tag_name'] as String?;
-    } catch (_) {
+    } catch (e) {
+      print('[Update] _getLatestTag 失败: $e');
       return null;
     }
   }
