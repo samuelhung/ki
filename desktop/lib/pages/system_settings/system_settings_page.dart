@@ -239,15 +239,13 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     _section('各任务单次调用成本估算（V4 Pro）', _costTable()),
   ]);
 
-  Widget _modelSpecsTable() => SingleChildScrollView(scrollDirection: Axis.horizontal, child: DataTable(
-    columnSpacing: 24,
-    headingRowColor: WidgetStatePropertyAll(AppTheme.border.withOpacity(0.3)),
-    columns: const [
-      DataColumn(label: Text('参数', style: TextStyle(color: AppTheme.textMuted, fontSize: 11))),
-      DataColumn(label: Text('V4 Flash', style: TextStyle(color: AppTheme.textMuted, fontSize: 11))),
-      DataColumn(label: Text('V4 Pro（当前）', style: TextStyle(color: AppTheme.accent, fontSize: 11))),
-    ],
-    rows: [
+  Widget _modelSpecsTable() => Column(children: [
+    _tableHeader(['参数', 'V4 Flash', 'V4 Pro（当前）'], flex: [2, 2, 2]),
+    ..._modelSpecRows(),
+  ]);
+
+  List<Widget> _modelSpecRows() {
+    final rows = [
       ['上下文长度', '1M token', '1M token'],
       ['最大输出', '384K token', '384K token'],
       ['思考模式', '支持', '支持'],
@@ -256,11 +254,21 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
       ['输入价格（缓存未命中）', '1 元/百万 token', '3 元/百万 token'],
       ['输入价格（缓存命中）', '0.02 元/百万 token', '0.025 元/百万 token'],
       ['输出价格', '2 元/百万 token', '6 元/百万 token'],
-    ].map((r) => DataRow(cells: r.asMap().entries.map((c) {
-      final isAccent = c.key == 2 && ['1M token', '384K token', '0.025 元/百万 token'].contains(c.value);
-      return DataCell(Text(c.value, style: TextStyle(color: isAccent ? AppTheme.success : AppTheme.textSecondary, fontSize: 11)));
-    }).toList())).toList(),
-  ));
+    ];
+    return rows.asMap().entries.map((e) {
+      final i = e.key; final r = e.value;
+      final isLast = i == rows.length - 1;
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: isLast ? Colors.transparent : const Color(0xFF1A1B20)))),
+        child: Row(children: [
+          Expanded(flex: 2, child: Text(r[0], style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11))),
+          Expanded(flex: 2, child: Text(r[1], style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11))),
+          Expanded(flex: 2, child: Text(r[2], style: TextStyle(color: ['1M token', '384K token', '0.025 元/百万 token'].contains(r[2]) ? AppTheme.success : AppTheme.textSecondary, fontSize: 11))),
+        ]),
+      );
+    }).toList();
+  }
 
   Widget _paramsDoc() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
     _paramDoc('temperature 随机度', '控制输出的随机性和创造性。取值 0–2。\n0：完全确定性，同样 prompt 永远同样输出，适合分类/标注/数学。\n0.1–0.3：轻微发散，适合摘要/翻译/事实性问答。\n0.4–0.6：适度创造，适合论文/导言/综合回答。\n0.7+：高度随机，创意写作/头脑风暴，但可能胡言乱语。'),
@@ -280,16 +288,13 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     Text(desc, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12, height: 1.6)),
   ]);
 
-  Widget _costTable() => SingleChildScrollView(scrollDirection: Axis.horizontal, child: DataTable(
-    columnSpacing: 24,
-    headingRowColor: WidgetStatePropertyAll(AppTheme.border.withOpacity(0.3)),
-    columns: const [
-      DataColumn(label: Text('任务', style: TextStyle(color: AppTheme.textMuted, fontSize: 11))),
-      DataColumn(label: Text('max_tokens', style: TextStyle(color: AppTheme.textMuted, fontSize: 11))),
-      DataColumn(label: Text('≈ 汉字', style: TextStyle(color: AppTheme.textMuted, fontSize: 11))),
-      DataColumn(label: Text('输出成本', style: TextStyle(color: AppTheme.textMuted, fontSize: 11))),
-    ],
-    rows: [
+  Widget _costTable() => Column(children: [
+    _tableHeader(['任务', 'max_tokens', '≈ 汉字', '输出成本'], flex: [3, 2, 2, 2]),
+    ..._costRows(),
+  ]);
+
+  List<Widget> _costRows() {
+    final rows = [
       ['内容总结 summarize', '3072', '2000', '0.02 元'],
       ['认知分类 classify', '256', '170', '<0.01 元'],
       ['实体标注 tag', '512', '340', '<0.01 元'],
@@ -309,13 +314,37 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
       ['AI 补全 auto_complete', '1500', '1000', '0.01 元'],
       ['事务判断 judge', '16384', '11000', '0.10 元'],
       ['实体深度分析 entity_insight', '2048', '1300', '0.01 元'],
-    ].map((r) => DataRow(cells: [
-      DataCell(Text(r[0], style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11))),
-      DataCell(Text(r[1], style: const TextStyle(color: AppTheme.textPrimary, fontSize: 11))),
-      DataCell(Text(r[2], style: const TextStyle(color: AppTheme.textMuted, fontSize: 11))),
-      DataCell(Text(r[3], style: const TextStyle(color: AppTheme.success, fontSize: 11))),
-    ])).toList(),
-  ));
+    ];
+    return rows.asMap().entries.map((e) {
+      final i = e.key; final r = e.value;
+      final isLast = i == rows.length - 1;
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        decoration: BoxDecoration(border: Border(bottom: BorderSide(color: isLast ? Colors.transparent : const Color(0xFF1A1B20)))),
+        child: Row(children: [
+          Expanded(flex: 3, child: Text(r[0], style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11))),
+          Expanded(flex: 2, child: Text(r[1], style: const TextStyle(color: AppTheme.textPrimary, fontSize: 11))),
+          Expanded(flex: 2, child: Text(r[2], style: const TextStyle(color: AppTheme.textMuted, fontSize: 11))),
+          Expanded(flex: 2, child: Text(r[3], style: const TextStyle(color: AppTheme.success, fontSize: 11))),
+        ]),
+      );
+    }).toList();
+  }
+
+  Widget _tableHeader(List<String> headers, {List<int>? flex}) => Container(
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    decoration: BoxDecoration(
+      color: AppTheme.border.withOpacity(0.3),
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+    ),
+    child: Row(children: headers.asMap().entries.map((e) {
+      final f = flex != null && e.key < flex.length ? flex[e.key] : 1;
+      return Expanded(flex: f, child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Text(e.value, style: const TextStyle(color: AppTheme.textMuted, fontSize: 11, fontWeight: FontWeight.w600)),
+      ));
+    }).toList()),
+  );
 
   // ── 通用配置 ──
   Widget _buildGeneralTab() {
@@ -446,7 +475,12 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     return '?';
   }
 
-  Widget _connGrid(List<Widget> cards) => Wrap(spacing: 10, runSpacing: 10, children: cards.map((c) => SizedBox(width: 170, child: c)).toList());
+  Widget _connGrid(List<Widget> cards) => LayoutBuilder(builder: (ctx, constraints) {
+    const double gap = 10;
+    const int cols = 4;
+    final itemW = (constraints.maxWidth - (cols - 1) * gap) / cols;
+    return Wrap(spacing: gap, runSpacing: gap, children: cards.map((c) => SizedBox(width: itemW, child: c)).toList());
+  });
 
   Widget _connCard(String label, String value, IconData icon, Color color) => Container(
     padding: const EdgeInsets.all(14),
@@ -495,10 +529,14 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     final tasks = _TASK_NAMES[key] ?? {};
     return ListView(padding: const EdgeInsets.all(24), children: [
       _section('${_TAB_LABELS[key]} — 任务参数',
-        Wrap(spacing: 10, runSpacing: 10, children: mod.entries.map((e) {
-          final cfg = e.value as Map<String, dynamic>;
-          return SizedBox(width: 300, child: _taskCard(e.key, tasks[e.key] ?? e.key, cfg));
-        }).toList()),
+        LayoutBuilder(builder: (ctx, constraints) {
+          const double gap = 10;
+          final itemW = (constraints.maxWidth - gap) / 2;
+          return Wrap(spacing: gap, runSpacing: gap, children: mod.entries.map((e) {
+            final cfg = e.value as Map<String, dynamic>;
+            return SizedBox(width: itemW, child: _taskCard(e.key, tasks[e.key] ?? e.key, cfg));
+          }).toList());
+        }),
       ),
     ]);
   }
