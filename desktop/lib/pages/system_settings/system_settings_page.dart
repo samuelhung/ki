@@ -41,6 +41,10 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
   String? _error;
   String _tab = 'params_info';
 
+  // Prompt templates state
+  Map<String, dynamic>? _prompts;
+  bool _promptsLoading = false;
+
   // Connection tab state
   final _backendController = TextEditingController();
   bool _backendSaving = false;
@@ -202,7 +206,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
               children: _TAB_LABELS.entries.map((e) {
                 final active = _tab == e.key;
                 return GestureDetector(
-                  onTap: () => setState(() => _tab = e.key),
+                  onTap: () => _onTabChanged(e.key),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14),
                     alignment: Alignment.center,
@@ -227,6 +231,25 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
       case 'general': return _buildGeneralTab();
       case 'connection': return _buildConnectionTab();
       default: return _buildModuleTab(_tab);
+    }
+  }
+
+  void _onTabChanged(String key) {
+    setState(() => _tab = key);
+    // Load prompts for business module tabs
+    if (!['params_info', 'general', 'connection'].contains(key)) {
+      _loadPrompts(key);
+    }
+  }
+
+  Future<void> _loadPrompts(String module) async {
+    if (_promptsLoading) return;
+    setState(() => _promptsLoading = true);
+    try {
+      final data = await ApiClient().getPrompts();
+      if (mounted) setState(() { _prompts = data['modules']; _promptsLoading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _promptsLoading = false);
     }
   }
 
@@ -432,6 +455,15 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
       const SizedBox(height: 20),
       // ── 后端地址配置 ──
       _section('后端地址', Column(children: [
+        Container(
+          padding: const EdgeInsets.all(10),
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(color: AppTheme.background, borderRadius: BorderRadius.circular(8)),
+          child: const Text(
+            '本地模式：后端运行在本机 127.0.0.1:9120，数据存在本地。\n远程模式：填入 VPN 地址（如 http://10.8.0.105:9120），多设备共享同一后端和数据。切换后即刻生效。',
+            style: TextStyle(color: AppTheme.textMuted, fontSize: 11, height: 1.6),
+          ),
+        ),
         Row(children: [
           _radioChip('自动检测', _urlMode == 'auto', () => setState(() => _urlMode = 'auto')),
           const SizedBox(width: 12),
@@ -462,15 +494,20 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
     ]);
   }
 
-  /// Read desktop version from Info.plist (macOS only)
+  /// Read desktop version from app bundle Info.plist (macOS only)
   String _readDesktopVersion() {
     try {
-      final mainJs = File('/Users/mrh/Documents/Projects/zhiji/desktop/pubspec.yaml');
-      if (mainJs.existsSync()) {
-        final content = mainJs.readAsStringSync();
-        final match = RegExp(r'version: (\d+\.\d+\.\d+)').firstMatch(content);
-        if (match != null) return match.group(1)!;
+      if (!Platform.isMacOS) return '?';
+      // Walk up from the executable to find the .app bundle
+      var dir = Directory(File(Platform.resolvedExecutable).parent.path);
+      while (dir.path != '/' && !dir.path.endsWith('.app')) {
+        dir = Directory(dir.parent.path);
       }
+      if (!dir.path.endsWith('.app')) return '?';
+      final plistPath = '${dir.path}/Contents/Info.plist';
+      final result = Process.runSync(
+          'plutil', ['-extract', 'CFBundleShortVersionString', 'raw', plistPath]);
+      if (result.exitCode == 0) return result.stdout.toString().trim();
     } catch (_) {}
     return '?';
   }
@@ -527,6 +564,8 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
   Widget _buildModuleTab(String key) {
     final mod = (_config![key] as Map<String, dynamic>?) ?? {};
     final tasks = _TASK_NAMES[key] ?? {};
+    final modulePrompts = (_prompts?['modules'] as Map<String, dynamic>?)?[key] as Map<String, dynamic>?;
+
     return ListView(padding: const EdgeInsets.all(24), children: [
       _section('${_TAB_LABELS[key]} — 任务参数',
         LayoutBuilder(builder: (ctx, constraints) {
@@ -534,14 +573,15 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
           final itemW = (constraints.maxWidth - gap) / 2;
           return Wrap(spacing: gap, runSpacing: gap, children: mod.entries.map((e) {
             final cfg = e.value as Map<String, dynamic>;
-            return SizedBox(width: itemW, child: _taskCard(e.key, tasks[e.key] ?? e.key, cfg));
+            final taskPrompts = modulePrompts?[e.key] as Map<String, dynamic>?;
+            return SizedBox(width: itemW, child: _taskCard(e.key, tasks[e.key] ?? e.key, cfg, taskPrompts));
           }).toList());
         }),
       ),
     ]);
   }
 
-  Widget _taskCard(String taskKey, String cnName, Map<String, dynamic> cfg) => Container(
+  Widget _taskCard(String taskKey, String cnName, Map<String, dynamic> cfg, Map<String, dynamic>? prompts) => Container(
     padding: const EdgeInsets.all(12),
     decoration: BoxDecoration(color: AppTheme.background, borderRadius: BorderRadius.circular(8)),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -551,6 +591,28 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
       _numRowSmall('temperature', (cfg['temperature'] as num?)?.toDouble() ?? 0.3, (v) => _updateTaskConfig(_tab, taskKey, {...cfg, 'temperature': v})),
       _numRowSmall('max_tokens', (cfg['max_tokens'] as num?)?.toDouble() ?? 2048, (v) => _updateTaskConfig(_tab, taskKey, {...cfg, 'max_tokens': v}), min: 64, max: 32768),
       _toggleRowSmall('thinking', (cfg['thinking'] as bool?) ?? false, (v) => _updateTaskConfig(_tab, taskKey, {...cfg, 'thinking': v})),
+      if (prompts != null && prompts.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        const Divider(height: 1, color: AppTheme.border),
+        const SizedBox(height: 6),
+        Text('Prompt 模板', style: const TextStyle(color: AppTheme.textMuted, fontSize: 10, fontWeight: FontWeight.w500)),
+        const SizedBox(height: 4),
+        ...prompts.entries.map((p) {
+          final content = p.value.toString();
+          final preview = content.length > 200 ? '${content.substring(0, 200)}...' : content;
+          return Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 4),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: const Color(0xFF0A0B0E), borderRadius: BorderRadius.circular(6), border: Border.all(color: AppTheme.border.withOpacity(0.3))),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(p.key, style: const TextStyle(color: AppTheme.accent, fontSize: 10, fontFamily: 'monospace')),
+              const SizedBox(height: 2),
+              Text(preview, style: const TextStyle(color: AppTheme.textMuted, fontSize: 10, fontFamily: 'monospace', height: 1.4)),
+            ]),
+          );
+        }),
+      ],
     ]),
   );
 
