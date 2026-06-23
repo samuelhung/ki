@@ -346,17 +346,22 @@ class _SystemDocPageState extends State<SystemDocPage> {
     final maxCount = tables.values.fold<int>(0, (m, v) => (v['count'] as int) > m ? (v['count'] as int) : m);
 
     return ListView(padding: const EdgeInsets.all(24), children: [
-      // 库概览
-      _sectionCard('数据库概览', Wrap(spacing: 10, runSpacing: 10, children: [
-        _statCard('文件路径', '${db['file']}', Icons.folder),
-        _statCard('文件大小', '${db['size_display']}', Icons.save, accent: true),
-        _statCard('WAL 模式', '${db['journal_mode']}', Icons.check_circle, accent: true),
-        _statCard('页数', '${db['page_count']}', Icons.grid_view),
-        _statCard('页大小', '${db['page_size']} B', Icons.memory),
-        _statCard('逻辑大小', '${db['total_mb']} MB', Icons.dns, accent: true),
-      ])),
+      // 库概览 — 2行×3 撑满
+      _sectionCard('数据库概览', LayoutBuilder(builder: (ctx, constraints) {
+        const int cols = 3;
+        const double gap = 10;
+        final itemW = (constraints.maxWidth - (cols - 1) * gap) / cols;
+        return Wrap(spacing: gap, runSpacing: gap, children: [
+          _statCard('文件路径', '${db['file']}', Icons.folder, width: itemW),
+          _statCard('文件大小', '${db['size_display']}', Icons.save, accent: true, width: itemW),
+          _statCard('WAL 模式', '${db['journal_mode']}', Icons.check_circle, accent: true, width: itemW),
+          _statCard('页数', '${db['page_count']}', Icons.grid_view, width: itemW),
+          _statCard('页大小', '${db['page_size']} B', Icons.memory, width: itemW),
+          _statCard('逻辑大小', '${db['total_mb']} MB', Icons.dns, accent: true, width: itemW),
+        ]);
+      }), icon: Icons.storage, iconColor: AppTheme.purple),
       const SizedBox(height: 16),
-      // 表统计
+      // 表统计 — 满宽
       _sectionCard('表统计', DataTable(
         columnSpacing: 16,
         headingRowColor: WidgetStatePropertyAll(AppTheme.border.withOpacity(0.3)),
@@ -386,36 +391,41 @@ class _SystemDocPageState extends State<SystemDocPage> {
               )),
             ]);
           }).toList(),
-      )),
+      ), icon: Icons.table_chart, iconColor: AppTheme.cyan),
       const SizedBox(height: 16),
-      // 存储产物
-      _sectionCard('存储产物', Wrap(spacing: 10, runSpacing: 10, children: files.entries.map((e) => SizedBox(
-        width: 150,
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: AppTheme.background, borderRadius: BorderRadius.circular(8)),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${e.value['label']}', style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
-            const SizedBox(height: 4),
-            Text('${e.value['count']}', style: const TextStyle(color: AppTheme.textPrimary, fontSize: 22, fontWeight: FontWeight.w700)),
-          ]),
-        ),
-      )).toList())),
+      // 存储产物 — 2行×4 撑满
+      _sectionCard('存储产物', LayoutBuilder(builder: (ctx, constraints) {
+        const int cols = 4;
+        const double gap = 10;
+        final itemW = (constraints.maxWidth - (cols - 1) * gap) / cols;
+        return Wrap(spacing: gap, runSpacing: gap, children: files.entries.map((e) => SizedBox(
+          width: itemW,
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: AppTheme.background, borderRadius: BorderRadius.circular(8)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('${e.value['label']}', style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+              const SizedBox(height: 4),
+              Text('${e.value['count']}', style: const TextStyle(color: AppTheme.textPrimary, fontSize: 22, fontWeight: FontWeight.w700)),
+            ]),
+          ),
+        )).toList());
+      }), icon: Icons.disc_full, iconColor: AppTheme.amber),
     ]);
   }
 
-  Widget _statCard(String label, String value, IconData icon, {bool accent = false}) => SizedBox(
-    width: 180,
+  Widget _statCard(String label, String value, IconData icon, {bool accent = false, double? width}) => SizedBox(
+    width: width,
     child: Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(color: AppTheme.background, borderRadius: BorderRadius.circular(8)),
       child: Row(children: [
         Icon(icon, size: 18, color: accent ? AppTheme.accent : AppTheme.textMuted),
         const SizedBox(width: 10),
-        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label, style: const TextStyle(color: AppTheme.textMuted, fontSize: 10)),
-          Text(value, style: TextStyle(color: accent ? AppTheme.textPrimary : AppTheme.textSecondary, fontSize: 14, fontWeight: FontWeight.w600)),
-        ]),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, style: const TextStyle(color: AppTheme.textMuted, fontSize: 10), overflow: TextOverflow.ellipsis),
+          Text(value, style: TextStyle(color: accent ? AppTheme.textPrimary : AppTheme.textSecondary, fontSize: 14, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis),
+        ])),
       ]),
     ),
   );
@@ -724,13 +734,19 @@ class _SystemDocPageState extends State<SystemDocPage> {
     Text(value, style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
   ]);
 
-  Widget _sectionCard(String title, Widget child) => Container(
+  Widget _sectionCard(String title, Widget child, {IconData? icon, Color? iconColor}) => Container(
     width: double.infinity,
     padding: const EdgeInsets.all(16),
     decoration: BoxDecoration(color: AppTheme.panel, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppTheme.border)),
     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       if (title.isNotEmpty) ...[
-        Text(title, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
+        Row(children: [
+          if (icon != null) ...[
+            Icon(icon, size: 16, color: iconColor ?? AppTheme.textMuted),
+            const SizedBox(width: 8),
+          ],
+          Text(title, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
+        ]),
         const SizedBox(height: 12),
       ],
       child,
