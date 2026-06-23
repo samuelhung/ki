@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
@@ -73,14 +74,19 @@ class UpdateService {
         return UpdateCheckResult.upToDate(version: remoteVersion);
       }
 
-      // 3. 下载 manifest.json（直链，强制 JSON 解析）
+      // 3. 下载 manifest.json（手动 JSON 解析，绕过重定向后 responseType 丢失的问题）
       final manifestResp = await _dio.get(
         _assetUrl(tag, 'manifest.json'),
-        options: Options(responseType: ResponseType.json),
+        options: Options(responseType: ResponseType.plain),
       );
-      final remote = manifestResp.data;
+      final body = manifestResp.data;
+      if (body is! String) {
+        print('[Update] manifest.json 响应类型异常: ${body.runtimeType}');
+        return UpdateCheckResult.error('manifest.json 响应异常');
+      }
+      final remote = jsonDecode(body);
       if (remote is! Map<String, dynamic>) {
-        print('[Update] manifest.json 响应类型异常 (${remote.runtimeType})');
+        print('[Update] manifest.json 解析后非 Map: ${remote.runtimeType}');
         return UpdateCheckResult.error('manifest.json 格式异常');
       }
       final remoteHash = remote['app_hash'] as String? ?? '';
