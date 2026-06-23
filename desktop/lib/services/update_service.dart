@@ -40,7 +40,11 @@ class UpdateService {
           'User-Agent': 'zhiji-desktop-updater',
         }),
       );
-      final data = resp.data as Map<String, dynamic>;
+      final data = resp.data;
+      if (data is! Map<String, dynamic>) {
+        print('[Update] _getLatestTag: 响应类型异常 (${data.runtimeType})，无法解析');
+        return null;
+      }
       return data['tag_name'] as String?;
     } catch (e) {
       print('[Update] _getLatestTag 失败: $e');
@@ -71,7 +75,11 @@ class UpdateService {
 
       // 3. 下载 manifest.json（直链）
       final manifestResp = await _dio.get(_assetUrl(tag, 'manifest.json'));
-      final remote = manifestResp.data as Map<String, dynamic>;
+      final remote = manifestResp.data;
+      if (remote is! Map<String, dynamic>) {
+        print('[Update] manifest.json 响应类型异常 (${remote.runtimeType})');
+        return UpdateCheckResult.error('manifest.json 格式异常');
+      }
       final remoteHash = remote['app_hash'] as String? ?? '';
 
       return UpdateCheckResult.hasUpdate(
