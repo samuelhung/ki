@@ -34,7 +34,10 @@ data/
 # 旧架构残余（已废弃）
 app/backend/
 app/data/
-desktop/
+
+# Flutter 桌面端构建产物（源码要跟踪）
+desktop/build/
+desktop/.dart_tool/
 desktop-latest.json
 
 # 文档
