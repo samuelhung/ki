@@ -73,8 +73,11 @@ class UpdateService {
         return UpdateCheckResult.upToDate(version: remoteVersion);
       }
 
-      // 3. 下载 manifest.json（直链）
-      final manifestResp = await _dio.get(_assetUrl(tag, 'manifest.json'));
+      // 3. 下载 manifest.json（直链，强制 JSON 解析）
+      final manifestResp = await _dio.get(
+        _assetUrl(tag, 'manifest.json'),
+        options: Options(responseType: ResponseType.json),
+      );
       final remote = manifestResp.data;
       if (remote is! Map<String, dynamic>) {
         print('[Update] manifest.json 响应类型异常 (${remote.runtimeType})');
