@@ -251,7 +251,7 @@ class _TasksPageState extends State<TasksPage> {
 
   Widget _filterInput(String h, String v, Function(String) cb) => SizedBox(
     height: 32,
-    child: Row(children: [
+    child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
       Icon(Icons.search, size: 14, color: AppTheme.textMuted),
       SizedBox(width: 6),
       Expanded(child: TextField(
@@ -366,17 +366,29 @@ class _TasksPageState extends State<TasksPage> {
   );
 
   Widget _calDayCell(DateTime d, List<Map<String,dynamic>> dTasks, String today) {
-    var ds = _fd(d), other = d.month - 1 != _mo, isSel = ds == _sd;
+    var ds = _fd(d), other = d.month - 1 != _mo, isSel = ds == _sd, isToday = ds == today;
     return Column(children: [
-      Text('${d.day}', style: TextStyle(
-        color: isSel ? Color(0xFF38BDF8) : other ? AppTheme.textMuted : AppTheme.textSecondary,
-        fontSize: 10, fontWeight: ds == today ? FontWeight.w700 : FontWeight.w400,
-      )),
-      ...dTasks.take(3).map((t) => Container(
-        width: double.infinity, margin: EdgeInsets.only(top: 1), padding: EdgeInsets.symmetric(horizontal: 2, vertical: 1),
-        decoration: BoxDecoration(color: _stc(t['status']).withOpacity(0.12), borderRadius: BorderRadius.circular(2)),
-        child: Text(t['title'] ?? '', style: TextStyle(color: _stc(t['status']), fontSize: 7), maxLines: 1, overflow: TextOverflow.ellipsis),
-      )),
+      Container(
+        width: 20, height: 20,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: isToday ? Color(0xFF38BDF8).withOpacity(0.15) : (isSel ? Color(0xFF0EA5E9).withOpacity(0.2) : Colors.transparent),
+          border: isToday ? Border.all(color: Color(0xFF38BDF8), width: 1.5) : null,
+        ),
+        alignment: Alignment.center,
+        child: Text('${d.day}', style: TextStyle(
+          color: isToday ? Color(0xFF38BDF8) : (isSel ? Color(0xFF38BDF8) : (other ? AppTheme.textMuted : AppTheme.textSecondary)),
+          fontSize: 10, fontWeight: isToday || ds == today ? FontWeight.w700 : FontWeight.w400,
+        )),
+      ),
+      ...dTasks.take(3).map((t) {
+        var sr = t['source'] ?? 'manual', sc = _SRC_C[sr] ?? _SRC_C['manual']!;
+        return Container(
+          width: double.infinity, margin: EdgeInsets.only(top: 1), padding: EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+          decoration: BoxDecoration(color: sc.withOpacity(0.12), borderRadius: BorderRadius.circular(2)),
+          child: Text(t['title'] ?? '', style: TextStyle(color: sc, fontSize: 7), maxLines: 1, overflow: TextOverflow.ellipsis),
+        );
+      }),
       if (dTasks.length > 3) Text('+${dTasks.length - 3}', style: TextStyle(color: AppTheme.textMuted, fontSize: 7)),
     ]);
   }
@@ -464,7 +476,7 @@ class _TasksPageState extends State<TasksPage> {
       _calNav('${_fd(_ws)} - ${_fd(_ws.add(Duration(days: 6)))}', () => _navWeek(-1), () => _navWeek(1)),
       SizedBox(height: 16),
       SizedBox(height: 160, child: Row(children: days.map((d) {
-        var ds = _fd(d), dTasks = _tod(ds);
+        var ds = _fd(d), dTasks = _tod(ds), isToday = ds == today;
         return Expanded(child: GestureDetector(
           onTap: () => setState(() => _sd = ds),
           child: Container(
@@ -472,18 +484,21 @@ class _TasksPageState extends State<TasksPage> {
             decoration: BoxDecoration(
               color: ds == _sd ? Color(0xFF0EA5E9).withOpacity(0.15) : Color(0xFF141518),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: ds == _sd ? Color(0xFF38BDF8) : Color(0xFF2A2B30)),
+              border: Border.all(color: isToday ? Color(0xFF38BDF8) : (ds == _sd ? Color(0xFF38BDF8) : Color(0xFF2A2B30)), width: isToday ? 1.5 : 1.0),
             ),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('${_WD[d.weekday-1]} ${d.day}', style: TextStyle(
-                color: ds == _sd ? Color(0xFF38BDF8) : AppTheme.textSecondary, fontSize: 11,
-                fontWeight: ds == today ? FontWeight.w700 : FontWeight.w400,
+                color: isToday ? Color(0xFF38BDF8) : (ds == _sd ? Color(0xFF38BDF8) : AppTheme.textSecondary), fontSize: 11,
+                fontWeight: isToday ? FontWeight.w700 : FontWeight.w400,
               )),
               SizedBox(height: 4),
-              ...dTasks.take(5).map((t) => Padding(
-                padding: EdgeInsets.only(bottom: 2),
-                child: Text(t['title'] ?? '', style: TextStyle(color: _stc(t['status']), fontSize: 9), maxLines: 1, overflow: TextOverflow.ellipsis),
-              )),
+              ...dTasks.take(5).map((t) {
+                var sr = t['source'] ?? 'manual', sc = _SRC_C[sr] ?? _SRC_C['manual']!;
+                return Padding(
+                  padding: EdgeInsets.only(bottom: 2),
+                  child: Text(t['title'] ?? '', style: TextStyle(color: sc, fontSize: 9), maxLines: 1, overflow: TextOverflow.ellipsis),
+                );
+              }),
             ]),
           ),
         ));
