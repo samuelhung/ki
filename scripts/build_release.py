@@ -278,12 +278,24 @@ def main():
     # 5. 生成 manifest
     manifest_path = generate_manifest(version, app_hash, dmg_path, patches)
 
+    # 5.5 复制安装脚本到发布目录
+    install_script_src = PROJECT_ROOT / "scripts" / "install_helper.sh"
+    if install_script_src.exists():
+        install_script_dst = RELEASE_DIR / "install_helper.sh"
+        shutil.copy2(install_script_src, install_script_dst)
+        print(f"🔧 安装脚本: install_helper.sh")
+    else:
+        install_script_dst = None
+        print(f"⚠️  安装脚本不存在: {install_script_src}")
+
     # 6. 总结
     print()
     print("━" * 50)
     print(f"✅ 发布包就绪: {RELEASE_DIR}")
     print(f"   安装包: {dmg_path.name} ({dmg_path.stat().st_size / 1024 / 1024:.1f} MB)")
     print(f"   清单:   manifest.json")
+    if install_script_dst:
+        print(f"   安装脚本: install_helper.sh")
     if patches:
         for p in patches:
             print(f"   补丁:   {p['url']} ({p['size'] / 1024:.0f} KB)")
@@ -293,11 +305,16 @@ def main():
     print("上传到 GitHub Release:")
     print(f"  gh release create v{version} \\")
     print(f"    {dmg_path} \\")
-    print(f"    {manifest_path}")
+    print(f"    {manifest_path} \\")
+    if install_script_dst:
+        print(f"    {install_script_dst} \\")
     if patches:
         for p in patches:
             print(f"    {RELEASE_DIR / p['url']} \\")
-    print("  --title '知几桌面端 v{version}' --notes '详见 CHANGELOG'")
+    if install_script_dst:
+        print(f"  --title '知几桌面端 v{version}' --notes '安装更新助手: sudo bash install_helper.sh'")
+    else:
+        print(f"  --title '知几桌面端 v{version}' --notes '详见 CHANGELOG'")
     print("━" * 50)
 
 
