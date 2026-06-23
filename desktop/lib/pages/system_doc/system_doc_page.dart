@@ -592,8 +592,9 @@ class _SystemDocPageState extends State<SystemDocPage> {
   void _showUpdateDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
+      builder: (ctx) => ListenableBuilder(
+        listenable: _updateMgr,
+        builder: (ctx, _) {
     return AlertDialog(
         backgroundColor: AppTheme.panel,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppTheme.border)),
@@ -706,11 +707,7 @@ class _SystemDocPageState extends State<SystemDocPage> {
           TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('关闭', style: TextStyle(color: AppTheme.textMuted, fontSize: 12))),
           if (!_updateMgr.isBusy || _updateMgr.status == 'checking')
             TextButton(
-              onPressed: _updateMgr.isBusy ? null : () {
-                _updateMgr.checkForUpdates().then((_) {
-                  if (ctx.mounted) setDialogState(() {});
-                });
-              },
+              onPressed: _updateMgr.isBusy ? null : () => _updateMgr.checkForUpdates(),
               child: _updateMgr.isBusy
                   ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.info))
                   : const Text('重新检查', style: TextStyle(color: AppTheme.info, fontSize: 12)),

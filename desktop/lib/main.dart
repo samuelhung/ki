@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:window_manager/window_manager.dart';
@@ -33,7 +34,8 @@ class UpdateManager extends ChangeNotifier {
   bool get isBusy => _status == 'checking' || _status == 'downloading' || _status == 'installing';
 
   void _addLog(String msg) {
-    _logs.add(msg);
+    final ts = DateFormat('HH:mm:ss').format(DateTime.now());
+    _logs.add('[$ts] $msg');
     notifyListeners();
   }
 
