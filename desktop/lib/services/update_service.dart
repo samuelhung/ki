@@ -156,17 +156,13 @@ class UpdateService {
       }
       _plog(onLog, 'App 二进制路径: $appPath');
 
-      // 备份当前文件
-      final backupPath = '$appPath.bak';
-      await File(appPath).copy(backupPath);
-      _plog(onLog, '已备份到: $backupPath');
-
-      // 应用 bspatch
-      final newPath = '$appPath.new';
-      _plog(onLog, '执行 bspatch $appPath $newPath ${patchFile.path}');
+      // ⚠️ macOS 沙箱不能直接写 /Applications/ 内的 .app bundle
+      // 策略：bspatch 只读原文件，输出到临时目录；最后用 osascript 提权替换
+      final newBinary = File(p.join(tmpDir.path, 'App.new'));
+      _plog(onLog, '执行 bspatch $appPath → ${newBinary.path}');
       final result = await Process.run('bspatch', [
         appPath,
-        newPath,
+        newBinary.path,
         patchFile.path,
       ]);
       _plog(onLog, 'bspatch exitCode=${result.exitCode}');
@@ -174,23 +170,31 @@ class UpdateService {
       if (result.exitCode != 0) {
         _plog(onLog, 'bspatch stderr: ${result.stderr}');
         _plog(onLog, 'bspatch stdout: ${result.stdout}');
-        // 检查新文件是否部分写入
         try {
-          final newFile = File(newPath);
-          if (newFile.existsSync()) {
-            _plog(onLog, '新文件部分存在: ${newFile.lengthSync()} 字节');
+          if (newBinary.existsSync()) {
+            _plog(onLog, '新文件部分存在: ${newBinary.lengthSync()} 字节');
           }
         } catch (_) {}
-        // 恢复备份
-        await File(backupPath).rename(appPath);
-        _plog(onLog, '已恢复备份');
+        return false;
+      }
+      _plog(onLog, '新 App 二进制大小: ${newBinary.lengthSync()} 字节');
+
+      // 用 osascript 提权替换（macOS 沙箱内唯一能写 /Applications 的方式）
+      _plog(onLog, '请求系统权限以替换 App 二进制...');
+      final escapedSrc = newBinary.path.replaceAll("'", "'\\''");
+      final escapedDst = appPath.replaceAll("'", "'\\''");
+      final cpResult = await Process.run('osascript', [
+        '-e',
+        "do shell script \"cp -f '$escapedSrc' '$escapedDst'\" with administrator privileges",
+      ]);
+      _plog(onLog, 'cp exitCode=${cpResult.exitCode}');
+
+      if (cpResult.exitCode != 0) {
+        _plog(onLog, 'cp stderr: ${cpResult.stderr}');
+        _plog(onLog, 'cp stdout: ${cpResult.stdout}');
         return false;
       }
 
-      // 替换文件
-      final newFile = File(newPath);
-      _plog(onLog, '新 App 二进制大小: ${newFile.lengthSync()} 字节');
-      await newFile.rename(appPath);
       _plog(onLog, '已替换 App 二进制');
 
       // 清理
