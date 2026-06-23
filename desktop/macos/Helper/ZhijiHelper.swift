@@ -45,6 +45,53 @@ class ZhijiHelper: NSObject, ZhijiHelperProtocol {
                 ofItemAtPath: destinationPath
             )
 
+            // 重新 ad-hoc 签名（bspatch 破坏了原始签名）
+            // 1. 签名替换后的二进制
+            let codesignTask = Process()
+            codesignTask.launchPath = "/usr/bin/codesign"
+            codesignTask.arguments = ["--force", "--sign", "-", destinationPath]
+            codesignTask.standardOutput = FileHandle.nullDevice
+            codesignTask.standardError = FileHandle.nullDevice
+            try codesignTask.run()
+            codesignTask.waitUntilExit()
+
+            if codesignTask.terminationStatus != 0 {
+                // 签名失败，回滚
+                rollback(fm, destinationPath: destinationPath, backupPath: backupPath)
+                reply(false, "二进制签名失败: codesign exit \\(codesignTask.terminationStatus)")
+                return
+            }
+
+            // 2. 签名 App.framework 目录（如果框架有独立签名目录）
+            let frameworkPath = URL(fileURLWithPath: destinationPath)
+                .deletingLastPathComponent()  // Versions/A
+                .deletingLastPathComponent()  // Versions
+                .deletingLastPathComponent()  // App.framework
+                .path
+            let frameworkSignTask = Process()
+            frameworkSignTask.launchPath = "/usr/bin/codesign"
+            frameworkSignTask.arguments = ["--force", "--sign", "-", frameworkPath]
+            frameworkSignTask.standardOutput = FileHandle.nullDevice
+            frameworkSignTask.standardError = FileHandle.nullDevice
+            try frameworkSignTask.run()
+            frameworkSignTask.waitUntilExit()
+            // 框架签名失败不阻塞—二进制签名通过即可
+
+            // 3. 验证签名
+            let verifyTask = Process()
+            verifyTask.launchPath = "/usr/bin/codesign"
+            verifyTask.arguments = ["-v", destinationPath]
+            verifyTask.standardOutput = FileHandle.nullDevice
+            verifyTask.standardError = FileHandle.nullDevice
+            try verifyTask.run()
+            verifyTask.waitUntilExit()
+
+            if verifyTask.terminationStatus != 0 {
+                rollback(fm, destinationPath: destinationPath, backupPath: backupPath)
+                reply(false, "签名验证失败: codesign -v exit \\(verifyTask.terminationStatus)")
+                return
+            }
+
             reply(true, nil)
         } catch {
             reply(false, "替换失败: \(error.localizedDescription)")
@@ -53,7 +100,17 @@ class ZhijiHelper: NSObject, ZhijiHelperProtocol {
 
     /// 返回 Helper 版本号
     func getVersion(withReply reply: @escaping (String) -> Void) {
-        reply("1.0.0")
+        reply("1.0.1")
+    }
+
+    /// 回滚：从备份恢复旧文件
+    private func rollback(_ fm: FileManager, destinationPath: String, backupPath: String) {
+        if fm.fileExists(atPath: backupPath) {
+            if fm.fileExists(atPath: destinationPath) {
+                try? fm.removeItem(atPath: destinationPath)
+            }
+            try? fm.copyItem(atPath: backupPath, toPath: destinationPath)
+        }
     }
 }
 
