@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_theme.dart';
 import '../../main.dart';
@@ -669,7 +670,23 @@ class _SystemDocPageState extends State<SystemDocPage> {
             // 日志面板
             if (_updateMgr.logs.isNotEmpty) ...[
               const SizedBox(height: 14),
-              Text('检查日志', style: TextStyle(color: AppTheme.textMuted, fontSize: 11, fontWeight: FontWeight.w500)),
+              Row(children: [
+                const Text('检查日志', style: TextStyle(color: AppTheme.textMuted, fontSize: 11, fontWeight: FontWeight.w500)),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () {
+                    Clipboard.setData(ClipboardData(text: _updateMgr.logs.join('\n')));
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      const SnackBar(content: Text('已复制到剪贴板'), duration: Duration(seconds: 1), behavior: SnackBarBehavior.floating, width: 160),
+                    );
+                  },
+                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.copy, size: 13, color: AppTheme.textMuted),
+                    SizedBox(width: 4),
+                    Text('复制日志', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+                  ]),
+                ),
+              ]),
               const SizedBox(height: 6),
               Container(
                 width: double.infinity,

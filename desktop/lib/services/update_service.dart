@@ -117,21 +117,36 @@ class UpdateService {
     try {
       _plog(onLog, '临时目录: ${tmpDir.path}');
 
-      // 下载补丁（用 get + ResponseType.bytes，绕过重定向后 responseType 丢失）
+      // 下载补丁（绕过 Dio 直接用 HttpClient — Dio 在沙箱 302 重定向后可能挂起不返回）
       final patchFile = File(p.join(tmpDir.path, 'update.bsdiff'));
-      _plog(onLog, '开始下载补丁: $downloadUrl');
-      final resp = await _dio.get(
-        downloadUrl,
-        options: Options(responseType: ResponseType.bytes),
-      );
-      final patchBytes = resp.data;
-      if (patchBytes is! List<int>) {
-        _plog(onLog, '下载响应非字节数据: ${patchBytes.runtimeType}');
-        return false;
+      final expectedSize = patch['size'] as int? ?? 0;
+      _plog(onLog, '开始下载补丁: $downloadUrl (预期 ${(expectedSize / 1024).toStringAsFixed(0)} KB)');
+
+      final client = HttpClient()..badCertificateCallback = (_, __, ___) => true;
+      try {
+        final request = await client.getUrl(Uri.parse(downloadUrl));
+        final response = await request.close().timeout(const Duration(seconds: 120));
+        _plog(onLog, '服务端响应: ${response.statusCode}');
+        final bytes = await response
+            .fold<List<int>>(<int>[], (prev, chunk) => prev..addAll(chunk))
+            .timeout(const Duration(seconds: 120));
+        client.close();
+
+        _plog(onLog, '下载完成: ${bytes.length} 字节 (${(bytes.length / 1024).toStringAsFixed(0)} KB)');
+        if (bytes.isEmpty) {
+          _plog(onLog, '下载数据为空 (statusCode=${response.statusCode})');
+          return false;
+        }
+        if (expectedSize > 0 && bytes.length != expectedSize) {
+          _plog(onLog, '下载大小不匹配: 预期 $expectedSize, 实际 ${bytes.length}');
+          return false;
+        }
+        await patchFile.writeAsBytes(bytes);
+        _plog(onLog, '补丁已写入: ${patchFile.path}');
+      } catch (e) {
+        client.close();
+        throw e;
       }
-      _plog(onLog, '下载完成: ${patchBytes.length} 字节 (${(patchBytes.length / 1024).toStringAsFixed(0)} KB)');
-      await patchFile.writeAsBytes(patchBytes);
-      _plog(onLog, '补丁已写入: ${patchFile.path}');
 
       // 找到当前 App.framework/App
       final appPath = _findAppFrameworkBinary();
