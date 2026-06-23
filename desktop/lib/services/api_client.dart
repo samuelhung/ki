@@ -126,13 +126,53 @@ class ApiClient {
   }
 
   // ---- 任务 ----
-  Future<Map<String, dynamic>> getTasks({int offset = 0, int limit = 30}) async {
-    final resp = await dio.get('/api/tasks',
-        queryParameters: {'offset': offset, 'limit': limit});
+  Future<Map<String, dynamic>> getTasks({
+    int offset = 0, int limit = 30,
+    String? status, String? source, String? priority, String? search,
+  }) async {
+    final params = <String, dynamic>{'offset': offset, 'limit': limit};
+    if (status != null && status.isNotEmpty) params['status'] = status;
+    if (source != null && source.isNotEmpty) params['source'] = source;
+    if (priority != null && priority.isNotEmpty) params['priority'] = priority;
+    if (search != null && search.isNotEmpty) params['search'] = search;
+    final resp = await dio.get('/api/tasks', queryParameters: params);
     final data = resp.data;
     if (data is Map<String, dynamic>) return data;
     if (data is List) return {'items': data, 'total': data.length};
     return {'items': [], 'total': 0};
+  }
+
+  Future<Map<String, dynamic>> getTask(String id) async {
+    final resp = await dio.get('/api/tasks/$id');
+    return resp.data;
+  }
+
+  Future<Map<String, dynamic>> createTask(Map<String, dynamic> body) async {
+    final resp = await dio.post('/api/tasks', data: body);
+    return resp.data;
+  }
+
+  Future<Map<String, dynamic>> updateTask(String id, Map<String, dynamic> body) async {
+    final resp = await dio.put('/api/tasks/$id', data: body);
+    return resp.data;
+  }
+
+  Future<void> deleteTask(String id) async {
+    await dio.delete('/api/tasks/$id');
+  }
+
+  Future<Map<String, dynamic>> judgeTask(String id) async {
+    final resp = await dio.post('/api/tasks/$id/judge');
+    return resp.data;
+  }
+
+  Future<List<dynamic>> getTasksDue(String fromDate, String toDate) async {
+    final resp = await dio.get('/api/tasks/due',
+        queryParameters: {'from_date': fromDate, 'to_date': toDate});
+    final data = resp.data;
+    if (data is List) return data;
+    if (data is Map<String, dynamic>) return data['items'] as List<dynamic>? ?? [];
+    return [];
   }
 
   Future<Map<String, dynamic>> getTaskStats() async {
