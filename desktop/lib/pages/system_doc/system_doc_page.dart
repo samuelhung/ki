@@ -275,8 +275,17 @@ class _SystemDocPageState extends State<SystemDocPage> {
     ]),
   );
 
-  Widget _featureGrid(List<Widget> items) => Wrap(spacing: 10, runSpacing: 10, children: items.map((w) => SizedBox(width: 220, child: w)).toList());
-  Widget _techGrid(List<Widget> items) => Wrap(spacing: 10, runSpacing: 10, children: items.map((w) => SizedBox(width: 160, child: w)).toList());
+  Widget _featureGrid(List<Widget> items) => LayoutBuilder(builder: (ctx, constraints) {
+    const double gap = 10;
+    final itemW = (constraints.maxWidth - gap) / 2;
+    return Wrap(spacing: gap, runSpacing: gap, children: items.map((w) => SizedBox(width: itemW, child: w)).toList());
+  });
+  Widget _techGrid(List<Widget> items) => LayoutBuilder(builder: (ctx, constraints) {
+    const double gap = 10;
+    const int cols = 4;
+    final itemW = (constraints.maxWidth - (cols - 1) * gap) / cols;
+    return Wrap(spacing: gap, runSpacing: gap, children: items.map((w) => SizedBox(width: itemW, child: w)).toList());
+  });
 
   // ── 版本更新 ──
   Widget _buildChangelogTab() {

@@ -158,7 +158,7 @@ void main() async {
   await windowManager.ensureInitialized();
   await windowManager.setTitle('知几');
   await windowManager.setSize(const Size(1280, 800));
-  await windowManager.setMinimumSize(const Size(900, 600));
+  await windowManager.setMinimumSize(const Size(1440, 700));
   await windowManager.center();
   await windowManager.show();
 
