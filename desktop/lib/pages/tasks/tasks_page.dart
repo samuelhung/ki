@@ -182,7 +182,7 @@ class _TasksPageState extends State<TasksPage> {
       SizedBox(width: 12),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('待办事务', style: TextStyle(color: AppTheme.textPrimary, fontSize: 20, fontWeight: FontWeight.w700)),
-        Text('每一个想法，都值得被认真对待', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+        Text('每一个想法，都值得被认真对待  ·  v1.0.43', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
       ])),
       _btn('新建', Icons.add, () => _openCreate()),
     ]),
@@ -379,7 +379,7 @@ class _TasksPageState extends State<TasksPage> {
       ...dTasks.asMap().entries.take(3).map((e) {
         var t = e.value, i = e.key;
         return Container(
-          width: double.infinity, margin: EdgeInsets.only(top: 2), padding: EdgeInsets.symmetric(horizontal: 2, vertical: 3),
+          width: double.infinity, margin: EdgeInsets.only(top: 2), padding: EdgeInsets.symmetric(horizontal: 2, vertical: 6),
           decoration: BoxDecoration(color: _tc(i).withOpacity(0.12), borderRadius: BorderRadius.circular(2)),
           child: Text(t['title'] ?? '', style: TextStyle(color: _tc(i), fontSize: 7), maxLines: 1, overflow: TextOverflow.ellipsis),
         );
