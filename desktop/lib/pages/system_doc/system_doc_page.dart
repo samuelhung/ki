@@ -590,10 +590,12 @@ class _SystemDocPageState extends State<SystemDocPage> {
   }
 
   void _showUpdateDialog(BuildContext context) {
-    final remote = _updateMgr.remoteVersion ?? '?';
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+    final remote = _updateMgr.remoteVersion ?? '?';
+    return AlertDialog(
         backgroundColor: AppTheme.panel,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppTheme.border)),
         title: Row(children: [
@@ -637,12 +639,18 @@ class _SystemDocPageState extends State<SystemDocPage> {
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('关闭', style: TextStyle(color: AppTheme.textMuted, fontSize: 12))),
           TextButton(
-            onPressed: () { Navigator.of(ctx).pop(); _updateMgr.checkForUpdates(); },
+            onPressed: () {
+              _updateMgr.checkForUpdates().then((_) {
+                if (ctx.mounted) setDialogState(() {});
+              });
+            },
             child: const Text('重新检查', style: TextStyle(color: AppTheme.info, fontSize: 12)),
           ),
         ],
-      ),
-    );
+      ); // end AlertDialog in builder
+    },
+  ),
+);
   }
 
   Widget _dialogRow(String label, String value, Color color) => Row(children: [

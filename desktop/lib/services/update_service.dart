@@ -52,7 +52,7 @@ class UpdateService {
 
       // 2. 比较版本
       if (_compareVersions(remoteVersion, currentVersion) <= 0) {
-        return UpdateCheckResult.upToDate();
+        return UpdateCheckResult.upToDate(version: remoteVersion);
       }
 
       // 3. 下载 manifest.json（直链）
@@ -204,8 +204,8 @@ class UpdateCheckResult {
     this.error,
   });
 
-  factory UpdateCheckResult.upToDate() =>
-      UpdateCheckResult._(hasUpdate: false);
+  factory UpdateCheckResult.upToDate({String? version}) =>
+      UpdateCheckResult._(hasUpdate: false, newVersion: version);
 
   factory UpdateCheckResult.hasUpdate({
     required String version,
