@@ -10,6 +10,10 @@ class MainFlutterWindow: NSWindow {
 
     RegisterGeneratedPlugins(registry: flutterViewController)
 
+    // 注册自定义 Helper 插件（SMJobBless + XPC）
+    let registrar = flutterViewController.registrar(forPlugin: "ZhijiHelperPlugin")
+    ZhijiHelperPlugin.register(with: registrar)
+
     super.awakeFromNib()
   }
 }

@@ -454,16 +454,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
       ),
       const SizedBox(height: 20),
       // ── 后端地址配置 ──
-      _section('后端地址', Column(children: [
-        Container(
-          padding: const EdgeInsets.all(10),
-          margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(color: AppTheme.background, borderRadius: BorderRadius.circular(8)),
-          child: const Text(
-            '本地模式：后端运行在本机 127.0.0.1:9120，数据存在本地。\n远程模式：填入 VPN 地址（如 http://10.8.0.105:9120），多设备共享同一后端和数据。切换后即刻生效。',
-            style: TextStyle(color: AppTheme.textMuted, fontSize: 11, height: 1.6),
-          ),
-        ),
+      _section('后端地址', Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           _radioChip('自动检测', _urlMode == 'auto', () => setState(() => _urlMode = 'auto')),
           const SizedBox(width: 12),
@@ -485,6 +476,9 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
             : Row(children: [
                 Expanded(child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), decoration: BoxDecoration(color: AppTheme.background, borderRadius: BorderRadius.circular(8), border: Border.all(color: AppTheme.border)), child: const Text('http://127.0.0.1:9120（自动）', style: TextStyle(color: AppTheme.textMuted, fontSize: 13)))),
               ]),
+        const SizedBox(height: 14),
+        // 说明文字放在地址栏下方
+        _modeDescription(),
         if (_backendStatus != null) ...[
           const SizedBox(height: 8),
           Text(_backendStatus!, style: TextStyle(color: _backendStatus == '已连接' ? AppTheme.success : AppTheme.error, fontSize: 12)),
@@ -564,7 +558,7 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
   Widget _buildModuleTab(String key) {
     final mod = (_config![key] as Map<String, dynamic>?) ?? {};
     final tasks = _TASK_NAMES[key] ?? {};
-    final modulePrompts = (_prompts?['modules'] as Map<String, dynamic>?)?[key] as Map<String, dynamic>?;
+    final modulePrompts = (_prompts as Map<String, dynamic>?)?[key] as Map<String, dynamic>?;
 
     return ListView(padding: const EdgeInsets.all(24), children: [
       _section('${_TAB_LABELS[key]} — 任务参数',
@@ -751,4 +745,34 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
       Text(label, style: TextStyle(color: selected ? AppTheme.textPrimary : AppTheme.textMuted, fontSize: 12)),
     ]),
   );
+
+  Widget _modeDescription() => Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: AppTheme.background,
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: AppTheme.border.withOpacity(0.4)),
+    ),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _modeRow('🏠', '本地模式', '后端运行在本机 ', '127.0.0.1:9120', '，数据存在本地。'),
+      const SizedBox(height: 8),
+      _modeRow('🌐', '远程模式', '填入 VPN 地址（如 ', 'http://10.8.0.105:9120', '），多设备共享同一后端和数据。切换后即刻生效。'),
+    ]),
+  );
+
+  Widget _modeRow(String icon, String title, String before, String addr, String after) =>
+    Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(icon, style: const TextStyle(fontSize: 13)),
+      const SizedBox(width: 8),
+      Expanded(child: RichText(text: TextSpan(
+        style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12, height: 1.6),
+        children: [
+          TextSpan(text: title, style: const TextStyle(fontWeight: FontWeight.w600, color: AppTheme.textPrimary)),
+          const TextSpan(text: '：'),
+          TextSpan(text: before),
+          TextSpan(text: addr, style: const TextStyle(color: AppTheme.accent, fontFamily: 'monospace', fontWeight: FontWeight.w500)),
+          TextSpan(text: after),
+        ],
+      ))),
+    ]);
 }

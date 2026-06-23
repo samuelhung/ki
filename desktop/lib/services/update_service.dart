@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
 /// 桌面端增量更新服务
@@ -27,9 +28,41 @@ class UpdateService {
     );
   }
 
+  static const _channel = MethodChannel('com.zhiji.helper');
   static const String _repo = 'samuelhung/ki';
   static const String _apiLatest =
       'https://api.github.com/repos/$_repo/releases/latest';
+
+  /// 确保 Helper 已安装（首次需用户授权，后续静默）
+  Future<bool> _ensureHelper(void Function(String)? onLog) async {
+    // 先检查是否已安装
+    try {
+      final installed = await _channel.invokeMethod<bool>('helperInstalled');
+      if (installed == true) return true;
+    } catch (_) {
+      // 通道可能不可用
+    }
+
+    _plog(onLog, '首次使用需要安装更新助手（仅此一次）');
+    try {
+      final result = await _channel.invokeMethod<bool>('installHelper');
+      if (result == true) {
+        _plog(onLog, '✓ 更新助手已安装');
+        return true;
+      }
+    } on PlatformException catch (e) {
+      if (e.code == 'USER_CANCELLED') {
+        _plog(onLog, '用户取消了授权，更新助手未安装');
+        return false;
+      }
+      _plog(onLog, '更新助手安装失败: ${e.message}');
+      return false;
+    } catch (e) {
+      _plog(onLog, '更新助手安装异常: $e');
+      return false;
+    }
+    return false;
+  }
 
   /// 从 GitHub Releases 获取最新版本 tag
   Future<String?> _getLatestTag() async {
@@ -179,23 +212,24 @@ class UpdateService {
       }
       _plog(onLog, '新 App 二进制大小: ${newBinary.lengthSync()} 字节');
 
-      // 用 osascript 提权替换（macOS 沙箱内唯一能写 /Applications 的方式）
-      _plog(onLog, '请求系统权限以替换 App 二进制...');
-      final escapedSrc = newBinary.path.replaceAll("'", "'\\''");
-      final escapedDst = appPath.replaceAll("'", "'\\''");
-      final cpResult = await Process.run('osascript', [
-        '-e',
-        "do shell script \"cp -f '$escapedSrc' '$escapedDst'\" with administrator privileges with prompt \"知几需要权限来安装更新补丁\"",
-      ]);
-      _plog(onLog, 'cp exitCode=${cpResult.exitCode}');
-
-      if (cpResult.exitCode != 0) {
-        _plog(onLog, 'cp stderr: ${cpResult.stderr}');
-        _plog(onLog, 'cp stdout: ${cpResult.stdout}');
+      // 确保特权 Helper 已安装（首次需用户授权，后续静默）
+      if (!await _ensureHelper(onLog)) {
+        _plog(onLog, '✗ 特权 Helper 不可用，无法完成更新');
         return false;
       }
 
-      _plog(onLog, '已替换 App 二进制');
+      // 通过 XPC 调用特权 Helper 替换 App 二进制
+      _plog(onLog, '调用特权 Helper 替换 App 二进制...');
+      try {
+        await _channel.invokeMethod('replaceAppBinary', {
+          'source': newBinary.path,
+          'destination': appPath,
+        });
+        _plog(onLog, '✓ 特权 Helper 已替换 App 二进制');
+      } on PlatformException catch (e) {
+        _plog(onLog, '✗ 替换失败: ${e.message}');
+        return false;
+      }
 
       // 清理
       tmpDir.deleteSync(recursive: true);
