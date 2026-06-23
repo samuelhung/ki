@@ -46,6 +46,17 @@ class ZhijiHelper: NSObject, ZhijiHelperProtocol {
             )
 
             // 重新 ad-hoc 签名（bspatch 破坏了原始签名）
+            // 步骤 1: 先移除旧签名
+            let rmSigTask = Process()
+            rmSigTask.launchPath = "/usr/bin/codesign"
+            rmSigTask.arguments = ["--remove-signature", destinationPath]
+            rmSigTask.standardOutput = FileHandle.nullDevice
+            rmSigTask.standardError = FileHandle.nullDevice
+            try rmSigTask.run()
+            rmSigTask.waitUntilExit()
+            // --remove-signature 失败不阻塞，继续尝试签名
+
+            // 步骤 2: 重新 ad-hoc 签名
             let codesignTask = Process()
             let errPipe = Pipe()
             codesignTask.launchPath = "/usr/bin/codesign"
@@ -63,20 +74,6 @@ class ZhijiHelper: NSObject, ZhijiHelperProtocol {
                 return
             }
 
-            // 签名 App.framework 目录（确保框架密封完整）
-            let frameworkPath = URL(fileURLWithPath: destinationPath)
-                .deletingLastPathComponent()  // Versions/A
-                .deletingLastPathComponent()  // Versions
-                .deletingLastPathComponent()  // App.framework
-                .path
-            let frameworkSignTask = Process()
-            frameworkSignTask.launchPath = "/usr/bin/codesign"
-            frameworkSignTask.arguments = ["--force", "--sign", "-", "--timestamp=none", frameworkPath]
-            frameworkSignTask.standardOutput = FileHandle.nullDevice
-            frameworkSignTask.standardError = FileHandle.nullDevice
-            try frameworkSignTask.run()
-            frameworkSignTask.waitUntilExit()
-
             reply(true, nil)
         } catch {
             reply(false, "替换失败: \(error.localizedDescription)")
@@ -85,7 +82,7 @@ class ZhijiHelper: NSObject, ZhijiHelperProtocol {
 
     /// 返回 Helper 版本号
     func getVersion(withReply reply: @escaping (String) -> Void) {
-        reply("1.0.3")
+        reply("1.0.4")
     }
 
     /// 回滚：从备份恢复旧文件
