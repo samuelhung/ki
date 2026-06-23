@@ -261,7 +261,7 @@ class _TasksPageState extends State<TasksPage> {
       Expanded(child: TextField(
         controller: TextEditingController(text: v)..selection = TextSelection.collapsed(offset: v.length),
         style: TextStyle(color: AppTheme.textPrimary, fontSize: 12),
-        decoration: InputDecoration(hintText: h, hintStyle: TextStyle(color: AppTheme.textMuted, fontSize: 12), border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.zero),
+        decoration: InputDecoration(hintText: h, hintStyle: TextStyle(color: AppTheme.textMuted, fontSize: 12), border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.zero, filled: true, fillColor: Color(0xFF141518)),
         onChanged: cb,
       )),
     ]),
@@ -379,7 +379,7 @@ class _TasksPageState extends State<TasksPage> {
       ...dTasks.asMap().entries.take(3).map((e) {
         var t = e.value, i = e.key;
         return Container(
-          width: double.infinity, margin: EdgeInsets.only(top: 1), padding: EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+          width: double.infinity, margin: EdgeInsets.only(top: 2), padding: EdgeInsets.symmetric(horizontal: 2, vertical: 3),
           decoration: BoxDecoration(color: _tc(i).withOpacity(0.12), borderRadius: BorderRadius.circular(2)),
           child: Text(t['title'] ?? '', style: TextStyle(color: _tc(i), fontSize: 7), maxLines: 1, overflow: TextOverflow.ellipsis),
         );
