@@ -361,37 +361,48 @@ class _SystemDocPageState extends State<SystemDocPage> {
         ]);
       }), icon: Icons.storage, iconColor: AppTheme.purple),
       const SizedBox(height: 16),
-      // 表统计 — 满宽
-      _sectionCard('表统计', DataTable(
-        columnSpacing: 16,
-        headingRowColor: WidgetStatePropertyAll(AppTheme.border.withOpacity(0.3)),
-        columns: const [
-          DataColumn(label: Text('表名', style: TextStyle(color: AppTheme.textMuted, fontSize: 12))),
-          DataColumn(label: Text('说明', style: TextStyle(color: AppTheme.textMuted, fontSize: 12))),
-          DataColumn(numeric: true, label: Text('行数', style: TextStyle(color: AppTheme.textMuted, fontSize: 12))),
-          DataColumn(label: Text('', style: TextStyle(fontSize: 12))),
-        ],
-        rows: (tables.entries.toList()
-          ..sort((a, b) => (b.value['count'] as int).compareTo(a.value['count'] as int)))
-          .map((e) {
+      // 表统计 — 满宽自适应（仿 web w-full table-fixed）
+      _sectionCard('表统计', Column(children: [
+        // 表头
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: AppTheme.border))),
+          child: const Row(children: [
+            Expanded(child: Text('表名', style: TextStyle(color: AppTheme.textMuted, fontSize: 12))),
+            Expanded(child: Text('说明', style: TextStyle(color: AppTheme.textMuted, fontSize: 12))),
+            SizedBox(width: 64, child: Text('行数', textAlign: TextAlign.right, style: TextStyle(color: AppTheme.textMuted, fontSize: 12))),
+            SizedBox(width: 64),
+          ]),
+        ),
+        // 数据行
+        ...(() sync* {
+          final sorted = tables.entries.toList()..sort((a, b) => (b.value['count'] as int).compareTo(a.value['count'] as int));
+          for (final e in sorted) {
             final count = e.value['count'] as int;
             final ratio = maxCount > 0 ? count / maxCount : 0.0;
-            return DataRow(cells: [
-              DataCell(Text(e.key, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontFamily: 'monospace'))),
-              DataCell(Text('${e.value['desc']}', style: const TextStyle(color: AppTheme.textMuted, fontSize: 11))),
-              DataCell(Text('$count', style: const TextStyle(color: AppTheme.textPrimary, fontSize: 12))),
-              DataCell(Container(
-                width: 60,
-                height: 6,
-                decoration: BoxDecoration(color: AppTheme.background, borderRadius: BorderRadius.circular(3)),
-                child: FractionallySizedBox(
-                  widthFactor: ratio.clamp(0.0, 1.0),
-                  child: Container(decoration: BoxDecoration(color: AppTheme.accent.withOpacity(0.6), borderRadius: BorderRadius.circular(3))),
-                ),
-              )),
-            ]);
-          }).toList(),
-      ), icon: Icons.table_chart, iconColor: AppTheme.cyan),
+            yield Container(
+              padding: const EdgeInsets.symmetric(vertical: 7),
+              decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFF1A1B20)))),
+              child: Row(children: [
+                Expanded(child: Text(e.key, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontFamily: 'monospace'))),
+                Expanded(child: Text('${e.value['desc']}', style: const TextStyle(color: AppTheme.textMuted, fontSize: 11), overflow: TextOverflow.ellipsis)),
+                SizedBox(width: 64, child: Text('$count', textAlign: TextAlign.right, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 12, fontFamily: 'monospace'))),
+                SizedBox(width: 64, child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    width: 60, height: 6,
+                    decoration: BoxDecoration(color: AppTheme.background, borderRadius: BorderRadius.circular(3)),
+                    child: FractionallySizedBox(
+                      widthFactor: ratio.clamp(0.0, 1.0),
+                      child: Container(decoration: BoxDecoration(color: AppTheme.accent.withOpacity(0.6), borderRadius: BorderRadius.circular(3))),
+                    ),
+                  ),
+                )),
+              ]),
+            );
+          }
+        })(),
+      ]), icon: Icons.table_chart, iconColor: AppTheme.cyan),
       const SizedBox(height: 16),
       // 存储产物 — 2行×4 撑满
       _sectionCard('存储产物', LayoutBuilder(builder: (ctx, constraints) {
