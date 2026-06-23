@@ -158,7 +158,7 @@ class _AppShellState extends ConsumerState<AppShell> {
           Expanded(
             child: Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 960),
+                constraints: const BoxConstraints(maxWidth: 1152),
                 child: widget.child,
               ),
             ),
