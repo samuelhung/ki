@@ -252,12 +252,16 @@ class _TasksPageState extends State<TasksPage> {
   Widget _filterInput(String h, String v, Function(String) cb) => Container(
     height: 32, padding: EdgeInsets.symmetric(horizontal: 10),
     decoration: BoxDecoration(color: Color(0xFF141518), borderRadius: BorderRadius.circular(8), border: Border.all(color: Color(0xFF2A2B30))),
-    child: TextField(
-      controller: TextEditingController(text: v)..selection = TextSelection.collapsed(offset: v.length),
-      style: TextStyle(color: AppTheme.textPrimary, fontSize: 12),
-      decoration: InputDecoration(hintText: h, hintStyle: TextStyle(color: AppTheme.textMuted, fontSize: 12), border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.zero),
-      onChanged: cb,
-    ),
+    child: Row(children: [
+      Icon(Icons.search, size: 14, color: AppTheme.textMuted),
+      SizedBox(width: 6),
+      Expanded(child: TextField(
+        controller: TextEditingController(text: v)..selection = TextSelection.collapsed(offset: v.length),
+        style: TextStyle(color: AppTheme.textPrimary, fontSize: 12),
+        decoration: InputDecoration(hintText: h, hintStyle: TextStyle(color: AppTheme.textMuted, fontSize: 12), border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.zero),
+        onChanged: cb,
+      )),
+    ]),
   );
 
   Widget _dd(Map<String,String> o, String v, Function(String) cb) => Container(
@@ -430,7 +434,7 @@ class _TasksPageState extends State<TasksPage> {
           SizedBox(height: 8),
           ...List.generate(6, (r) => Padding(
             padding: EdgeInsets.only(top: r > 0 ? 6 : 0),
-            child: Row(children: List.generate(7, (c) {
+            child: SizedBox(height: 160, child: Row(children: List.generate(7, (c) {
               var d = days[r * 7 + c], ds = _fd(d), dTasks = _tod(ds);
               var other = d.month - 1 != _mo, isSel = ds == _sd;
               return Expanded(child: GestureDetector(
@@ -445,7 +449,7 @@ class _TasksPageState extends State<TasksPage> {
                   child: _calDayCell(d, dTasks, today),
                 ),
               ));
-            })),
+            }))),
           )),
         ]),
       ),
@@ -501,7 +505,7 @@ class _TasksPageState extends State<TasksPage> {
   // ── Detail Overlay ──
   Widget _buildDetailOverlay() => GestureDetector(
     onTap: () => setState(() { _detail = null; _edit = false; }),
-    child: Container(color: Colors.black54, child: Align(alignment: Alignment.centerRight, child: Container(
+    child: Container(color: Colors.black54, child: Align(alignment: Alignment.center, child: Container(
       width: 400, color: Color(0xFF141518),
       child: Material(child: Container(color: Color(0xFF141518), child: SingleChildScrollView(
         padding: EdgeInsets.all(20),

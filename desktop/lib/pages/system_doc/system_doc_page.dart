@@ -595,8 +595,10 @@ class _SystemDocPageState extends State<SystemDocPage> {
     }
 
     return GestureDetector(
-      onTap: busy ? null : () {
+      onTap: () {
         if (s == 'latest' || s == 'error') {
+          _showUpdateDialog(context);
+        } else if (busy) {
           _showUpdateDialog(context);
         } else {
           _updateMgr.checkForUpdates();
