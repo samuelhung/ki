@@ -46,11 +46,10 @@ class ZhijiHelper: NSObject, ZhijiHelperProtocol {
             )
 
             // 重新 ad-hoc 签名（bspatch 破坏了原始签名）
-            // 1. 签名替换后的二进制
             let codesignTask = Process()
             let errPipe = Pipe()
             codesignTask.launchPath = "/usr/bin/codesign"
-            codesignTask.arguments = ["--force", "--sign", "-", destinationPath]
+            codesignTask.arguments = ["--force", "--sign", "-", "--timestamp=none", destinationPath]
             codesignTask.standardOutput = FileHandle.nullDevice
             codesignTask.standardError = errPipe
             try codesignTask.run()
@@ -60,11 +59,11 @@ class ZhijiHelper: NSObject, ZhijiHelperProtocol {
                 let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
                 let errStr = String(data: errData, encoding: .utf8) ?? ""
                 rollback(fm, destinationPath: destinationPath, backupPath: backupPath)
-                reply(false, "二进制签名失败: codesign exit \\(codesignTask.terminationStatus) \\(errStr)")
+                reply(false, "二进制签名失败(exit \(codesignTask.terminationStatus)): \(errStr)")
                 return
             }
 
-            // 2. 签名 App.framework 目录（确保框架密封完整）
+            // 签名 App.framework 目录（确保框架密封完整）
             let frameworkPath = URL(fileURLWithPath: destinationPath)
                 .deletingLastPathComponent()  // Versions/A
                 .deletingLastPathComponent()  // Versions
@@ -72,12 +71,11 @@ class ZhijiHelper: NSObject, ZhijiHelperProtocol {
                 .path
             let frameworkSignTask = Process()
             frameworkSignTask.launchPath = "/usr/bin/codesign"
-            frameworkSignTask.arguments = ["--force", "--sign", "-", frameworkPath]
+            frameworkSignTask.arguments = ["--force", "--sign", "-", "--timestamp=none", frameworkPath]
             frameworkSignTask.standardOutput = FileHandle.nullDevice
             frameworkSignTask.standardError = FileHandle.nullDevice
             try frameworkSignTask.run()
             frameworkSignTask.waitUntilExit()
-            // 框架签名失败不阻塞—二进制签名通过即可
 
             reply(true, nil)
         } catch {
@@ -87,7 +85,7 @@ class ZhijiHelper: NSObject, ZhijiHelperProtocol {
 
     /// 返回 Helper 版本号
     func getVersion(withReply reply: @escaping (String) -> Void) {
-        reply("1.0.2")
+        reply("1.0.3")
     }
 
     /// 回滚：从备份恢复旧文件
