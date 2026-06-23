@@ -606,10 +606,11 @@ class _SystemDocPageState extends State<SystemDocPage> {
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           _dialogRow('当前版本', 'v${_updateMgr.version}', AppTheme.textSecondary),
           const SizedBox(height: 6),
-          _dialogRow('最新版本', 'v$remote', remote == '?' ? AppTheme.textMuted : AppTheme.accent),
+          _dialogRow('最新版本', _updateMgr.isBusy ? '检查中...' : 'v${_updateMgr.remoteVersion ?? '?'}', 
+              _updateMgr.isBusy ? AppTheme.info : (_updateMgr.remoteVersion != null ? AppTheme.accent : AppTheme.textMuted)),
           const SizedBox(height: 6),
-          _dialogRow('状态', _updateMgr.message, _updateMgr.status == 'error' ? AppTheme.error : AppTheme.success),
-          if (_updateMgr.status == 'latest' && _updateMgr.version == remote)
+          _dialogRow('状态', _updateMgr.message, _updateMgr.isBusy ? AppTheme.info : _updateMgr.status == 'error' ? AppTheme.error : AppTheme.success),
+          if (!_updateMgr.isBusy && _updateMgr.status == 'latest' && _updateMgr.version == _updateMgr.remoteVersion)
             Padding(
               padding: const EdgeInsets.only(top: 12),
               child: Container(

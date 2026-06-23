@@ -35,17 +35,27 @@ class UpdateManager extends ChangeNotifier {
 
     _status = 'checking';
     _message = '正在检查更新...';
+    _remoteVersion = null;
     notifyListeners();
 
     try {
       final currentVersion = _readAppVersion();
       _version = currentVersion;
+      print('[UPDATE] 当前版本: $currentVersion');
       final result = await UpdateService().checkForUpdates(currentVersion);
-      _remoteVersion = result.newVersion; // might be null on error
+      _remoteVersion = result.newVersion;
+      print('[UPDATE] 远程版本: $_remoteVersion, hasUpdate: ${result.hasUpdate}, error: ${result.error}, patches: ${result.patches.length}');
 
       if (!result.hasUpdate || result.patches.isEmpty) {
-        _status = 'latest';
-        _message = '已是最新版本';
+        if (result.error != null) {
+          _status = 'error';
+          _message = result.error!;
+          print('[UPDATE] 检查出错: ${result.error}');
+        } else {
+          _status = 'latest';
+          _message = '已是最新版本';
+          print('[UPDATE] 已是最新版本');
+        }
         notifyListeners();
         return;
       }
