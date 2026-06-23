@@ -22,48 +22,74 @@ class UpdateManager extends ChangeNotifier {
   String _message = '';
   double _percent = 0;
   String? _remoteVersion;
+  final List<String> _logs = [];
 
   String? get remoteVersion => _remoteVersion;
+  List<String> get logs => List.unmodifiable(_logs);
 
   String get status => _status;
   String get message => _message;
   double get percent => _percent;
   bool get isBusy => _status == 'checking' || _status == 'downloading' || _status == 'installing';
 
+  void _addLog(String msg) {
+    _logs.add(msg);
+    notifyListeners();
+  }
+
   Future<void> checkForUpdates() async {
     if (isBusy) return;
 
+    _logs.clear();
     _status = 'checking';
     _message = '正在检查更新...';
     _remoteVersion = null;
     notifyListeners();
 
     try {
+      _addLog('⏳ 步骤 1/4: 读取本地版本号...');
       final currentVersion = _readAppVersion();
       _version = currentVersion;
+      _addLog('   本地版本: v$currentVersion');
       print('[UPDATE] 当前版本: $currentVersion');
+
+      _addLog('⏳ 步骤 2/4: 查询 GitHub 最新版本...');
       final result = await UpdateService().checkForUpdates(currentVersion);
       _remoteVersion = result.newVersion;
-      print('[UPDATE] 远程版本: $_remoteVersion, hasUpdate: ${result.hasUpdate}, error: ${result.error}, patches: ${result.patches.length}');
+      if (result.error != null) {
+        _addLog('   ✗ 查询失败: ${result.error}');
+      } else if (_remoteVersion != null) {
+        _addLog('   远程最新: v$_remoteVersion');
+      }
+      print('[UPDATE] 远程版本: $_remoteVersion, hasUpdate: ${result.hasUpdate}, error: ${result.error}');
 
       if (!result.hasUpdate || result.patches.isEmpty) {
         if (result.error != null) {
+          _addLog('✗ 检查出错');
           _status = 'error';
           _message = result.error!;
-          print('[UPDATE] 检查出错: ${result.error}');
         } else {
+          _addLog('✓ 当前已是最新版本，无需更新');
           _status = 'latest';
           _message = '已是最新版本';
-          print('[UPDATE] 已是最新版本');
         }
         notifyListeners();
         return;
       }
 
+      _addLog('✓ 发现新版本 v${result.newVersion}');
+      _addLog('   可用补丁: ${result.patches.length} 个');
+
       final match = result.patches.firstWhere(
         (p) => p['from_version'] == _version,
         orElse: () => result.patches.first,
       );
+      final patchFrom = match['from_version'] ?? '?';
+      final patchSize = match['size'] ?? 0;
+
+      _addLog('⏳ 步骤 3/4: 下载补丁');
+      _addLog('   来源: v$patchFrom → v${result.newVersion}');
+      _addLog('   大小: ${(patchSize / 1024).toStringAsFixed(0)} KB');
 
       _status = 'downloading';
       _message = '发现 v${result.newVersion}，下载中...';
@@ -72,19 +98,23 @@ class UpdateManager extends ChangeNotifier {
       final ok = await UpdateService().downloadAndApplyPatch(match, result.tag!);
 
       if (ok) {
+        _addLog('✓ 步骤 4/4: 补丁应用成功');
+        _addLog('   即将重启...');
         _status = 'installing';
         _message = '更新完成，即将重启...';
         notifyListeners();
         await Future.delayed(const Duration(milliseconds: 500));
         await UpdateService().restartApp();
       } else {
+        _addLog('✗ 补丁应用失败');
         _status = 'error';
         _message = '更新失败，请重试';
         notifyListeners();
       }
     } catch (e) {
+      _addLog('✗ 异常: ${e.toString().length > 80 ? '\${e.toString().substring(0, 80)}...' : e}');
       _status = 'error';
-      _message = e.toString().length > 60 ? '${e.toString().substring(0, 60)}...' : e.toString();
+      _message = e.toString().length > 60 ? '\${e.toString().substring(0, 60)}...' : e.toString();
       notifyListeners();
     }
   }

@@ -594,69 +594,137 @@ class _SystemDocPageState extends State<SystemDocPage> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
-    final remote = _updateMgr.remoteVersion ?? '?';
     return AlertDialog(
         backgroundColor: AppTheme.panel,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppTheme.border)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
         title: Row(children: [
-          Icon(Icons.system_update, size: 20, color: _updateMgr.status == 'error' ? AppTheme.error : AppTheme.success),
+          Icon(Icons.system_update, size: 20, color: _updateMgr.isBusy ? AppTheme.info : _updateMgr.status == 'error' ? AppTheme.error : AppTheme.success),
           const SizedBox(width: 8),
           Text('更新检查', style: TextStyle(color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.w600)),
         ]),
-        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          _dialogRow('当前版本', 'v${_updateMgr.version}', AppTheme.textSecondary),
-          const SizedBox(height: 6),
-          _dialogRow('最新版本', _updateMgr.isBusy ? '检查中...' : 'v${_updateMgr.remoteVersion ?? '?'}', 
-              _updateMgr.isBusy ? AppTheme.info : (_updateMgr.remoteVersion != null ? AppTheme.accent : AppTheme.textMuted)),
-          const SizedBox(height: 6),
-          _dialogRow('状态', _updateMgr.message, _updateMgr.isBusy ? AppTheme.info : _updateMgr.status == 'error' ? AppTheme.error : AppTheme.success),
-          if (!_updateMgr.isBusy && _updateMgr.status == 'latest' && _updateMgr.version == _updateMgr.remoteVersion)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Container(
+        content: SizedBox(
+          width: 560,
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            // 概要行
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(color: AppTheme.background, borderRadius: BorderRadius.circular(10)),
+              child: Row(children: [
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  _infoRow('桌面版本', 'v${_updateMgr.version}', AppTheme.accent),
+                  const SizedBox(height: 6),
+                  _infoRow('最新版本', _updateMgr.isBusy ? '检查中...' : _updateMgr.remoteVersion != null ? 'v${_updateMgr.remoteVersion}' : '—', 
+                      _updateMgr.isBusy ? AppTheme.info : _updateMgr.remoteVersion != null ? AppTheme.emerald : AppTheme.textMuted),
+                ])),
+                const SizedBox(width: 24),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: _updateMgr.isBusy ? AppTheme.info.withValues(alpha: 0.12) 
+                        : _updateMgr.status == 'error' ? AppTheme.error.withValues(alpha: 0.12)
+                        : _updateMgr.status == 'latest' ? AppTheme.success.withValues(alpha: 0.12)
+                        : AppTheme.textMuted.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    if (_updateMgr.isBusy)
+                      const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.info))
+                    else
+                      Icon(
+                        _updateMgr.status == 'error' ? Icons.error_outline : _updateMgr.status == 'latest' ? Icons.check_circle : Icons.info_outline,
+                        size: 16,
+                        color: _updateMgr.status == 'error' ? AppTheme.error : _updateMgr.status == 'latest' ? AppTheme.success : AppTheme.info,
+                      ),
+                    const SizedBox(width: 8),
+                    Text(_updateMgr.message, style: TextStyle(
+                        color: _updateMgr.isBusy ? AppTheme.info : _updateMgr.status == 'error' ? AppTheme.error : AppTheme.success,
+                        fontSize: 12, fontWeight: FontWeight.w600)),
+                  ]),
+                ),
+              ]),
+            ),
+            // 日志面板
+            if (_updateMgr.logs.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Text('检查日志', style: TextStyle(color: AppTheme.textMuted, fontSize: 11, fontWeight: FontWeight.w500)),
+              const SizedBox(height: 6),
+              Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(maxHeight: 260),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0A0B0E),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppTheme.border.withValues(alpha: 0.5)),
+                ),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _updateMgr.logs.length,
+                  itemBuilder: (_, i) {
+                    final log = _updateMgr.logs[i];
+                    Color logColor = AppTheme.textSecondary;
+                    if (log.startsWith('✓')) logColor = AppTheme.success;
+                    if (log.startsWith('✗')) logColor = AppTheme.error;
+                    if (log.startsWith('⏳')) logColor = AppTheme.info; 
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Text(log, style: TextStyle(color: logColor, fontSize: 11, fontFamily: 'monospace', height: 1.6)),
+                    );
+                  },
+                ),
+              ),
+            ],
+            // 提示
+            if (!_updateMgr.isBusy && _updateMgr.status == 'latest' && _updateMgr.version == _updateMgr.remoteVersion) ...[
+              const SizedBox(height: 12),
+              Container(
                 padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(color: AppTheme.success.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+                decoration: BoxDecoration(color: AppTheme.success.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(8)),
                 child: const Row(children: [
-                  Icon(Icons.check, size: 16, color: AppTheme.success),
+                  Icon(Icons.check, size: 14, color: AppTheme.success),
                   SizedBox(width: 8),
-                  Expanded(child: Text('当前已是最新版本，无需更新', style: TextStyle(color: AppTheme.success, fontSize: 12))),
+                  Text('当前已是最新版本，无需更新', style: TextStyle(color: AppTheme.success, fontSize: 12)),
                 ]),
               ),
-            ),
-          if (_updateMgr.status == 'error')
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Container(
+            ],
+            if (_updateMgr.status == 'error' && !_updateMgr.isBusy) ...[
+              const SizedBox(height: 12),
+              Container(
                 padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(color: AppTheme.error.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+                decoration: BoxDecoration(color: AppTheme.error.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(8)),
                 child: const Row(children: [
-                  Icon(Icons.warning_amber, size: 16, color: AppTheme.error),
+                  Icon(Icons.warning_amber, size: 14, color: AppTheme.error),
                   SizedBox(width: 8),
                   Expanded(child: Text('检查失败，可能是网络问题或 GitHub API 限流', style: TextStyle(color: AppTheme.error, fontSize: 12))),
                 ]),
               ),
-            ),
-        ]),
+            ],
+          ]),
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('关闭', style: TextStyle(color: AppTheme.textMuted, fontSize: 12))),
-          TextButton(
-            onPressed: () {
-              _updateMgr.checkForUpdates().then((_) {
-                if (ctx.mounted) setDialogState(() {});
-              });
-            },
-            child: const Text('重新检查', style: TextStyle(color: AppTheme.info, fontSize: 12)),
-          ),
+          if (!_updateMgr.isBusy || _updateMgr.status == 'checking')
+            TextButton(
+              onPressed: _updateMgr.isBusy ? null : () {
+                _updateMgr.checkForUpdates().then((_) {
+                  if (ctx.mounted) setDialogState(() {});
+                });
+              },
+              child: _updateMgr.isBusy
+                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.info))
+                  : const Text('重新检查', style: TextStyle(color: AppTheme.info, fontSize: 12)),
+            ),
         ],
-      ); // end AlertDialog in builder
+      ); // end AlertDialog
     },
   ),
 );
   }
 
-  Widget _dialogRow(String label, String value, Color color) => Row(children: [
+  Widget _infoRow(String label, String value, Color color) => Row(children: [
     SizedBox(width: 70, child: Text(label, style: const TextStyle(color: AppTheme.textMuted, fontSize: 12))),
-    Expanded(child: Text(value, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w500, fontFamily: 'monospace'))),
+    Text(value, style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'monospace')),
   ]);
 
   Widget _sectionCard(String title, Widget child) => Container(
