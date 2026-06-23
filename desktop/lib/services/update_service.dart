@@ -106,7 +106,8 @@ class UpdateService {
 
   /// 下载补丁并应用
   Future<bool> downloadAndApplyPatch(
-      Map<String, dynamic> patch, String tag) async {
+      Map<String, dynamic> patch, String tag,
+      {void Function(String)? onLog}) async {
     final patchUrl = patch['url'] as String;
     final downloadUrl = patchUrl.startsWith('http')
         ? patchUrl
@@ -114,50 +115,87 @@ class UpdateService {
 
     final tmpDir = Directory.systemTemp.createTempSync('zhiji_update_');
     try {
-      // 下载补丁
+      _plog(onLog, '临时目录: ${tmpDir.path}');
+
+      // 下载补丁（用 get + ResponseType.bytes，绕过重定向后 responseType 丢失）
       final patchFile = File(p.join(tmpDir.path, 'update.bsdiff'));
-      await _dio.download(downloadUrl, patchFile.path);
+      _plog(onLog, '开始下载补丁: $downloadUrl');
+      final resp = await _dio.get(
+        downloadUrl,
+        options: Options(responseType: ResponseType.bytes),
+      );
+      final patchBytes = resp.data;
+      if (patchBytes is! List<int>) {
+        _plog(onLog, '下载响应非字节数据: ${patchBytes.runtimeType}');
+        return false;
+      }
+      _plog(onLog, '下载完成: ${patchBytes.length} 字节 (${(patchBytes.length / 1024).toStringAsFixed(0)} KB)');
+      await patchFile.writeAsBytes(patchBytes);
+      _plog(onLog, '补丁已写入: ${patchFile.path}');
 
       // 找到当前 App.framework/App
       final appPath = _findAppFrameworkBinary();
       if (appPath == null) {
-        print('[Update] 找不到 App.framework/App');
+        _plog(onLog, '找不到 App.framework/App');
         return false;
       }
+      _plog(onLog, 'App 二进制路径: $appPath');
 
       // 备份当前文件
       final backupPath = '$appPath.bak';
       await File(appPath).copy(backupPath);
+      _plog(onLog, '已备份到: $backupPath');
 
       // 应用 bspatch
       final newPath = '$appPath.new';
+      _plog(onLog, '执行 bspatch $appPath $newPath ${patchFile.path}');
       final result = await Process.run('bspatch', [
         appPath,
         newPath,
         patchFile.path,
       ]);
+      _plog(onLog, 'bspatch exitCode=${result.exitCode}');
 
       if (result.exitCode != 0) {
-        print('[Update] bspatch 失败: ${result.stderr}');
+        _plog(onLog, 'bspatch stderr: ${result.stderr}');
+        _plog(onLog, 'bspatch stdout: ${result.stdout}');
+        // 检查新文件是否部分写入
+        try {
+          final newFile = File(newPath);
+          if (newFile.existsSync()) {
+            _plog(onLog, '新文件部分存在: ${newFile.lengthSync()} 字节');
+          }
+        } catch (_) {}
         // 恢复备份
         await File(backupPath).rename(appPath);
+        _plog(onLog, '已恢复备份');
         return false;
       }
 
       // 替换文件
-      await File(newPath).rename(appPath);
+      final newFile = File(newPath);
+      _plog(onLog, '新 App 二进制大小: ${newFile.lengthSync()} 字节');
+      await newFile.rename(appPath);
+      _plog(onLog, '已替换 App 二进制');
 
       // 清理
       tmpDir.deleteSync(recursive: true);
+      _plog(onLog, '补丁应用完成');
 
       return true;
-    } catch (e) {
-      print('[Update] 更新失败: $e');
+    } catch (e, stack) {
+      _plog(onLog, '更新失败: $e');
+      _plog(onLog, '堆栈: $stack');
       try {
         tmpDir.deleteSync(recursive: true);
       } catch (_) {}
       return false;
     }
+  }
+
+  void _plog(void Function(String)? onLog, String msg) {
+    print('[Update] $msg');
+    onLog?.call(msg);
   }
 
   /// 重启应用

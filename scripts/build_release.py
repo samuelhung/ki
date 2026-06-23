@@ -146,7 +146,10 @@ def fetch_previous_binary(prev_version: str) -> Path | None:
         capture_output=True, timeout=30, check=True,
     )
 
-    prev_binary = mount_point / "zhiji_desktop.app" / "Contents" / "Frameworks" / "App.framework" / "Versions" / "A" / "App"
+    prev_binary_old = mount_point / "zhiji_desktop.app" / "Contents" / "Frameworks" / "App.framework" / "Versions" / "A" / "App"
+    prev_binary_new = mount_point / "知几.app" / "Contents" / "Frameworks" / "App.framework" / "Versions" / "A" / "App"
+
+    prev_binary = prev_binary_old if prev_binary_old.exists() else prev_binary_new
 
     if not prev_binary.exists():
         print(f"⚠️  DMG 中找不到 App 二进制")
@@ -203,7 +206,7 @@ def generate_patches(version: str, current_hash: str) -> list[dict]:
         print(f"  bsdiff {prev_bin} → {patch_name}")
         result = subprocess.run(
             ["bsdiff", str(prev_bin), str(APP_BINARY), str(patch_path)],
-            capture_output=True, timeout=60,
+            capture_output=True, timeout=300,
         )
 
         shutil.rmtree(prev_bin.parent, ignore_errors=True)

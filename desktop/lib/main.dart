@@ -97,7 +97,10 @@ class UpdateManager extends ChangeNotifier {
       _message = '发现 v${result.newVersion}，下载中...';
       notifyListeners();
 
-      final ok = await UpdateService().downloadAndApplyPatch(match, result.tag!);
+      final ok = await UpdateService().downloadAndApplyPatch(
+          match, result.tag!,
+          onLog: _addLog,
+      );
 
       if (ok) {
         _addLog('✓ 步骤 4/4: 补丁应用成功');
