@@ -182,7 +182,7 @@ class _TasksPageState extends State<TasksPage> {
       SizedBox(width: 12),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('待办事务', style: TextStyle(color: AppTheme.textPrimary, fontSize: 20, fontWeight: FontWeight.w700)),
-        Text('每一个想法，都值得被认真对待  ·  v1.0.43', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+        Text('每一个想法，都值得被认真对待  ·  v1.0.44', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
       ])),
       _btn('新建', Icons.add, () => _openCreate()),
     ]),
@@ -254,7 +254,7 @@ class _TasksPageState extends State<TasksPage> {
 
   Widget _filterInput(String h, String v, Function(String) cb) => Container(
     height: 32, padding: EdgeInsets.symmetric(horizontal: 8),
-    decoration: BoxDecoration(color: Color(0xFF141518), borderRadius: BorderRadius.circular(8), border: Border.all(color: Color(0xFF2A2B30))),
+    decoration: BoxDecoration(color: Color(0xFF141518), borderRadius: BorderRadius.circular(8), border: Border.all(color: Color(0xFF141518))),
     child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
       Icon(Icons.search, size: 13, color: AppTheme.textMuted),
       SizedBox(width: 4),
@@ -381,7 +381,7 @@ class _TasksPageState extends State<TasksPage> {
         return Container(
           width: double.infinity, margin: EdgeInsets.only(top: 2), padding: EdgeInsets.symmetric(horizontal: 2, vertical: 6),
           decoration: BoxDecoration(color: _tc(i).withOpacity(0.12), borderRadius: BorderRadius.circular(2)),
-          child: Text(t['title'] ?? '', style: TextStyle(color: _tc(i), fontSize: 7), maxLines: 1, overflow: TextOverflow.ellipsis),
+          child: Text(t['title'] ?? '', style: TextStyle(color: _tc(i), fontSize: 10), maxLines: 1, overflow: TextOverflow.ellipsis),
         );
       }),
       if (dTasks.length > 3) Text('+${dTasks.length - 3}', style: TextStyle(color: AppTheme.textMuted, fontSize: 7)),
