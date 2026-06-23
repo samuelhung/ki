@@ -771,13 +771,42 @@ class _SystemDocPageState extends State<SystemDocPage> {
     child: Text(code, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontFamily: 'monospace', height: 1.7)),
   );
 
-  Widget _dataTable(List<String> headers, List<List<String>> rows) => SingleChildScrollView(
-    scrollDirection: Axis.horizontal,
-    child: DataTable(
-      columnSpacing: 20,
-      headingRowColor: WidgetStatePropertyAll(AppTheme.border.withOpacity(0.3)),
-      columns: headers.map((h) => DataColumn(label: Text(h, style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)))).toList(),
-      rows: rows.map((r) => DataRow(cells: r.asMap().entries.map((c) => DataCell(Text(c.value, style: TextStyle(color: c.key == 2 ? AppTheme.accent : AppTheme.textSecondary, fontSize: 11, fontFamily: c.key == 1 ? 'monospace' : null)))).toList())).toList(),
+  Widget _dataTable(List<String> headers, List<List<String>> rows) => Column(children: [
+    // 表头
+    Container(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        color: AppTheme.border.withOpacity(0.3),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+      ),
+      child: Row(children: [
+        Expanded(child: _th(headers[0])),
+        Expanded(flex: 2, child: _th(headers[1])),
+        Expanded(flex: 2, child: _th(headers[2])),
+        Expanded(child: _th(headers[3])),
+      ]),
     ),
+    // 数据行
+    ...rows.asMap().entries.map((e) {
+      final i = e.key;
+      final r = e.value;
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: i < rows.length - 1 ? const Color(0xFF1A1B20) : Colors.transparent)),
+        ),
+        child: Row(children: [
+          Expanded(child: Text(r[0], style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11))),
+          Expanded(flex: 2, child: Text(r[1], style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontFamily: 'monospace'), overflow: TextOverflow.ellipsis)),
+          Expanded(flex: 2, child: Text(r[2], style: const TextStyle(color: AppTheme.accent, fontSize: 11, fontFamily: 'monospace'), overflow: TextOverflow.ellipsis)),
+          Expanded(child: Text(r[3], style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11))),
+        ]),
+      );
+    }),
+  ]);
+
+  Widget _th(String text) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 8),
+    child: Text(text, style: const TextStyle(color: AppTheme.textMuted, fontSize: 11, fontWeight: FontWeight.w600)),
   );
 }
