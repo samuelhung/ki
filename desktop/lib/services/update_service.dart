@@ -185,7 +185,7 @@ class UpdateService {
       final escapedDst = appPath.replaceAll("'", "'\\''");
       final cpResult = await Process.run('osascript', [
         '-e',
-        "do shell script \"cp -f '$escapedSrc' '$escapedDst'\" with administrator privileges",
+        "do shell script \"cp -f '$escapedSrc' '$escapedDst'\" with administrator privileges with prompt \"知几需要权限来安装更新补丁\"",
       ]);
       _plog(onLog, 'cp exitCode=${cpResult.exitCode}');
 

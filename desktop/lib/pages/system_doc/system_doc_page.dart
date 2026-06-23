@@ -706,21 +706,30 @@ class _SystemDocPageState extends State<SystemDocPage> {
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: AppTheme.border.withValues(alpha: 0.5)),
                 ),
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _updateMgr.logs.length,
-                  itemBuilder: (_, i) {
-                    final log = _updateMgr.logs[i];
-                    Color logColor = AppTheme.textSecondary;
-                    if (log.startsWith('✓')) logColor = AppTheme.success;
-                    if (log.startsWith('✗')) logColor = AppTheme.error;
-                    if (log.startsWith('⏳')) logColor = AppTheme.info; 
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 2),
-                      child: Text(log, style: TextStyle(color: logColor, fontSize: 11, fontFamily: 'monospace', height: 1.6)),
-                    );
-                  },
-                ),
+                child: Builder(builder: (ctx) {
+                  final scrollCtrl = ScrollController();
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (scrollCtrl.hasClients && scrollCtrl.position.maxScrollExtent > 0) {
+                      scrollCtrl.animateTo(scrollCtrl.position.maxScrollExtent, duration: const Duration(milliseconds: 150), curve: Curves.easeOut);
+                    }
+                  });
+                  return ListView.builder(
+                    controller: scrollCtrl,
+                    shrinkWrap: true,
+                    itemCount: _updateMgr.logs.length,
+                    itemBuilder: (_, i) {
+                      final log = _updateMgr.logs[i];
+                      Color logColor = AppTheme.textSecondary;
+                      if (log.startsWith('✓')) logColor = AppTheme.success;
+                      if (log.startsWith('✗')) logColor = AppTheme.error;
+                      if (log.startsWith('⏳')) logColor = AppTheme.info; 
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 2),
+                        child: Text(log, style: TextStyle(color: logColor, fontSize: 11, fontFamily: 'monospace', height: 1.6)),
+                      );
+                    },
+                  );
+                }),
               ),
             ],
             // 提示
