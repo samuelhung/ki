@@ -279,6 +279,7 @@ def _generate_appcast_entry(version: str, dmg_path: Path) -> str | None:
     dmg_size = dmg_path.stat().st_size
     full_version = _read_full_version()  # "1.0.51+52"
     full_version_enc = full_version.replace("+", "%2B")
+    build_number = full_version.split("+")[1] if "+" in full_version else "0"
     download_url = f"https://github.com/{GITHUB_REPO}/releases/download/v{full_version_enc}/{dmg_name}"
     pub_date = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S %z")
 
@@ -288,7 +289,7 @@ def _generate_appcast_entry(version: str, dmg_path: Path) -> str | None:
       <pubDate>{pub_date}</pubDate>
       <enclosure
         url="{download_url}"
-        sparkle:version="{version}"
+        sparkle:version="{build_number}"
         sparkle:shortVersionString="{version}"
         sparkle:edSignature="{ed_sig}"
         length="{dmg_size}"
