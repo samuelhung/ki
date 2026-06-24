@@ -442,6 +442,16 @@ class _IngestPageState extends State<IngestPage> {
     );
   }
 
+  Widget _formatLine(String type, String extensions, Color color) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 1),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Text('$type ', style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w500)),
+        Text(extensions, style: const TextStyle(color: AppTheme.textMuted, fontSize: 10)),
+      ]),
+    );
+  }
+
   Widget _actionBtn(String label, IconData icon, Color color, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
@@ -922,7 +932,11 @@ class _IngestPageState extends State<IngestPage> {
                     const SizedBox(height: 8),
                     Text(_selectedFileName ?? '点击选择文件', style: TextStyle(color: _selectedFileName != null ? AppTheme.cyan : AppTheme.textMuted, fontSize: 13)),
                     const SizedBox(height: 4),
-                    const Text('支持音视频、文档格式', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+                    const Text('支持格式', style: TextStyle(color: AppTheme.textMuted, fontSize: 11, fontWeight: FontWeight.w500)),
+                    const SizedBox(height: 4),
+                    _formatLine('视频', '.mp4 .mov .avi .mkv .webm', AppTheme.rose),
+                    _formatLine('音频', '.mp3 .wav .m4a .aac .flac .ogg .opus', AppTheme.amber),
+                    _formatLine('文本', '.md .txt .markdown .json .csv .log .pdf .epub', AppTheme.cyan),
                   ]),
                 ),
               ),

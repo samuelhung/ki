@@ -8,6 +8,19 @@
         <language>zh</language>
         <link>https://github.com/samuelhung/ki/releases</link>
     <item>
+      <title>知几桌面端 v1.0.60</title>
+      <description><![CDATA[知几 v1.0.60 — 文件上传格式说明 + 仪表盘功能恢复（热力图/用量统计/信息源）<br><br><b>▸ 新功能</b><br>&nbsp;&nbsp;&nbsp;&nbsp;仪表盘事件热力图 — GitHub 风格贡献日历（近12周活动趋势）<br>&nbsp;&nbsp;&nbsp;&nbsp;仪表盘 AI 运转 — 今日调用/知识吞吐/缓存命中/花费 + 模块分布 + 7天趋势<br>&nbsp;&nbsp;&nbsp;&nbsp;仪表盘信息源弹窗 — 点击信息源卡片弹出订阅源列表<br><br><b>▸ UI</b><br>&nbsp;&nbsp;&nbsp;&nbsp;文件上传弹窗补充详细格式说明（视频/音频/文本分类列出）<br>&nbsp;&nbsp;&nbsp;&nbsp;仪表盘卡片/图表/事件列表统一 max-width: 1152px 对齐]]></description>
+      <pubDate>Wed, 24 Jun 2026 09:42:22 +0000</pubDate>
+      <enclosure
+        url="https://github.com/samuelhung/ki/releases/download/v1.0.60/zhiji_1.0.60.dmg"
+        sparkle:version="61"
+        sparkle:shortVersionString="1.0.60"
+        sparkle:edSignature="6Q7tokVfJd3ta9ZTh9TsDQsdBN8CjeTsKoFakeglOuBE9pFmw517LeVJKR4z2JoOyTwcdQfgsAAD+Xf82OCECA=="
+        length="21033034"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>知几桌面端 v1.0.59</title>
       <description><![CDATA[知几 v1.0.59 — 更新日志换行修复 + 专题页 UI 对齐 + 视频播放器<br><br><b>▸ 修复</b><br>&nbsp;&nbsp;&nbsp;&nbsp;Sparkle 更新日志换行 — CDATA 改用 <br> 标签，不再折叠成一段<br>&nbsp;&nbsp;&nbsp;&nbsp;内容详情页视频无法播放 — 集成 video_player，支持网络流媒体播放/暂停<br><br><b>▸ UI</b><br>&nbsp;&nbsp;&nbsp;&nbsp;专题系列页「已保存专题」改为 tab 样式（icon + 底部高亮线）<br>&nbsp;&nbsp;&nbsp;&nbsp;专题系列页「发现专题」按钮样式对齐内容采集页（大小/间距/透明度一致）]]></description>
       <pubDate>Wed, 24 Jun 2026 08:11:03 +0000</pubDate>

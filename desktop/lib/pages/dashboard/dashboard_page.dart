@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/heatmap_chart.dart';
+import '../../widgets/usage_widget.dart';
+import '../../widgets/sources_modal.dart';
 
 // ---- 数据模型 ----
 class DashboardSummary {
@@ -108,6 +111,14 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     return '晚上好';
   }
 
+  void _openSourcesModal() {
+    showDialog(
+      useRootNavigator: true,
+      context: context,
+      builder: (_) => const SourcesModal(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -132,6 +143,28 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
 
         // Metric cards
         SliverToBoxAdapter(child: _buildMetricCards()),
+
+        // Heatmap
+        SliverToBoxAdapter(child: Padding(
+          padding: const EdgeInsets.fromLTRB(32, 0, 32, 16),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1152),
+              child: const HeatmapChartWidget(),
+            ),
+          ),
+        )),
+
+        // AI Usage
+        SliverToBoxAdapter(child: Padding(
+          padding: const EdgeInsets.fromLTRB(32, 0, 32, 16),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1152),
+              child: const UsageWidget(),
+            ),
+          ),
+        )),
 
         // Section: 最近事件
         SliverToBoxAdapter(child: _buildSectionHeader('最近事件')),
@@ -226,16 +259,20 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   Widget _buildMetricCards() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(32, 24, 32, 16),
-      child: Wrap(
-        spacing: 16,
-        runSpacing: 16,
-        children: [
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1152),
+          child: Wrap(
+            spacing: 16,
+            runSpacing: 16,
+            children: [
           _MetricCard(
             icon: Icons.rss_feed,
             label: '信息源',
             value: '${_summary.sourcesEnabled}',
             subtitle: '已启用 RSS 源',
             color: AppTheme.cyan,
+            onTap: () => _openSourcesModal(),
           ),
           _MetricCard(
             icon: Icons.auto_awesome,
@@ -266,6 +303,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
             color: AppTheme.blue,
           ),
         ],
+          ),
+        ),
       ),
     );
   }
@@ -273,12 +312,17 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
   Widget _buildSectionHeader(String title) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(32, 16, 32, 8),
-      child: Text(
-        title,
-        style: const TextStyle(
-          color: AppTheme.textPrimary,
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 1152),
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: AppTheme.textPrimary,
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ),
       ),
     );
@@ -414,6 +458,7 @@ class _MetricCard extends StatelessWidget {
   final String value;
   final String subtitle;
   final Color color;
+  final VoidCallback? onTap;
 
   const _MetricCard({
     required this.icon,
@@ -421,11 +466,14 @@ class _MetricCard extends StatelessWidget {
     required this.value,
     required this.subtitle,
     required this.color,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
       width: 200,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -455,6 +503,7 @@ class _MetricCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(subtitle, style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
         ],
+      ),
       ),
     );
   }
