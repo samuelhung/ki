@@ -8,6 +8,19 @@
         <language>zh</language>
         <link>https://github.com/samuelhung/ki/releases</link>
     <item>
+      <title>知几桌面端 v1.0.68</title>
+      <description><![CDATA[知几 v1.0.68 — 知识图谱 + 产业链模块桌面端实现<br><br><b>▸ 新功能</b><br>&nbsp;&nbsp;&nbsp;&nbsp;知识图谱页面 — vis-network 力导向图 + 实体详情面板 + 深度分析 + 事件预览<br>&nbsp;&nbsp;&nbsp;&nbsp;产业链列表页 — 链卡片网格 + 全球份额 + 替代方案 + 编辑弹窗（5 tab）+ 数据审核<br>&nbsp;&nbsp;&nbsp;&nbsp;产业链详情页 — 流转药丸 + AI 分析报告 + 智能答疑 + 全球份额三栏展示<br>&nbsp;&nbsp;&nbsp;&nbsp;产业链流向图 — ReactFlow DAG 图 + 搜索高亮 + 跨链虚线 + 详情浮动面板<br>&nbsp;&nbsp;&nbsp;&nbsp;产业链数据管理 — 新建/编辑/删除节点 + 重叠检测合并 + AI 建议新建链]]></description>
+      <pubDate>Wed, 24 Jun 2026 12:43:26 +0000</pubDate>
+      <enclosure
+        url="https://github.com/samuelhung/ki/releases/download/v1.0.68/zhiji_1.0.68.dmg"
+        sparkle:version="69"
+        sparkle:shortVersionString="1.0.68"
+        sparkle:edSignature="pNv81PX60wLLXyTK7//sldWxXEn1NFbztQHyUX9DEy3kLQKRnplX+QlU0WXPQyGmQ/2jmcjjRMmQDfpzaV6xBA=="
+        length="22201970"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>知几桌面端 v1.0.67</title>
       <description><![CDATA[知几 v1.0.67 — 事件列表重构 + 头脑风暴详情页全面实现<br><br><b>▸ UI</b><br>&nbsp;&nbsp;&nbsp;&nbsp;事件列表改为表格式布局（对齐头脑风暴样式）— 表头+行+搜索过滤+状态/主题筛选+分页<br>&nbsp;&nbsp;&nbsp;&nbsp;事件行支持内联展开详情面板（中文标题/摘要/元数据）<br><br><b>▸ 新功能</b><br>&nbsp;&nbsp;&nbsp;&nbsp;头脑风暴详情页全面实现（对齐 web 端）— 4 tab：参考文档/对话/总结/概念沉淀<br>&nbsp;&nbsp;&nbsp;&nbsp;参考文档 tab — 检索可选事件+凝神静思 AI 推荐+关联<br>&nbsp;&nbsp;&nbsp;&nbsp;对话 tab — AI 多轮问答+追问+文档引用跳转<br>&nbsp;&nbsp;&nbsp;&nbsp;总结 tab — AI 深度总结+重新生成<br>&nbsp;&nbsp;&nbsp;&nbsp;概念沉淀 tab — 提取概念+沉淀入库]]></description>
       <pubDate>Wed, 24 Jun 2026 12:12:04 +0000</pubDate>

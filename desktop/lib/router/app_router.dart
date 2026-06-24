@@ -13,6 +13,8 @@ import '../pages/series/series_page.dart';
 import '../pages/series/series_detail_page.dart';
 import '../pages/knowledge_graph/knowledge_graph_page.dart';
 import '../pages/industry_chains/industry_chains_page.dart';
+import '../pages/industry_chains/chain_detail_page.dart';
+import '../pages/industry_chains/industry_flow_page.dart';
 import '../pages/study/study_page.dart';
 import '../pages/study/study_detail_page.dart';
 import '../pages/toolbox/toolbox_page.dart';
@@ -86,6 +88,23 @@ final appRouter = GoRouter(
         GoRoute(
           path: '/chains',
           builder: (context, state) => const IndustryChainsPage(),
+        ),
+        GoRoute(
+          path: '/chain-detail',
+          builder: (context, state) {
+            final args = state.extra as Map<String, dynamic>;
+            return ChainDetailPage(
+              chainName: args['chainName'] as String,
+              chainNodes: (args['chainNodes'] as List).cast<Map<String, dynamic>>(),
+              chainIcon: args['chainIcon'] as String?,
+              flowSummary: args['flowSummary'] as String? ?? '',
+              allNodes: (args['allNodes'] as List).cast<Map<String, dynamic>>(),
+            );
+          },
+        ),
+        GoRoute(
+          path: '/industry-flow',
+          builder: (context, state) => const IndustryFlowPage(),
         ),
         GoRoute(
           path: '/study',

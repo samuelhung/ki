@@ -263,14 +263,111 @@ class ApiClient {
     return resp.data;
   }
 
+  Future<Map<String, dynamic>> getChainNodes() async {
+    final resp = await dio.get('/api/chains/nodes');
+    return resp.data;
+  }
+
   Future<Map<String, dynamic>> getChainHintsCount() async {
     final resp = await dio.get('/api/chains/hints/count');
     return resp.data;
   }
 
+  Future<Map<String, dynamic>> getChainHints({String status = 'pending', int limit = 50}) async {
+    final resp = await dio.get('/api/chains/hints', queryParameters: {'status': status, 'limit': limit});
+    return resp.data;
+  }
+
+  Future<Map<String, dynamic>> resolveChainHint(String hintId, String action, {String? editedValue}) async {
+    final resp = await dio.post('/api/chains/hints/$hintId/resolve',
+        data: {'action': action, 'edited_value': editedValue ?? ''});
+    return resp.data;
+  }
+
+  Future<Map<String, dynamic>> getChainReport(String chainName, {bool force = false}) async {
+    final resp = await dio.post('/api/chains/report',
+        data: {'chain_name': chainName, 'force': force});
+    return resp.data;
+  }
+
+  Future<Map<String, dynamic>> chainChat(String chainName, String message, List<Map<String, dynamic>> history) async {
+    final resp = await dio.post('/api/chains/chat',
+        data: {'chain_name': chainName, 'message': message, 'history': history});
+    return resp.data;
+  }
+
+  Future<Map<String, dynamic>> collectNode(String nodeId) async {
+    final resp = await dio.post('/api/chains/nodes/ai-collect',
+        data: {'node_id': nodeId, 'use_web': true});
+    return resp.data;
+  }
+
+  Future<Map<String, dynamic>> collectChain(String nodeId) async {
+    final resp = await dio.post('/api/chains/ai-collect-all',
+        data: {'node_id': nodeId, 'use_web': true});
+    return resp.data;
+  }
+
+  Future<Map<String, dynamic>> overlapCheckChains() async {
+    final resp = await dio.get('/api/chains/overlap-check');
+    return resp.data;
+  }
+
+  Future<Map<String, dynamic>> mergeChains(String chainA, String chainB, String into) async {
+    final resp = await dio.post('/api/chains/merge',
+        data: {'chain_a': chainA, 'chain_b': chainB, 'into': into});
+    return resp.data;
+  }
+
+  Future<Map<String, dynamic>> getChainSuggestions({String status = 'pending'}) async {
+    final resp = await dio.get('/api/chains/suggestions', queryParameters: {'status': status});
+    return resp.data;
+  }
+
+  Future<Map<String, dynamic>> getChainSuggestionsCount() async {
+    final resp = await dio.get('/api/chains/suggestions/count');
+    return resp.data;
+  }
+
+  Future<Map<String, dynamic>> adoptChainSuggestion(String id) async {
+    final resp = await dio.post('/api/chains/suggestions/$id/adopt');
+    return resp.data;
+  }
+
+  Future<void> dismissChainSuggestion(String id) async {
+    await dio.post('/api/chains/suggestions/$id/dismiss');
+  }
+
+  Future<Map<String, dynamic>> saveChainNode(Map<String, dynamic> data, {String? id}) async {
+    if (id == null) {
+      final resp = await dio.post('/api/chains/nodes', data: data);
+      return resp.data;
+    } else {
+      final copy = Map<String, dynamic>.from(data);
+      copy.remove('id');
+      final resp = await dio.put('/api/chains/nodes/$id', data: copy);
+      return resp.data;
+    }
+  }
+
+  Future<Map<String, dynamic>> deleteChainNode(String id) async {
+    final resp = await dio.delete('/api/chains/nodes/$id');
+    return resp.data;
+  }
+
   // ---- 知识图谱 ----
-  Future<Map<String, dynamic>> getKnowledgeGraph() async {
-    final resp = await dio.get('/api/entities/graph');
+  Future<Map<String, dynamic>> getKnowledgeGraph({int limit = 200}) async {
+    final resp = await dio.get('/api/entities/graph', queryParameters: {'limit': limit});
+    return resp.data;
+  }
+
+  Future<Map<String, dynamic>> getEntityDetail(String id) async {
+    final resp = await dio.get('/api/entities/graph/entity/$id');
+    return resp.data;
+  }
+
+  Future<Map<String, dynamic>> getEntityInsight(String id) async {
+    final resp = await dio.get('/api/entities/graph/entity/$id/insight');
     return resp.data;
   }
 
