@@ -101,8 +101,15 @@ class _AppShellState extends ConsumerState<AppShell> {
                         ),
                       ),
                       SizedBox(height: 4),
-                      // Version badge
-                      // TODO: dynamic version
+                      // 版本 + Sparkle 标识
+                      Text(
+                        'v1.0.48 · Sparkle ✨',
+                        style: const TextStyle(
+                          color: AppTheme.textMuted,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                     ],
                   ),
                 ),
