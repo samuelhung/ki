@@ -75,7 +75,7 @@ final appRouter = GoRouter(
             GoRoute(
               path: ':id',
               builder: (context, state) =>
-                  SeriesDetailPage(id: int.parse(state.pathParameters['id']!)),
+                  SeriesDetailPage(seriesId: state.pathParameters['id']!),
             ),
           ],
         ),
