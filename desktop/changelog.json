@@ -1,6 +1,26 @@
 {
   "versions": [
     {
+      "version": "1.0.54",
+      "date": "2026-06-21",
+      "title": "内容采集页面优化 + 事件详情页",
+      "sections": [
+        {"icon": "🎨", "label": "UI", "items": [
+          "tab 添加副标题（格局→地缘政治·大国博弈·国际关系等）",
+          "移除副标题下方和列表底部分割线",
+          "事件列表增加详情入口按钮"
+        ]},
+        {"icon": "✨", "label": "新功能", "items": [
+          "事件详情页 — 对照 web 端完整迁移（正文/总结/关联问题/产业分析 4 tab）",
+          "事件行点击标题跳转详情页"
+        ]},
+        {"icon": "🐛", "label": "修复", "items": [
+          "web 端详情页路由修复 (/event/ → /events/)",
+          "appcast description 改为 changelog 摘要 + releaseNotesLink"
+        ]}
+      ]
+    },
+    {
       "version": "1.0.53",
       "date": "2026-06-21",
       "title": "内容采集页面",

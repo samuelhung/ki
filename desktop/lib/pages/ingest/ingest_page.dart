@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_theme.dart';
+import 'event_detail_page.dart';
 
 class IngestPage extends StatefulWidget {
   const IngestPage({super.key});
@@ -175,6 +176,10 @@ class _IngestPageState extends State<IngestPage> {
     setState(() { _tab = t; _page = 1; _selected.clear(); });
     _load();
     if (t == 'briefing') _loadBriefing();
+  }
+
+  void _openDetail(String eventId) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => EventDetailPage(eventId: eventId)));
   }
 
   void _onSearch(String v) {
@@ -377,7 +382,6 @@ class _IngestPageState extends State<IngestPage> {
         child: Column(children: [
           // Header
           _buildHeader(),
-          const Divider(height: 1, color: AppTheme.border),
           // Tabs
           _buildTabs(),
           const Divider(height: 1, color: AppTheme.border),
@@ -481,18 +485,29 @@ class _IngestPageState extends State<IngestPage> {
   Widget _tabBtn(String t) {
     final active = _tab == t;
     final icon = switch (t) { '格局' => Icons.public, '财富' => Icons.monetization_on, '认知' => Icons.psychology, '前瞻' => Icons.explore, _ => Icons.bolt };
+    final sub = switch (t) {
+      '格局' => '地缘政治·大国博弈·国际关系',
+      '财富' => '经济金融·商业洞察·投资理财',
+      '认知' => '思维模型·方法论·底层逻辑',
+      '前瞻' => '科技趋势·未来预判·前沿动态',
+      _ => '全球要闻·智能整理·快速浏览',
+    };
     return GestureDetector(
       onTap: () => _onTabChanged(t),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         alignment: Alignment.center,
         decoration: BoxDecoration(
           border: Border(bottom: BorderSide(color: active ? AppTheme.accent : Colors.transparent, width: 2)),
         ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 16, color: active ? AppTheme.accent : AppTheme.textMuted),
-          const SizedBox(width: 4),
-          Text(t, style: TextStyle(color: active ? AppTheme.textPrimary : AppTheme.textMuted, fontSize: 13, fontWeight: active ? FontWeight.w600 : FontWeight.w400)),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(icon, size: 16, color: active ? AppTheme.accent : AppTheme.textMuted),
+            const SizedBox(width: 4),
+            Text(t, style: TextStyle(color: active ? AppTheme.textPrimary : AppTheme.textMuted, fontSize: 13, fontWeight: active ? FontWeight.w600 : FontWeight.w400)),
+          ]),
+          const SizedBox(height: 2),
+          Text(sub, style: TextStyle(color: active ? AppTheme.textSecondary : AppTheme.textMuted.withOpacity(0.5), fontSize: 10)),
         ]),
       ),
     );
@@ -541,9 +556,12 @@ class _IngestPageState extends State<IngestPage> {
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       visualDensity: VisualDensity.compact,
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 4),
                     Expanded(
-                      child: Text(evt['title'] as String? ?? '', style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      child: GestureDetector(
+                        onTap: () => _openDetail(id),
+                        child: Text(evt['title'] as String? ?? '', style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Container(
@@ -551,9 +569,14 @@ class _IngestPageState extends State<IngestPage> {
                       decoration: BoxDecoration(color: _sourceColor(evt['source_id'] as String? ?? '').withOpacity(0.12), borderRadius: BorderRadius.circular(4)),
                       child: Text(_sourceLabel(evt['source_id'] as String? ?? ''), style: TextStyle(color: _sourceColor(evt['source_id'] as String? ?? ''), fontSize: 10, fontWeight: FontWeight.w500)),
                     ),
-                    const SizedBox(width: 16),
-                    Text(_formatTime(evt['created_at'] as String?), style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
                     const SizedBox(width: 8),
+                    Text(_formatTime(evt['created_at'] as String?), style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      icon: const Icon(Icons.open_in_new, size: 14), color: AppTheme.textMuted,
+                      tooltip: '详情',
+                      onPressed: () => _openDetail(id),
+                    ),
                     IconButton(
                       icon: const Icon(Icons.delete_outline, size: 16), color: AppTheme.textMuted,
                       onPressed: () {
@@ -578,7 +601,6 @@ class _IngestPageState extends State<IngestPage> {
       // Pagination
       Container(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-        decoration: const BoxDecoration(border: Border(top: BorderSide(color: AppTheme.border))),
         child: Row(children: [
           if (_selected.isNotEmpty) ...[
             TextButton.icon(

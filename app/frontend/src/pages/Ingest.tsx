@@ -324,7 +324,7 @@ export default function Ingest() {
   }
 
   function openDetail(eventId: string) {
-    navigate(`/event/${eventId}`);
+    navigate(`/events/${eventId}`);
   }
 
   function openModal(type: 'douyin' | 'file' | 'concept') {
