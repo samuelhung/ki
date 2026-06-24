@@ -44,13 +44,23 @@ GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}"
 
 
 def _read_desktop_version() -> str:
-    """从 pubspec.yaml 读取版本号。"""
+    """从 pubspec.yaml 读取版本号（不含 build number）。"""
     pubspec = DESKTOP_DIR / "pubspec.yaml"
     content = pubspec.read_text()
     m = re.search(r"^version:\s*(\S+)", content, re.MULTILINE)
     if not m:
         sys.exit("❌ 找不到 version 字段")
     return m.group(1).split("+")[0]  # "1.0.0+1" → "1.0.0"
+
+
+def _read_full_version() -> str:
+    """从 pubspec.yaml 读取完整版本号（含 build number，如 '1.0.51+52'）。"""
+    pubspec = DESKTOP_DIR / "pubspec.yaml"
+    content = pubspec.read_text()
+    m = re.search(r"^version:\s*(\S+)", content, re.MULTILINE)
+    if not m:
+        sys.exit("❌ 找不到 version 字段")
+    return m.group(1)  # "1.0.51+52"
 
 
 def _shasum(path: Path) -> str:
@@ -80,7 +90,7 @@ def build_flutter() -> bool:
 
 def build_dmg(version: str) -> Path:
     """创建 DMG 安装包。"""
-    dmg_name = f"zhiji_desktop_{version}_universal.dmg"
+    dmg_name = f"zhiji_{version}.dmg"
     dmg_path = RELEASE_DIR / dmg_name
 
     RELEASE_DIR.mkdir(parents=True, exist_ok=True)
@@ -261,10 +271,14 @@ def _generate_appcast_entry(version: str, dmg_path: Path) -> str | None:
         print(f"⚠️  sign_update 失败: {result.stderr}")
         return None
 
-    ed_sig = result.stdout.strip()
+    ed_sig_raw = result.stdout.strip()
+    # sign_update 输出: sparkle:edSignature="xxx" length="nnn"
+    m = re.search(r'sparkle:edSignature="([^"]+)"', ed_sig_raw)
+    ed_sig = m.group(1) if m else ed_sig_raw
     dmg_name = dmg_path.name
     dmg_size = dmg_path.stat().st_size
-    download_url = f"https://github.com/{GITHUB_REPO}/releases/download/v{version}/{dmg_name}"
+    full_version = _read_full_version()  # "1.0.51+52"
+    download_url = f"https://github.com/{GITHUB_REPO}/releases/download/v{full_version}/{dmg_name}"
     pub_date = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S %z")
 
     return f"""    <item>
@@ -283,14 +297,14 @@ def _generate_appcast_entry(version: str, dmg_path: Path) -> str | None:
 
 
 def _update_appcast(appcast_path: Path, entry: str) -> None:
-    """将新 item 插入 appcast.xml 的 <channel> 后。"""
+    """将新 item 插入 appcast.xml — 在已有 items 之前（</link> 之后）。"""
     if not appcast_path.exists():
         print(f"⚠️  appcast.xml 不存在: {appcast_path}")
         return
 
     content = appcast_path.read_text()
-    # 在 <channel> 后插入（第一个 item 位置）
-    marker = "  <channel>"
+    # 在 channel 元数据后、第一个 <item> 前插入
+    marker = "</link>"
     new_content = content.replace(marker, f"{marker}\n{entry}", 1)
     appcast_path.write_text(new_content)
     print(f"📡 appcast.xml 已更新")
@@ -318,7 +332,7 @@ def _generate_release_notes(version: str) -> str:
                 lines.append("")
             lines.append("## 📦 桌面端更新")
             lines.append("")
-            lines.append(f"- DMG: `zhiji_desktop_{version}_universal.dmg`")
+            lines.append(f"- DMG: `zhiji_{version}.dmg`")
             lines.append("- 自动更新: Sparkle 检测 appcast.xml → EdDSA 签名验证 → DMG 覆盖安装")
             return "\n".join(lines)
     return f"知几桌面端 v{version}"
