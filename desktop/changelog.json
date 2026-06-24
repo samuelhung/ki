@@ -1,6 +1,21 @@
 {
   "versions": [
     {
+      "version": "1.0.52",
+      "date": "2026-06-24",
+      "title": "侧栏 UI 修复 + 签名问题",
+      "sections": [
+        {"icon": "🎨", "label": "UI", "items": [
+          "侧栏副标题改为单行「知几其神乎，见微知著」",
+          "版本/版权信息移至侧栏 Logo 区下方"
+        ]},
+        {"icon": "🐛", "label": "修复", "items": [
+          "build_release.py 补上 codesign 签名步骤（.app + DMG）",
+          "appcast sparkle:version 修正为 build number"
+        ]}
+      ]
+    },
+    {
       "version": "1.0.51",
       "date": "2026-06-24",
       "title": "changelog.json 结构化版本数据",

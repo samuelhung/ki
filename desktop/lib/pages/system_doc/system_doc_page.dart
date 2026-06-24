@@ -116,8 +116,6 @@ class _SystemDocPageState extends State<SystemDocPage> {
                   ),
                   const SizedBox(height: 4),
                   const Text('知几其神乎，见微知著', style: TextStyle(color: AppTheme.textMuted, fontSize: 13)),
-                  const SizedBox(height: 2),
-                  Text('v${_updateMgr.version} · Copyright © 2026 Mr.H ✨', style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
                 ],
               ),
             ),

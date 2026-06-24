@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../theme/app_theme.dart';
 import '../services/api_client.dart';
+import '../main.dart';
 
 // ---- 侧栏导航项 ----
 class _NavItem {
@@ -79,9 +80,9 @@ class _AppShellState extends ConsumerState<AppShell> {
                   decoration: const BoxDecoration(
                     border: Border(bottom: BorderSide(color: AppTheme.border)),
                   ),
-                  child: const Column(
+                  child: Column(
                     children: [
-                      Text(
+                      const Text(
                         '知几',
                         style: TextStyle(
                           color: AppTheme.textPrimary,
@@ -90,17 +91,23 @@ class _AppShellState extends ConsumerState<AppShell> {
                           letterSpacing: 2,
                         ),
                       ),
-                      SizedBox(height: 4),
-                      Text(
-                        '知几其神乎\n见微知著',
-                        textAlign: TextAlign.center,
+                      const SizedBox(height: 4),
+                      const Text(
+                        '知几其神乎，见微知著',
                         style: TextStyle(
                           color: AppTheme.textMuted,
                           fontSize: 10,
-                          height: 1.3,
                         ),
                       ),
-                      SizedBox(height: 4),
+                      const SizedBox(height: 6),
+                      Text(
+                        'v${UpdateManager().version} · Copyright © 2026 Mr.H ✨',
+                        style: const TextStyle(
+                          color: AppTheme.textMuted,
+                          fontSize: 9,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
                     ],
                   ),
                 ),
