@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-"""知几桌面端发布构建脚本。
+"""知几桌面端发布构建脚本 (Sparkle 版)。
 
 流程:
 1. flutter build macos
-2. 计算 App.framework/App 的 SHA256
-3. 如果存在上次构建，生成 bsdiff 增量补丁
-4. 生成 manifest.json（版本、哈希、补丁信息）
-5. 输出到 desktop/build/release/
+2. 用自签证书 codesign .app
+3. 创建 DMG（纯 ASCII 文件名，防 GitHub 吞中文）
+4. codesign DMG
+5. 用 Sparkle sign_update 签名 DMG → 生成 appcast.xml
+6. 输出到 desktop/build/release/
 """
 import hashlib
-import json
-import os
-import shutil
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -20,110 +19,164 @@ from datetime import datetime, timezone
 PROJECT = Path(__file__).resolve().parent.parent
 DESKTOP = PROJECT
 BUILD_DIR = DESKTOP / "build" / "macos" / "Build" / "Products" / "Release"
-APP_PATH = BUILD_DIR / "zhiji_desktop.app"
-FRAMEWORK_APP = APP_PATH / "Contents" / "Frameworks" / "App.framework" / "Versions" / "A" / "App"
+APP_PATH = BUILD_DIR / "知几.app"
 RELEASE_DIR = DESKTOP / "build" / "release"
-MANIFEST_PATH = RELEASE_DIR / "manifest.json"
-PREV_MANIFEST = RELEASE_DIR / "manifest.prev.json"
-VERSION_FILE = DESKTOP / "pubspec.yaml"
+APPCAST_PATH = RELEASE_DIR / "appcast.xml"
+SIGN_UPDATE = DESKTOP / "macos" / "Sparkle" / "bin" / "sign_update"
+CERT_NAME = "Zhiji"
+GITHUB_REPO = "samuelhung/ki"
 
 
-def get_version() -> str:
-    """从 pubspec.yaml 读取版本。"""
+def get_version() -> tuple[str, str]:
+    """从 pubspec.yaml 读取版本，返回 (version_name, build_number)。"""
     content = (DESKTOP / "pubspec.yaml").read_text()
     for line in content.splitlines():
         if line.strip().startswith("version:"):
-            return line.split(":")[1].strip()
-    return "0.1.0"
+            ver = line.split(":")[1].strip()
+            if "+" in ver:
+                name, build = ver.split("+", 1)
+                return name, build
+            return ver, "1"
+    return "0.1.0", "1"
 
 
-def sha256(path: Path) -> str:
-    """计算文件 SHA256。"""
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        while chunk := f.read(8192):
-            h.update(chunk)
-    return h.hexdigest()
+def sign_app():
+    print("🔐 签名 .app ...")
+    subprocess.run(
+        ["codesign", "--deep", "--force", "--sign", CERT_NAME, str(APP_PATH)],
+        check=True, timeout=60,
+    )
+    print("   ✅ 已签名 (Zhiji)")
+
+
+def create_dmg(version_name: str) -> Path:
+    """创建 DMG，纯 ASCII 文件名。"""
+    dmg_name = f"zhiji_{version_name}.dmg"
+    dmg_path = RELEASE_DIR / dmg_name
+    dmg_path.parent.mkdir(parents=True, exist_ok=True)
+
+    print(f"💿 创建 DMG: {dmg_name}")
+
+    tmp_dmg = RELEASE_DIR / "tmp.dmg"
+    subprocess.run([
+        "hdiutil", "create", "-fs", "HFS+",
+        "-srcfolder", str(APP_PATH),
+        "-volname", f"知几 {version_name}",
+        "-size", "200m",
+        str(tmp_dmg),
+    ], check=True, timeout=120)
+
+    if dmg_path.exists():
+        dmg_path.unlink()
+    subprocess.run([
+        "hdiutil", "convert", str(tmp_dmg),
+        "-format", "UDZO",
+        "-imagekey", "zlib-level=9",
+        "-o", str(dmg_path),
+    ], check=True, timeout=120)
+    tmp_dmg.unlink()
+
+    print(f"   ✅ DMG 就绪: {dmg_path.name}")
+    return dmg_path
+
+
+def sign_dmg(dmg_path: Path):
+    print("🔐 签名 DMG ...")
+    subprocess.run(
+        ["codesign", "--force", "--sign", CERT_NAME, str(dmg_path)],
+        check=True, timeout=30,
+    )
+    print("   ✅ DMG 已签名")
+
+
+def generate_appcast(version_name: str, build_number: str, dmg_path: Path):
+    """生成/更新 appcast.xml。"""
+    dmg_size = dmg_path.stat().st_size
+
+    # GitHub release tag: v{version_name}+{build_number}
+    full_ver = f"{version_name}+{build_number}"
+    tag = f"v{full_ver}"
+    dmg_url = f"https://github.com/{GITHUB_REPO}/releases/download/{tag}/{dmg_path.name}"
+
+    # Sparkle 签名
+    result = subprocess.run(
+        [str(SIGN_UPDATE), str(dmg_path)],
+        capture_output=True, text=True, timeout=30,
+    )
+    sig_match = re.search(r'sparkle:edSignature="([^"]+)"', result.stdout)
+    if not sig_match:
+        print(f"   ❌ 无法解析签名: {result.stdout}")
+        sys.exit(1)
+    ed_sig = sig_match.group(1)
+    print(f"   Sparkle 签名: {ed_sig[:40]}...")
+
+    pub_date = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S GMT")
+
+    # sparkle:version 用 build number（匹配 CFBundleVersion）
+    # sparkle:shortVersionString 用版本名（显示用）
+    item_xml = f"""    <item>
+        <title>知几 {version_name}</title>
+        <sparkle:releaseNotesLink xml:lang="zh">
+            https://github.com/{GITHUB_REPO}/releases/tag/{tag}
+        </sparkle:releaseNotesLink>
+        <pubDate>{pub_date}</pubDate>
+        <enclosure
+            url="{dmg_url}"
+            sparkle:version="{build_number}"
+            sparkle:shortVersionString="{version_name}"
+            length="{dmg_size}"
+            type="application/octet-stream"
+            sparkle:edSignature="{ed_sig}"
+        />
+    </item>
+"""
+
+    if APPCAST_PATH.exists():
+        content = APPCAST_PATH.read_text()
+        insert_pos = content.find("</channel>")
+        if insert_pos == -1:
+            insert_pos = content.find("</rss>")
+        new_content = content[:insert_pos] + "\n" + item_xml + content[insert_pos:]
+    else:
+        new_content = f"""<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0"
+     xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"
+     xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <channel>
+        <title>知几更新</title>
+        <description>知几桌面端自动更新通道</description>
+        <language>zh</language>
+        <link>https://github.com/{GITHUB_REPO}/releases</link>
+{item_xml}
+    </channel>
+</rss>
+"""
+
+    APPCAST_PATH.write_text(new_content)
+    print(f"   ✅ appcast.xml 已更新: {APPCAST_PATH}")
 
 
 def build_release():
-    version = get_version()
-    print(f"📦 知几桌面端 {version} 发布构建")
+    version_name, build_number = get_version()
+    full_ver = f"{version_name}+{build_number}"
+    tag = f"v{full_ver}"
+    print(f"📦 知几桌面端 v{version_name} (build {build_number})\n")
 
-    # 1. 确保编译产物存在
-    if not FRAMEWORK_APP.exists():
-        print("❌ 找不到 App.framework/App，先运行 flutter build macos")
+    if not APP_PATH.exists():
+        print(f"❌ 找不到 {APP_PATH}，先运行 flutter build macos")
         sys.exit(1)
 
-    app_hash = sha256(FRAMEWORK_APP)
-    app_size = FRAMEWORK_APP.stat().st_size
-    print(f"   App.framework/App: {app_hash[:16]}... ({app_size / 1024 / 1024:.1f} MB)")
+    sign_app()
+    dmg_path = create_dmg(version_name)
+    sign_dmg(dmg_path)
+    generate_appcast(version_name, build_number, dmg_path)
 
-    # 2. 创建 release 目录
-    RELEASE_DIR.mkdir(parents=True, exist_ok=True)
-
-    # 3. 加载上次 manifest
-    prev = {}
-    if PREV_MANIFEST.exists():
-        prev = json.loads(PREV_MANIFEST.read_text())
-
-    # 4. 生成增量补丁
-    patches = []
-    prev_hash = prev.get("app_hash", "")
-    if prev_hash and prev_hash != app_hash:
-        # 找上次的 App 文件
-        prev_app = RELEASE_DIR / f"App.{prev_hash[:16]}.bin"
-        if prev_app.exists():
-            patch_file = RELEASE_DIR / f"patch_{prev_hash[:8]}_{app_hash[:8]}.bsdiff"
-            print(f"   ⚡ 生成增量补丁: {patch_file.name}")
-            subprocess.run(
-                ["bsdiff", str(prev_app), str(FRAMEWORK_APP), str(patch_file)],
-                check=True, timeout=60,
-            )
-            patch_size = patch_file.stat().st_size
-            patches.append({
-                "from_hash": prev_hash,
-                "to_hash": app_hash,
-                "url": f"patches/{patch_file.name}",
-                "size": patch_size,
-                "size_mb": round(patch_size / 1024 / 1024, 2),
-            })
-            print(f"      补丁大小: {patch_size / 1024 / 1024:.2f} MB")
-
-    # 5. 保存当前 App 副本（供下次 diff）
-    backup_app = RELEASE_DIR / f"App.{app_hash[:16]}.bin"
-    shutil.copy2(FRAMEWORK_APP, backup_app)
-
-    # 6. 生成 manifest
-    manifest = {
-        "version": version,
-        "app_hash": app_hash,
-        "app_size": app_size,
-        "app_size_mb": round(app_size / 1024 / 1024, 2),
-        "built_at": datetime.now(timezone.utc).isoformat(),
-        "platform": "macos",
-        "arch": "universal",  # x86_64 + arm64
-        "patches": patches,
-        "full_download": {
-            "url": "",
-            "size_mb": round((APP_PATH.stat().st_size if hasattr(APP_PATH, 'stat') else 0) / 1024 / 1024, 2) if APP_PATH.exists() else 0,
-        },
-    }
-
-    manifest_path = RELEASE_DIR / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False))
-    print(f"✅ manifest.json 已生成: {manifest_path}")
-
-    # 7. 更新 prev manifest
-    PREV_MANIFEST.write_text(json.dumps(manifest, indent=2, ensure_ascii=False))
-
+    dmg_size_mb = dmg_path.stat().st_size / 1024 / 1024
     print(f"\n📋 发布清单:")
-    print(f"   版本: {version}")
-    print(f"   哈希: {app_hash[:16]}")
-    print(f"   补丁: {len(patches)} 个")
-    if patches:
-        print(f"   增量: {patches[0]['size_mb']} MB")
-    print(f"\n   上传至 GitHub Release 或静态服务器即可。")
+    print(f"   版本: {full_ver}")
+    print(f"   DMG:  {dmg_path.name} ({dmg_size_mb:.1f} MB)")
+    print(f"   Appcast: appcast.xml")
+    print(f"\n   上传 {dmg_path.name} + appcast.xml 至 GitHub Release {tag}")
 
 
 if __name__ == "__main__":
