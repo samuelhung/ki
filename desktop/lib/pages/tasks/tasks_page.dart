@@ -182,7 +182,7 @@ class _TasksPageState extends State<TasksPage> {
       SizedBox(width: 12),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('待办事务', style: TextStyle(color: AppTheme.textPrimary, fontSize: 20, fontWeight: FontWeight.w700)),
-        Text('每一个想法，都值得被认真对待 ✨  ·  v1.0.46', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+        Text('每一个想法，都值得被认真对待 ✨  ·  v1.0.47', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)),
       ])),
       _btn('新建', Icons.add, () => _openCreate()),
     ]),

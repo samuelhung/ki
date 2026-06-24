@@ -1,5 +1,6 @@
 import 'dart:async';
-import 'dart:io';
+import 'dart:io' as io;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../../services/api_client.dart';
 import '../../services/config_service.dart';
@@ -490,16 +491,16 @@ class _SystemSettingsPageState extends State<SystemSettingsPage> {
 
   /// Read desktop version from app bundle Info.plist (macOS only)
   String _readDesktopVersion() {
+    if (kIsWeb) return 'Web';
     try {
-      if (!Platform.isMacOS) return '?';
-      // Walk up from the executable to find the .app bundle
-      var dir = Directory(File(Platform.resolvedExecutable).parent.path);
+      if (!io.Platform.isMacOS) return '?';
+      var dir = io.Directory(io.File(io.Platform.resolvedExecutable).parent.path);
       while (dir.path != '/' && !dir.path.endsWith('.app')) {
-        dir = Directory(dir.parent.path);
+        dir = io.Directory(dir.parent.path);
       }
       if (!dir.path.endsWith('.app')) return '?';
       final plistPath = '${dir.path}/Contents/Info.plist';
-      final result = Process.runSync(
+      final result = io.Process.runSync(
           'plutil', ['-extract', 'CFBundleShortVersionString', 'raw', plistPath]);
       if (result.exitCode == 0) return result.stdout.toString().trim();
     } catch (_) {}

@@ -1,40 +1,54 @@
 import 'dart:convert';
-import 'dart:io';
+import 'dart:io' as io;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path/path.dart' as p;
 
-/// 桌面端本地配置服务
+/// 桌面端本地配置服务（Web 端降级为内存存储）
 /// 配置文件: ~/.zhiji/desktop_config.json
 class ConfigService {
   static const _configFileName = 'desktop_config.json';
+  static Map<String, dynamic>? _webCache;
 
-  static Future<File> _configFile() async {
-    final home = Platform.environment['HOME'] ??
-        Platform.environment['USERPROFILE'] ??
-        '.';
-    final zhijiDir = Directory(p.join(home, '.zhiji'));
-    if (!await zhijiDir.exists()) {
-      await zhijiDir.create(recursive: true);
-    }
-    return File(p.join(zhijiDir.path, _configFileName));
+  /// Web 降级：内存存储
+  static Map<String, dynamic> get _memoryStore {
+    _webCache ??= <String, dynamic>{};
+    return _webCache!;
   }
 
-  /// 读取完整配置
   static Future<Map<String, dynamic>> load() async {
-    final file = await _configFile();
-    if (await file.exists()) {
-      try {
+    if (kIsWeb) return Map<String, dynamic>.from(_memoryStore);
+
+    try {
+      final home = io.Platform.environment['HOME'] ??
+          io.Platform.environment['USERPROFILE'] ?? '.';
+      final file = io.File(p.join(home, '.zhiji', _configFileName));
+      if (await file.exists()) {
         return jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-      } catch (_) {}
-    }
+      }
+    } catch (_) {}
     return <String, dynamic>{};
   }
 
-  /// 保存完整配置
   static Future<void> save(Map<String, dynamic> config) async {
-    final file = await _configFile();
-    await file.writeAsString(
-      const JsonEncoder.withIndent('  ').convert(config),
-    );
+    if (kIsWeb) {
+      _memoryStore
+        ..clear()
+        ..addAll(config);
+      return;
+    }
+
+    try {
+      final home = io.Platform.environment['HOME'] ??
+          io.Platform.environment['USERPROFILE'] ?? '.';
+      final zhijiDir = io.Directory(p.join(home, '.zhiji'));
+      if (!await zhijiDir.exists()) {
+        await zhijiDir.create(recursive: true);
+      }
+      final file = io.File(p.join(zhijiDir.path, _configFileName));
+      await file.writeAsString(
+        const JsonEncoder.withIndent('  ').convert(config),
+      );
+    } catch (_) {}
   }
 
   /// 读取后端地址，默认 http://127.0.0.1:9120

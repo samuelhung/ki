@@ -1,19 +1,20 @@
-import 'dart:io';
+import 'dart:io' as io;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:window_manager/window_manager.dart';
+import 'package:window_manager/window_manager.dart'
+    if (dart.library.html) 'services/window_stub.dart';
 import 'theme/app_theme.dart';
 import 'router/app_router.dart';
 import 'services/api_client.dart';
 
-/// 全局更新管理器 — 通过 Sparkle MethodChannel 驱动原生更新
+/// 全局更新管理器 — 桌面端通过 Sparkle MethodChannel 驱动原生更新
+/// Web 端仅提供占位，不执行实际操作
 class UpdateManager extends ChangeNotifier {
   static final UpdateManager _instance = UpdateManager._();
   factory UpdateManager() => _instance;
   UpdateManager._();
-
-  static const _channel = MethodChannel('com.zhiji.sparkle');
 
   String _status = 'idle';
   String _message = '就绪';
@@ -26,27 +27,27 @@ class UpdateManager extends ChangeNotifier {
   String get message => _message;
   List<String> get logs => _logs;
   double get percent => _percent;
-  bool get isBusy => _status == 'checking' || _status == 'downloading' || _status == 'installing';
+  bool get isBusy =>
+      _status == 'checking' || _status == 'downloading' || _status == 'installing';
 
-  /// 从 App Bundle Info.plist 读取版本号
+  /// 版本号：桌面端读 Info.plist，Web 端返回固定值
   static String get _bundleVersion {
+    if (kIsWeb) return '1.0.0';
     try {
-      // Platform.resolvedExecutable 指向 Flutter AOT runner:
-      //   /Applications/知几.app/Contents/Frameworks/App.framework/Versions/A/App
-      // 需要回溯到 .app 目录再读 Info.plist
-      final exePath = Platform.resolvedExecutable;
+      final exePath = io.Platform.resolvedExecutable;
       final appIdx = exePath.indexOf('.app/');
       if (appIdx == -1) return '0.0.0';
       final plistPath = '${exePath.substring(0, appIdx + 4)}/Contents/Info.plist';
-      final result = Process.runSync('defaults', ['read', plistPath, 'CFBundleShortVersionString']);
+      final result = io.Process.runSync(
+          'defaults', ['read', plistPath, 'CFBundleShortVersionString']);
       if (result.exitCode == 0) return result.stdout.toString().trim();
     } catch (_) {}
     return '0.0.0';
   }
 
-  /// 触发 Sparkle 手动检查更新
+  /// 触发更新检查（仅桌面端有效；Web 端空操作）
   Future<void> checkForUpdates() async {
-    if (isBusy) return;
+    if (kIsWeb || isBusy) return;
 
     _status = 'checking';
     _message = '正在检查更新...';
@@ -54,8 +55,8 @@ class UpdateManager extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final result = await _channel.invokeMethod('checkForUpdates');
-      // result 可能包含 Sparkle 反馈：'up-to-date' / 'update-available' / 'user-cancelled'
+      const channel = MethodChannel('com.zhiji.sparkle');
+      final result = await channel.invokeMethod('checkForUpdates');
       if (result == 'up-to-date') {
         _status = 'latest';
         _message = '已是最新版本';
@@ -83,16 +84,16 @@ void main() async {
 
   await ApiClient().initialize();
 
-  await windowManager.ensureInitialized();
-  await windowManager.setTitle('知几');
-  await windowManager.setSize(const Size(1280, 800));
-  await windowManager.setMinimumSize(const Size(1440, 700));
-  await windowManager.center();
-  await windowManager.show();
+  if (!kIsWeb) {
+    await windowManager.ensureInitialized();
+    await windowManager.setTitle('知几');
+    await windowManager.setSize(const Size(1280, 800));
+    await windowManager.setMinimumSize(const Size(1440, 700));
+    await windowManager.center();
+    await windowManager.show();
+  }
 
   runApp(const ProviderScope(child: ZhijiApp()));
-
-  // Sparkle 在原生层自动检查更新（SUEnableAutomaticChecks=YES）
 }
 
 class ZhijiApp extends StatelessWidget {
