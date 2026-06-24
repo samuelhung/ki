@@ -111,9 +111,10 @@ class ApiClient {
   }
 
   // ---- 头脑风暴 ----
-  Future<Map<String, dynamic>> getBrainstorms({int offset = 0, int limit = 30}) async {
-    final resp = await dio.get('/api/brainstorm',
-        queryParameters: {'offset': offset, 'limit': limit});
+  Future<Map<String, dynamic>> getBrainstorms({int offset = 0, int limit = 30, String? topic}) async {
+    final params = <String, dynamic>{'offset': offset, 'limit': limit};
+    if (topic != null) params['topic'] = topic;
+    final resp = await dio.get('/api/brainstorm', queryParameters: params);
     final data = resp.data;
     if (data is Map<String, dynamic>) return data;
     if (data is List) return {'items': data, 'total': data.length};
@@ -123,6 +124,24 @@ class ApiClient {
   Future<Map<String, dynamic>> getBrainstorm(String id) async {
     final resp = await dio.get('/api/brainstorm/$id');
     return resp.data;
+  }
+
+  Future<Map<String, dynamic>> getBrainstormTopicCounts() async {
+    final resp = await dio.get('/api/brainstorm/topic-counts');
+    return resp.data;
+  }
+
+  Future<Map<String, dynamic>> createBrainstorm(String question) async {
+    final resp = await dio.post('/api/brainstorm', data: {'question': question});
+    return resp.data;
+  }
+
+  Future<void> deleteBrainstorm(String id) async {
+    await dio.delete('/api/brainstorm/$id');
+  }
+
+  Future<void> batchDeleteBrainstorms(List<String> ids) async {
+    await dio.post('/api/brainstorm/batch-delete', data: {'question_ids': ids});
   }
 
   // ---- 任务 ----
