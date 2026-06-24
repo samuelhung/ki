@@ -1,7 +1,7 @@
 name: zhiji_desktop
 description: "知几 — 知识情报中心桌面端"
 publish_to: 'none'
-version: 1.0.52+53
+version: 1.0.53+54
 
 environment:
   sdk: ^3.12.2
@@ -25,6 +25,7 @@ dependencies:
   # 工具
   intl: ^0.19.0
   url_launcher: ^6.3.1
+  file_picker: ^11.0.2
 
 dev_dependencies:
   flutter_test:
