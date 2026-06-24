@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import '../../services/api_client.dart';
 import '../../theme/app_theme.dart';
 
@@ -47,6 +48,9 @@ class _EventDetailPageState extends State<EventDetailPage> {
 
   // ── Polling timer ──
   Timer? _pollTimer;
+
+  // ── Video ──
+  WebViewController? _webVideoController;
 
   // ── Handy derived flags ──
   bool get _hasTabs => _detail != null && _tabSources.contains(_detail!['source_id']);
@@ -696,26 +700,28 @@ class _EventDetailPageState extends State<EventDetailPage> {
     final mediaUrl = toMediaUrl(videoPath);
     if (mediaUrl == null) return const SizedBox.shrink();
 
-    // Use flutter's video_player if available or show a placeholder
-    // For now, render a placeholder with a link
+    final fullUrl = '${ApiClient().dio.options.baseUrl}$mediaUrl';
+    if (_webVideoController == null) {
+      _webVideoController = WebViewController()
+        ..setJavaScriptMode(JavaScriptMode.unrestricted)
+        ..loadHtmlString('''
+<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{margin:0;background:#000;display:flex;align-items:center;justify-content:center;height:100vh;}
+video{max-width:100%;max-height:100%;}</style></head>
+<body><video controls autoplay src="$fullUrl"></video></body></html>
+''');
+    }
+
     return Container(
       margin: const EdgeInsets.only(bottom: 24),
-      height: 300,
+      height: 360,
       decoration: BoxDecoration(
         color: Colors.black,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppTheme.border),
       ),
-      child: Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.play_circle_outline, size: 48, color: AppTheme.textMuted),
-          const SizedBox(height: 8),
-          Text(
-            '视频播放: $mediaUrl',
-            style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
-          ),
-        ]),
-      ),
+      clipBehavior: Clip.antiAlias,
+      child: WebViewWidget(controller: _webVideoController!),
     );
   }
 

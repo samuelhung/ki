@@ -356,7 +356,7 @@ def _generate_release_notes(version: str) -> str:
 
 
 def _release_notes_plain(version: str) -> str:
-    """生成纯文本版本说明（Sparkle appcast CDATA 用，无 markdown 语法）。"""
+    """生成 HTML 版本说明（Sparkle appcast CDATA 用，带 &lt;br&gt; 换行）。"""
     changelog_path = DESKTOP_DIR / "changelog.json"
     if not changelog_path.exists():
         return f"知几桌面端 v{version}"
@@ -366,14 +366,13 @@ def _release_notes_plain(version: str) -> str:
         if v.get("version") == version:
             title = v.get("title", "")
             sections = v.get("sections", [])
-            lines = [f"知几 v{version} — {title}", ""]
+            parts = [f"知几 v{version} — {title}"]
             for sec in sections:
                 label = sec.get("label", "")
-                lines.append(f"▸ {label}")
+                parts.append(f"<br><br><b>▸ {label}</b>")
                 for item in sec.get("items", []):
-                    lines.append(f"    {item}")
-                lines.append("")
-            return "\n".join(lines).rstrip()
+                    parts.append(f"<br>&nbsp;&nbsp;&nbsp;&nbsp;{item}")
+            return "".join(parts)
     return f"知几桌面端 v{version}"
 
 

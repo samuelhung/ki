@@ -490,20 +490,19 @@ class _SeriesPageState extends State<SeriesPage> {
   }
 
   Widget _buildDiscoverButton() {
-    return InkWell(
+    return GestureDetector(
       onTap: _openDiscovery,
-      borderRadius: BorderRadius.circular(8),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: AppTheme.purple.withOpacity(0.15),
+          color: AppTheme.purple.withOpacity(0.1),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppTheme.purple.withOpacity(0.3)),
+          border: Border.all(color: AppTheme.purple.withOpacity(0.25)),
         ),
         child: const Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.lightbulb_outline, color: AppTheme.purple, size: 16),
-          SizedBox(width: 6),
-          Text('发现专题', style: TextStyle(color: AppTheme.purple, fontSize: 14, fontWeight: FontWeight.w500)),
+          Icon(Icons.lightbulb_outline, color: AppTheme.purple, size: 14),
+          SizedBox(width: 4),
+          Text('发现专题', style: TextStyle(color: AppTheme.purple, fontSize: 12, fontWeight: FontWeight.w500)),
         ]),
       ),
     );
@@ -542,8 +541,19 @@ class _SeriesPageState extends State<SeriesPage> {
       padding: const EdgeInsets.symmetric(horizontal: 32),
       children: [
         const SizedBox(height: 4),
-        Text('已保存专题（${_series.length}）',
-            style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.w500)),
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: AppTheme.accent, width: 2)),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.layers, size: 16, color: AppTheme.accent),
+            const SizedBox(width: 4),
+            Text('已保存专题', style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+            const SizedBox(width: 4),
+            Text('${_series.length}', style: const TextStyle(color: AppTheme.textSecondary, fontSize: 10)),
+          ]),
+        ),
         const SizedBox(height: 12),
         ..._series.map((s) => _buildSeriesCard(s)),
         const SizedBox(height: 24),
