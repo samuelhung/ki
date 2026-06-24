@@ -142,16 +142,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                         item: const _NavItem('/system', Icons.menu_book, AppTheme.teal, '系统说明'),
                         isActive: location == '/system',
                       ),
-                      const SizedBox(height: 8),
-                      // 版本 + Sparkle 标识
-                      const Text(
-                        'v1.0.49 · Sparkle ✨',
-                        style: TextStyle(
-                          color: AppTheme.textMuted,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
+
                     ],
                   ),
                 ),

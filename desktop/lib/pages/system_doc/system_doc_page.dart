@@ -114,7 +114,9 @@ class _SystemDocPageState extends State<SystemDocPage> {
                     ],
                   ),
                   const SizedBox(height: 4),
-                  const Text('知几 — 知几其神乎，见微知著', style: TextStyle(color: AppTheme.textMuted, fontSize: 13)),
+                  const Text('知几其神乎，见微知著', style: TextStyle(color: AppTheme.textMuted, fontSize: 13)),
+                  const SizedBox(height: 2),
+                  Text('v${_updateMgr.version} · Copyright © 2026 Mr.H ✨', style: const TextStyle(color: AppTheme.textMuted, fontSize: 11)),
                 ],
               ),
             ),
@@ -290,6 +292,12 @@ class _SystemDocPageState extends State<SystemDocPage> {
   // ── 版本更新 ──
   Widget _buildChangelogTab() {
     final versions = [
+      ['1.0.50', '2026-06-24', '架构梳理与UI优化', [
+        '系统说明页：副标题改为"知几其神乎，见微知著"，版本/版权信息移到副标题下方',
+        '侧栏底部移除旧版本号，版本信息统一到系统说明页',
+        '新增 docs/ARCHITECTURE.md 架构全景文档 — 三端规格、发布流程、踩坑记录',
+        '平台架构确认：React PWA（阅微堂 :3900/3901）为 web/移动端主力方案',
+      ]],
       ['1.0.3', '2026-06-23', '手动检查更新', [
         '系统说明页新增「检查更新」按钮 — 手动触发增量更新检测',
         '启动自动更新不再依赖后端连通性',
