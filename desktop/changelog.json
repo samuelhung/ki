@@ -1,6 +1,16 @@
 {
   "versions": [
     {
+      "version": "1.0.65",
+      "date": "2026-06-24",
+      "title": "头脑风暴数据加载修复",
+      "sections": [
+        {"icon": "🐛", "label": "修复", "items": [
+          "头脑风暴列表为空 — API 响应字段 questions 误写为 items，导致数据解析失败"
+        ]}
+      ]
+    },
+    {
       "version": "1.0.64",
       "date": "2026-06-24",
       "title": "修复 Sparkle 自动更新安装失败",

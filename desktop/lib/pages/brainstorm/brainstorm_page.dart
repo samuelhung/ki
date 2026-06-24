@@ -85,7 +85,7 @@ class _BrainstormPageState extends State<BrainstormPage> {
     try {
       final resp = await _api.getBrainstorms(topic: _tab, limit: 5000);
       if (mounted) {
-        final items = (resp['items'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [];
+        final items = (resp['questions'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [];
         setState(() { _items = items; _loading = false; _page = 1; _selectedIds.clear(); });
       }
     } catch (e) {
