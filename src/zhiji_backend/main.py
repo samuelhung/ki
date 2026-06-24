@@ -5,7 +5,7 @@ import logging
 import logging.handlers
 from pathlib import Path
 from dotenv import load_dotenv
-from .paths import ZHIJI_HOME, FRONTEND_DIST, LOG_DIR, INGEST_ROOT, ensure_data_dirs
+from .paths import ZHIJI_HOME, FRONTEND_DIST, LOG_DIR, INGEST_ROOT, RELEASES_DIR, ensure_data_dirs
 
 # ---- 数据目录初始化 ----
 ensure_data_dirs()
@@ -183,6 +183,9 @@ app.include_router(chain_router)
 
 INGEST_ROOT.mkdir(parents=True, exist_ok=True)
 app.mount("/ingest", StaticFiles(directory=str(INGEST_ROOT)), name="ingest")
+
+RELEASES_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/releases", StaticFiles(directory=str(RELEASES_DIR)), name="releases")
 
 if _HAS_FRONTEND:
     app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")

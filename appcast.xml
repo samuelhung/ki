@@ -8,6 +8,19 @@
         <language>zh</language>
         <link>https://github.com/samuelhung/ki/releases</link>
     <item>
+      <title>知几桌面端 v1.0.70</title>
+      <description><![CDATA[知几桌面端 v1.0.70]]></description>
+      <pubDate>Wed, 24 Jun 2026 13:18:00 +0000</pubDate>
+      <enclosure
+        url="http://10.8.0.105:9120/releases/zhiji_1.0.70.dmg"
+        sparkle:version="71"
+        sparkle:shortVersionString="1.0.70"
+        sparkle:edSignature="0AsHdRXLLMR3cBOVDmxG0FDUO+j7VxjNNszYA/5+MsS4XEgIKxLVqjQtp4sHuILblsTwJifIFqOE4Hn38yDsBw=="
+        length="22218574"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>知几桌面端 v1.0.69</title>
       <description><![CDATA[知几 v1.0.69 — 修复产业链数据解析 + 流向图渲染<br><br><b>▸ 修复</b><br>&nbsp;&nbsp;&nbsp;&nbsp;修复产业链页面 global_shares 解析崩溃（API 返回 Map 但代码当 List 解析）<br>&nbsp;&nbsp;&nbsp;&nbsp;修复全景流向图 WebView 无法加载（ReactFlow ESM → vis-network CDN）<br>&nbsp;&nbsp;&nbsp;&nbsp;修复 upstream_ids JSON 字符串/List 双格式兼容]]></description>
       <pubDate>Wed, 24 Jun 2026 13:07:05 +0000</pubDate>

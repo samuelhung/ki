@@ -1,6 +1,23 @@
 {
   "versions": [
     {
+      "version": "1.0.70",
+      "date": "2026-06-25",
+      "title": "修复 Sparkle 更新失败 — 内网后端分发 + 签名修复",
+      "sections": [
+        {"icon": "🐛", "label": "修复", "items": [
+          "修复 GitHub Release 下载太慢导致 Sparkle 更新超时失败（48KB/s → 内网千兆）",
+          "DMG 改从后端内网分发（10.8.0.105:9120/releases/），OpenVPN 两台 Mac 均可达",
+          "修复 build_release.py — --skip-build 时跳过 .app 签名 → 所有 DMG 均为 adhoc",
+          "新增后端 /releases 静态目录挂载 + 自动化 DMG 拷贝"
+        ]},
+        {"icon": "🔨", "label": "构建", "items": [
+          "build_release.py 签名逻辑移出 if/else 块 → 每次打包保证签名",
+          "发版时自动拷贝 DMG 到 ~/.zhiji/data/releases/"
+        ]}
+      ]
+    },
+    {
       "version": "1.0.69",
       "date": "2026-06-25",
       "title": "修复产业链数据解析 + 流向图渲染",

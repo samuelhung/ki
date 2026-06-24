@@ -30,6 +30,7 @@ INGEST_ROOT = DATA_DIR / "ingest"
 BRAINSTORM_DIR = DATA_DIR / "brainstorm"
 LOG_DIR = DATA_DIR / "logs"
 CONFIG_PATH = DATA_DIR / "system_config.json"
+RELEASES_DIR = DATA_DIR / "releases"
 DEFAULT_DB_PATH = DATA_DIR / "intelligence.sqlite"
 
 # ---- 前端静态文件（随包分发） ----
