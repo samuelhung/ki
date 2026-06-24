@@ -236,9 +236,9 @@ class _UsageWidgetState extends State<UsageWidget> {
       ),
       const SizedBox(height: 12),
       Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        _legendDot(AppTheme.purple.withOpacity(0.6), 'token'),
+        _legendDot(const Color(0xFFA855F7).withOpacity(0.6), 'token'),
         const SizedBox(width: 16),
-        _legendDot(AppTheme.amber.withOpacity(0.4), '花费'),
+        _legendDot(const Color(0xFFF59E0B).withOpacity(0.4), '花费'),
       ]),
     ]);
   }
@@ -256,10 +256,10 @@ class _UsageWidgetState extends State<UsageWidget> {
         const Spacer(),
         Row(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
           Container(width: 10, height: tokenH > 0 ? (tokenH * 0.96).clamp(2.0, 96.0) : (tokens > 0 ? 2 : 0),
-              decoration: BoxDecoration(color: AppTheme.purple.withOpacity(0.6), borderRadius: const BorderRadius.only(topLeft: Radius.circular(2), topRight: Radius.circular(2)))),
+              decoration: BoxDecoration(color: const Color(0xFFA855F7).withOpacity(0.6), borderRadius: const BorderRadius.only(topLeft: Radius.circular(2), topRight: Radius.circular(2)))),
           const SizedBox(width: 2),
           Container(width: 10, height: costH > 0 ? (costH * 0.96).clamp(2.0, 96.0) : (cost > 0 ? 2 : 0),
-              decoration: BoxDecoration(color: AppTheme.amber.withOpacity(0.4), borderRadius: const BorderRadius.only(topLeft: Radius.circular(2), topRight: Radius.circular(2)))),
+              decoration: BoxDecoration(color: const Color(0xFFF59E0B).withOpacity(0.4), borderRadius: const BorderRadius.only(topLeft: Radius.circular(2), topRight: Radius.circular(2)))),
         ]),
         const SizedBox(height: 4),
         Text(label, style: const TextStyle(color: AppTheme.textMuted, fontSize: 9)),

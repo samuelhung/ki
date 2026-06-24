@@ -166,8 +166,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
           ),
         )),
 
-        // Section: 最近事件
-        SliverToBoxAdapter(child: _buildSectionHeader('最近事件')),
+        // Events list
         _events.isEmpty
             ? SliverToBoxAdapter(
                 child: Container(
@@ -262,46 +261,48 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 1152),
-          child: Wrap(
-            spacing: 16,
-            runSpacing: 16,
+          child: Row(
             children: [
-          _MetricCard(
+          Expanded(child: _MetricCard(
             icon: Icons.rss_feed,
             label: '信息源',
             value: '${_summary.sourcesEnabled}',
             subtitle: '已启用 RSS 源',
             color: AppTheme.cyan,
             onTap: () => _openSourcesModal(),
-          ),
-          _MetricCard(
+          )),
+          const SizedBox(width: 16),
+          Expanded(child: _MetricCard(
             icon: Icons.auto_awesome,
             label: '今日新增',
             value: '${_summary.todayNew}',
             subtitle: '内容采集 + 新增问题',
             color: AppTheme.purple,
-          ),
-          _MetricCard(
+          )),
+          const SizedBox(width: 16),
+          Expanded(child: _MetricCard(
             icon: Icons.upload_file,
             label: '内容采集',
             value: '${_summary.ingestTotal}',
             subtitle: '累计采集内容',
             color: AppTheme.rose,
-          ),
-          _MetricCard(
+          )),
+          const SizedBox(width: 16),
+          Expanded(child: _MetricCard(
             icon: Icons.lightbulb,
             label: '头脑风暴',
             value: '${_summary.brainstormTotal}',
             subtitle: '累计提出问题',
             color: AppTheme.amber,
-          ),
-          _MetricCard(
+          )),
+          const SizedBox(width: 16),
+          Expanded(child: _MetricCard(
             icon: Icons.checklist,
             label: '待办事务',
             value: '${_summary.taskTotal}',
             subtitle: '${_summary.taskTodo} 待处理 · ${_summary.taskOverdue} 逾期',
             color: AppTheme.blue,
-          ),
+          )),
         ],
           ),
         ),
@@ -474,7 +475,6 @@ class _MetricCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-      width: 200,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: AppTheme.panel,

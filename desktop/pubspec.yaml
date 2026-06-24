@@ -1,7 +1,7 @@
 name: zhiji_desktop
 description: "知几 — 知识情报中心桌面端"
 publish_to: 'none'
-version: 1.0.61+62
+version: 1.0.62+63
 
 environment:
   sdk: ^3.12.2
