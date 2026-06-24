@@ -114,11 +114,13 @@ def generate_appcast(version_name: str, build_number: str, dmg_path: Path):
 
     # sparkle:version 用 build number（匹配 CFBundleVersion）
     # sparkle:shortVersionString 用版本名（显示用）
+    # 用 CDATA 内嵌纯文本更新说明，避免加载 GitHub 网页卡住
     item_xml = f"""    <item>
         <title>知几 {version_name}</title>
-        <sparkle:releaseNotesLink xml:lang="zh">
-            https://github.com/{GITHUB_REPO}/releases/tag/{tag}
-        </sparkle:releaseNotesLink>
+        <description><![CDATA[
+<h4>知几桌面端 v{version_name}</h4>
+<p>完整更新日志见 <a href="https://github.com/{GITHUB_REPO}/releases/tag/{tag}">GitHub Release</a></p>
+        ]]></description>
         <pubDate>{pub_date}</pubDate>
         <enclosure
             url="{dmg_url}"
