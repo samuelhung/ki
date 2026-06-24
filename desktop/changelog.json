@@ -1,6 +1,16 @@
 {
   "versions": [
     {
+      "version": "1.0.64",
+      "date": "2026-06-24",
+      "title": "修复 Sparkle 自动更新安装失败",
+      "sections": [
+        {"icon": "🐛", "label": "修复", "items": [
+          "Sparkle 自动更新失败 — SUEnableInstallerLauncherService 关掉 XPC 安装服务，自签证书 App 回退到传统安装方式"
+        ]}
+      ]
+    },
+    {
       "version": "1.0.63",
       "date": "2026-06-24",
       "title": "文件选取权限修复 + 头脑风暴完整迁移",

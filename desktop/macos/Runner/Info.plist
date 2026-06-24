@@ -33,7 +33,7 @@
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUEnableInstallerLauncherService</key>
-	<true/>
+	<false/>
 	<key>SUFeedURL</key>
 	<string>https://raw.githubusercontent.com/samuelhung/ki/main/appcast.xml</string>
 	<key>SUShowReleaseNotes</key>

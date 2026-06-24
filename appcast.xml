@@ -8,6 +8,19 @@
         <language>zh</language>
         <link>https://github.com/samuelhung/ki/releases</link>
     <item>
+      <title>知几桌面端 v1.0.64</title>
+      <description><![CDATA[知几 v1.0.64 — 修复 Sparkle 自动更新安装失败<br><br><b>▸ 修复</b><br>&nbsp;&nbsp;&nbsp;&nbsp;Sparkle 自动更新失败 — SUEnableInstallerLauncherService 关掉 XPC 安装服务，自签证书 App 回退到传统安装方式]]></description>
+      <pubDate>Wed, 24 Jun 2026 11:29:40 +0000</pubDate>
+      <enclosure
+        url="https://github.com/samuelhung/ki/releases/download/v1.0.64/zhiji_1.0.64.dmg"
+        sparkle:version="65"
+        sparkle:shortVersionString="1.0.64"
+        sparkle:edSignature="epBXlvYpf31e6gmSJs0BSOSUAOxabwFiGI/XBtOmRoehNvco5dDCou8C0GiaEtJBwUC3ckUJrqu39GBr8hHDDw=="
+        length="21394306"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>知几桌面端 v1.0.63</title>
       <description><![CDATA[知几 v1.0.63 — 文件选取权限修复 + 头脑风暴完整迁移<br><br><b>▸ 修复</b><br>&nbsp;&nbsp;&nbsp;&nbsp;文件上传「点击选择文件」无响应 — macOS Sandbox 缺少 user-selected 文件权限，NSOpenPanel 静默失败<br><br><b>▸ 新功能</b><br>&nbsp;&nbsp;&nbsp;&nbsp;头脑风暴完整迁移（对齐 web 版）— 4 话题 tab（格局/财富/认知/前瞻·副标题·icon）<br>&nbsp;&nbsp;&nbsp;&nbsp;问题列表 — 复选框多选、话题色标、关联文档计数、提交时间<br>&nbsp;&nbsp;&nbsp;&nbsp;搜索 + 批量删除 + 分页 + 新建问题弹窗]]></description>
       <pubDate>Wed, 24 Jun 2026 10:52:18 +0000</pubDate>
