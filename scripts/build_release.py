@@ -278,7 +278,8 @@ def _generate_appcast_entry(version: str, dmg_path: Path) -> str | None:
     dmg_name = dmg_path.name
     dmg_size = dmg_path.stat().st_size
     full_version = _read_full_version()  # "1.0.51+52"
-    download_url = f"https://github.com/{GITHUB_REPO}/releases/download/v{full_version}/{dmg_name}"
+    full_version_enc = full_version.replace("+", "%2B")
+    download_url = f"https://github.com/{GITHUB_REPO}/releases/download/v{full_version_enc}/{dmg_name}"
     pub_date = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S %z")
 
     return f"""    <item>
