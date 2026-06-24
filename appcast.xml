@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0"
+     xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"
+     xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <channel>
+        <title>知几更新</title>
+        <description>知几桌面端自动更新通道</description>
+        <language>zh</language>
+        <link>https://github.com/samuelhung/ki/releases</link>
+    <item>
+        <title>知几 1.0.47+48</title>
+        <sparkle:releaseNotesLink xml:lang="zh">
+            https://github.com/samuelhung/ki/releases/tag/v1.0.47%2B48
+        </sparkle:releaseNotesLink>
+        <pubDate>Wed, 24 Jun 2026 03:03:31 GMT</pubDate>
+        <enclosure
+            url="https://github.com/samuelhung/ki/releases/download/v1.0.47%2B48/_1.0.47%2B48.dmg"
+            sparkle:version="1.0.47"
+            sparkle:shortVersionString="1.0.47"
+            length="19184470"
+            type="application/octet-stream"
+            sparkle:edSignature="W/N9v+69cbhW3pY1VRbfXXZLgGIEa7hPtpH/z5MEjBXtAeHN5MpDdxCDHmTRGkH3VcpcrgtV9AJw9rz6nlUZCA=="
+        />
+    </item>
+
+    </channel>
+</rss>
