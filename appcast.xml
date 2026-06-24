@@ -8,6 +8,19 @@
         <language>zh</language>
         <link>https://github.com/samuelhung/ki/releases</link>
     <item>
+      <title>知几桌面端 v1.0.67</title>
+      <description><![CDATA[知几 v1.0.67 — 事件列表重构 + 头脑风暴详情页全面实现<br><br><b>▸ UI</b><br>&nbsp;&nbsp;&nbsp;&nbsp;事件列表改为表格式布局（对齐头脑风暴样式）— 表头+行+搜索过滤+状态/主题筛选+分页<br>&nbsp;&nbsp;&nbsp;&nbsp;事件行支持内联展开详情面板（中文标题/摘要/元数据）<br><br><b>▸ 新功能</b><br>&nbsp;&nbsp;&nbsp;&nbsp;头脑风暴详情页全面实现（对齐 web 端）— 4 tab：参考文档/对话/总结/概念沉淀<br>&nbsp;&nbsp;&nbsp;&nbsp;参考文档 tab — 检索可选事件+凝神静思 AI 推荐+关联<br>&nbsp;&nbsp;&nbsp;&nbsp;对话 tab — AI 多轮问答+追问+文档引用跳转<br>&nbsp;&nbsp;&nbsp;&nbsp;总结 tab — AI 深度总结+重新生成<br>&nbsp;&nbsp;&nbsp;&nbsp;概念沉淀 tab — 提取概念+沉淀入库]]></description>
+      <pubDate>Wed, 24 Jun 2026 12:12:04 +0000</pubDate>
+      <enclosure
+        url="https://github.com/samuelhung/ki/releases/download/v1.0.67/zhiji_1.0.67.dmg"
+        sparkle:version="68"
+        sparkle:shortVersionString="1.0.67"
+        sparkle:edSignature="RrXt/wd6A0U7+xhAKGno37BTuaeLNzNG0/JDfsq78Gtps/lIK3Oxkcq/HL4qRYEWvvkal5PV0VDRpU0DZK5RAA=="
+        length="21484202"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>知几桌面端 v1.0.66</title>
       <description><![CDATA[知几 v1.0.66 — 头脑风暴详情页 + 时间/选择框/对齐修复<br><br><b>▸ 新功能</b><br>&nbsp;&nbsp;&nbsp;&nbsp;头脑风暴详情页 — 问题详情 + AI 回答 + 关联文档列表<br><br><b>▸ 修复</b><br>&nbsp;&nbsp;&nbsp;&nbsp;头脑风暴/事件列表/仪表盘时间统一为北京时间（UTC+8）<br>&nbsp;&nbsp;&nbsp;&nbsp;列表选择框从长方形修正为正方形（Align 居中 + border-radius 2）<br>&nbsp;&nbsp;&nbsp;&nbsp;表头与列内容居中对齐（去掉行内多余间距）]]></description>
       <pubDate>Wed, 24 Jun 2026 11:55:57 +0000</pubDate>

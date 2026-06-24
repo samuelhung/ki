@@ -69,12 +69,14 @@ class ApiClient {
     int offset = 0,
     int limit = 50,
     String? sourceId,
+    String? contentType,
     String? topic,
     String? search,
     bool includeCount = false,
   }) async {
     final params = <String, dynamic>{'offset': offset, 'limit': limit};
     if (sourceId != null) params['source_id'] = sourceId;
+    if (contentType != null) params['content_type'] = contentType;
     if (topic != null) params['topic'] = topic;
     if (search != null) params['search'] = search;
     if (includeCount) params['count'] = 1;
@@ -142,6 +144,52 @@ class ApiClient {
 
   Future<void> batchDeleteBrainstorms(List<String> ids) async {
     await dio.post('/api/brainstorm/batch-delete', data: {'question_ids': ids});
+  }
+
+  // ---- 对话 ----
+  Future<Map<String, dynamic>> getConversation(String questionId) async {
+    final resp = await dio.get('/api/brainstorm/$questionId/conversation');
+    return resp.data;
+  }
+
+  Future<Map<String, dynamic>> startConversation(String questionId, List<String> eventIds, {String question = ''}) async {
+    final resp = await dio.post('/api/brainstorm/$questionId/conversation/start',
+        data: {'event_ids': eventIds, 'question': question});
+    return resp.data;
+  }
+
+  Future<Map<String, dynamic>> sendFollowUp(String questionId, String content) async {
+    final resp = await dio.post('/api/brainstorm/$questionId/conversation/message',
+        data: {'content': content});
+    return resp.data;
+  }
+
+  Future<Map<String, dynamic>> generateSummary(String questionId) async {
+    final resp = await dio.post('/api/brainstorm/$questionId/conversation/summary');
+    return resp.data;
+  }
+
+  Future<Map<String, dynamic>> getConcepts(String questionId) async {
+    final resp = await dio.get('/api/brainstorm/$questionId/concepts');
+    return resp.data;
+  }
+
+  Future<Map<String, dynamic>> precipitateConcept(String questionId, String name, String description) async {
+    final resp = await dio.post('/api/brainstorm/concepts/precipitate',
+        data: {'question_id': questionId, 'name': name, 'description': description});
+    return resp.data;
+  }
+
+  Future<Map<String, dynamic>> contemplate(String questionId) async {
+    final resp = await dio.post('/api/brainstorm/contemplate',
+        data: {'direction': 'question_to_events', 'entity_id': questionId});
+    return resp.data;
+  }
+
+  Future<Map<String, dynamic>> answerQuestion(String questionId, List<String> eventIds) async {
+    final resp = await dio.post('/api/brainstorm/answer',
+        data: {'question_id': questionId, 'event_ids': eventIds, 'question': ''});
+    return resp.data;
   }
 
   // ---- 任务 ----
