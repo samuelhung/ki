@@ -120,9 +120,9 @@ class _HeatmapChartWidgetState extends State<HeatmapChartWidget> {
   static Color _levelColor(int level) {
     switch (level) {
       case 0: return const Color(0xFF1A1B20);
-      case 1: return const Color(0x3328A55F);
-      case 2: return const Color(0x7328A55F);
-      case 3: return const Color(0xBF28A55F);
+      case 1: return const Color(0x33A855F7);
+      case 2: return const Color(0x73A855F7);
+      case 3: return const Color(0xBFA855F7);
       default: return const Color(0xFF1A1B20);
     }
   }

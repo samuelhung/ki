@@ -112,18 +112,18 @@ class _UsageWidgetState extends State<UsageWidget> {
         // 4 mini cards
         IntrinsicHeight(
           child: Row(children: [
-            _miniCard('今日调用', Icons.auto_awesome, AppTheme.purple, '${today['total_calls'] ?? 0}次',
+            _miniCard('今日调用', Icons.show_chart, AppTheme.purple, '${today['total_calls'] ?? 0}次',
                 (today['error_calls'] as int? ?? 0) > 0 ? '${today['error_calls']} 次失败' : null, null),
             _vDivider(),
             _miniCard('知识吞吐', Icons.dns, AppTheme.cyan, _fmtTokens(today['total_tokens'] as int? ?? 0),
                 null, '入 ${_fmtTokens(today['prompt_tokens'] as int? ?? 0)} · 出 ${_fmtTokens(today['completion_tokens'] as int? ?? 0)}'),
             _vDivider(),
             _miniCard('缓存命中', Icons.bar_chart, AppTheme.emerald, '${today['cache_hit_rate'] ?? 0}%',
-                null, '省 ${_fmtCost((today['cache_saved'] as num?)?.toDouble() ?? 0)}'),
+                null, '省 ${_fmtCost((today['cache_saved'] as num?)?.toDouble() ?? 0)}', valueColor: AppTheme.emerald),
             _vDivider(),
             _miniCard('今日花费', Icons.monetization_on, AppTheme.amber,
                 _fmtCost((today['cost_rmb'] as num?)?.toDouble() ?? 0), null,
-                '均 ${(today['avg_duration_ms'] as int? ?? 0) > 0 ? '${((today['avg_duration_ms'] as int) / 1000).toStringAsFixed(1)}s' : '—'}/次'),
+                '均 ${(today['avg_duration_ms'] as int? ?? 0) > 0 ? '${((today['avg_duration_ms'] as int) / 1000).toStringAsFixed(1)}s' : '—'}/次', valueColor: AppTheme.amber),
           ]),
         ),
 
@@ -164,7 +164,8 @@ class _UsageWidgetState extends State<UsageWidget> {
     );
   }
 
-  Widget _miniCard(String label, IconData icon, Color color, String value, String? error, String? sub) {
+  Widget _miniCard(String label, IconData icon, Color color, String value, String? error, String? sub, {Color? valueColor}) {
+    final vColor = valueColor ?? AppTheme.textPrimary;
     return Expanded(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -175,7 +176,7 @@ class _UsageWidgetState extends State<UsageWidget> {
             Text(label, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
           ]),
           const SizedBox(height: 8),
-          Text(value, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 20, fontWeight: FontWeight.bold)),
+          Text(value, style: TextStyle(color: vColor, fontSize: 20, fontWeight: FontWeight.bold)),
           if (error != null)
             Text(error, style: const TextStyle(color: AppTheme.error, fontSize: 10)),
           if (sub != null)
