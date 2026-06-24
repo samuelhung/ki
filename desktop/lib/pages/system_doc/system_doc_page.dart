@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../services/api_client.dart';
@@ -291,58 +292,56 @@ class _SystemDocPageState extends State<SystemDocPage> {
 
   // ── 版本更新 ──
   Widget _buildChangelogTab() {
-    final versions = [
-      ['1.0.50', '2026-06-24', '架构梳理与UI优化', [
-        '系统说明页：副标题改为"知几其神乎，见微知著"，版本/版权信息移到副标题下方',
-        '侧栏底部移除旧版本号，版本信息统一到系统说明页',
-        '新增 docs/ARCHITECTURE.md 架构全景文档 — 三端规格、发布流程、踩坑记录',
-        '平台架构确认：React PWA（阅微堂 :3900/3901）为 web/移动端主力方案',
-      ]],
-      ['1.0.3', '2026-06-23', '手动检查更新', [
-        '系统说明页新增「检查更新」按钮 — 手动触发增量更新检测',
-        '启动自动更新不再依赖后端连通性',
-      ]],
-      ['1.0.2', '2026-06-23', '系统说明与设置全面完善', [
-        '系统说明 — 6 tab 完整迁移：数据架构/数据流/功能体系/版本更新/数据库实时信息/日志实时查看',
-        '系统设置 — 完全重建：参数说明（模型规格表/参数详解/成本估算）、通用配置（模型/API Key/缓存）、连接面板（状态轮询/自动手动切换/数据库子状态）、8 个业务模块 AI 参数独立控制',
-        'API 客户端扩展 — 新增 system-config/save/database/logs/prompts 端点',
-      ]],
-      ['1.0.1', '2026-06-23', '增量更新上线', [
-        '桌面端后端地址远程配置 — 系统设置页可切换到局域网后端',
-        '增量更新管道 — bsdiff 补丁，启动自动检测 manifest.json',
-        '系统说明页完善 — 数据架构/数据流/功能体系/版本更新/数据库/日志',
-        '系统设置页重建 — 参数说明/通用配置/连接/业务模块 AI 参数',
-        '修复代码签名问题 — 替换二进制破坏签名导致 SIGILL 闪退',
-      ]],
-      ['1.0.0', '2026-06-22', '首次发布', [
-        'Flutter 桌面端发布 — 统一暗色主题 #0B0C10',
-        '14 个页面：仪表盘/事件/来源/摘要/脑暴/专题/产业链/知识图谱/采集/工具箱/辅导/设置/说明/任务',
-        'GoRouter 导航 + ShellRoute 侧栏布局',
-        'window_manager 窗口管理',
-        '通用二进制 (x86_64 + arm64)',
-      ]],
-    ];
+    return FutureBuilder<String>(
+      future: rootBundle.loadString('changelog.json'),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator(color: AppTheme.accent));
+        }
+        final data = jsonDecode(snapshot.data!) as Map<String, dynamic>;
+        final versions = (data['versions'] as List<dynamic>).cast<Map<String, dynamic>>();
 
-    return ListView(padding: const EdgeInsets.all(24), children: versions.map((v) => Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: _sectionCard('', Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2), decoration: BoxDecoration(color: AppTheme.accent.withOpacity(0.15), borderRadius: BorderRadius.circular(4)), child: Text('v${v[0]}', style: const TextStyle(color: AppTheme.accent, fontSize: 11, fontWeight: FontWeight.w600))),
-          const SizedBox(width: 8),
-          Text(v[1] as String, style: const TextStyle(color: AppTheme.textMuted, fontSize: 12)),
-          const SizedBox(width: 8),
-          Text(v[2] as String, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-        ]),
-        const SizedBox(height: 12),
-        ...(v[3] as List<String>).map((item) => Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Text('•  ', style: TextStyle(color: AppTheme.accent, fontSize: 12)),
-            Expanded(child: Text(item, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12, height: 1.5))),
-          ]),
-        )),
-      ])),
-    )).toList());
+        return ListView(padding: const EdgeInsets.all(24), children: versions.map((v) {
+          final version = v['version'] as String;
+          final date = v['date'] as String;
+          final title = v['title'] as String;
+          final sections = (v['sections'] as List<dynamic>).cast<Map<String, dynamic>>();
+
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: _sectionCard('', Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2), decoration: BoxDecoration(color: AppTheme.accent.withOpacity(0.15), borderRadius: BorderRadius.circular(4)), child: Text('v$version', style: const TextStyle(color: AppTheme.accent, fontSize: 11, fontWeight: FontWeight.w600))),
+                const SizedBox(width: 8),
+                Text(date, style: const TextStyle(color: AppTheme.textMuted, fontSize: 12)),
+                const SizedBox(width: 8),
+                Text(title, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+              ]),
+              const SizedBox(height: 12),
+              ...sections.map((sec) {
+                final icon = sec['icon'] as String? ?? '';
+                final label = sec['label'] as String? ?? '';
+                final items = (sec['items'] as List<dynamic>).cast<String>();
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('$icon $label', style: const TextStyle(color: AppTheme.textPrimary, fontSize: 12, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 4),
+                    ...items.map((item) => Padding(
+                      padding: const EdgeInsets.only(bottom: 4, left: 8),
+                      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        const Text('•  ', style: TextStyle(color: AppTheme.accent, fontSize: 12)),
+                        Expanded(child: Text(item, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12, height: 1.5))),
+                      ]),
+                    )),
+                  ]),
+                );
+              }),
+            ])),
+          );
+        }).toList());
+      },
+    );
   }
 
   // ── 数据库 ──

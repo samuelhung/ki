@@ -28,6 +28,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.request import urlopen, Request
 
@@ -245,6 +246,84 @@ def generate_manifest(version: str, app_hash: str, dmg_path: Path, patches: list
     return manifest_path
 
 
+def _generate_appcast_entry(version: str, dmg_path: Path) -> str | None:
+    """用 Sparkle sign_update 签名 DMG，返回 appcast <item> XML 片段。"""
+    sign_update = DESKTOP_DIR / "macos" / "Pods" / "Sparkle" / "bin" / "sign_update"
+    if not sign_update.exists():
+        print(f"⚠️  sign_update 未找到: {sign_update}")
+        return None
+
+    result = subprocess.run(
+        [str(sign_update), str(dmg_path)],
+        capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode != 0:
+        print(f"⚠️  sign_update 失败: {result.stderr}")
+        return None
+
+    ed_sig = result.stdout.strip()
+    dmg_name = dmg_path.name
+    dmg_size = dmg_path.stat().st_size
+    download_url = f"https://github.com/{GITHUB_REPO}/releases/download/v{version}/{dmg_name}"
+    pub_date = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S %z")
+
+    return f"""    <item>
+      <title>知几桌面端 v{version}</title>
+      <description><![CDATA[知几桌面端 v{version}]]></description>
+      <pubDate>{pub_date}</pubDate>
+      <enclosure
+        url="{download_url}"
+        sparkle:version="{version}"
+        sparkle:shortVersionString="{version}"
+        sparkle:edSignature="{ed_sig}"
+        length="{dmg_size}"
+        type="application/octet-stream"
+      />
+    </item>"""
+
+
+def _update_appcast(appcast_path: Path, entry: str) -> None:
+    """将新 item 插入 appcast.xml 的 <channel> 后。"""
+    if not appcast_path.exists():
+        print(f"⚠️  appcast.xml 不存在: {appcast_path}")
+        return
+
+    content = appcast_path.read_text()
+    # 在 <channel> 后插入（第一个 item 位置）
+    marker = "  <channel>"
+    new_content = content.replace(marker, f"{marker}\n{entry}", 1)
+    appcast_path.write_text(new_content)
+    print(f"📡 appcast.xml 已更新")
+
+
+def _generate_release_notes(version: str) -> str:
+    """从 desktop/changelog.json 读取版本说明，生成 GitHub Release 正文。"""
+    changelog_path = DESKTOP_DIR / "changelog.json"
+    if not changelog_path.exists():
+        return f"知几桌面端 v{version}"
+
+    data = json.loads(changelog_path.read_text())
+    for v in data.get("versions", []):
+        if v.get("version") == version:
+            title = v.get("title", "")
+            sections = v.get("sections", [])
+            lines = [f"## ✨ 知几 v{version} — {title}", ""]
+            for sec in sections:
+                icon = sec.get("icon", "")
+                label = sec.get("label", "")
+                lines.append(f"### {icon} {label}")
+                lines.append("")
+                for item in sec.get("items", []):
+                    lines.append(f"- {item}")
+                lines.append("")
+            lines.append("## 📦 桌面端更新")
+            lines.append("")
+            lines.append(f"- DMG: `zhiji_desktop_{version}_universal.dmg`")
+            lines.append("- 自动更新: Sparkle 检测 appcast.xml → EdDSA 签名验证 → DMG 覆盖安装")
+            return "\n".join(lines)
+    return f"知几桌面端 v{version}"
+
+
 def main():
     parser = argparse.ArgumentParser(description="知几桌面端发布构建")
     parser.add_argument("--skip-build", action="store_true", help="跳过编译（使用已有产物）")
@@ -288,7 +367,14 @@ def main():
         install_script_dst = None
         print(f"⚠️  安装脚本不存在: {install_script_src}")
 
-    # 6. 总结
+    # 6. 生成/更新 Sparkle appcast
+    appcast_path = PROJECT_ROOT / "appcast.xml"
+    appcast_entry = _generate_appcast_entry(version, dmg_path)
+    if appcast_entry:
+        _update_appcast(appcast_path, appcast_entry)
+        print(f"📡 appcast: {appcast_path}")
+
+    # 7. 总结
     print()
     print("━" * 50)
     print(f"✅ 发布包就绪: {RELEASE_DIR}")
@@ -302,19 +388,25 @@ def main():
     else:
         print(f"   补丁:   (首次发布，无增量补丁)")
     print()
+
+    # 生成 Release 说明
+    notes = _generate_release_notes(version)
+    notes_path = RELEASE_DIR / "RELEASE_NOTES.md"
+    notes_path.write_text(notes)
+    print("📝 Release 说明 (来自 changelog.json):")
+    print(notes)
+    print()
+
     print("上传到 GitHub Release:")
-    print(f"  gh release create v{version} \\")
-    print(f"    {dmg_path} \\")
-    print(f"    {manifest_path} \\")
+    print(f"  gh release create v{version} \\\\")
+    print(f"    {dmg_path} \\\\")
+    print(f"    {manifest_path} \\\\")
     if install_script_dst:
-        print(f"    {install_script_dst} \\")
+        print(f"    {install_script_dst} \\\\")
     if patches:
         for p in patches:
-            print(f"    {RELEASE_DIR / p['url']} \\")
-    if install_script_dst:
-        print(f"  --title '知几桌面端 v{version}' --notes '安装更新助手: sudo bash install_helper.sh'")
-    else:
-        print(f"  --title '知几桌面端 v{version}' --notes '详见 CHANGELOG'")
+            print(f"    {RELEASE_DIR / p['url']} \\\\")
+    print(f"  --notes-file {notes_path}")
     print("━" * 50)
 
 

@@ -1,0 +1,88 @@
+{
+  "versions": [
+    {
+      "version": "1.0.51",
+      "date": "2026-06-24",
+      "title": "changelog.json 结构化版本数据",
+      "sections": [
+        {"icon": "🔨", "label": "工具", "items": [
+          "changelog.json 结构化版本数据 — App 系统说明与 GitHub Release 内容同源",
+          "build_release.py 自动读 changelog.json 生成 Release 说明",
+          "版本更新 tab 改为读 JSON asset 渲染，不再硬编码"
+        ]}
+      ]
+    },
+    {
+      "version": "1.0.50",
+      "date": "2026-06-24",
+      "title": "架构梳理与UI优化",
+      "sections": [
+        {"icon": "🎨", "label": "UI", "items": [
+          "系统说明页：副标题简化，版本版权信息移至副标题下方",
+          "侧栏底部移除硬编码版本号，版本信息统一到系统说明页"
+        ]},
+        {"icon": "📚", "label": "文档", "items": [
+          "新增 docs/ARCHITECTURE.md 架构全景文档 — 产品定义、三端规格、mermaid架构图、发布流程、三级踩坑速查",
+          "平台架构确认：React PWA（阅微堂 :3900/3901）为 web/移动端主力方案，Flutter Web 已可编译但暂不部署"
+        ]},
+        {"icon": "🔨", "label": "工具", "items": [
+          "zhiji / zhiji-release-workflow skill 更新：架构说明同步、GitHub Release emoji 图标约束",
+          "changelog.json 结构化版本数据 — App 系统说明与 GitHub Release 内容同源"
+        ]}
+      ]
+    },
+    {
+      "version": "1.0.3",
+      "date": "2026-06-23",
+      "title": "手动检查更新",
+      "sections": [
+        {"icon": "✨", "label": "新功能", "items": [
+          "系统说明页新增「检查更新」按钮，手动触发增量更新检测",
+          "启动自动更新不再依赖后端连通性"
+        ]}
+      ]
+    },
+    {
+      "version": "1.0.2",
+      "date": "2026-06-23",
+      "title": "系统说明与设置全面完善",
+      "sections": [
+        {"icon": "✨", "label": "新功能", "items": [
+          "系统说明 6 tab 完整迁移：数据架构/数据流/功能体系/版本更新/数据库实时信息/日志实时查看",
+          "系统设置完全重建：参数说明（模型规格表/参数详解/成本估算）、通用配置（模型/API Key/缓存）、连接面板（状态轮询/自动手动切换/数据库子状态）、8 个业务模块 AI 参数独立控制",
+          "API 客户端扩展，新增 system-config/save/database/logs/prompts 端点"
+        ]}
+      ]
+    },
+    {
+      "version": "1.0.1",
+      "date": "2026-06-23",
+      "title": "增量更新上线",
+      "sections": [
+        {"icon": "✨", "label": "新功能", "items": [
+          "桌面端后端地址远程配置，系统设置页可切换到局域网后端",
+          "增量更新管道 bsdiff 补丁，启动自动检测 manifest.json",
+          "系统说明页完善：数据架构/数据流/功能体系/版本更新/数据库/日志",
+          "系统设置页重建：参数说明/通用配置/连接/业务模块 AI 参数"
+        ]},
+        {"icon": "🐛", "label": "修复", "items": [
+          "修复代码签名问题：替换二进制破坏签名导致 SIGILL 闪退"
+        ]}
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "date": "2026-06-22",
+      "title": "首次发布",
+      "sections": [
+        {"icon": "✨", "label": "新功能", "items": [
+          "Flutter 桌面端发布，统一暗色主题 #0B0C10",
+          "14 个页面：仪表盘/事件/来源/摘要/脑暴/专题/产业链/知识图谱/采集/工具箱/辅导/设置/说明/任务",
+          "GoRouter 导航 + ShellRoute 侧栏布局",
+          "window_manager 窗口管理",
+          "通用二进制 (x86_64 + arm64)"
+        ]}
+      ]
+    }
+  ]
+}
