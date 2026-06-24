@@ -253,17 +253,19 @@ def main():
     if not args.skip_build:
         if not build_flutter():
             sys.exit(1)
-        # 签名 .app（Sparkle 要求证书签名，不能用 ad-hoc）
-        print("🔐 签名 .app: Zhiji")
-        subprocess.run(
-            ["codesign", "--deep", "--force", "--sign", "Zhiji", str(FLUTTER_APP)],
-            capture_output=True, check=True, timeout=60,
-        )
-        print("✅ .app 签名完成")
     elif not APP_BINARY.exists():
         sys.exit(f"❌ 编译产物不存在: {APP_BINARY}")
     else:
         print("⏭️  跳过编译")
+
+    # 签名 .app（Sparkle 要求证书签名，不能用 ad-hoc）
+    # ⚠️ 必须每次执行：flutter build 只产 adhoc，--skip-build 时也不会自动签名
+    print("🔐 签名 .app: Zhiji")
+    subprocess.run(
+        ["codesign", "--deep", "--force", "--sign", "Zhiji", str(FLUTTER_APP)],
+        capture_output=True, check=True, timeout=60,
+    )
+    print("✅ .app 签名完成")
 
     # 2. 哈希
     app_hash = _shasum(APP_BINARY)

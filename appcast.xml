@@ -10,13 +10,13 @@
     <item>
       <title>知几桌面端 v1.0.69</title>
       <description><![CDATA[知几 v1.0.69 — 修复产业链数据解析 + 流向图渲染<br><br><b>▸ 修复</b><br>&nbsp;&nbsp;&nbsp;&nbsp;修复产业链页面 global_shares 解析崩溃（API 返回 Map 但代码当 List 解析）<br>&nbsp;&nbsp;&nbsp;&nbsp;修复全景流向图 WebView 无法加载（ReactFlow ESM → vis-network CDN）<br>&nbsp;&nbsp;&nbsp;&nbsp;修复 upstream_ids JSON 字符串/List 双格式兼容]]></description>
-      <pubDate>Wed, 24 Jun 2026 12:58:51 +0000</pubDate>
+      <pubDate>Wed, 24 Jun 2026 13:07:05 +0000</pubDate>
       <enclosure
         url="https://github.com/samuelhung/ki/releases/download/v1.0.69/zhiji_1.0.69.dmg"
         sparkle:version="70"
         sparkle:shortVersionString="1.0.69"
-        sparkle:edSignature="G3Aw7F3U4F9zk2Tg2ecyepT27gXctnD+L3KTyMIy59YofU5vcrsIJgl1JBZn4A3kbjP44EqekcEDd9BsA8JqDQ=="
-        length="22195242"
+        sparkle:edSignature="cc1Ea06a6+a3ayZTZ/GwnOGMqVL+SBv52gXAeBxE1Jm4UFkoLrLCJo3I8V40jHdUI51VzQs9h3kXbbLcWPINBg=="
+        length="22218427"
         type="application/octet-stream"
       />
     </item>
