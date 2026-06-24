@@ -101,15 +101,6 @@ class _AppShellState extends ConsumerState<AppShell> {
                         ),
                       ),
                       SizedBox(height: 4),
-                      // 版本 + Sparkle 标识
-                      Text(
-                        'v1.0.48 · Sparkle ✨',
-                        style: const TextStyle(
-                          color: AppTheme.textMuted,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
                     ],
                   ),
                 ),
@@ -150,6 +141,16 @@ class _AppShellState extends ConsumerState<AppShell> {
                       _NavButton(
                         item: const _NavItem('/system', Icons.menu_book, AppTheme.teal, '系统说明'),
                         isActive: location == '/system',
+                      ),
+                      const SizedBox(height: 8),
+                      // 版本 + Sparkle 标识
+                      const Text(
+                        'v1.0.49 · Sparkle ✨',
+                        style: TextStyle(
+                          color: AppTheme.textMuted,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ],
                   ),

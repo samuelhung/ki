@@ -31,7 +31,14 @@ class UpdateManager extends ChangeNotifier {
   /// 从 App Bundle Info.plist 读取版本号
   static String get _bundleVersion {
     try {
-      final result = Process.runSync('defaults', ['read', '${Platform.resolvedExecutable}/../Info.plist', 'CFBundleShortVersionString']);
+      // Platform.resolvedExecutable 指向 Flutter AOT runner:
+      //   /Applications/知几.app/Contents/Frameworks/App.framework/Versions/A/App
+      // 需要回溯到 .app 目录再读 Info.plist
+      final exePath = Platform.resolvedExecutable;
+      final appIdx = exePath.indexOf('.app/');
+      if (appIdx == -1) return '0.0.0';
+      final plistPath = '${exePath.substring(0, appIdx + 4)}/Contents/Info.plist';
+      final result = Process.runSync('defaults', ['read', plistPath, 'CFBundleShortVersionString']);
       if (result.exitCode == 0) return result.stdout.toString().trim();
     } catch (_) {}
     return '0.0.0';
