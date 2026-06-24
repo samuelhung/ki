@@ -369,7 +369,7 @@ class _BrainstormPageState extends State<BrainstormPage> {
                                   ),
                                   child: Row(children: [
                                     const SizedBox(width: 28),
-                                    const Expanded(flex: 5, child: Text('问题', style: TextStyle(color: AppTheme.textMuted, fontSize: 12))),
+                                    const Expanded(flex: 5, child: Center(child: Text('问题', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)))),
                                     const SizedBox(width: 80, child: Center(child: Text('分类', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)))),
                                     const SizedBox(width: 72, child: Center(child: Text('关联文档', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)))),
                                     const SizedBox(width: 104, child: Center(child: Text('提交时间', style: TextStyle(color: AppTheme.textMuted, fontSize: 12)))),
@@ -477,16 +477,19 @@ class _BrainstormPageState extends State<BrainstormPage> {
           // Checkbox
           SizedBox(
             width: 28,
-            child: GestureDetector(
-              onTap: () => _toggleSelect(id),
-              child: Container(
-                width: 16, height: 16,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(3),
-                  border: Border.all(color: selected ? AppTheme.purple : const Color(0xFF555555), width: 1.5),
-                  color: selected ? AppTheme.purple.withOpacity(0.2) : Colors.transparent,
+            child: Align(
+              alignment: Alignment.center,
+              child: GestureDetector(
+                onTap: () => _toggleSelect(id),
+                child: Container(
+                  width: 16, height: 16,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(2),
+                    border: Border.all(color: selected ? AppTheme.purple : const Color(0xFF555555), width: 1.5),
+                    color: selected ? AppTheme.purple.withOpacity(0.2) : Colors.transparent,
+                  ),
+                  child: selected ? const Icon(Icons.check, size: 10, color: AppTheme.purple) : null,
                 ),
-                child: selected ? const Icon(Icons.check, size: 10, color: AppTheme.purple) : null,
               ),
             ),
           ),
@@ -495,7 +498,6 @@ class _BrainstormPageState extends State<BrainstormPage> {
             flex: 5,
             child: Text(question, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13), maxLines: 2, overflow: TextOverflow.ellipsis),
           ),
-          const SizedBox(width: 8),
           // Topic badge
           SizedBox(
             width: 80,
@@ -509,7 +511,6 @@ class _BrainstormPageState extends State<BrainstormPage> {
                   : const Text('—', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
             ),
           ),
-          const SizedBox(width: 8),
           // Doc count
           SizedBox(
             width: 72,
@@ -523,7 +524,6 @@ class _BrainstormPageState extends State<BrainstormPage> {
                   : const Text('—', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
             ),
           ),
-          const SizedBox(width: 8),
           // Date
           SizedBox(
             width: 104,
@@ -558,7 +558,7 @@ class _BrainstormPageState extends State<BrainstormPage> {
 
   String _formatDate(String iso) {
     try {
-      final dt = DateTime.parse(iso);
+      final dt = DateTime.parse(iso).add(const Duration(hours: 8));
       return '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
     } catch (_) { return iso; }
   }
