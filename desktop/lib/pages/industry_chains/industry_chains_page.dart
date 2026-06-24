@@ -3,225 +3,6 @@ import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 import '../../services/api_client.dart';
 
-// ── Data classes ──
-
-class GlobalShare {
-  String c;
-  double p, pExportGlobal, pExportRatio, pExportNational;
-  double d, dImportGlobal, dImportRatio, dImportNational;
-
-  GlobalShare({
-    this.c = '',
-    this.p = 0,
-    this.pExportGlobal = 0,
-    this.pExportRatio = 0,
-    this.pExportNational = 0,
-    this.d = 0,
-    this.dImportGlobal = 0,
-    this.dImportRatio = 0,
-    this.dImportNational = 0,
-  });
-
-  factory GlobalShare.fromJson(Map<String, dynamic> json) {
-    return GlobalShare(
-      c: json['c'] as String? ?? '',
-      p: (json['p'] as num?)?.toDouble() ?? 0,
-      pExportGlobal: (json['p_export_global'] as num?)?.toDouble() ?? 0,
-      pExportRatio: (json['p_export_ratio'] as num?)?.toDouble() ?? 0,
-      pExportNational: (json['p_export_national'] as num?)?.toDouble() ?? 0,
-      d: (json['d'] as num?)?.toDouble() ?? 0,
-      dImportGlobal: (json['d_import_global'] as num?)?.toDouble() ?? 0,
-      dImportRatio: (json['d_import_ratio'] as num?)?.toDouble() ?? 0,
-      dImportNational: (json['d_import_national'] as num?)?.toDouble() ?? 0,
-    );
-  }
-
-  static GlobalShare empty() => GlobalShare();
-}
-
-class Substitute {
-  String node, maturity, trigger, advantage, bottleneck;
-  Substitute({
-    this.node = '',
-    this.maturity = '',
-    this.trigger = '',
-    this.advantage = '',
-    this.bottleneck = '',
-  });
-  factory Substitute.fromJson(Map<String, dynamic> json) {
-    return Substitute(
-      node: json['node'] as String? ?? '',
-      maturity: json['maturity'] as String? ?? '',
-      trigger: json['trigger'] as String? ?? '',
-      advantage: json['advantage'] as String? ?? '',
-      bottleneck: json['bottleneck'] as String? ?? '',
-    );
-  }
-  static Substitute empty() => Substitute();
-}
-
-class ChainNodeData {
-  String id, chain, name, nodeType, description;
-  List<GlobalShare> globalShares;
-  List<Substitute> substitutes;
-  List<String> upstreamIds;
-  Map<String, String> dataSources;
-  int sortOrder;
-  String? lastUpdated;
-
-  ChainNodeData({
-    this.id = '',
-    this.chain = '',
-    this.name = '',
-    this.nodeType = '原材料',
-    this.description = '',
-    List<GlobalShare>? globalShares,
-    List<Substitute>? substitutes,
-    List<String>? upstreamIds,
-    Map<String, String>? dataSources,
-    this.sortOrder = 0,
-    this.lastUpdated,
-  })  : globalShares = globalShares ?? [],
-        substitutes = substitutes ?? [],
-        upstreamIds = upstreamIds ?? [],
-        dataSources = dataSources ?? {};
-
-  factory ChainNodeData.fromJson(Map<String, dynamic> json) {
-    return ChainNodeData(
-      id: json['id'] as String? ?? '',
-      chain: json['chain'] as String? ?? '',
-      name: json['name'] as String? ?? '',
-      nodeType: json['node_type'] as String? ?? '原材料',
-      description: json['description'] as String? ?? '',
-      globalShares: (json['global_shares'] as List<dynamic>?)
-              ?.map((e) => GlobalShare.fromJson(e as Map<String, dynamic>))
-              .toList() ??
-          [],
-      substitutes: (json['substitutes'] as List<dynamic>?)
-              ?.map((e) => Substitute.fromJson(e as Map<String, dynamic>))
-              .toList() ??
-          [],
-      upstreamIds: (json['upstream_ids'] as List<dynamic>?)
-              ?.map((e) => e as String)
-              .toList() ??
-          [],
-      dataSources: (json['data_sources'] as Map<String, dynamic>?)
-              ?.map((k, v) => MapEntry(k, v as String)) ??
-          {},
-      sortOrder: json['sort_order'] as int? ?? 0,
-      lastUpdated: json['last_updated'] as String?,
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'chain': chain,
-      'name': name,
-      'node_type': nodeType,
-      'description': description,
-      'global_shares': globalShares.map((s) {
-        return {
-          'c': s.c,
-          'p': s.p,
-          'p_export_global': s.pExportGlobal,
-          'p_export_ratio': s.pExportRatio,
-          'p_export_national': s.pExportNational,
-          'd': s.d,
-          'd_import_global': s.dImportGlobal,
-          'd_import_ratio': s.dImportRatio,
-          'd_import_national': s.dImportNational,
-        };
-      }).toList(),
-      'substitutes': substitutes.map((s) {
-        return {
-          'node': s.node,
-          'maturity': s.maturity,
-          'trigger': s.trigger,
-          'advantage': s.advantage,
-          'bottleneck': s.bottleneck,
-        };
-      }).toList(),
-      'upstream_ids': upstreamIds,
-      'data_sources': dataSources,
-      'sort_order': sortOrder,
-    };
-  }
-}
-
-class ChainHint {
-  String id, eventId, nodeId, chain, field;
-  String currentValue, suggestedValue, sourceQuote;
-  double confidence;
-  String status, nodeName;
-
-  ChainHint({
-    this.id = '',
-    this.eventId = '',
-    this.nodeId = '',
-    this.chain = '',
-    this.field = '',
-    this.currentValue = '',
-    this.suggestedValue = '',
-    this.sourceQuote = '',
-    this.confidence = 0,
-    this.status = '',
-    this.nodeName = '',
-  });
-
-  factory ChainHint.fromJson(Map<String, dynamic> json) {
-    return ChainHint(
-      id: json['id'] as String? ?? '',
-      eventId: json['event_id'] as String? ?? '',
-      nodeId: json['node_id'] as String? ?? '',
-      chain: json['chain'] as String? ?? '',
-      field: json['field'] as String? ?? '',
-      currentValue: json['current_value'] as String? ?? '',
-      suggestedValue: json['suggested_value'] as String? ?? '',
-      sourceQuote: json['source_quote'] as String? ?? '',
-      confidence: (json['confidence'] as num?)?.toDouble() ?? 0,
-      status: json['status'] as String? ?? '',
-      nodeName: json['node_name'] as String? ?? '',
-    );
-  }
-}
-
-class ChainSuggestion {
-  String id, chainName, eventId, reason, sourceQuote;
-  double confidence;
-  String status, createdAt;
-  List<Map<String, dynamic>> nodesJson;
-
-  ChainSuggestion({
-    this.id = '',
-    this.chainName = '',
-    this.eventId = '',
-    this.reason = '',
-    this.sourceQuote = '',
-    this.confidence = 0,
-    this.status = '',
-    this.createdAt = '',
-    List<Map<String, dynamic>>? nodesJson,
-  }) : nodesJson = nodesJson ?? [];
-
-  factory ChainSuggestion.fromJson(Map<String, dynamic> json) {
-    return ChainSuggestion(
-      id: json['id'] as String? ?? '',
-      chainName: json['chain_name'] as String? ?? '',
-      eventId: json['event_id'] as String? ?? '',
-      reason: json['reason'] as String? ?? '',
-      sourceQuote: json['source_quote'] as String? ?? '',
-      confidence: (json['confidence'] as num?)?.toDouble() ?? 0,
-      status: json['status'] as String? ?? '',
-      createdAt: json['created_at'] as String? ?? '',
-      nodesJson: (json['nodes_json'] as List<dynamic>?)
-              ?.map((e) => e as Map<String, dynamic>)
-              .toList() ??
-          [],
-    );
-  }
-}
-
 // ── Constants ──
 
 const List<String> _typeOptions = ['原材料', '中间品', '零部件', '终端'];
@@ -296,11 +77,11 @@ class _TradeTag {
   const _TradeTag(this.label, this.color, this.bg);
 }
 
-_TradeTag? _getTradeTag(GlobalShare s) {
-  final p = s.p;
-  final ratio = s.dImportRatio;
-  final expRatio = s.pExportRatio;
-  final impGlobal = s.dImportGlobal;
+_TradeTag? _getTradeTag(Map<String, dynamic> s) {
+  final p = (s['p'] as num?)?.toDouble() ?? 0;
+  final ratio = (s['d_import_ratio'] as num?)?.toDouble() ?? 0;
+  final expRatio = (s['p_export_ratio'] as num?)?.toDouble() ?? 0;
+  final impGlobal = (s['d_import_global'] as num?)?.toDouble() ?? 0;
   if (ratio > 50 || impGlobal > 15) {
     return _TradeTag('严重依赖进口', const Color(0xFFF87171), const Color(0x1AEF4444));
   }
@@ -319,43 +100,48 @@ _TradeTag? _getTradeTag(GlobalShare s) {
   return null;
 }
 
-// ── Share normalization ──
+// ── Upstream IDs parsing: handles both JSON string and raw List ──
 
-Map<String, List<GlobalShare>> _normalizeShares(dynamic raw) {
-  final empty = <String, List<GlobalShare>>{
-    'production': [],
-    'supply': [],
-    'demand': [],
-  };
-  if (raw == null) return empty;
+List<String> _parseUpstreamIds(dynamic val) {
+  if (val == null) return [];
+  if (val is List) return val.map((e) => e.toString()).toList();
+  if (val is String) {
+    try {
+      final decoded = jsonDecode(val);
+      if (decoded is List) return decoded.map((e) => e.toString()).toList();
+    } catch (_) {}
+    return [val];
+  }
+  return [];
+}
+
+// ── Share normalization: handles both grouped and flat formats ──
+
+Map<String, List<Map<String, dynamic>>> _normalizeShares(dynamic raw) {
   try {
     final data = raw is String ? jsonDecode(raw) : raw;
     if (data is Map && data['groups'] != null) {
-      final groups = data['groups'] as Map<String, dynamic>;
       return {
-        'production': (groups['production'] as List<dynamic>?)
-                ?.map((e) => GlobalShare.fromJson(e as Map<String, dynamic>))
-                .toList() ??
+        'production': (data['groups']['production'] as List<dynamic>?)
+                ?.cast<Map<String, dynamic>>() ??
             [],
-        'supply': (groups['supply'] as List<dynamic>?)
-                ?.map((e) => GlobalShare.fromJson(e as Map<String, dynamic>))
-                .toList() ??
+        'supply': (data['groups']['supply'] as List<dynamic>?)
+                ?.cast<Map<String, dynamic>>() ??
             [],
-        'demand': (groups['demand'] as List<dynamic>?)
-                ?.map((e) => GlobalShare.fromJson(e as Map<String, dynamic>))
-                .toList() ??
+        'demand': (data['groups']['demand'] as List<dynamic>?)
+                ?.cast<Map<String, dynamic>>() ??
             [],
       };
     }
     if (data is List) {
       return {
-        'production': data.map((e) => GlobalShare.fromJson(e as Map<String, dynamic>)).toList(),
+        'production': data.cast<Map<String, dynamic>>(),
         'supply': [],
         'demand': [],
       };
     }
   } catch (_) {}
-  return empty;
+  return {'production': [], 'supply': [], 'demand': []};
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -363,7 +149,7 @@ Map<String, List<GlobalShare>> _normalizeShares(dynamic raw) {
 // ══════════════════════════════════════════════════════════════════════
 
 class _HintsReviewDialog extends StatefulWidget {
-  final List<ChainHint> hints;
+  final List<Map<String, dynamic>> hints;
   final VoidCallback onResolved;
 
   const _HintsReviewDialog({required this.hints, required this.onResolved});
@@ -378,11 +164,12 @@ class _HintsReviewDialogState extends State<_HintsReviewDialog> {
   String _editedValue = '';
   final _api = ApiClient();
 
-  ChainHint get _hint => widget.hints[_idx];
+  Map<String, dynamic> get _hint => widget.hints[_idx];
 
   Color get _confidenceColor {
-    if (_hint.confidence >= 0.8) return const Color(0xFF34D399);
-    if (_hint.confidence >= 0.5) return const Color(0xFFFBBF24);
+    final conf = (_hint['confidence'] as num?)?.toDouble() ?? 0;
+    if (conf >= 0.8) return const Color(0xFF34D399);
+    if (conf >= 0.5) return const Color(0xFFFBBF24);
     return const Color(0xFFF87171);
   }
 
@@ -390,7 +177,7 @@ class _HintsReviewDialogState extends State<_HintsReviewDialog> {
     setState(() => _resolving = true);
     try {
       await _api.resolveChainHint(
-        _hint.id,
+        _hint['id'] as String? ?? '',
         action,
         editedValue: action == 'accept' ? _editedValue : '',
       );
@@ -410,6 +197,14 @@ class _HintsReviewDialogState extends State<_HintsReviewDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final hintName = _hint['node_name'] as String? ?? '';
+    final hintChain = _hint['chain'] as String? ?? '';
+    final hintConfidence = (_hint['confidence'] as num?)?.toDouble() ?? 0;
+    final hintField = _hint['field'] as String? ?? '';
+    final hintCurrent = _hint['current_value'] as String? ?? '';
+    final hintSuggested = _hint['suggested_value'] as String? ?? '';
+    final hintQuote = _hint['source_quote'] as String? ?? '';
+
     return AlertDialog(
       backgroundColor: const Color(0xFF141518),
       shape: RoundedRectangleBorder(
@@ -448,12 +243,12 @@ class _HintsReviewDialogState extends State<_HintsReviewDialog> {
               padding: const EdgeInsets.all(20),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
-                  Text(_hint.nodeName,
+                  Text(hintName,
                       style: const TextStyle(color: Color(0xFFE5E7EB), fontSize: 12, fontWeight: FontWeight.w500)),
                   const Text(' · ', style: TextStyle(color: Color(0xFF6B7280), fontSize: 12)),
-                  Text(_hint.chain, style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 12)),
+                  Text(hintChain, style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 12)),
                   const Text(' · ', style: TextStyle(color: Color(0xFF6B7280), fontSize: 12)),
-                  Text('置信度 ${(_hint.confidence * 100).toInt()}%',
+                  Text('置信度 ${(hintConfidence * 100).toInt()}%',
                       style: TextStyle(color: _confidenceColor, fontSize: 12, fontWeight: FontWeight.w500)),
                 ]),
                 const SizedBox(height: 16),
@@ -467,9 +262,9 @@ class _HintsReviewDialogState extends State<_HintsReviewDialog> {
                       color: const Color(0xFF0B0C10),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: const Color(0xFF2A2B30))),
-                  child: Text(_hint.field, style: const TextStyle(color: Color(0xFFE5E7EB), fontSize: 13)),
+                  child: Text(hintField, style: const TextStyle(color: Color(0xFFE5E7EB), fontSize: 13)),
                 ),
-                if (_hint.currentValue.isNotEmpty) ...[
+                if (hintCurrent.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   const Text('当前值',
                       style: TextStyle(color: Color(0xFF6B7280), fontSize: 10, fontWeight: FontWeight.w500)),
@@ -481,7 +276,7 @@ class _HintsReviewDialogState extends State<_HintsReviewDialog> {
                         color: const Color(0xFF0B0C10),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: const Color(0xFF2A2B30))),
-                    child: Text(_hint.currentValue,
+                    child: Text(hintCurrent,
                         style: const TextStyle(
                             color: Color(0xFF9CA3AF), fontSize: 13, decoration: TextDecoration.lineThrough)),
                   ),
@@ -498,13 +293,13 @@ class _HintsReviewDialogState extends State<_HintsReviewDialog> {
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: const Color(0xFF34D399).withAlpha(51))),
                   child: TextField(
-                    controller: TextEditingController(text: _editedValue.isEmpty ? _hint.suggestedValue : _editedValue),
+                    controller: TextEditingController(text: _editedValue.isEmpty ? hintSuggested : _editedValue),
                     onChanged: (v) => _editedValue = v,
                     style: const TextStyle(color: Color(0xFF34D399), fontSize: 13),
                     decoration: const InputDecoration(border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.zero),
                   ),
                 ),
-                if (_hint.sourceQuote.isNotEmpty) ...[
+                if (hintQuote.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   const Text('原文引用',
                       style: TextStyle(color: Color(0xFF6B7280), fontSize: 10, fontWeight: FontWeight.w500)),
@@ -516,7 +311,7 @@ class _HintsReviewDialogState extends State<_HintsReviewDialog> {
                         color: const Color(0xFF0B0C10),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: const Color(0xFF2A2B30))),
-                    child: Text('"${_hint.sourceQuote}"',
+                    child: Text('"$hintQuote"',
                         style: const TextStyle(color: Color(0xFF6B7280), fontSize: 11, fontStyle: FontStyle.italic, height: 1.5)),
                   ),
                 ],
@@ -584,12 +379,12 @@ class _HintsReviewDialogState extends State<_HintsReviewDialog> {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// _EditDialog — 5-tab node editor
+// _EditDialog — 5-tab node editor (raw Maps throughout)
 // ══════════════════════════════════════════════════════════════════════
 
 class _EditDialog extends StatefulWidget {
-  final ChainNodeData? node;
-  final List<ChainNodeData> allNodes;
+  final Map<String, dynamic>? node;
+  final List<Map<String, dynamic>> allNodes;
   final String? defaultChain;
   final VoidCallback onSaved;
 
@@ -602,7 +397,7 @@ class _EditDialog extends StatefulWidget {
 class _EditDialogState extends State<_EditDialog> {
   final _api = ApiClient();
   late String _tab;
-  late ChainNodeData _form;
+  late Map<String, dynamic> _form;
   bool _saving = false;
   final _aiTextCtrl = TextEditingController();
   bool _aiLoading = false;
@@ -614,19 +409,68 @@ class _EditDialogState extends State<_EditDialog> {
   void initState() {
     super.initState();
     _tab = 'basic';
-    _form = widget.node ?? ChainNodeData(chain: widget.defaultChain ?? '光伏产业链', nodeType: '原材料', sortOrder: 0);
+
+    if (widget.node != null) {
+      _form = Map<String, dynamic>.from(widget.node!);
+      // Flatten grouped shares into flat list for editing
+      _form['global_shares'] = _loadSharesForEditing(widget.node!);
+      // Parse upstream_ids from either JSON string or List
+      _form['upstream_ids'] = _parseUpstreamIds(widget.node!['upstream_ids']);
+      // Ensure data_sources is a proper map
+      if (_form['data_sources'] is! Map<String, dynamic>) {
+        _form['data_sources'] = <String, String>{};
+      }
+    } else {
+      _form = <String, dynamic>{
+        'id': '',
+        'chain': widget.defaultChain ?? '光伏产业链',
+        'name': '',
+        'node_type': '原材料',
+        'description': '',
+        'global_shares': <Map<String, dynamic>>[],
+        'substitutes': <Map<String, dynamic>>[],
+        'upstream_ids': <String>[],
+        'data_sources': <String, String>{},
+        'sort_order': 0,
+      };
+    }
   }
 
-  List<ChainNodeData> get _sameChainNodes {
-    return widget.allNodes.where((n) => n.chain == _form.chain && n.id != _form.id).toList();
+  List<Map<String, dynamic>> _loadSharesForEditing(Map<String, dynamic> node) {
+    final raw = node['global_shares'];
+    if (raw is List) {
+      return (raw).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    final groups = _normalizeShares(raw);
+    final all = <Map<String, dynamic>>[];
+    for (final g in groups.values) {
+      for (final s in g) {
+        all.add(Map<String, dynamic>.from(s));
+      }
+    }
+    return all;
   }
+
+  List<Map<String, dynamic>> get _sameChainNodes {
+    return widget.allNodes.where((n) => n['chain'] == _form['chain'] && n['id'] != _form['id']).toList();
+  }
+
+  // ── helpers to get typed values from _form ──
+
+  List<Map<String, dynamic>> get _formShares => (_form['global_shares'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [];
+  List<Map<String, dynamic>> get _formSubs => (_form['substitutes'] as List<dynamic>?)?.cast<Map<String, dynamic>>() ?? [];
+  List<String> get _formUpstreamIds => (_form['upstream_ids'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+  Map<String, String> get _formSources => (_form['data_sources'] as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, v.toString())) ?? {};
 
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
-      final data = _form.toJson();
-      data['upstream_names'] = _sameChainNodes.where((n) => _form.upstreamIds.contains(n.id)).map((n) => n.name).toList();
-      await _api.saveChainNode(data, id: _isNew ? null : _form.id);
+      final data = Map<String, dynamic>.from(_form);
+      data['upstream_names'] = _sameChainNodes
+          .where((n) => _formUpstreamIds.contains(n['id'] as String?))
+          .map((n) => n['name'])
+          .toList();
+      await _api.saveChainNode(data, id: _isNew ? null : _form['id'] as String?);
       widget.onSaved();
     } catch (_) {
     } finally {
@@ -637,7 +481,7 @@ class _EditDialogState extends State<_EditDialog> {
   Future<void> _delete() async {
     if (_isNew) return;
     try {
-      await _api.deleteChainNode(_form.id);
+      await _api.deleteChainNode(_form['id'] as String);
       widget.onSaved();
     } catch (_) {}
   }
@@ -655,71 +499,67 @@ class _EditDialogState extends State<_EditDialog> {
   }
 
   void _addShare() {
-    setState(() { _form.globalShares = [..._form.globalShares, GlobalShare.empty()]; });
+    final shares = List<Map<String, dynamic>>.from(_formShares);
+    shares.add(<String, dynamic>{
+      'c': '', 'p': 0, 'p_export_global': 0, 'p_export_ratio': 0, 'p_export_national': 0,
+      'd': 0, 'd_import_global': 0, 'd_import_ratio': 0, 'd_import_national': 0,
+    });
+    setState(() { _form['global_shares'] = shares; });
   }
 
   void _updateShare(int idx, Map<String, dynamic> patch) {
-    setState(() {
-      final s = _form.globalShares[idx];
-      _form.globalShares[idx] = GlobalShare(
-        c: (patch['c'] as String?) ?? s.c,
-        p: (patch['p'] as double?) ?? s.p,
-        pExportGlobal: (patch['p_export_global'] as double?) ?? s.pExportGlobal,
-        pExportRatio: (patch['p_export_ratio'] as double?) ?? s.pExportRatio,
-        pExportNational: (patch['p_export_national'] as double?) ?? s.pExportNational,
-        d: (patch['d'] as double?) ?? s.d,
-        dImportGlobal: (patch['d_import_global'] as double?) ?? s.dImportGlobal,
-        dImportRatio: (patch['d_import_ratio'] as double?) ?? s.dImportRatio,
-        dImportNational: (patch['d_import_national'] as double?) ?? s.dImportNational,
-      );
-    });
+    final shares = List<Map<String, dynamic>>.from(_formShares);
+    shares[idx] = Map<String, dynamic>.from(shares[idx])..addAll(patch);
+    setState(() { _form['global_shares'] = shares; });
   }
 
   void _removeShare(int idx) {
-    setState(() { _form.globalShares = List.from(_form.globalShares)..removeAt(idx); });
+    final shares = List<Map<String, dynamic>>.from(_formShares)..removeAt(idx);
+    setState(() { _form['global_shares'] = shares; });
   }
 
   void _addSub() {
-    setState(() { _form.substitutes = [..._form.substitutes, Substitute.empty()]; });
+    final subs = List<Map<String, dynamic>>.from(_formSubs);
+    subs.add(<String, dynamic>{'node': '', 'maturity': '', 'trigger': '', 'advantage': '', 'bottleneck': ''});
+    setState(() { _form['substitutes'] = subs; });
   }
 
   void _updateSub(int idx, Map<String, String?> patch) {
-    setState(() {
-      final s = _form.substitutes[idx];
-      _form.substitutes[idx] = Substitute(
-        node: patch['node'] ?? s.node,
-        maturity: patch['maturity'] ?? s.maturity,
-        trigger: patch['trigger'] ?? s.trigger,
-        advantage: patch['advantage'] ?? s.advantage,
-        bottleneck: patch['bottleneck'] ?? s.bottleneck,
-      );
-    });
+    final subs = List<Map<String, dynamic>>.from(_formSubs);
+    final updated = Map<String, dynamic>.from(subs[idx]);
+    patch.forEach((k, v) { if (v != null) updated[k] = v; });
+    subs[idx] = updated;
+    setState(() { _form['substitutes'] = subs; });
   }
 
   void _removeSub(int idx) {
-    setState(() { _form.substitutes = List.from(_form.substitutes)..removeAt(idx); });
+    final subs = List<Map<String, dynamic>>.from(_formSubs)..removeAt(idx);
+    setState(() { _form['substitutes'] = subs; });
   }
 
   void _addSource() {
-    setState(() { _form.dataSources = Map.from(_form.dataSources)..[''] = ''; });
+    final sources = Map<String, String>.from(_formSources);
+    sources[''] = '';
+    setState(() { _form['data_sources'] = sources; });
   }
 
   void _updateSourceKey(String oldKey, String newKey) {
-    setState(() {
-      final val = _form.dataSources[oldKey] ?? '';
-      final map = Map<String, String>.from(_form.dataSources);
-      map.remove(oldKey);
-      map[newKey] = val;
-      _form.dataSources = map;
-    });
+    final sources = Map<String, String>.from(_formSources);
+    final val = sources.remove(oldKey) ?? '';
+    sources[newKey] = val;
+    setState(() { _form['data_sources'] = sources; });
   }
 
   void _updateSourceVal(String key, String val) {
-    setState(() { _form.dataSources = Map.from(_form.dataSources)..[key] = val; });
+    final sources = Map<String, String>.from(_formSources);
+    sources[key] = val;
+    setState(() { _form['data_sources'] = sources; });
   }
 
   void _removeSource(String key) {
-    setState(() { _form.dataSources = Map.from(_form.dataSources)..remove(key); });
+    final sources = Map<String, String>.from(_formSources);
+    sources.remove(key);
+    setState(() { _form['data_sources'] = sources; });
   }
 
   @override
@@ -736,7 +576,7 @@ class _EditDialogState extends State<_EditDialog> {
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFF2A2B30)))),
             child: Row(children: [
-              Text(_isNew ? '新建节点' : '编辑：${_form.name}',
+              Text(_isNew ? '新建节点' : '编辑：${_form['name'] ?? ''}',
                   style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
               const Spacer(),
               GestureDetector(
@@ -783,7 +623,7 @@ class _EditDialogState extends State<_EditDialog> {
                       builder: (ctx) => AlertDialog(
                         backgroundColor: const Color(0xFF141518),
                         title: const Text('确认删除', style: TextStyle(color: Colors.white, fontSize: 14)),
-                        content: Text('确认删除「${_form.name}」？此操作不可撤销。',
+                        content: Text('确认删除「${_form['name'] ?? ''}」？此操作不可撤销。',
                             style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 12)),
                         actions: [
                           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消', style: TextStyle(color: Color(0xFF9CA3AF)))),
@@ -850,6 +690,11 @@ class _EditDialogState extends State<_EditDialog> {
   }
 
   Widget _buildBasicTab() {
+    final formName = _form['name'] as String? ?? '';
+    final formChain = _form['chain'] as String? ?? '';
+    final formNodeType = _form['node_type'] as String? ?? '原材料';
+    final formDesc = _form['description'] as String? ?? '';
+
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -860,7 +705,7 @@ class _EditDialogState extends State<_EditDialog> {
             decoration: BoxDecoration(color: const Color(0xFF0B0C10), borderRadius: BorderRadius.circular(6), border: Border.all(color: const Color(0xFF2A2B30))),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
-                value: _form.chain,
+                value: formChain,
                 dropdownColor: const Color(0xFF141518),
                 style: const TextStyle(color: Color(0xFFE5E7EB), fontSize: 12),
                 isExpanded: true,
@@ -868,7 +713,7 @@ class _EditDialogState extends State<_EditDialog> {
                   return DropdownMenuItem(value: c, child: Text(c));
                 }).toList(),
                 onChanged: (v) {
-                  if (v != null) setState(() { _form.chain = v; _form.upstreamIds = []; });
+                  if (v != null) setState(() { _form['chain'] = v; _form['upstream_ids'] = <String>[]; });
                 },
               ),
             ),
@@ -883,12 +728,12 @@ class _EditDialogState extends State<_EditDialog> {
             decoration: BoxDecoration(color: const Color(0xFF0B0C10), borderRadius: BorderRadius.circular(6), border: Border.all(color: const Color(0xFF2A2B30))),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
-                value: _form.nodeType,
+                value: formNodeType,
                 dropdownColor: const Color(0xFF141518),
                 style: const TextStyle(color: Color(0xFFE5E7EB), fontSize: 12),
                 isExpanded: true,
                 items: _typeOptions.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
-                onChanged: (v) { if (v != null) setState(() => _form.nodeType = v); },
+                onChanged: (v) { if (v != null) setState(() => _form['node_type'] = v); },
               ),
             ),
           ),
@@ -898,8 +743,8 @@ class _EditDialogState extends State<_EditDialog> {
       const Text('名称', style: TextStyle(color: Color(0xFF6B7280), fontSize: 10, fontWeight: FontWeight.w500)),
       const SizedBox(height: 4),
       TextField(
-        controller: TextEditingController(text: _form.name),
-        onChanged: (v) => _form.name = v,
+        controller: TextEditingController(text: formName),
+        onChanged: (v) => _form['name'] = v,
         style: const TextStyle(color: Color(0xFFE5E7EB), fontSize: 12),
         decoration: InputDecoration(
           filled: true, fillColor: const Color(0xFF0B0C10),
@@ -913,8 +758,8 @@ class _EditDialogState extends State<_EditDialog> {
       const Text('描述', style: TextStyle(color: Color(0xFF6B7280), fontSize: 10, fontWeight: FontWeight.w500)),
       const SizedBox(height: 4),
       TextField(
-        controller: TextEditingController(text: _form.description),
-        onChanged: (v) => _form.description = v,
+        controller: TextEditingController(text: formDesc),
+        onChanged: (v) => _form['description'] = v,
         style: const TextStyle(color: Color(0xFFE5E7EB), fontSize: 12),
         decoration: InputDecoration(
           filled: true, fillColor: const Color(0xFF0B0C10),
@@ -928,15 +773,19 @@ class _EditDialogState extends State<_EditDialog> {
       const Text('上游节点（可多选）', style: TextStyle(color: Color(0xFF6B7280), fontSize: 10, fontWeight: FontWeight.w500)),
       const SizedBox(height: 6),
       Wrap(spacing: 6, runSpacing: 6, children: _sameChainNodes.map((n) {
-        final selected = _form.upstreamIds.contains(n.id);
+        final nId = n['id'] as String? ?? '';
+        final nName = n['name'] as String? ?? '';
+        final selected = _formUpstreamIds.contains(nId);
         return GestureDetector(
           onTap: () {
             setState(() {
+              final ids = List<String>.from(_formUpstreamIds);
               if (selected) {
-                _form.upstreamIds = List.from(_form.upstreamIds)..remove(n.id);
+                ids.remove(nId);
               } else {
-                _form.upstreamIds = [..._form.upstreamIds, n.id];
+                ids.add(nId);
               }
+              _form['upstream_ids'] = ids;
             });
           },
           child: Container(
@@ -946,7 +795,7 @@ class _EditDialogState extends State<_EditDialog> {
               borderRadius: BorderRadius.circular(4),
               border: Border.all(color: selected ? const Color(0xFFA855F7).withAlpha(102) : const Color(0xFF2A2B30)),
             ),
-            child: Text(n.name,
+            child: Text(nName,
                 style: TextStyle(color: selected ? const Color(0xFFA78BFA) : const Color(0xFF6B7280), fontSize: 10)),
           ),
         );
@@ -955,8 +804,9 @@ class _EditDialogState extends State<_EditDialog> {
   }
 
   Widget _buildSharesTab() {
+    final shares = _formShares;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      ..._form.globalShares.asMap().entries.map((entry) {
+      ...shares.asMap().entries.map((entry) {
         final idx = entry.key;
         final s = entry.value;
         return Container(
@@ -967,7 +817,7 @@ class _EditDialogState extends State<_EditDialog> {
             Row(children: [
               Expanded(
                 child: TextField(
-                  controller: TextEditingController(text: s.c),
+                  controller: TextEditingController(text: s['c'] as String? ?? ''),
                   onChanged: (v) => _updateShare(idx, {'c': v}),
                   style: const TextStyle(color: Color(0xFFE5E7EB), fontSize: 12),
                   decoration: const InputDecoration(hintText: '国家/地区', hintStyle: TextStyle(color: Color(0xFF6B7280), fontSize: 12), border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.zero),
@@ -978,17 +828,17 @@ class _EditDialogState extends State<_EditDialog> {
             const SizedBox(height: 8),
             const Text('生产侧', style: TextStyle(color: Color(0xFFFBBF24), fontSize: 9, fontWeight: FontWeight.w500)),
             const SizedBox(height: 4),
-            _shareFieldRow('全球产量', s.p, (v) => _updateShare(idx, {'p': v})),
-            _shareFieldRow('出口/全球出口', s.pExportGlobal, (v) => _updateShare(idx, {'p_export_global': v})),
-            _shareFieldRow('出口/产量', s.pExportRatio, (v) => _updateShare(idx, {'p_export_ratio': v})),
-            _shareFieldRow('占本国总出口', s.pExportNational, (v) => _updateShare(idx, {'p_export_national': v})),
+            _shareFieldRow('全球产量', (s['p'] as num?)?.toDouble() ?? 0, (v) => _updateShare(idx, {'p': v})),
+            _shareFieldRow('出口/全球出口', (s['p_export_global'] as num?)?.toDouble() ?? 0, (v) => _updateShare(idx, {'p_export_global': v})),
+            _shareFieldRow('出口/产量', (s['p_export_ratio'] as num?)?.toDouble() ?? 0, (v) => _updateShare(idx, {'p_export_ratio': v})),
+            _shareFieldRow('占本国总出口', (s['p_export_national'] as num?)?.toDouble() ?? 0, (v) => _updateShare(idx, {'p_export_national': v})),
             const SizedBox(height: 8),
             const Text('需求侧', style: TextStyle(color: Color(0xFF60A5FA), fontSize: 9, fontWeight: FontWeight.w500)),
             const SizedBox(height: 4),
-            _shareFieldRow('全球消费', s.d, (v) => _updateShare(idx, {'d': v})),
-            _shareFieldRow('进口/全球进口', s.dImportGlobal, (v) => _updateShare(idx, {'d_import_global': v})),
-            _shareFieldRow('进口/消费', s.dImportRatio, (v) => _updateShare(idx, {'d_import_ratio': v})),
-            _shareFieldRow('占本国总进口', s.dImportNational, (v) => _updateShare(idx, {'d_import_national': v})),
+            _shareFieldRow('全球消费', (s['d'] as num?)?.toDouble() ?? 0, (v) => _updateShare(idx, {'d': v})),
+            _shareFieldRow('进口/全球进口', (s['d_import_global'] as num?)?.toDouble() ?? 0, (v) => _updateShare(idx, {'d_import_global': v})),
+            _shareFieldRow('进口/消费', (s['d_import_ratio'] as num?)?.toDouble() ?? 0, (v) => _updateShare(idx, {'d_import_ratio': v})),
+            _shareFieldRow('占本国总进口', (s['d_import_national'] as num?)?.toDouble() ?? 0, (v) => _updateShare(idx, {'d_import_national': v})),
           ]),
         );
       }),
@@ -1028,8 +878,9 @@ class _EditDialogState extends State<_EditDialog> {
   }
 
   Widget _buildSubsTab() {
+    final subs = _formSubs;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      ..._form.substitutes.asMap().entries.map((entry) {
+      ...subs.asMap().entries.map((entry) {
         final idx = entry.key;
         final sub = entry.value;
         return Container(
@@ -1040,7 +891,7 @@ class _EditDialogState extends State<_EditDialog> {
             Row(children: [
               Expanded(
                 child: TextField(
-                  controller: TextEditingController(text: sub.node),
+                  controller: TextEditingController(text: sub['node'] as String? ?? ''),
                   onChanged: (v) => _updateSub(idx, {'node': v}),
                   style: const TextStyle(color: Color(0xFFE5E7EB), fontSize: 12),
                   decoration: const InputDecoration(hintText: '替代品名称', hintStyle: TextStyle(color: Color(0xFF6B7280), fontSize: 12), border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.zero),
@@ -1050,15 +901,15 @@ class _EditDialogState extends State<_EditDialog> {
             ]),
             const SizedBox(height: 8),
             Row(children: [
-              Expanded(child: _subFieldRow('成熟度', sub.maturity, (v) => _updateSub(idx, {'maturity': v}))),
+              Expanded(child: _subFieldRow('成熟度', sub['maturity'] as String? ?? '', (v) => _updateSub(idx, {'maturity': v}))),
               const SizedBox(width: 8),
-              Expanded(child: _subFieldRow('触发条件', sub.trigger, (v) => _updateSub(idx, {'trigger': v}))),
+              Expanded(child: _subFieldRow('触发条件', sub['trigger'] as String? ?? '', (v) => _updateSub(idx, {'trigger': v}))),
             ]),
             const SizedBox(height: 6),
             Row(children: [
-              Expanded(child: _subFieldRow('优势', sub.advantage, (v) => _updateSub(idx, {'advantage': v}))),
+              Expanded(child: _subFieldRow('优势', sub['advantage'] as String? ?? '', (v) => _updateSub(idx, {'advantage': v}))),
               const SizedBox(width: 8),
-              Expanded(child: _subFieldRow('瓶颈', sub.bottleneck, (v) => _updateSub(idx, {'bottleneck': v}))),
+              Expanded(child: _subFieldRow('瓶颈', sub['bottleneck'] as String? ?? '', (v) => _updateSub(idx, {'bottleneck': v}))),
             ]),
           ]),
         );
@@ -1092,19 +943,20 @@ class _EditDialogState extends State<_EditDialog> {
   }
 
   Widget _buildSourcesTab() {
-    final entries = _form.dataSources.entries.toList();
+    final sources = _formSources;
+    final entries = sources.entries.toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       const Text('标注每个数据指标的来源，方便追溯和下次更新。', style: TextStyle(color: Color(0xFF6B7280), fontSize: 10)),
       const SizedBox(height: 12),
       ...entries.asMap().entries.map((e) {
-        final entry = e.value;
+        final kv = e.value;
         return Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: Row(children: [
             Expanded(
               child: TextField(
-                controller: TextEditingController(text: entry.key),
-                onChanged: (v) => _updateSourceKey(entry.key, v),
+                controller: TextEditingController(text: kv.key),
+                onChanged: (v) => _updateSourceKey(kv.key, v),
                 style: const TextStyle(color: Color(0xFFE5E7EB), fontSize: 10),
                 decoration: InputDecoration(
                   hintText: '指标名', hintStyle: const TextStyle(color: Color(0xFF6B7280), fontSize: 10),
@@ -1118,8 +970,8 @@ class _EditDialogState extends State<_EditDialog> {
             Expanded(
               flex: 2,
               child: TextField(
-                controller: TextEditingController(text: entry.value),
-                onChanged: (v) => _updateSourceVal(entry.key, v),
+                controller: TextEditingController(text: kv.value),
+                onChanged: (v) => _updateSourceVal(kv.key, v),
                 style: const TextStyle(color: Color(0xFFE5E7EB), fontSize: 10),
                 decoration: InputDecoration(
                   hintText: '来源（如 USGS 2025）', hintStyle: const TextStyle(color: Color(0xFF6B7280), fontSize: 10),
@@ -1129,7 +981,7 @@ class _EditDialogState extends State<_EditDialog> {
                 ),
               ),
             ),
-            GestureDetector(onTap: () => _removeSource(entry.key), child: const Icon(Icons.close, size: 12, color: Color(0xFF6B7280))),
+            GestureDetector(onTap: () => _removeSource(kv.key), child: const Icon(Icons.close, size: 12, color: Color(0xFF6B7280))),
           ]),
         );
       }),
@@ -1209,7 +1061,7 @@ class _MergeFlowLegendChip extends StatelessWidget {
 }
 
 // ══════════════════════════════════════════════════════════════════════
-// IndustryChainsPage — main page
+// IndustryChainsPage — main page (raw Maps everywhere)
 // ══════════════════════════════════════════════════════════════════════
 
 class IndustryChainsPage extends StatefulWidget {
@@ -1222,16 +1074,16 @@ class IndustryChainsPage extends StatefulWidget {
 class _IndustryChainsPageState extends State<IndustryChainsPage> {
   final _api = ApiClient();
 
-  List<ChainNodeData> _nodes = [];
+  List<Map<String, dynamic>> _nodes = [];
   bool _loading = true;
   Map<String, String> _chainIconMap = {};
   Map<String, String> _chainFlowSummaryMap = {};
 
   // Hints
-  List<ChainHint> _hints = [];
+  List<Map<String, dynamic>> _hints = [];
 
   // Suggestions
-  List<ChainSuggestion> _suggestions = [];
+  List<Map<String, dynamic>> _suggestions = [];
   int _suggestionsCount = 0;
 
   // Overlap
@@ -1265,10 +1117,13 @@ class _IndustryChainsPageState extends State<IndustryChainsPage> {
       final results = await Future.wait([_api.getChainNodes(), _api.getChains()]);
       final nd = results[0];
       final ch = results[1];
+
+      // Parse nodes as raw Map<String, dynamic> — no typed classes
       final nodes = (nd['nodes'] as List<dynamic>?)
-              ?.map((e) => ChainNodeData.fromJson(e as Map<String, dynamic>))
+              ?.map((e) => e as Map<String, dynamic>)
               .toList() ??
           [];
+
       final iconMap = <String, String>{};
       final summaryMap = <String, String>{};
       (ch['chains'] as List<dynamic>?)?.forEach((c) {
@@ -1277,6 +1132,7 @@ class _IndustryChainsPageState extends State<IndustryChainsPage> {
         if (cm['icon'] != null) iconMap[name] = cm['icon'] as String;
         if (cm['flow_summary'] != null) summaryMap[name] = cm['flow_summary'] as String;
       });
+
       setState(() {
         _nodes = nodes;
         _chainIconMap = iconMap;
@@ -1292,7 +1148,7 @@ class _IndustryChainsPageState extends State<IndustryChainsPage> {
     try {
       final data = await _api.getChainHints(status: 'pending', limit: 50);
       final hints = (data['hints'] as List<dynamic>?)
-              ?.map((e) => ChainHint.fromJson(e as Map<String, dynamic>))
+              ?.map((e) => e as Map<String, dynamic>)
               .toList() ??
           [];
       setState(() => _hints = hints);
@@ -1305,7 +1161,7 @@ class _IndustryChainsPageState extends State<IndustryChainsPage> {
       final data = results[0];
       final cnt = results[1];
       final suggestions = (data['suggestions'] as List<dynamic>?)
-              ?.map((e) => ChainSuggestion.fromJson(e as Map<String, dynamic>))
+              ?.map((e) => e as Map<String, dynamic>)
               .toList() ??
           [];
       setState(() {
@@ -1330,12 +1186,12 @@ class _IndustryChainsPageState extends State<IndustryChainsPage> {
     final chainNodes = _chainsMap[chainName] ?? [];
     if (chainNodes.isEmpty) return;
     final refNode = chainNodes.firstWhere((n) {
-      final groups = _normalizeShares(n.globalShares);
+      final groups = _normalizeShares(n['global_shares']);
       return groups['production']!.isEmpty && groups['supply']!.isEmpty && groups['demand']!.isEmpty;
     }, orElse: () => chainNodes.first);
     setState(() => _collectingChain = chainName);
     try {
-      final d = await _api.collectChain(refNode.id);
+      final d = await _api.collectChain(refNode['id'] as String? ?? '');
       if (d['ok'] == true) _fetchData();
     } catch (_) {
     } finally {
@@ -1343,11 +1199,12 @@ class _IndustryChainsPageState extends State<IndustryChainsPage> {
     }
   }
 
-  Map<String, List<ChainNodeData>> get _chainsMap {
-    final map = <String, List<ChainNodeData>>{};
+  Map<String, List<Map<String, dynamic>>> get _chainsMap {
+    final map = <String, List<Map<String, dynamic>>>{};
     for (final n in _nodes) {
-      map.putIfAbsent(n.chain, () => []);
-      map[n.chain]!.add(n);
+      final chain = n['chain'] as String? ?? '';
+      map.putIfAbsent(chain, () => []);
+      map[chain]!.add(n);
     }
     return map;
   }
@@ -1395,7 +1252,7 @@ class _IndustryChainsPageState extends State<IndustryChainsPage> {
     );
   }
 
-  void _showEditDialog({ChainNodeData? node, String? defaultChain}) {
+  void _showEditDialog({Map<String, dynamic>? node, String? defaultChain}) {
     showDialog(
       context: context,
       builder: (ctx) => _EditDialog(
@@ -1821,17 +1678,26 @@ class _IndustryChainsPageState extends State<IndustryChainsPage> {
     );
   }
 
-  Widget _buildChainCard(String chainName, List<ChainNodeData> chainNodes) {
+  Widget _buildChainCard(String chainName, List<Map<String, dynamic>> chainNodes) {
     final typeCounts = <String, int>{};
     var totalCountries = 0;
     for (final n in chainNodes) {
-      typeCounts[n.nodeType] = (typeCounts[n.nodeType] ?? 0) + 1;
-      final groups = _normalizeShares(n.globalShares);
-      final names = <String>{
-        ...?groups['production']?.map((s) => s.c),
-        ...?groups['supply']?.map((s) => s.c),
-        ...?groups['demand']?.map((s) => s.c),
-      };
+      final nodeType = n['node_type'] as String? ?? '';
+      typeCounts[nodeType] = (typeCounts[nodeType] ?? 0) + 1;
+      final groups = _normalizeShares(n['global_shares']);
+      final names = <String>{};
+      for (final s in groups['production']!) {
+        final c = s['c'] as String? ?? '';
+        if (c.isNotEmpty) names.add(c);
+      }
+      for (final s in groups['supply']!) {
+        final c = s['c'] as String? ?? '';
+        if (c.isNotEmpty) names.add(c);
+      }
+      for (final s in groups['demand']!) {
+        final c = s['c'] as String? ?? '';
+        if (c.isNotEmpty) names.add(c);
+      }
       totalCountries += names.length;
     }
     final avgCountries = chainNodes.isNotEmpty ? (totalCountries / chainNodes.length).toStringAsFixed(1) : '0';
@@ -1926,6 +1792,15 @@ class _IndustryChainsPageState extends State<IndustryChainsPage> {
     }
     return Column(
       children: _suggestions.map((sug) {
+        final sugChainName = sug['chain_name'] as String? ?? '';
+        final sugConfidence = (sug['confidence'] as num?)?.toDouble() ?? 0;
+        final sugReason = sug['reason'] as String? ?? '';
+        final sugQuote = sug['source_quote'] as String? ?? '';
+        final sugNodesJson = (sug['nodes_json'] as List<dynamic>?)
+                ?.map((e) => e as Map<String, dynamic>)
+                .toList() ??
+            [];
+
         return Container(
           margin: const EdgeInsets.only(bottom: 16),
           decoration: BoxDecoration(color: const Color(0xFF141518), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFF2A2B30))),
@@ -1936,19 +1811,19 @@ class _IndustryChainsPageState extends State<IndustryChainsPage> {
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Row(children: [
-                      Text(sug.chainName,
+                      Text(sugChainName,
                           style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
                       const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(color: const Color(0xFF0B0C10), borderRadius: BorderRadius.circular(4)),
-                        child: Text('置信度 ${(sug.confidence * 100).toInt()}%',
+                        child: Text('置信度 ${(sugConfidence * 100).toInt()}%',
                             style: const TextStyle(color: Color(0xFF6B7280), fontSize: 11)),
                       ),
                     ]),
-                    if (sug.reason.isNotEmpty) ...[
+                    if (sugReason.isNotEmpty) ...[
                       const SizedBox(height: 6),
-                      Text(sug.reason, style: const TextStyle(color: Color(0xFF6B7280), fontSize: 11, height: 1.5)),
+                      Text(sugReason, style: const TextStyle(color: Color(0xFF6B7280), fontSize: 11, height: 1.5)),
                     ],
                   ]),
                 ),
@@ -1957,7 +1832,7 @@ class _IndustryChainsPageState extends State<IndustryChainsPage> {
                   GestureDetector(
                     onTap: () async {
                       try {
-                        await _api.dismissChainSuggestion(sug.id);
+                        await _api.dismissChainSuggestion(sug['id'] as String? ?? '');
                         _fetchSuggestions();
                       } catch (_) {}
                     },
@@ -1971,7 +1846,7 @@ class _IndustryChainsPageState extends State<IndustryChainsPage> {
                   GestureDetector(
                     onTap: () async {
                       try {
-                        final d = await _api.adoptChainSuggestion(sug.id);
+                        final d = await _api.adoptChainSuggestion(sug['id'] as String? ?? '');
                         if (d['ok'] == true) {
                           _fetchSuggestions();
                           _fetchData();
@@ -1991,54 +1866,56 @@ class _IndustryChainsPageState extends State<IndustryChainsPage> {
                   ),
                 ]),
               ]),
-              if (sug.sourceQuote.isNotEmpty) ...[
+              if (sugQuote.isNotEmpty) ...[
                 const SizedBox(height: 12),
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(color: const Color(0xFF0B0C10), borderRadius: BorderRadius.circular(8)),
-                  child: Text('"${sug.sourceQuote}"',
+                  child: Text('"$sugQuote"',
                       style: const TextStyle(color: Color(0xFF6B7280), fontSize: 11, fontStyle: FontStyle.italic)),
                 ),
               ],
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: sug.nodesJson.map((n) {
-                  final nType = n['node_type'] as String? ?? '';
-                  return Container(
-                    width: 180,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(color: const Color(0xFF0B0C10), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFF2A2B30))),
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Row(children: [
-                        Text(n['name'] as String? ?? '',
-                            style: const TextStyle(color: Color(0xFFE5E7EB), fontSize: 12, fontWeight: FontWeight.w500)),
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: _typeBgFor(nType),
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: _typeColorFor(nType).withAlpha(102)),
+              if (sugNodesJson.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: sugNodesJson.map((n) {
+                    final nType = n['node_type'] as String? ?? '';
+                    return Container(
+                      width: 180,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(color: const Color(0xFF0B0C10), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFF2A2B30))),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Row(children: [
+                          Text(n['name'] as String? ?? '',
+                              style: const TextStyle(color: Color(0xFFE5E7EB), fontSize: 12, fontWeight: FontWeight.w500)),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: _typeBgFor(nType),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: _typeColorFor(nType).withAlpha(102)),
+                            ),
+                            child: Text(nType, style: TextStyle(color: _typeColorFor(nType), fontSize: 9)),
                           ),
-                          child: Text(nType, style: TextStyle(color: _typeColorFor(nType), fontSize: 9)),
-                        ),
+                        ]),
+                        if (n['description'] != null) ...[
+                          const SizedBox(height: 4),
+                          Text(n['description'] as String? ?? '',
+                              style: const TextStyle(color: Color(0xFF6B7280), fontSize: 10)),
+                        ],
+                        if (n['initial_data'] != null) ...[
+                          const SizedBox(height: 4),
+                          Text('📊 ${n['initial_data']}', style: const TextStyle(color: Color(0xFF34D399), fontSize: 10)),
+                        ],
                       ]),
-                      if (n['description'] != null) ...[
-                        const SizedBox(height: 4),
-                        Text(n['description'] as String? ?? '',
-                            style: const TextStyle(color: Color(0xFF6B7280), fontSize: 10)),
-                      ],
-                      if (n['initial_data'] != null) ...[
-                        const SizedBox(height: 4),
-                        Text('📊 ${n['initial_data']}', style: const TextStyle(color: Color(0xFF34D399), fontSize: 10)),
-                      ],
-                    ]),
-                  );
-                }).toList(),
-              ),
+                    );
+                  }).toList(),
+                ),
+              ],
             ]),
           ),
         );

@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "1.0.69",
+      "date": "2026-06-25",
+      "title": "修复产业链数据解析 + 流向图渲染",
+      "sections": [
+        {"icon": "🐛", "label": "修复", "items": [
+          "修复产业链页面 global_shares 解析崩溃（API 返回 Map 但代码当 List 解析）",
+          "修复全景流向图 WebView 无法加载（ReactFlow ESM → vis-network CDN）",
+          "修复 upstream_ids JSON 字符串/List 双格式兼容"
+        ]}
+      ]
+    },
+    {
       "version": "1.0.68",
       "date": "2026-06-25",
       "title": "知识图谱 + 产业链模块桌面端实现",
