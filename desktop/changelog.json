@@ -1,6 +1,20 @@
 {
   "versions": [
     {
+      "version": "1.0.56",
+      "date": "2026-06-21",
+      "title": "列表行高缩小 + 弹窗黑屏修复",
+      "sections": [
+        {"icon": "🎨", "label": "UI", "items": [
+          "列表行高缩小（vertical 8→5），字体不变"
+        ]},
+        {"icon": "🐛", "label": "修复", "items": [
+          "弹窗关闭后黑屏 — showDialog 加 useRootNavigator: true",
+          "appcast 下载 URL 短版本号修复（v1.0.53/54/55 历史 URL 同步修正）"
+        ]}
+      ]
+    },
+    {
       "version": "1.0.55",
       "date": "2026-06-21",
       "title": "内容采集模块多项优化",

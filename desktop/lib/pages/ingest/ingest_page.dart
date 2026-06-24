@@ -540,7 +540,7 @@ class _IngestPageState extends State<IngestPage> {
                 onTap: () => setState(() => sel ? _selected.remove(id) : _selected.add(id)),
                 borderRadius: BorderRadius.circular(8),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
                   child: Row(children: [
                     Checkbox(
                       value: sel, onChanged: (_) => setState(() => sel ? _selected.remove(id) : _selected.add(id)),
@@ -552,7 +552,7 @@ class _IngestPageState extends State<IngestPage> {
                     Expanded(
                       child: GestureDetector(
                         onTap: () => _openDetail(id),
-                        child: Text(evt['title'] as String? ?? '', style: const TextStyle(color: AppTheme.textPrimary, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
+                        child: Text(evt['title'] as String? ?? '', style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -572,7 +572,7 @@ class _IngestPageState extends State<IngestPage> {
                     IconButton(
                       icon: const Icon(Icons.delete_outline, size: 16), color: AppTheme.textMuted,
                       onPressed: () {
-                        showDialog(context: context, builder: (_) => AlertDialog(
+                        showDialog(useRootNavigator: true, context: context, builder: (_) => AlertDialog(
                           backgroundColor: AppTheme.panel,
                           title: const Text('删除确认', style: TextStyle(color: AppTheme.textPrimary)),
                           content: const Text('确定要删除这条记录吗？', style: TextStyle(color: AppTheme.textSecondary)),
@@ -699,6 +699,7 @@ class _IngestPageState extends State<IngestPage> {
     final visibleDone = showAll ? done : done.take(5).toList();
 
     showDialog(
+      useRootNavigator: true,
       context: context,
       builder: (_) => StatefulBuilder(builder: (ctx, setDlgState) {
         return AlertDialog(
@@ -817,6 +818,7 @@ class _IngestPageState extends State<IngestPage> {
   // ── Douyin / File / Concept modals ──
   void _showDouyinModal() {
     showDialog(
+      useRootNavigator: true,
       context: context,
       builder: (_) => StatefulBuilder(builder: (ctx, setDlgState) {
         return AlertDialog(
@@ -872,6 +874,7 @@ class _IngestPageState extends State<IngestPage> {
 
   void _showFileModal() {
     showDialog(
+      useRootNavigator: true,
       context: context,
       builder: (_) => StatefulBuilder(builder: (ctx, setDlgState) {
         return AlertDialog(
@@ -941,6 +944,7 @@ class _IngestPageState extends State<IngestPage> {
 
   void _showConceptModal() {
     showDialog(
+      useRootNavigator: true,
       context: context,
       builder: (_) => StatefulBuilder(builder: (ctx, setDlgState) {
         return AlertDialog(
