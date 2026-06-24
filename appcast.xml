@@ -10,26 +10,26 @@
     <item>
       <title>知几桌面端 v1.0.62</title>
       <description><![CDATA[知几 v1.0.62 — 仪表盘用色/布局修正<br><br><b>▸ UI</b><br>&nbsp;&nbsp;&nbsp;&nbsp;7 天趋势柱状图颜色修正 — 对齐 web 端 purple-500 (#A855F7) / amber-500 (#F59E0B)<br>&nbsp;&nbsp;&nbsp;&nbsp;去掉事件列表上方「最近事件」标题（信息冗余）<br>&nbsp;&nbsp;&nbsp;&nbsp;顶部 5 个指标卡片宽度对齐热力图（固定宽 → Expanded 弹性填充）]]></description>
-      <pubDate>Wed, 24 Jun 2026 10:16:52 +0000</pubDate>
+      <pubDate>Wed, 24 Jun 2026 10:26:21 +0000</pubDate>
       <enclosure
         url="https://github.com/samuelhung/ki/releases/download/v1.0.62/zhiji_1.0.62.dmg"
         sparkle:version="63"
         sparkle:shortVersionString="1.0.62"
-        sparkle:edSignature="ty55J/xXwG/Q59zkYb3FgmwuN64aVSGjSLwRQQrMvGDdyuLRNIzrB2dI+DfxmKo0em9Pl08mZOI7O08ddFSbCg=="
-        length="21356252"
+        sparkle:edSignature="RB3/ikUQS/dyiOOQEbZFS7flss63J2MW+2rYCpNOT6sztdF2fDsj4yBJxAhjEQCEEZ8P1fkpGya0kV4lGB22BQ=="
+        length="21356681"
         type="application/octet-stream"
       />
     </item>
     <item>
       <title>知几桌面端 v1.0.61</title>
       <description><![CDATA[知几 v1.0.61 — 热力图/AI运转用色对齐 web 端<br><br><b>▸ UI</b><br>&nbsp;&nbsp;&nbsp;&nbsp;事件热力图颜色修正 — 绿色误用改为紫色（对齐 web 端 #A855F7）<br>&nbsp;&nbsp;&nbsp;&nbsp;AI 运转面板缓存命中/今日花费数值颜色对齐 web 端（绿色/黄色）<br>&nbsp;&nbsp;&nbsp;&nbsp;AI 运转面板今日调用图标改为 show_chart]]></description>
-      <pubDate>Wed, 24 Jun 2026 10:00:16 +0000</pubDate>
+      <pubDate>Wed, 24 Jun 2026 10:25:04 +0000</pubDate>
       <enclosure
         url="https://github.com/samuelhung/ki/releases/download/v1.0.61/zhiji_1.0.61.dmg"
         sparkle:version="62"
         sparkle:shortVersionString="1.0.61"
-        sparkle:edSignature="Cxw0KR2N8/XFOli/4mWZH0cA0i1cFFiR9ZMMCLxrNims5VWZIsOjX6yXOlar9ZJ2wWSQOIPH9VdaV07gpwd2Bw=="
-        length="21033520"
+        sparkle:edSignature="xbOXjeEkVOn9ikYrNO8cwattpwjKTYDtn6wj8fRw+lymyW628E4YPP8f6Wqds2bp5zv7KQTckT4QlV5YUWGQDQ=="
+        length="21357618"
         type="application/octet-stream"
       />
     </item>
