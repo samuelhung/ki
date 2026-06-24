@@ -284,7 +284,7 @@ def _generate_appcast_entry(version: str, dmg_path: Path) -> str | None:
     download_url = f"https://github.com/{GITHUB_REPO}/releases/download/v{version}/{dmg_name}"
     pub_date = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S %z")
 
-    release_notes = _generate_release_notes(version)
+    release_notes = _release_notes_plain(version)
 
     return f"""    <item>
       <title>知几桌面端 v{version}</title>
@@ -328,7 +328,7 @@ def _update_appcast(appcast_path: Path, entry: str) -> None:
 
 
 def _generate_release_notes(version: str) -> str:
-    """从 desktop/changelog.json 读取版本说明，生成 GitHub Release 正文。"""
+    """从 desktop/changelog.json 读取版本说明，生成 Markdown 正文（GitHub Release 用）。"""
     changelog_path = DESKTOP_DIR / "changelog.json"
     if not changelog_path.exists():
         return f"知几桌面端 v{version}"
@@ -352,6 +352,28 @@ def _generate_release_notes(version: str) -> str:
             lines.append(f"- DMG: `zhiji_{version}.dmg`")
             lines.append("- 自动更新: Sparkle 检测 appcast.xml → EdDSA 签名验证 → DMG 覆盖安装")
             return "\n".join(lines)
+    return f"知几桌面端 v{version}"
+
+
+def _release_notes_plain(version: str) -> str:
+    """生成纯文本版本说明（Sparkle appcast CDATA 用，无 markdown 语法）。"""
+    changelog_path = DESKTOP_DIR / "changelog.json"
+    if not changelog_path.exists():
+        return f"知几桌面端 v{version}"
+
+    data = json.loads(changelog_path.read_text())
+    for v in data.get("versions", []):
+        if v.get("version") == version:
+            title = v.get("title", "")
+            sections = v.get("sections", [])
+            lines = [f"知几 v{version} — {title}", ""]
+            for sec in sections:
+                label = sec.get("label", "")
+                lines.append(f"▸ {label}")
+                for item in sec.get("items", []):
+                    lines.append(f"    {item}")
+                lines.append("")
+            return "\n".join(lines).rstrip()
     return f"知几桌面端 v{version}"
 
 

@@ -577,8 +577,8 @@ class _IngestPageState extends State<IngestPage> {
                           title: const Text('删除确认', style: TextStyle(color: AppTheme.textPrimary)),
                           content: const Text('确定要删除这条记录吗？', style: TextStyle(color: AppTheme.textSecondary)),
                           actions: [
-                            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
-                            TextButton(onPressed: () { Navigator.of(context).pop(); _deleteEvent(id); }, child: const Text('删除', style: TextStyle(color: AppTheme.error))),
+                            TextButton(onPressed: () => Navigator.of(context, rootNavigator: true).pop(), child: const Text('取消')),
+                            TextButton(onPressed: () { Navigator.of(context, rootNavigator: true).pop(); _deleteEvent(id); }, child: const Text('删除', style: TextStyle(color: AppTheme.error))),
                           ],
                         ));
                       },
@@ -746,7 +746,7 @@ class _IngestPageState extends State<IngestPage> {
               ]),
             ),
           ),
-          actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('关闭', style: TextStyle(color: AppTheme.textMuted)))],
+          actions: [TextButton(onPressed: () => Navigator.of(context, rootNavigator: true).pop(), child: const Text('关闭', style: TextStyle(color: AppTheme.textMuted)))],
         );
       }),
     );
@@ -860,7 +860,7 @@ class _IngestPageState extends State<IngestPage> {
             ]),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消', style: TextStyle(color: AppTheme.textMuted))),
+            TextButton(onPressed: () => Navigator.of(context, rootNavigator: true).pop(), child: const Text('取消', style: TextStyle(color: AppTheme.textMuted))),
             FilledButton(
               onPressed: _dySubmitting ? null : () { _submitDouyin(); setDlgState(() {}); },
               style: FilledButton.styleFrom(backgroundColor: AppTheme.rose),
@@ -930,7 +930,7 @@ class _IngestPageState extends State<IngestPage> {
             ]),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消', style: TextStyle(color: AppTheme.textMuted))),
+            TextButton(onPressed: () => Navigator.of(context, rootNavigator: true).pop(), child: const Text('取消', style: TextStyle(color: AppTheme.textMuted))),
             FilledButton(
               onPressed: (_fileSubmitting || _selectedFilePath == null) ? null : () { _submitFile(); setDlgState(() {}); },
               style: FilledButton.styleFrom(backgroundColor: AppTheme.cyan),
@@ -999,7 +999,7 @@ class _IngestPageState extends State<IngestPage> {
             ]),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消', style: TextStyle(color: AppTheme.textMuted))),
+            TextButton(onPressed: () => Navigator.of(context, rootNavigator: true).pop(), child: const Text('取消', style: TextStyle(color: AppTheme.textMuted))),
             FilledButton(
               onPressed: (_conceptSubmitting || _conceptTitleCtrl.text.trim().isEmpty) ? null : _submitConcept,
               style: FilledButton.styleFrom(backgroundColor: AppTheme.emerald),

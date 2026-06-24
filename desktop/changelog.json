@@ -1,6 +1,19 @@
 {
   "versions": [
     {
+      "version": "1.0.57",
+      "date": "2026-06-21",
+      "title": "更新日志纯文本排版 + 弹窗黑屏彻底修复",
+      "sections": [
+        {"icon": "🎨", "label": "UI", "items": [
+          "Sparkle 更新日志改为纯文本排版（去除 markdown 符号）"
+        ]},
+        {"icon": "🐛", "label": "修复", "items": [
+          "弹窗关闭黑屏 — Navigator.pop 显式 rootNavigator: true"
+        ]}
+      ]
+    },
+    {
       "version": "1.0.56",
       "date": "2026-06-21",
       "title": "列表行高缩小 + 弹窗黑屏修复",
