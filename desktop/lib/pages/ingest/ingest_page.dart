@@ -396,24 +396,33 @@ class _IngestPageState extends State<IngestPage> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(32, 20, 32, 12),
       child: Row(children: [
-        const Icon(Icons.download, size: 32, color: AppTheme.purple),
+        const Icon(Icons.download, size: 28, color: AppTheme.purple),
         const SizedBox(width: 12),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             const Text('内容采集', style: TextStyle(color: AppTheme.textPrimary, fontSize: 22, fontWeight: FontWeight.w700)),
             const SizedBox(height: 2),
-            Row(children: [
-              Text('今天也是汲取智慧的一天', style: const TextStyle(color: AppTheme.textMuted, fontSize: 13)),
-              const SizedBox(width: 16),
-              _statChip('今日', _todaySubs, AppTheme.emerald),
-              const SizedBox(width: 8),
-              _statChip('处理中', _processing, AppTheme.amber),
-            ]),
+            const Text('今天也是汲取智慧的一天', style: TextStyle(color: AppTheme.textMuted, fontSize: 13)),
           ]),
         ),
         const SizedBox(width: 12),
-        _actionBtn('处理队列', Icons.list_alt, AppTheme.purple, () { _loadQueue(); _queueShowAllDone = false; _showQueueModal(); }),
-        const SizedBox(width: 6),
+        // Search
+        SizedBox(
+          width: 180, height: 32,
+          child: TextField(
+            controller: _searchCtrl,
+            style: const TextStyle(color: AppTheme.textPrimary, fontSize: 12),
+            decoration: InputDecoration(
+              hintText: '搜索...', hintStyle: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
+              prefixIcon: const Icon(Icons.search, size: 14, color: AppTheme.textMuted),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              filled: true, fillColor: AppTheme.panel,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: const BorderSide(color: AppTheme.border)),
+            ),
+            onChanged: _onSearch,
+          ),
+        ),
+        const SizedBox(width: 8),
         _actionBtn('抖音分享', Icons.music_note, AppTheme.rose, _showDouyinModal),
         const SizedBox(width: 6),
         _actionBtn('上传文件', Icons.upload_file, AppTheme.cyan, _showFileModal),
@@ -454,29 +463,12 @@ class _IngestPageState extends State<IngestPage> {
 
   Widget _buildTabs() {
     return SizedBox(
-      height: 44,
+      height: 56,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 24),
         children: [
           for (final t in _tabs) _tabBtn(t),
-          const SizedBox(width: 32),
-          // Search
-          SizedBox(
-            width: 180, height: 32,
-            child: TextField(
-              controller: _searchCtrl,
-              style: const TextStyle(color: AppTheme.textPrimary, fontSize: 12),
-              decoration: InputDecoration(
-                hintText: '搜索...', hintStyle: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
-                prefixIcon: const Icon(Icons.search, size: 14, color: AppTheme.textMuted),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                filled: true, fillColor: AppTheme.panel,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(6), borderSide: const BorderSide(color: AppTheme.border)),
-              ),
-              onChanged: _onSearch,
-            ),
-          ),
         ],
       ),
     );
@@ -495,7 +487,7 @@ class _IngestPageState extends State<IngestPage> {
     return GestureDetector(
       onTap: () => _onTabChanged(t),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         alignment: Alignment.center,
         decoration: BoxDecoration(
           border: Border(bottom: BorderSide(color: active ? AppTheme.accent : Colors.transparent, width: 2)),
@@ -548,7 +540,7 @@ class _IngestPageState extends State<IngestPage> {
                 onTap: () => setState(() => sel ? _selected.remove(id) : _selected.add(id)),
                 borderRadius: BorderRadius.circular(8),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
                   child: Row(children: [
                     Checkbox(
                       value: sel, onChanged: (_) => setState(() => sel ? _selected.remove(id) : _selected.add(id)),
@@ -560,7 +552,7 @@ class _IngestPageState extends State<IngestPage> {
                     Expanded(
                       child: GestureDetector(
                         onTap: () => _openDetail(id),
-                        child: Text(evt['title'] as String? ?? '', style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+                        child: Text(evt['title'] as String? ?? '', style: const TextStyle(color: AppTheme.textPrimary, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -585,8 +577,8 @@ class _IngestPageState extends State<IngestPage> {
                           title: const Text('删除确认', style: TextStyle(color: AppTheme.textPrimary)),
                           content: const Text('确定要删除这条记录吗？', style: TextStyle(color: AppTheme.textSecondary)),
                           actions: [
-                            TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
-                            TextButton(onPressed: () { Navigator.pop(context); _deleteEvent(id); }, child: const Text('删除', style: TextStyle(color: AppTheme.error))),
+                            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消')),
+                            TextButton(onPressed: () { Navigator.of(context).pop(); _deleteEvent(id); }, child: const Text('删除', style: TextStyle(color: AppTheme.error))),
                           ],
                         ));
                       },
@@ -753,7 +745,7 @@ class _IngestPageState extends State<IngestPage> {
               ]),
             ),
           ),
-          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('关闭', style: TextStyle(color: AppTheme.textMuted)))],
+          actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('关闭', style: TextStyle(color: AppTheme.textMuted)))],
         );
       }),
     );
@@ -866,7 +858,7 @@ class _IngestPageState extends State<IngestPage> {
             ]),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消', style: TextStyle(color: AppTheme.textMuted))),
+            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消', style: TextStyle(color: AppTheme.textMuted))),
             FilledButton(
               onPressed: _dySubmitting ? null : () { _submitDouyin(); setDlgState(() {}); },
               style: FilledButton.styleFrom(backgroundColor: AppTheme.rose),
@@ -935,7 +927,7 @@ class _IngestPageState extends State<IngestPage> {
             ]),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消', style: TextStyle(color: AppTheme.textMuted))),
+            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消', style: TextStyle(color: AppTheme.textMuted))),
             FilledButton(
               onPressed: (_fileSubmitting || _selectedFilePath == null) ? null : () { _submitFile(); setDlgState(() {}); },
               style: FilledButton.styleFrom(backgroundColor: AppTheme.cyan),
@@ -1003,7 +995,7 @@ class _IngestPageState extends State<IngestPage> {
             ]),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消', style: TextStyle(color: AppTheme.textMuted))),
+            TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('取消', style: TextStyle(color: AppTheme.textMuted))),
             FilledButton(
               onPressed: (_conceptSubmitting || _conceptTitleCtrl.text.trim().isEmpty) ? null : _submitConcept,
               style: FilledButton.styleFrom(backgroundColor: AppTheme.emerald),

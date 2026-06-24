@@ -16,6 +16,7 @@ import '../pages/industry_chains/industry_chains_page.dart';
 import '../pages/study/study_page.dart';
 import '../pages/study/study_detail_page.dart';
 import '../pages/toolbox/toolbox_page.dart';
+import '../pages/ingest/queue_page.dart';
 import '../pages/system_doc/system_doc_page.dart';
 import '../pages/system_settings/system_settings_page.dart';
 
@@ -100,6 +101,10 @@ final appRouter = GoRouter(
         GoRoute(
           path: '/tools',
           builder: (context, state) => const ToolboxPage(),
+        ),
+        GoRoute(
+          path: '/queue',
+          builder: (context, state) => const QueuePage(),
         ),
         GoRoute(
           path: '/system',

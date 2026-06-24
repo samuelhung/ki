@@ -280,18 +280,15 @@ def _generate_appcast_entry(version: str, dmg_path: Path) -> str | None:
     full_version = _read_full_version()  # "1.0.51+52"
     full_version_enc = full_version.replace("+", "%2B")
     build_number = full_version.split("+")[1] if "+" in full_version else "0"
-    download_url = f"https://github.com/{GITHUB_REPO}/releases/download/v{full_version_enc}/{dmg_name}"
+    # 下载 URL 用短版本号（GitHub Release tag 不含 build number）
+    download_url = f"https://github.com/{GITHUB_REPO}/releases/download/v{version}/{dmg_name}"
     pub_date = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S %z")
 
-    release_url = f"https://github.com/{GITHUB_REPO}/releases/tag/v{version}"
     release_notes = _generate_release_notes(version)
-    # 简短摘要（取前 200 字符），完整说明通过 releaseNotesLink 指向 GitHub
-    short_desc = release_notes[:200] + "..." if len(release_notes) > 200 else release_notes
 
     return f"""    <item>
       <title>知几桌面端 v{version}</title>
-      <description><![CDATA[{short_desc}]]></description>
-      <sparkle:releaseNotesLink>{release_url}</sparkle:releaseNotesLink>
+      <description><![CDATA[{release_notes}]]></description>
       <pubDate>{pub_date}</pubDate>
       <enclosure
         url="{download_url}"

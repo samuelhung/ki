@@ -141,6 +141,11 @@ class _AppShellState extends ConsumerState<AppShell> {
                   child: Column(
                     children: [
                       _NavButton(
+                        item: const _NavItem('/queue', Icons.list_alt, AppTheme.purple, '处理队列'),
+                        isActive: location == '/queue',
+                      ),
+                      const SizedBox(height: 4),
+                      _NavButton(
                         item: const _NavItem('/settings', Icons.settings, AppTheme.textMuted, '系统设置'),
                         isActive: location == '/settings',
                       ),
