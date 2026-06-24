@@ -299,12 +299,24 @@ def _generate_appcast_entry(version: str, dmg_path: Path) -> str | None:
 
 
 def _update_appcast(appcast_path: Path, entry: str) -> None:
-    """将新 item 插入 appcast.xml — 在已有 items 之前（</link> 之后）。"""
+    """将新 item 插入 appcast.xml — 移除同版本旧条目后在 </link> 后插入。"""
     if not appcast_path.exists():
         print(f"⚠️  appcast.xml 不存在: {appcast_path}")
         return
 
     content = appcast_path.read_text()
+
+    # 提取新条目的 shortVersionString 用于去重
+    ver_match = re.search(r'sparkle:shortVersionString="([^"]+)"', entry)
+    if ver_match:
+        new_ver = ver_match.group(1)
+        # 移除已有同版本 <item>...</item> 块
+        pattern = re.compile(
+            r'\n    <item>.*?sparkle:shortVersionString="' + re.escape(new_ver) + r'".*?</item>',
+            re.DOTALL,
+        )
+        content = pattern.sub("", content)
+
     # 在 channel 元数据后、第一个 <item> 前插入
     marker = "</link>"
     new_content = content.replace(marker, f"{marker}\n{entry}", 1)
@@ -355,6 +367,13 @@ def main():
     if not args.skip_build:
         if not build_flutter():
             sys.exit(1)
+        # 签名 .app（Sparkle 要求证书签名，不能用 ad-hoc）
+        print("🔐 签名 .app: Zhiji")
+        subprocess.run(
+            ["codesign", "--deep", "--force", "--sign", "Zhiji", str(FLUTTER_APP)],
+            capture_output=True, check=True, timeout=60,
+        )
+        print("✅ .app 签名完成")
     elif not APP_BINARY.exists():
         sys.exit(f"❌ 编译产物不存在: {APP_BINARY}")
     else:
@@ -366,6 +385,14 @@ def main():
 
     # 3. 打包 DMG
     dmg_path = build_dmg(version)
+
+    # 签名 DMG
+    print("🔐 签名 DMG: Zhiji")
+    subprocess.run(
+        ["codesign", "--force", "--sign", "Zhiji", str(dmg_path)],
+        capture_output=True, check=True, timeout=30,
+    )
+    print("✅ DMG 签名完成")
 
     # 4. 生成增量补丁
     patches = generate_patches(version, app_hash)
