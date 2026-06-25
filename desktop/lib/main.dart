@@ -90,8 +90,21 @@ class _ZhijiShellState extends State<ZhijiShell> with TrayListener, WindowListen
       windowManager.addListener(this);
     }
     _urlController.text = _backendUrl;
-    _checkBackend();
-    _healthTimer = Timer.periodic(const Duration(seconds: 15), (_) => _checkBackend());
+    // 首次启动（无配置文件）→ 跳过健康检查，直接进连接设置页
+    if (_hasConfig()) {
+      _checkBackend();
+      _healthTimer = Timer.periodic(const Duration(seconds: 15), (_) => _checkBackend());
+    } else {
+      setState(() { _checking = false; });
+    }
+  }
+
+  bool _hasConfig() {
+    try {
+      return _configFile.existsSync();
+    } catch (_) {
+      return false;
+    }
   }
 
   @override
