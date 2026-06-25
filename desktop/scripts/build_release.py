@@ -178,7 +178,8 @@ def build_release():
     print(f"   版本: {full_ver}")
     print(f"   DMG:  {dmg_path.name} ({dmg_size_mb:.1f} MB)")
     print(f"   Appcast: appcast.xml")
-    print(f"\n   上传 {dmg_path.name} + appcast.xml 至 GitHub Release {tag}")
+    print(f"\n   上传 {dmg_path.name} 至 GitHub Release {tag}")
+    print(f"   appcast.xml 由后端内网分发 (10.8.0.105:9120/releases/)，不上传 GitHub")
 
 
 if __name__ == "__main__":
