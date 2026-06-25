@@ -50,7 +50,14 @@ void main() async {
     await windowManager.setPreventClose(true);
     await windowManager.show();
 
-    await trayManager.setIcon('assets/icon.png');
+    // 托盘: 用 app bundle 内图标，不存在则跳过不崩溃
+    try {
+      final execDir = io.File(io.Platform.resolvedExecutable).parent.parent.path;
+      final iconPath = '$execDir/Resources/AppIcon.icns';
+      if (io.File(iconPath).existsSync()) {
+        await trayManager.setIcon(iconPath);
+      }
+    } catch (_) {}
     await trayManager.setToolTip('知几');
     await trayManager.setContextMenu(Menu(items: [
       MenuItem(key: 'show', label: '显示知几'),

@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "1.1.2",
+      "date": "2026-06-25",
+      "title": "修复托盘图标导致启动崩溃（黑屏根因）",
+      "sections": [
+        {"icon": "🐛", "label": "修复", "items": [
+          "修复托盘图标路径不存在导致 main() 异常崩溃（MacBook Air 黑屏根因）",
+          "托盘图标改用 app bundle 内 AppIcon.icns，不存在则静默跳过",
+          "托盘设置包裹 try-catch，防止启动阶段崩溃"
+        ]}
+      ]
+    },
+    {
       "version": "1.1.1",
       "date": "2026-06-25",
       "title": "修复 MacBook Air 黑屏 + 回退 webview_flutter",
