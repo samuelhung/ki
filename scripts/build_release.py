@@ -144,8 +144,9 @@ def _generate_appcast_entry(version: str, dmg_path: Path) -> str | None:
     full_version = _read_full_version()  # "1.0.51+52"
     full_version_enc = full_version.replace("+", "%2B")
     build_number = full_version.split("+")[1] if "+" in full_version else "0"
-    # 下载 URL 改为后端内网地址（GitHub 从中国下载太慢，21MB 需 7 分钟 → Sparkle 超时）
-    download_url = f"{BACKEND_DMG_URL}/{dmg_name}"
+    # GitHub Release 下载 URL
+    tag = f"v{full_version}"
+    download_url = f"https://github.com/{GITHUB_REPO}/releases/download/{tag.replace('+', '%2B')}/{dmg_name}"
     pub_date = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S %z")
 
     release_notes = _release_notes_plain(version)

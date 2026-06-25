@@ -12,7 +12,7 @@
       <description><![CDATA[知几 v1.1.0 — Flutter 桌面壳 + 全 WebView 架构<br><br><b>▸ 新功能</b><br>&nbsp;&nbsp;&nbsp;&nbsp;架构重构：Flutter 桌面壳 + 全 WebView，消除 14 页双端维护<br>&nbsp;&nbsp;&nbsp;&nbsp;Web 前端 Curtain Wipe 页面过场动画<br>&nbsp;&nbsp;&nbsp;&nbsp;launchd 托管后端，开机自启 + 崩溃自动重启<br>&nbsp;&nbsp;&nbsp;&nbsp;托盘最小化管理，关闭窗口不退出<br><br><b>▸ 构建</b><br>&nbsp;&nbsp;&nbsp;&nbsp;清理 33 个原生页面 Dart 文件（净删 18,375 行）<br>&nbsp;&nbsp;&nbsp;&nbsp;WebView 引擎 flutter_inappwebview 替代原生组件]]></description>
       <pubDate>Wed, 25 Jun 2026 03:16:50 +0000</pubDate>
       <enclosure
-        url="http://10.8.0.105:9120/releases/zhiji_1.1.0.dmg"
+        url="https://github.com/samuelhung/ki/releases/download/v1.1.0%2B72/zhiji_1.1.0.dmg"
         sparkle:version="72"
         sparkle:shortVersionString="1.1.0"
         sparkle:edSignature="oRIoNeg+JMoWS9H+dVMivG4eNYb1NxzsN/kL3744VNBiO4iklBN/L76yVoJq6sTPzT0+dBgBrmzEdmRKshl0Cw=="
