@@ -50,7 +50,6 @@ void main() async {
     await windowManager.setPreventClose(true);
     await windowManager.show();
 
-    // 托盘: 用 app bundle 内图标，不存在则跳过不崩溃
     try {
       final execDir = io.File(io.Platform.resolvedExecutable).parent.parent.path;
       final iconPath = '$execDir/Resources/AppIcon.icns';
@@ -134,7 +133,6 @@ class _ZhijiShellState extends State<ZhijiShell> with TrayListener, WindowListen
   Future<void> _applyUrl() async {
     final url = _urlController.text.trim();
     if (url.isEmpty) return;
-    // 确保有协议前缀
     final fixed = url.startsWith('http') ? url : 'http://$url';
     _saveBackendUrl(fixed);
     _backendUrl = fixed;
@@ -169,12 +167,11 @@ class _ZhijiShellState extends State<ZhijiShell> with TrayListener, WindowListen
   @override
   void onWindowClose() => windowManager.hide();
 
-  // ── WebView ──
+  // ── WebView (macOS: 不调 setBackgroundColor，避免 setOpaque bug) ──
   void _initWebView() {
     late final WebViewController ctrl;
     ctrl = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(const Color(0xFF0B0C10))
       ..setNavigationDelegate(NavigationDelegate(
         onNavigationRequest: (request) {
           final uri = Uri.tryParse(request.url);
@@ -218,7 +215,6 @@ class _ZhijiShellState extends State<ZhijiShell> with TrayListener, WindowListen
   }
 
   Widget _buildBody() {
-    // 加载中
     if (_checking) {
       return Container(
         color: const Color(0xFF0B0C10),
@@ -247,13 +243,11 @@ class _ZhijiShellState extends State<ZhijiShell> with TrayListener, WindowListen
       );
     }
 
-    // 后端在线 → WebView
     if (_backendOnline) {
       if (_webCtrl == null) _initWebView();
       return WebViewWidget(controller: _webCtrl!);
     }
 
-    // 后端离线 → 连接设置界面
     return _offlineScreen();
   }
 
@@ -276,7 +270,6 @@ class _ZhijiShellState extends State<ZhijiShell> with TrayListener, WindowListen
                 style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 14),
               ),
               const SizedBox(height: 32),
-              // 修改后端地址
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
