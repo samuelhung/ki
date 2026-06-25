@@ -8,6 +8,19 @@
         <language>zh</language>
         <link>https://github.com/samuelhung/ki/releases</link>
     <item>
+      <title>知几桌面端 v1.1.1</title>
+      <description><![CDATA[知几 v1.1.1 — 修复 MacBook Air 黑屏 + 回退 webview_flutter<br><br><b>▸ 修复</b><br>&nbsp;&nbsp;&nbsp;&nbsp;修复 MacBook Air 打开黑屏（WebView 平台视图遮挡 Flutter UI）<br>&nbsp;&nbsp;&nbsp;&nbsp;后端离线时展示连接设置界面（修改地址、重试、启动本机后端）<br>&nbsp;&nbsp;&nbsp;&nbsp;Info.plist 添加 NSAppTransportSecurity 例外，允许本地 HTTP 明文连接<br><br><b>▸ 构建</b><br>&nbsp;&nbsp;&nbsp;&nbsp;WebView 引擎回退: flutter_inappwebview → webview_flutter（macOS 兼容性更好）]]></description>
+      <pubDate>Thu, 25 Jun 2026 03:45:44 +0000</pubDate>
+      <enclosure
+        url="https://github.com/samuelhung/ki/releases/download/v1.1.1%2B73/zhiji_1.1.1.dmg"
+        sparkle:version="73"
+        sparkle:shortVersionString="1.1.1"
+        sparkle:edSignature="afVq0ZYce5UAsDBP2GvE8ObbOYP3Gy8rHsH3MU7NkaU2KodKmTeYbnsJUQsMTZgxhCwTgJEchUX363LRjk3qCA=="
+        length="19724255"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>知几桌面端 v1.1.0</title>
       <description><![CDATA[知几 v1.1.0 — Flutter 桌面壳 + 全 WebView 架构<br><br><b>▸ 新功能</b><br>&nbsp;&nbsp;&nbsp;&nbsp;架构重构：Flutter 桌面壳 + 全 WebView，消除 14 页双端维护<br>&nbsp;&nbsp;&nbsp;&nbsp;Web 前端 Curtain Wipe 页面过场动画<br>&nbsp;&nbsp;&nbsp;&nbsp;launchd 托管后端，开机自启 + 崩溃自动重启<br>&nbsp;&nbsp;&nbsp;&nbsp;托盘最小化管理，关闭窗口不退出<br><br><b>▸ 构建</b><br>&nbsp;&nbsp;&nbsp;&nbsp;清理 33 个原生页面 Dart 文件（净删 18,375 行）<br>&nbsp;&nbsp;&nbsp;&nbsp;WebView 引擎 flutter_inappwebview 替代原生组件]]></description>
       <pubDate>Wed, 25 Jun 2026 03:16:50 +0000</pubDate>

@@ -1,6 +1,21 @@
 {
   "versions": [
     {
+      "version": "1.1.1",
+      "date": "2026-06-25",
+      "title": "修复 MacBook Air 黑屏 + 回退 webview_flutter",
+      "sections": [
+        {"icon": "🐛", "label": "修复", "items": [
+          "修复 MacBook Air 打开黑屏（WebView 平台视图遮挡 Flutter UI）",
+          "后端离线时展示连接设置界面（修改地址、重试、启动本机后端）",
+          "Info.plist 添加 NSAppTransportSecurity 例外，允许本地 HTTP 明文连接"
+        ]},
+        {"icon": "🔨", "label": "构建", "items": [
+          "WebView 引擎回退: flutter_inappwebview → webview_flutter（macOS 兼容性更好）"
+        ]}
+      ]
+    },
+    {
       "version": "1.1.0",
       "date": "2026-06-25",
       "title": "架构重构: Flutter 桌面壳 + 全 WebView 内容",

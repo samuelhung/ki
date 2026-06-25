@@ -1,66 +1,80 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io' as io;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-const _backendUrl = 'http://127.0.0.1:9120';
-const _healthUrl = '$_backendUrl/api/health';
+// ── 默认后端地址 + config 文件 ──
+const _defaultBackendUrl = 'http://127.0.0.1:9120';
+final _configFile = io.File('${io.Platform.environment['HOME']}/.zhiji/config.json');
 
+String _loadBackendUrl() {
+  try {
+    if (_configFile.existsSync()) {
+      final data = jsonDecode(_configFile.readAsStringSync()) as Map<String, dynamic>;
+      final url = data['backend_url'] as String?;
+      if (url != null && url.isNotEmpty) return url;
+    }
+  } catch (_) {}
+  return _defaultBackendUrl;
+}
+
+void _saveBackendUrl(String url) {
+  _configFile.parent.createSync(recursive: true);
+  var data = <String, dynamic>{};
+  try {
+    if (_configFile.existsSync()) {
+      data = jsonDecode(_configFile.readAsStringSync()) as Map<String, dynamic>;
+    }
+  } catch (_) {}
+  data['backend_url'] = url;
+  _configFile.writeAsStringSync(jsonEncode(data));
+}
+
+// ── App 入口 ──
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   if (!kIsWeb) {
     await windowManager.ensureInitialized();
-
     const minSize = Size(1440, 700);
     await windowManager.setMinimumSize(minSize);
     await windowManager.setSize(const Size(1440, 900));
     await windowManager.center();
     await windowManager.setTitle('知几');
-
-    // 关闭按钮 → 隐藏到托盘
     await windowManager.setPreventClose(true);
-
     await windowManager.show();
 
-    // 托盘
     await trayManager.setIcon('assets/icon.png');
     await trayManager.setToolTip('知几');
-    final menu = Menu(
-      items: [
-        MenuItem(
-          key: 'show',
-          label: '显示知几',
-        ),
-        MenuItem(
-          key: 'quit',
-          label: '退出知几',
-        ),
-      ],
-    );
-    await trayManager.setContextMenu(menu);
+    await trayManager.setContextMenu(Menu(items: [
+      MenuItem(key: 'show', label: '显示知几'),
+      MenuItem(key: 'quit', label: '退出知几'),
+    ]));
   }
 
   runApp(const ZhijiShell());
 }
 
+// ── Shell Widget ──
 class ZhijiShell extends StatefulWidget {
   const ZhijiShell({super.key});
-
   @override
   State<ZhijiShell> createState() => _ZhijiShellState();
 }
 
 class _ZhijiShellState extends State<ZhijiShell> with TrayListener, WindowListener {
-  InAppWebViewController? _webView;
+  WebViewController? _webCtrl;
+  String _backendUrl = _loadBackendUrl();
   bool _backendOnline = false;
   bool _checking = true;
   Timer? _healthTimer;
+  final _urlController = TextEditingController();
 
   @override
   void initState() {
@@ -69,6 +83,7 @@ class _ZhijiShellState extends State<ZhijiShell> with TrayListener, WindowListen
       trayManager.addListener(this);
       windowManager.addListener(this);
     }
+    _urlController.text = _backendUrl;
     _checkBackend();
     _healthTimer = Timer.periodic(const Duration(seconds: 15), (_) => _checkBackend());
   }
@@ -76,6 +91,7 @@ class _ZhijiShellState extends State<ZhijiShell> with TrayListener, WindowListen
   @override
   void dispose() {
     _healthTimer?.cancel();
+    _urlController.dispose();
     if (!kIsWeb) {
       trayManager.removeListener(this);
       windowManager.removeListener(this);
@@ -83,22 +99,19 @@ class _ZhijiShellState extends State<ZhijiShell> with TrayListener, WindowListen
     super.dispose();
   }
 
-  // ---- 后端健康检查 ----
+  // ── 后端健康检查 ──
   Future<void> _checkBackend() async {
+    final healthUrl = '$_backendUrl/api/health';
     try {
       final client = io.HttpClient();
       client.connectionTimeout = const Duration(seconds: 3);
-      final req = await client.getUrl(Uri.parse(_healthUrl));
+      final req = await client.getUrl(Uri.parse(healthUrl));
       final resp = await req.close().timeout(const Duration(seconds: 3));
       final online = resp.statusCode == 200;
-      if (mounted) {
-        setState(() { _backendOnline = online; _checking = false; });
-      }
+      if (mounted) setState(() { _backendOnline = online; _checking = false; });
       client.close();
     } catch (_) {
-      if (mounted) {
-        setState(() { _backendOnline = false; _checking = false; });
-      }
+      if (mounted) setState(() { _backendOnline = false; _checking = false; });
     }
   }
 
@@ -111,18 +124,32 @@ class _ZhijiShellState extends State<ZhijiShell> with TrayListener, WindowListen
     } catch (_) {}
   }
 
-  // ---- 托盘事件 ----
+  Future<void> _applyUrl() async {
+    final url = _urlController.text.trim();
+    if (url.isEmpty) return;
+    // 确保有协议前缀
+    final fixed = url.startsWith('http') ? url : 'http://$url';
+    _saveBackendUrl(fixed);
+    _backendUrl = fixed;
+    _webCtrl = null;
+    setState(() { _checking = true; });
+    await _checkBackend();
+    if (_backendOnline) {
+      _initWebView();
+      setState(() {});
+    }
+  }
+
+  // ── 托盘 ──
   @override
-  void onTrayMenuItemClick(MenuItem menuItem) {
-    switch (menuItem.key) {
+  void onTrayMenuItemClick(MenuItem item) {
+    switch (item.key) {
       case 'show':
         windowManager.show();
         windowManager.focus();
-        break;
       case 'quit':
         trayManager.destroy();
         if (!kIsWeb) windowManager.destroy();
-        break;
     }
   }
 
@@ -132,24 +159,41 @@ class _ZhijiShellState extends State<ZhijiShell> with TrayListener, WindowListen
     windowManager.focus();
   }
 
-  // ---- 窗口事件 ----
   @override
-  void onWindowClose() {
-    // 最小化到托盘而不是退出
-    windowManager.hide();
-  }
+  void onWindowClose() => windowManager.hide();
 
-  // ---- WebView 创建 ----
-  InAppWebViewSettings get _webViewSettings => InAppWebViewSettings(
-    javaScriptEnabled: true,
-    domStorageEnabled: true,
-    allowsInlineMediaPlayback: true,
-    mediaPlaybackRequiresUserGesture: false,
-    useShouldOverrideUrlLoading: true,
-    // 允许文件访问（拖放导入用）
-    allowFileAccessFromFileURLs: true,
-    allowUniversalAccessFromFileURLs: true,
-  );
+  // ── WebView ──
+  void _initWebView() {
+    late final WebViewController ctrl;
+    ctrl = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(const Color(0xFF0B0C10))
+      ..setNavigationDelegate(NavigationDelegate(
+        onNavigationRequest: (request) {
+          final uri = Uri.tryParse(request.url);
+          if (uri == null) return NavigationDecision.navigate;
+          if (uri.host != '127.0.0.1' &&
+              uri.host != 'localhost' &&
+              !uri.host.startsWith('10.8.') &&
+              (uri.scheme == 'http' || uri.scheme == 'https')) {
+            launchUrl(uri);
+            return NavigationDecision.prevent;
+          }
+          return NavigationDecision.navigate;
+        },
+        onPageFinished: (_) {
+          ctrl.runJavaScript('window.__zhijiBackendStatus = true;');
+        },
+      ))
+      ..addJavaScriptChannel('zhiji_openUrl',
+        onMessageReceived: (msg) {
+          final uri = Uri.tryParse(msg.message);
+          if (uri != null) launchUrl(uri);
+        },
+      )
+      ..loadRequest(Uri.parse(_backendUrl));
+    _webCtrl = ctrl;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -161,128 +205,167 @@ class _ZhijiShellState extends State<ZhijiShell> with TrayListener, WindowListen
         scaffoldBackgroundColor: const Color(0xFF0B0C10),
       ),
       home: Scaffold(
-        body: Stack(
-          children: [
-            // ---- WebView 内容 ----
-            Positioned.fill(
-              child: InAppWebView(
-                initialUrlRequest: URLRequest(url: WebUri(_backendUrl)),
-                initialSettings: _webViewSettings,
-                onWebViewCreated: (controller) {
-                  _webView = controller;
+        body: _buildBody(),
+      ),
+    );
+  }
 
-                  // JS Bridge: 注册 handler 供 Web 前端调用
-                  controller.addJavaScriptHandler(
-                    handlerName: 'openUrl',
-                    callback: (args) {
-                      if (args.isNotEmpty) {
-                        launchUrl(Uri.parse(args[0].toString()));
-                      }
-                    },
-                  );
-                },
-                onLoadStop: (controller, url) async {
-                  // 注入后端状态
-                  controller.evaluateJavascript(
-                    source: 'window.__zhijiBackendStatus = $_backendOnline;',
-                  );
-                },
-                shouldOverrideUrlLoading: (controller, navigationAction) async {
-                  final uri = navigationAction.request.url;
-                  if (uri != null) {
-                    final scheme = uri.scheme;
-                    // 拦截外部链接
-                    if (scheme == 'mailto' || scheme == 'tel') {
-                      final launched = await launchUrl(uri);
-                      return NavigationActionPolicy.CANCEL;
-                    }
-                    // 拦截 http/https 外部域（非本地、非 VPN）
-                    if ((scheme == 'http' || scheme == 'https') &&
-                        uri.host != '127.0.0.1' &&
-                        uri.host != 'localhost' &&
-                        !uri.host.startsWith('10.8.')) {
-                      await launchUrl(uri);
-                      return NavigationActionPolicy.CANCEL;
-                    }
-                  }
-                  return NavigationActionPolicy.ALLOW;
-                },
-              ),
-            ),
-
-            // ---- 后端离线提示 ----
-            if (!_checking && !_backendOnline)
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: Container(
-                  color: const Color(0xE6D97706),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.wifi_off, size: 14, color: Colors.white),
-                      const SizedBox(width: 8),
-                      const Text(
-                        '后端未连接 — 部分功能不可用',
-                        style: TextStyle(color: Colors.white, fontSize: 12),
-                      ),
-                      const SizedBox(width: 12),
-                      GestureDetector(
-                        onTap: _startBackend,
-                        child: const Text(
-                          '启动',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            decoration: TextDecoration.underline,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+  Widget _buildBody() {
+    // 加载中
+    if (_checking) {
+      return Container(
+        color: const Color(0xFF0B0C10),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('知几', style: TextStyle(
+                color: Colors.white, fontSize: 28, fontWeight: FontWeight.w600, letterSpacing: 4,
+              )),
+              const SizedBox(height: 16),
+              const SizedBox(
+                width: 24, height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation(Color(0xFFA78BFA)),
                 ),
               ),
+              const SizedBox(height: 16),
+              Text('正在连接 $_backendUrl ...',
+                style: const TextStyle(color: Color(0xFF6B7280), fontSize: 13),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
 
-            // ---- 启动加载 ----
-            if (_checking)
-              const Positioned.fill(
-                child: ColoredBox(
-                  color: Color(0xFF0B0C10),
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
+    // 后端在线 → WebView
+    if (_backendOnline) {
+      if (_webCtrl == null) _initWebView();
+      return WebViewWidget(controller: _webCtrl!);
+    }
+
+    // 后端离线 → 连接设置界面
+    return _offlineScreen();
+  }
+
+  Widget _offlineScreen() {
+    return Container(
+      color: const Color(0xFF0B0C10),
+      child: Center(
+        child: SizedBox(
+          width: 460,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.cloud_off, size: 56, color: Color(0xFF6B7280)),
+              const SizedBox(height: 24),
+              const Text('无法连接到知几后端',
+                style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              Text('当前后端地址: $_backendUrl',
+                style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 14),
+              ),
+              const SizedBox(height: 32),
+              // 修改后端地址
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1F2937),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFF374151)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('后端地址',
+                      style: TextStyle(color: Color(0xFFD1D5DB), fontSize: 13, fontWeight: FontWeight.w500),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
                       children: [
-                        Text(
-                          '知几',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 28,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 4,
+                        Expanded(
+                          child: TextField(
+                            controller: _urlController,
+                            style: const TextStyle(color: Colors.white, fontSize: 14),
+                            decoration: InputDecoration(
+                              hintText: 'http://127.0.0.1:9120',
+                              hintStyle: const TextStyle(color: Color(0xFF4B5563)),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              filled: true,
+                              fillColor: const Color(0xFF111827),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(color: Color(0xFF374151)),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(color: Color(0xFF374151)),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                borderSide: const BorderSide(color: Color(0xFFA78BFA)),
+                              ),
+                            ),
+                            onSubmitted: (_) => _applyUrl(),
                           ),
                         ),
-                        SizedBox(height: 12),
+                        const SizedBox(width: 10),
                         SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation(Color(0xFFA78BFA)),
+                          height: 42,
+                          child: ElevatedButton(
+                            onPressed: _applyUrl,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFA78BFA),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            child: const Text('连接', style: TextStyle(fontWeight: FontWeight.w600)),
                           ),
-                        ),
-                        SizedBox(height: 16),
-                        Text(
-                          '正在连接后端...',
-                          style: TextStyle(color: Color(0xFF6B7280), fontSize: 13),
                         ),
                       ],
                     ),
-                  ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'MacBook Pro 后端地址: http://10.8.0.105:9120',
+                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                    ),
+                  ],
                 ),
               ),
-          ],
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _startBackend,
+                    icon: const Icon(Icons.play_arrow, size: 18),
+                    label: const Text('启动本机后端'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFD1D5DB),
+                      side: const BorderSide(color: Color(0xFF374151)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  OutlinedButton.icon(
+                    onPressed: _checkBackend,
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('重试'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFD1D5DB),
+                      side: const BorderSide(color: Color(0xFF374151)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

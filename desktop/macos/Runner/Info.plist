@@ -40,5 +40,10 @@
 	<true/>
 	<key>SUPublicEDKey</key>
 	<string>u66TezJI8HPRq6X/rJntJx9VOgfDhJ54pt3/quqm6W8=</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 </dict>
 </plist>
