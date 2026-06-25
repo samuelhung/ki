@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useCurtain } from '../CurtainContext';
 import { Layers, Lightbulb, Loader2, ExternalLink, Search, Zap, Plus, AlertTriangle, Check, PenTool, ArrowRight, RefreshCw } from 'lucide-react';
 import Modal from '../components/Modal';
 
@@ -41,6 +42,7 @@ type DiscoveryMode = 'choose' | 'global_stage1' | 'global_stage2' | 'topic_input
 
 export default function Series() {
   const navigate = useNavigate();
+  const { navigateWithCurtain } = useCurtain();
   const [series, setSeries] = useState<SeriesItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -754,7 +756,7 @@ export default function Series() {
             <div className="flex gap-2">
               <button
                 onClick={() => {
-                  if (manualCreatedId) navigate(`/series/${manualCreatedId}`);
+                  if (manualCreatedId) navigateWithCurtain(`/series/${manualCreatedId}`);
                 }}
                 className="flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300"
               >
@@ -859,7 +861,7 @@ export default function Series() {
           {series.map(s => (
             <div key={s.id} className="bg-[#141518] border border-[#2A2B30] rounded-xl overflow-hidden">
               <button
-                onClick={() => navigate(`/series/${s.id}`)}
+                onClick={() => navigateWithCurtain(`/series/${s.id}`)}
                 className="w-full flex items-center justify-between p-4 text-left hover:bg-[#1A1B20] transition-colors group"
               >
                 <div className="flex-1 min-w-0">

@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Routes, Route, Outlet } from 'react-router-dom';
-import { Wifi, WifiOff, Upload, X } from 'lucide-react';
+import { Routes, Route, Outlet, useLocation } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { Wifi, WifiOff, Upload } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import BottomTabBar from './components/BottomTabBar';
 import MobileHeader from './components/MobileHeader';
 import ErrorBoundary from './components/ErrorBoundary';
 import { EventCacheProvider } from './components/EventCache';
+import { CurtainProvider, useCurtain } from './CurtainContext';
 import Dashboard from './pages/Dashboard';
 import Ingest from './pages/Ingest';
 import Events from './pages/Events';
@@ -28,7 +30,33 @@ import IndustryChains from './pages/IndustryChains';
 import IndustryFlow from './pages/IndustryFlow';
 import { getBackendUrl } from './main';
 
+function CurtainOverlay() {
+  const { curtainPhase, onAnimationComplete } = useCurtain();
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 pointer-events-none"
+      style={{ background: '#0B0C10' }}
+      initial={{ x: '100%' }}
+      animate={{
+        x: curtainPhase === 'idle'
+          ? '100%'
+          : curtainPhase === 'covering'
+          ? 0
+          : '-100%'
+      }}
+      transition={{
+        duration: 0.35,
+        ease: [0.4, 0, 0.2, 1]
+      }}
+      onAnimationComplete={onAnimationComplete}
+    />
+  );
+}
+
 function Layout() {
+  const location = useLocation();
+
   // ---- Offline detection ----
   const [isOnline, setIsOnline] = useState(true);
   const [offlineSince, setOfflineSince] = useState<number | null>(null);
@@ -123,74 +151,80 @@ function Layout() {
   }, []);
 
   return (
-    <div
-      className="h-screen w-full bg-[#0B0C10] overflow-hidden font-sans relative"
-      onDragEnter={handleDragEnter}
-      onDragLeave={handleDragLeave}
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
-    >
-      {/* Offline banner */}
-      {!isOnline && (
-        <div className="absolute top-0 left-0 right-0 z-50 bg-amber-600/90 text-white text-xs px-4 py-1.5 flex items-center justify-center gap-2">
-          <WifiOff size={12} />
-          <span>后端未连接 — 部分功能不可用</span>
-          <button
-            onClick={() => window.location.reload()}
-            className="underline hover:text-amber-200"
-          >
-            重试
-          </button>
-        </div>
-      )}
+    <CurtainProvider>
+      <div
+        className="h-screen w-full bg-[#0B0C10] overflow-hidden font-sans relative"
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+      >
+        {/* Offline banner */}
+        {!isOnline && (
+          <div className="absolute top-0 left-0 right-0 z-50 bg-amber-600/90 text-white text-xs px-4 py-1.5 flex items-center justify-center gap-2">
+            <WifiOff size={12} />
+            <span>后端未连接 — 部分功能不可用</span>
+            <button
+              onClick={() => window.location.reload()}
+              className="underline hover:text-amber-200"
+            >
+              重试
+            </button>
+          </div>
+        )}
 
-      {/* Drag-drop overlay */}
-      {dragOver && (
-        <div className="absolute inset-0 z-40 bg-purple-600/20 border-2 border-dashed border-purple-400 rounded-lg flex items-center justify-center pointer-events-none">
-          <div className="text-center">
-            <Upload size={48} className="text-purple-400 mx-auto mb-2" />
-            <p className="text-purple-300 text-lg font-medium">拖放文件以导入</p>
-            <p className="text-purple-400/60 text-sm">支持音视频、文档、图片</p>
+        {/* Drag-drop overlay */}
+        {dragOver && (
+          <div className="absolute inset-0 z-40 bg-purple-600/20 border-2 border-dashed border-purple-400 rounded-lg flex items-center justify-center pointer-events-none">
+            <div className="text-center">
+              <Upload size={48} className="text-purple-400 mx-auto mb-2" />
+              <p className="text-purple-300 text-lg font-medium">拖放文件以导入</p>
+              <p className="text-purple-400/60 text-sm">支持音视频、文档、图片</p>
+            </div>
+          </div>
+        )}
+
+        {/* Uploading indicator */}
+        {uploading.length > 0 && (
+          <div className="absolute bottom-4 right-4 z-50 bg-gray-900/90 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-300 max-w-xs">
+            <div className="flex items-center gap-2 mb-1">
+              <Upload size={12} className="text-purple-400" />
+              <span>导入中 ({uploading.length})</span>
+            </div>
+            {uploading.slice(0, 3).map((name, i) => (
+              <div key={i} className="text-gray-500 truncate">{name}</div>
+            ))}
+            {uploading.length > 3 && <div className="text-gray-500">...</div>}
+          </div>
+        )}
+
+        {/* Desktop layout */}
+        <div className="hidden md:flex h-full">
+          <Sidebar />
+          <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+            <div className="flex-1 overflow-auto custom-scrollbar">
+              <ErrorBoundary>
+                <Outlet />
+              </ErrorBoundary>
+            </div>
           </div>
         </div>
-      )}
 
-      {/* Uploading indicator */}
-      {uploading.length > 0 && (
-        <div className="absolute bottom-4 right-4 z-50 bg-gray-900/90 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-300 max-w-xs">
-          <div className="flex items-center gap-2 mb-1">
-            <Upload size={12} className="text-purple-400" />
-            <span>导入中 ({uploading.length})</span>
-          </div>
-          {uploading.slice(0, 3).map((name, i) => (
-            <div key={i} className="text-gray-500 truncate">{name}</div>
-          ))}
-          {uploading.length > 3 && <div className="text-gray-500">...</div>}
-        </div>
-      )}
-
-      {/* Desktop layout */}
-      <div className="hidden md:flex h-full">
-        <Sidebar />
-        <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+        {/* Mobile layout */}
+        <div className="md:hidden flex flex-col h-full">
+          <MobileHeader />
           <div className="flex-1 overflow-auto custom-scrollbar">
             <ErrorBoundary>
               <Outlet />
             </ErrorBoundary>
           </div>
+          <BottomTabBar />
         </div>
+
+        {/* Curtain overlay for Wipe transition */}
+        <CurtainOverlay />
       </div>
-      {/* Mobile layout */}
-      <div className="md:hidden flex flex-col h-full">
-        <MobileHeader />
-        <div className="flex-1 overflow-auto custom-scrollbar">
-          <ErrorBoundary>
-            <Outlet />
-          </ErrorBoundary>
-        </div>
-        <BottomTabBar />
-      </div>
-    </div>
+    </CurtainProvider>
   );
 }
 
@@ -219,6 +253,8 @@ export default function App() {
           <Route path="toolbox" element={<Toolbox />} />
           <Route path="industry-chains" element={<IndustryChains />} />
           <Route path="industry-flow" element={<IndustryFlow />} />
+          <Route path="chains" element={<IndustryChains />} />
+          <Route path="tools" element={<Toolbox />} />
         </Route>
       </Routes>
     </EventCacheProvider>

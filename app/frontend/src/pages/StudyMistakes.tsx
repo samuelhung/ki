@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useCurtain } from '../CurtainContext';
 import { ArrowLeft, Loader2, AlertTriangle } from 'lucide-react';
 import { formatTimeBeijing } from '../utils';
 
@@ -18,6 +19,7 @@ const SUBJECTS = ['全部', '语文', '数学', '英语'];
 
 export default function StudyMistakes() {
   const navigate = useNavigate();
+  const { navigateWithCurtain } = useCurtain();
   const [items, setItems] = useState<MistakeItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [subject, setSubject] = useState('全部');
@@ -134,7 +136,7 @@ export default function StudyMistakes() {
                       {items.map(item => (
                         <tr
                           key={item.id}
-                          onClick={() => navigate(`/study/${item.id}`)}
+                          onClick={() => navigateWithCurtain(`/study/${item.id}`)}
                           className="border-b border-[#2A2B30] last:border-b-0 hover:bg-[#1A1B20] cursor-pointer transition-colors"
                         >
                           <td className="py-3 px-4">

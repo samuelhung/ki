@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useCurtain } from '../CurtainContext';
 import { BookOpen, Loader2, Plus, Search, Trash2, Upload, X } from 'lucide-react';
 import { formatTimeBeijing } from '../utils';
 
@@ -25,6 +26,7 @@ const CORRECT_COLORS: Record<number, string> = { 1: 'text-emerald-400', 0: 'text
 
 export default function Study() {
   const navigate = useNavigate();
+  const { navigateWithCurtain } = useCurtain();
   const [items, setItems] = useState<StudyItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [subject, setSubject] = useState('全部');
@@ -271,7 +273,7 @@ export default function Study() {
                   {filtered.map(item => (
                     <tr
                       key={item.id}
-                      onClick={() => navigate(`/study/${item.id}`)}
+                      onClick={() => navigateWithCurtain(`/study/${item.id}`)}
                       className="border-b border-[#2A2B30] last:border-b-0 hover:bg-[#1A1B20] cursor-pointer transition-colors"
                     >
                       <td className="py-3 px-3 text-center">

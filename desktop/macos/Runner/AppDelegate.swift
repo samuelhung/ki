@@ -247,8 +247,9 @@ class AppDelegate: FlutterAppDelegate {
 
         super.applicationDidFinishLaunching(notification)
     }
+    // 托盘模式：关闭窗口不退出应用
     override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        return true
+        return false
     }
 
     override func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {

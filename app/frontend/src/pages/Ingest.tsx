@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useCurtain } from '../CurtainContext';
 import { Upload, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Loader2, Trash2, Search, Maximize2, Download, Globe, Coins, Brain, Telescope, Zap, X, List, RotateCcw } from 'lucide-react';
 import MetricCard from '../components/MetricCard';
 import Modal from '../components/Modal';
@@ -65,6 +66,7 @@ export default function Ingest() {
   const [briefingLoading, setBriefingLoading] = useState(false);
   const [bpExpanded, setBpExpanded] = useState<Set<string>>(new Set());
   const navigate = useNavigate();
+  const { navigateWithCurtain } = useCurtain();
   const [modalType, setModalType] = useState<'douyin' | 'file' | 'concept' | 'queue' | null>(null);
   const [douyinText, setDouyinText] = useState('');
   const [douyinTopic, setDouyinTopic] = useState('');
@@ -324,7 +326,7 @@ export default function Ingest() {
   }
 
   function openDetail(eventId: string) {
-    navigate(`/events/${eventId}`);
+    navigateWithCurtain(`/events/${eventId}`);
   }
 
   function openModal(type: 'douyin' | 'file' | 'concept') {

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useCurtain } from '../CurtainContext';
 import { Trash2, X, ChevronLeft, ChevronRight, Lightbulb, Search, Maximize2, Globe, Coins, Brain, Telescope } from 'lucide-react';
 import EmptyState from '../components/EmptyState';
 import Checkbox from '../components/Checkbox';
@@ -51,6 +52,7 @@ function topicBadgeClass(topic: string): string {
 
 export default function Brainstorm() {
   const navigate = useNavigate();
+  const { navigateWithCurtain } = useCurtain();
   const [questions, setQuestions] = useState<BrainstormQuestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -289,7 +291,7 @@ export default function Brainstorm() {
                         {formatTimeBeijing(q.created_at)}
                       </div>
                       <div className="col-span-1 flex justify-center gap-0.5" onClick={e => e.stopPropagation()}>
-                        <button onClick={() => navigate(`/brainstorm/${q.id}`)}
+                        <button onClick={() => navigateWithCurtain(`/brainstorm/${q.id}`)}
                           className="p-1.5 rounded text-gray-500 hover:text-purple-400 hover:bg-[#2A2B30] transition-colors"
                           title="查看详情">
                           <Maximize2 size={15} />
@@ -304,7 +306,7 @@ export default function Brainstorm() {
                     {/* 手机行 — 紧凑列表 */}
                     <div
                       className="md:hidden flex items-center gap-3 px-4 py-3 hover:bg-[#1A1B20] border-b border-[#2A2B30] last:border-b-0 cursor-pointer"
-                      onClick={() => navigate(`/brainstorm/${q.id}`)}
+                      onClick={() => navigateWithCurtain(`/brainstorm/${q.id}`)}
                     >
                       <div className="flex-1 min-w-0">
                         <div className="text-sm text-gray-200 truncate">{q.question}</div>
