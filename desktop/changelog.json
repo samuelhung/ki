@@ -1,6 +1,28 @@
 {
   "versions": [
     {
+      "version": "1.1.0",
+      "date": "2026-06-25",
+      "title": "架构重构: Flutter 桌面壳 + 全 WebView 内容",
+      "sections": [
+        {"icon": "🎨", "label": "架构", "items": [
+          "桌面端从 33 个原生 Flutter 页面重写为纯 WebView 壳（~240 行），消除双端维护",
+          "引擎切换: webview_flutter → flutter_inappwebview，支持 JS Bridge 双向通信",
+          "新增托盘模式: 关闭窗口 → 隐藏到托盘，后端独立运行不受影响",
+          "启动时自动健康检查后端，断连显示黄色提示条 + 一键启动按钮"
+        ]},
+        {"icon": "✨", "label": "新增", "items": [
+          "前端: Curtain Wipe 过场动画（遮罩滑入→切路由→滑出），列表↔详情统一体验",
+          "后端 launchd 托管: com.zhiji.backend，开机自启 + 崩溃 5 秒自动重启",
+          "部署脚本: desktop/deploy/com.zhiji.backend.plist"
+        ]},
+        {"icon": "🗑️", "label": "删除", "items": [
+          "14 个原生 Flutter 页面 + 路由 + 主题 + Shell → 全部由 React Web 前端接管",
+          "移除 8 个不再需要的依赖包 (go_router, riverpod, dio, markdown 等)"
+        ]}
+      ]
+    },
+    {
       "version": "1.0.70",
       "date": "2026-06-25",
       "title": "修复 Sparkle 更新失败 — 内网后端分发 + 签名修复",

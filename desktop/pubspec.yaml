@@ -1,7 +1,7 @@
 name: zhiji_desktop
 description: "知几 — 知识情报中心桌面端 (WebView 壳)"
 publish_to: 'none'
-version: 1.0.70+71
+version: 1.1.0+72
 
 environment:
   sdk: ^3.12.2
