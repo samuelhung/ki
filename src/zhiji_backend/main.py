@@ -185,7 +185,15 @@ INGEST_ROOT.mkdir(parents=True, exist_ok=True)
 app.mount("/ingest", StaticFiles(directory=str(INGEST_ROOT)), name="ingest")
 
 RELEASES_DIR.mkdir(parents=True, exist_ok=True)
-app.mount("/releases", StaticFiles(directory=str(RELEASES_DIR)), name="releases")
+# Use direct route to avoid conflict with root SPA mount (html=True intercepts everything)
+@app.get("/releases/{filename:path}")
+async def serve_release(filename: str):
+    file_path = RELEASES_DIR / filename
+    if not file_path.exists() or not file_path.is_file():
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"error": "not found"}, status_code=404)
+    from fastapi.responses import FileResponse
+    return FileResponse(file_path)
 
 if _HAS_FRONTEND:
     app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
