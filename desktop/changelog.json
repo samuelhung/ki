@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "1.3.4",
+      "date": "2026-06-26",
+      "title": "强制刷新 Flutter WebView 中的 Web 前端缓存",
+      "sections": [
+        {"icon": "🐛", "label": "修复", "items": [
+          "修复安装新版后 WebView 仍复用旧首页/旧 JS，导致系统说明继续显示 v1.8.12 和 Tauri invoke 报错",
+          "Flutter 壳创建 WebView 时先清理 WKWebView 缓存与 localStorage，再加载后端 Web 前端",
+          "WebView 加载 URL 自动追加 desktop_version 和 cache_bust 参数，强制重新获取当前后端页面"
+        ]}
+      ]
+    },
+    {
       "version": "1.3.3",
       "date": "2026-06-26",
       "title": "修复 WebView 缓存导致旧前端继续运行",

@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 // ── 默认后端地址 + config 文件 ──
 const _defaultBackendUrl = 'http://127.0.0.1:9120';
+const _desktopVersion = '1.3.4';
 final _configFile = io.File('${io.Platform.environment['HOME']}/.zhiji/config.json');
 
 String _loadBackendUrl() {
@@ -181,6 +182,14 @@ class _ZhijiShellState extends State<ZhijiShell> with TrayListener, WindowListen
   @override
   void onWindowClose() => windowManager.hide();
 
+  Uri _webViewUri() {
+    final uri = Uri.parse(_backendUrl);
+    final params = Map<String, String>.from(uri.queryParameters)
+      ..['desktop_version'] = _desktopVersion
+      ..['cache_bust'] = DateTime.now().millisecondsSinceEpoch.toString();
+    return uri.replace(queryParameters: params);
+  }
+
   // ── WebView (macOS: 不调 setBackgroundColor，避免 setOpaque bug) ──
   void _initWebView() {
     late final WebViewController ctrl;
@@ -215,9 +224,15 @@ class _ZhijiShellState extends State<ZhijiShell> with TrayListener, WindowListen
             await _sparkleChannel.invokeMethod('checkForUpdates');
           } catch (_) {}
         },
-      )
-      ..loadRequest(Uri.parse(_backendUrl));
+      );
     _webCtrl = ctrl;
+    () async {
+      try {
+        await ctrl.clearCache();
+        await ctrl.clearLocalStorage();
+      } catch (_) {}
+      await ctrl.loadRequest(_webViewUri());
+    }();
   }
 
   @override
