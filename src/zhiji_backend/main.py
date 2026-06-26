@@ -153,7 +153,13 @@ async def spa_fallback(request: Request, call_next):
     Only active when frontend dist exists (dev/browser mode)."""
     response = await call_next(request)
     if _HAS_FRONTEND and response.status_code == 404 and not request.url.path.startswith("/api"):
-        return FileResponse(FRONTEND_DIST / "index.html")
+        response = FileResponse(FRONTEND_DIST / "index.html")
+    if _HAS_FRONTEND and not request.url.path.startswith("/api"):
+        path = request.url.path
+        if path in ("", "/") or path.endswith((".html", ".js", ".css")):
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
     return response
 
 

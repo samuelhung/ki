@@ -8,6 +8,19 @@
         <language>zh</language>
         <link>https://github.com/samuelhung/ki/releases</link>
     <item>
+      <title>知几桌面端 v1.3.3</title>
+      <description><![CDATA[知几 v1.3.3 — 修复 WebView 缓存导致旧前端继续运行<br><br><b>▸ 修复</b><br>&nbsp;&nbsp;&nbsp;&nbsp;修复安装新版后系统说明仍显示 v1.8.12、检查更新仍触发 Tauri 报错的问题<br>&nbsp;&nbsp;&nbsp;&nbsp;前端构建产物文件名加入版本号，避免 WKWebView 复用旧 JS 缓存<br>&nbsp;&nbsp;&nbsp;&nbsp;版本显示同步为 1.3.3，确保系统说明、侧边栏和 about 页一致]]></description>
+      <pubDate>Fri, 26 Jun 2026 03:17:25 +0000</pubDate>
+      <enclosure
+        url="https://github.com/samuelhung/ki/releases/download/v1.3.3%2B78/zhiji_1.3.3.dmg"
+        sparkle:version="78"
+        sparkle:shortVersionString="1.3.3"
+        sparkle:edSignature="hjP8fV1MO5lgVjhCSq/1rYSMI1CzDEzBZqgHO9BXK7E5anYu/PjSOxEHXvBbq3sQRdqYbARgRhukVasMj81BDQ=="
+        length="19722975"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>知几桌面端 v1.3.2</title>
       <description><![CDATA[知几 v1.3.2 — 修复 Flutter 桌面壳检查更新按钮<br><br><b>▸ 修复</b><br>&nbsp;&nbsp;&nbsp;&nbsp;修复系统说明页点击检查更新时报错 undefined is not an object (evaluating 'window.__TAURI_INTERNALS__.invoke')<br>&nbsp;&nbsp;&nbsp;&nbsp;移除前端残留 Tauri updater 调用，改为 Flutter WebView JS Bridge 触发 Sparkle 原生更新检查<br>&nbsp;&nbsp;&nbsp;&nbsp;检查更新由 Sparkle 原生弹窗接管，避免前端误显示 Tauri 下载进度<br><br><b>▸ 说明</b><br>&nbsp;&nbsp;&nbsp;&nbsp;前端显示版本与桌面端 pubspec.yaml 同步为 1.3.2]]></description>
       <pubDate>Fri, 26 Jun 2026 02:59:00 +0000</pubDate>
