@@ -1,6 +1,21 @@
 {
   "versions": [
     {
+      "version": "1.3.2",
+      "date": "2026-06-26",
+      "title": "修复 Flutter 桌面壳检查更新按钮",
+      "sections": [
+        {"icon": "🐛", "label": "修复", "items": [
+          "修复系统说明页点击检查更新时报错 undefined is not an object (evaluating 'window.__TAURI_INTERNALS__.invoke')",
+          "移除前端残留 Tauri updater 调用，改为 Flutter WebView JS Bridge 触发 Sparkle 原生更新检查",
+          "检查更新由 Sparkle 原生弹窗接管，避免前端误显示 Tauri 下载进度"
+        ]},
+        {"icon": "📚", "label": "说明", "items": [
+          "前端显示版本与桌面端 pubspec.yaml 同步为 1.3.2"
+        ]}
+      ]
+    },
+    {
       "version": "1.3.0",
       "date": "2026-06-29",
       "title": "修复 macOS WebView 灰屏——webview_flutter_wkwebview setOpaque 崩溃",

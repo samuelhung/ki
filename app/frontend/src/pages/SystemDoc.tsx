@@ -1,19 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { BookOpen, FileText, RefreshCw, Search, Database, HardDrive, Table, Download, CheckCircle, AlertCircle, Upload } from 'lucide-react';
+import { BookOpen, FileText, RefreshCw, Search, Database, HardDrive, Table, CheckCircle, AlertCircle, Upload } from 'lucide-react';
 
 import { APP_VERSION } from '../constants';
 
-// Tauri updater — only in desktop build
-let _invoke: any = null;
-let _listen: any = null;
-try {
-  const tauri = await import('@tauri-apps/api/core');
-  _invoke = tauri.invoke;
-  const event = await import('@tauri-apps/api/event');
-  _listen = event.listen;
-} catch { /* not in Tauri */ }
-const tauriInvoke = _invoke;
-const tauriListen = _listen;
+declare global {
+  interface Window {
+    zhiji_checkUpdates?: { postMessage: (message: string) => void };
+  }
+}
+
+const canCheckUpdates = () => typeof window !== 'undefined' && Boolean(window.zhiji_checkUpdates);
 
 const tabs = [
   { key: 'arch', label: '数据架构' },
@@ -44,47 +40,22 @@ export default function SystemDoc() {
   const [tab, setTab] = useState<string>('arch');
 
   // ---- Update checker state ----
-  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'latest' | 'downloading' | 'installing' | 'error'>('idle');
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'latest' | 'error'>('idle');
   const [updateMessage, setUpdateMessage] = useState('');
-  const [updatePercent, setUpdatePercent] = useState(0);
-  const [updateNewVersion, setUpdateNewVersion] = useState('');
 
-  // Listen for update progress events from Rust
-  useEffect(() => {
-    if (!tauriListen) return;
-    let unlisten: (() => void) | undefined;
-    tauriListen('update-progress', (event: any) => {
-      const { stage, percent, message } = event.payload;
-      setUpdatePercent(percent || 0);
-      setUpdateMessage(message || '');
-      if (stage === 'downloading') setUpdateStatus('downloading');
-      else if (stage === 'installing') setUpdateStatus('installing');
-      else if (stage === 'done') { setUpdateStatus('latest'); setUpdateMessage('更新完成'); }
-      else if (stage === 'error') { setUpdateStatus('error'); }
-    }).then((fn: any) => { unlisten = fn; });
-    tauriListen('update-available', (event: any) => {
-      setUpdateNewVersion(event.payload.version || '');
-      setUpdateStatus('downloading');
-    }).then((fn: any) => { /* nested listen */ });
-    return () => { if (unlisten) unlisten(); };
-  }, []);
-
-  const handleCheckUpdate = async () => {
-    if (!tauriInvoke) return;
+  const handleCheckUpdate = () => {
+    if (!canCheckUpdates()) {
+      setUpdateStatus('error');
+      setUpdateMessage('当前环境不支持桌面端更新检查');
+      return;
+    }
     setUpdateStatus('checking');
-    setUpdateMessage('正在检查更新...');
+    setUpdateMessage('已打开系统更新检查，请按弹窗提示继续');
     try {
-      const result: string = await tauriInvoke('check_updates');
-      if (result === 'latest') {
-        setUpdateStatus('latest');
-        setUpdateMessage('已是最新版本');
-      }
-      // If result starts with 'v', update is being downloaded
-      // The progress events will update the UI
+      window.zhiji_checkUpdates?.postMessage('check');
     } catch (e: any) {
       setUpdateStatus('error');
-      // Tauri returns the error string directly, not as Error.message
-      const errMsg = typeof e === 'string' ? e : (e?.message || e?.toString() || '检查失败');
+      const errMsg = e?.message || e?.toString() || '检查失败';
       setUpdateMessage(errMsg);
     }
   };
@@ -146,25 +117,22 @@ export default function SystemDoc() {
                 <div className="flex items-center gap-3">
                   <h1 className="text-2xl font-bold text-white">系统说明</h1>
                   <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-purple-500/20 text-purple-400">v{APP_VERSION}</span>
-                  {tauriInvoke && (
+                  {canCheckUpdates() && (
                     <button
                       onClick={handleCheckUpdate}
-                      disabled={updateStatus === 'checking' || updateStatus === 'downloading' || updateStatus === 'installing'}
+                      disabled={updateStatus === 'checking'}
                       className={`ml-2 px-2 py-0.5 rounded text-[11px] font-medium transition-colors ${
                         updateStatus === 'latest' ? 'bg-green-500/20 text-green-400' :
                         updateStatus === 'error' ? 'bg-red-500/20 text-red-400' :
-                        updateStatus === 'checking' || updateStatus === 'downloading' || updateStatus === 'installing' ? 'bg-blue-500/20 text-blue-400' :
+                        updateStatus === 'checking' ? 'bg-blue-500/20 text-blue-400' :
                         'bg-gray-500/10 text-gray-400 hover:text-white hover:bg-gray-500/20'
                       }`}
                     >
                       {updateStatus === 'checking' && <RefreshCw size={10} className="inline mr-1 animate-spin" />}
-                      {updateStatus === 'downloading' && <Download size={10} className="inline mr-1" />}
                       {updateStatus === 'latest' && <CheckCircle size={10} className="inline mr-1" />}
                       {updateStatus === 'error' && <AlertCircle size={10} className="inline mr-1" />}
                       {updateStatus === 'idle' ? '检查更新' :
                        updateStatus === 'checking' ? '检查中' :
-                       updateStatus === 'downloading' ? `${updatePercent}%` :
-                       updateStatus === 'installing' ? '安装中' :
                        updateStatus === 'latest' ? '已最新' :
                        '检查更新'}
                     </button>
@@ -173,23 +141,8 @@ export default function SystemDoc() {
               </div>
             </div>
             <p className="text-gray-400 mt-1 text-sm">知几 — 知几其神乎，见微知著</p>
-            {/* Update progress bar */}
-            {(updateStatus === 'downloading' || updateStatus === 'installing') && (
-              <div className="mt-3 max-w-md">
-                <div className="flex items-center justify-between text-xs text-gray-400 mb-1">
-                  <span>{updateMessage}</span>
-                  <span>{updatePercent}%</span>
-                </div>
-                <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-purple-500 to-blue-400 rounded-full transition-all duration-300"
-                    style={{ width: `${updatePercent}%` }}
-                  />
-                </div>
-              </div>
-            )}
-            {updateStatus === 'error' && updateMessage && (
-              <p className="mt-2 text-xs text-red-400">{updateMessage}</p>
+            {updateMessage && (
+              <p className={`mt-2 text-xs ${updateStatus === 'error' ? 'text-red-400' : 'text-blue-400'}`}>{updateMessage}</p>
             )}
           </div>
 

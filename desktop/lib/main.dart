@@ -80,6 +80,7 @@ class _ZhijiShellState extends State<ZhijiShell> with TrayListener, WindowListen
   bool _backendOnline = false;
   bool _checking = true;
   Timer? _healthTimer;
+  static const _sparkleChannel = MethodChannel('com.zhiji.sparkle');
   final _urlController = TextEditingController();
 
   @override
@@ -206,6 +207,13 @@ class _ZhijiShellState extends State<ZhijiShell> with TrayListener, WindowListen
         onMessageReceived: (msg) {
           final uri = Uri.tryParse(msg.message);
           if (uri != null) launchUrl(uri);
+        },
+      )
+      ..addJavaScriptChannel('zhiji_checkUpdates',
+        onMessageReceived: (_) async {
+          try {
+            await _sparkleChannel.invokeMethod('checkForUpdates');
+          } catch (_) {}
         },
       )
       ..loadRequest(Uri.parse(_backendUrl));

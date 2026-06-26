@@ -1,9 +1,9 @@
-// 客户端版本号 — 唯一真源是 tauri.conf.json 的 version 字段
+// 客户端版本号 — 与 desktop/pubspec.yaml 的 marketing version 同步
 // 修改版本号时请同步更新：
-// 1. desktop/src-tauri/tauri.conf.json   → version（热更新判断用）
-// 2. desktop-latest.json                 → version（更新端点）
+// 1. desktop/pubspec.yaml                 → version
+// 2. desktop/changelog.json               → 版本说明
 // 3. 本文件                              → APP_VERSION（前端显示用）
-export const APP_VERSION = "1.8.12";
+export const APP_VERSION = "1.3.2";
 
 // Backend URL for API calls
 export const DEFAULT_BACKEND_URL = "http://127.0.0.1:9120";

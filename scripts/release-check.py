@@ -42,9 +42,10 @@ else:
 check("2. 代码签名（必须 Authority=Zhiji，不能 adhoc）")
 try:
     r = subprocess.run(["codesign", "-dvvv", str(FLUTTER_APP)], capture_output=True, text=True, timeout=10)
-    if "Authority=Zhiji" in r.stdout:
+    app_sig = r.stdout + r.stderr
+    if "Authority=Zhiji" in app_sig:
         ok(".app: Authority=Zhiji")
-    elif "Signature=adhoc" in r.stdout:
+    elif "Signature=adhoc" in app_sig:
         fail(".app: Signature=adhoc（未签名！）")
     else:
         warn(f".app: 无法确定签名状态")
@@ -52,7 +53,8 @@ try:
     auto = FLUTTER_APP / "Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate"
     if auto.exists():
         r2 = subprocess.run(["codesign", "-dvvv", str(auto)], capture_output=True, text=True, timeout=10)
-        if "Authority=Zhiji" in r2.stdout:
+        auto_sig = r2.stdout + r2.stderr
+        if "Authority=Zhiji" in auto_sig:
             ok("Sparkle Autoupdate: Authority=Zhiji")
         else:
             fail("Sparkle Autoupdate: 未签名或签名无效")
@@ -105,7 +107,8 @@ if dmg_files:
 
     try:
         r = subprocess.run(["codesign", "-dvvv", str(dmg)], capture_output=True, text=True, timeout=10)
-        if "Authority=Zhiji" in r.stdout:
+        dmg_sig = r.stdout + r.stderr
+        if "Authority=Zhiji" in dmg_sig:
             ok("DMG: Authority=Zhiji")
         else:
             fail("DMG: 签名无效")

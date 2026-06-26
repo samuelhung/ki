@@ -28,20 +28,11 @@ body {
   <div class="logo">知</div>
   <div class="name">知几</div>
   <div class="subtitle">知几其神乎<br/>见微知著</div>
-  <div class="version" id="version">v1.8.6</div>
+  <div class="version" id="version">v1.3.2</div>
   <div class="info">
     © 2026<br/>
     samuelhung
   </div>
 </div>
-<script>
-// If in Tauri, get version from Rust
-if (window.__TAURI_INTERNALS__) {
-  const { invoke } = window.__TAURI_INTERNALS__;
-  invoke('get_desktop_version').then(v => {
-    document.getElementById('version').textContent = 'v' + v;
-  }).catch(() => {});
-}
-</script>
 </body>
 </html>
