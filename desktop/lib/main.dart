@@ -11,7 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 // ── 默认后端地址 + config 文件 ──
 const _defaultBackendUrl = 'http://127.0.0.1:9120';
-const _desktopVersion = '1.3.4';
+const _desktopVersion = '1.3.5';
 final _configFile = io.File('${io.Platform.environment['HOME']}/.zhiji/config.json');
 
 String _loadBackendUrl() {

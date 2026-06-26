@@ -1,6 +1,18 @@
 {
   "versions": [
     {
+      "version": "1.3.5",
+      "date": "2026-06-26",
+      "title": "修复 Dock 点击无法重新打开窗口",
+      "sections": [
+        {"icon": "🐛", "label": "修复", "items": [
+          "修复 macOS 点击窗口关闭按钮后，Dock 图标仍在但再次点击无法重新显示窗口的问题",
+          "AppDelegate 新增 applicationShouldHandleReopen，在 Dock 重新激活时恢复隐藏窗口并置前",
+          "保留关闭按钮隐藏到托盘/后台的行为，不影响托盘菜单的显示和退出入口"
+        ]}
+      ]
+    },
+    {
       "version": "1.3.4",
       "date": "2026-06-26",
       "title": "强制刷新 Flutter WebView 中的 Web 前端缓存",

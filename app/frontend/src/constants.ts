@@ -3,7 +3,7 @@
 // 1. desktop/pubspec.yaml                 → version
 // 2. desktop/changelog.json               → 版本说明
 // 3. 本文件                              → APP_VERSION（前端显示用）
-export const APP_VERSION = "1.3.4";
+export const APP_VERSION = "1.3.5";
 
 // Backend URL for API calls
 export const DEFAULT_BACKEND_URL = "http://127.0.0.1:9120";

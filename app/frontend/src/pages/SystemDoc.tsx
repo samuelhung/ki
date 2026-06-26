@@ -174,7 +174,33 @@ export default function SystemDoc() {
       {tab === 'arch' && (
         <div className="space-y-6">
           <div className="bg-[#141518] border border-[#2A2B30] rounded-xl p-5">
-            <h2 className="text-sm font-semibold text-white mb-4">目录结构</h2>
+            <h2 className="text-sm font-semibold text-white mb-4">运行架构</h2>
+            <pre className="text-xs leading-relaxed text-gray-300 bg-[#0B0C10] rounded-lg p-4 overflow-x-auto font-mono mb-4">
+{`macOS 知几.app
+├── Flutter WebView 壳
+│   ├── 窗口 / 托盘 / 关闭隐藏
+│   ├── 后端健康检查 + 连接设置页
+│   ├── WKWebView 加载 React 前端
+│   ├── JS Bridge: zhiji_checkUpdates → Sparkle
+│   └── 每次创建 WebView 清理缓存并追加 desktop_version/cache_bust
+│
+├── React + Vite + Tailwind 前端
+│   ├── 所有业务页面、移动端适配、过场动画
+│   ├── API 使用同源相对路径，支持 127.0.0.1 / 10.8.0.105 等后端地址
+│   └── 构建产物文件名带版本号，避免旧 JS 缓存
+│
+└── Python / FastAPI 后端
+    ├── launchd: com.zhiji.backend 开机自启 + 崩溃重启
+    ├── SQLite + 文件系统双写
+    └── API 与静态 Web 单端口 :9120`}
+            </pre>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              桌面端只承担壳层能力，业务界面全部由 Web 前端渲染；自动更新由 Sparkle 读取 GitHub 上的 appcast.xml，再下载 GitHub Release 中的全量 DMG。
+            </p>
+          </div>
+
+          <div className="bg-[#141518] border border-[#2A2B30] rounded-xl p-5">
+            <h2 className="text-sm font-semibold text-white mb-4">数据目录结构</h2>
             <pre className="text-xs leading-relaxed text-gray-300 bg-[#0B0C10] rounded-lg p-4 overflow-x-auto font-mono">
 {`data/
 │
@@ -331,6 +357,8 @@ export default function SystemDoc() {
                 { name: '信息源管理', desc: '8 源 RSS，采集页卡片 + 弹窗启停' },
                 { name: '知识图谱', desc: '实体关系提取、力导向图可视化、深度分析' },
                 { name: '辅导中心', desc: '教材PDF上传→逐课解读，支持孩子版/家长版/教材解读三种模式，课文目录+附录' },
+                { name: '桌面壳', desc: 'Flutter WebView 壳，负责托盘、连接设置、缓存刷新和 Sparkle 更新桥接' },
+                { name: '自动更新', desc: 'Sparkle 读取 GitHub appcast，下载 GitHub Release 全量 DMG 并验签安装' },
               ].map(m => (
                 <div key={m.name} className="bg-[#0B0C10] rounded-lg p-3">
                   <div className="text-sm font-medium text-white">{m.name}</div>
@@ -352,6 +380,8 @@ export default function SystemDoc() {
                 { label: '搜索', value: 'FTS5 全文检索' },
                 { label: '图标', value: 'lucide-react' },
                 { label: '图谱', value: 'vis-network' },
+                { label: '桌面壳', value: 'Flutter + webview_flutter' },
+                { label: '更新', value: 'Sparkle 2 + GitHub Release' },
                 { label: '构建', value: 'Vite + Rolldown' },
               ].map(t => (
                 <div key={t.label} className="bg-[#0B0C10] rounded-lg p-3">
@@ -365,6 +395,10 @@ export default function SystemDoc() {
           <div className="bg-[#141518] border border-[#2A2B30] rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-4">v{APP_VERSION} 架构特征</h2>
             <div className="space-y-2 text-xs text-gray-400">
+              <p>• <span className="text-gray-300">Flutter WebView 桌面壳</span> — macOS App 只负责窗口、托盘、连接设置、JS Bridge 和 Sparkle 更新，业务页面统一由 React 前端承载</p>
+              <p>• <span className="text-gray-300">WebView 缓存刷新</span> — 创建 WebView 时清理 WKWebView 缓存和 localStorage，加载 URL 追加 desktop_version/cache_bust，避免新版继续运行旧 JS</p>
+              <p>• <span className="text-gray-300">GitHub Sparkle 更新链路</span> — appcast.xml 通过 raw.githubusercontent.com 分发，DMG 通过 GitHub Release 下载，Sparkle EdDSA 验签后安装</p>
+              <p>• <span className="text-gray-300">检查更新桥接</span> — React 前端不再调用 Tauri，改用 window.zhiji_checkUpdates.postMessage('check') 触发 Flutter 原生 Sparkle 通道</p>
               <p>• <span className="text-gray-300">专题待确认流程</span> — 刷新扫描取代"寻找新成员"，建议缓存至数据库归入待确认队列，新内容采集后自动匹配追加</p>
               <p>• <span className="text-gray-300">推荐理由系统</span> — expand/auto_suggest 返回推荐理由，存储格式升级为含理由的对象数组，向后兼容</p>
               <p>• <span className="text-gray-300">专题系列引擎</span> — AI 按主题聚类事件，候选审核→保存，结构化总结 + 论文式深度分析</p>
@@ -392,219 +426,94 @@ export default function SystemDoc() {
         <div className="space-y-8">
           {[
             {
-              version: '1.8.5',
-              date: '2026-06-16',
-              title: '工具箱 — 贷款利率换算器',
+              version: '1.3.5',
+              date: '2026-06-26',
+              title: '修复 Dock 点击无法重新打开窗口',
               items: [
-                '新增工具箱模块 — 侧边栏+移动端导航入口，支持后续扩展更多工具',
-                '贷款利率换算器 — 正向（月分期利率→月供+真实年化）与反向（月供→反推利率）',
-                'IRR 二分查找法 — 真实年化精确到 0.01%，年金现值方程单调收敛',
-                '对比表格 — 销售说的 vs 真实成本并排显示，差异红色高亮+人话总结',
-                '月供明细 — 拆分本金/利息子行，反向模式本金只读+利息可编辑三栏输入',
-                '实时计算 — onChange 触发，零延迟，无需点击按钮',
+                '修复 macOS 点击窗口关闭按钮后，Dock 图标仍在但再次点击无法重新显示窗口的问题',
+                'AppDelegate 新增 applicationShouldHandleReopen，在 Dock 重新激活时恢复隐藏窗口并置前',
+                '保留关闭按钮隐藏到托盘/后台的行为，不影响托盘菜单的显示和退出入口',
               ],
             },
             {
-              version: '1.8.4',
-              date: '2026-06-16',
-              title: '辅导中心 P0-P2 修复 + 多版本支持',
+              version: '1.3.4',
+              date: '2026-06-26',
+              title: '强制刷新 Flutter WebView 中的 Web 前端缓存',
               items: [
-                'P0 — 恢复孩子版/家长版版本切换 tab（非教材类），初始 null 崩溃修复',
-                'P0 — UNIT_REGISTRY 按书名动态匹配单元结构 + resolveUnits 回退，不再硬编码',
-                'P0 — 附录按 subject===\'语文\' 条件显示，不误判其他学科',
-                'P1 — MD tab 统一使用 mdToHtml 渲染器，prose 样式不再不一致',
-                'P1 — 编号列表 1. 2. 3. 渲染为灰色编号+缩进',
-                'P2 — sanitizeHtml 过滤 script/style/on* 防 XSS，移除 ReactMarkdown 依赖',
-                'P2 — 课文解析改用自定义 dangerouslySetInnerHTML，样式与专题详情深度分析一致',
-                '新增辅导中心模块 — 学习讲稿作为独立模块集成，教材 PDF 上传→逐课 AI 解读',
-                '教材提取链路 — PyMuPDF 提取文本 → DeepSeek 识别目录页码 → 按页码切分课文 → 逐课生成解读',
-                '课文目录 — 按单元分组折叠展开，附录（识字表/写字表/词语表）拼音-汉字网格对齐',
-                '讲稿渲染 — HTML 模板固化（Python 模板引擎），自定义 mdToHtml 加紫色主题样式',
-                'OCR 验证 — 火山 OCR 识别两页教材截图均准确，ocr_textbook.py 批量脚本就绪',
+                '修复安装新版后 WebView 仍复用旧首页/旧 JS，导致系统说明继续显示旧版本和旧更新入口',
+                'Flutter 壳创建 WebView 时先清理 WKWebView 缓存与 localStorage，再加载后端 Web 前端',
+                'WebView 加载 URL 自动追加 desktop_version 和 cache_bust 参数，强制重新获取当前页面',
+                '发布验证补齐远端 appcast、GitHub Release asset、实机安装与 Sparkle 更新提醒',
               ],
             },
             {
-              version: '1.8.3',
-              date: '2026-06-15 15:50:00',
-              title: '待办事务模块上线',
+              version: '1.3.3',
+              date: '2026-06-26',
+              title: '修复 WebView 缓存导致旧前端继续运行',
               items: [
-                '新增待办事务模块 — 列表视图 + 月/周/日三种日历视图，支持搜索和来源/优先级/状态筛选',
-                '仪表盘待办卡片 — 实时显示待处理数量和逾期数量',
-                'KI 联动入口 — 内容详情/专题详情/脑暴详情页面顶部按钮栏统一添加「添加待办」入口',
-                '待办事务页面风格统一 — 视图切换改为 tab 下划线风格，按钮/选择器/列表卡片对齐全站 KI 深色规范',
-                '待办事务页标题加 ClipboardList 图标，与新建按钮同 sky 色系',
+                '前端构建产物文件名加入版本号，避免 WKWebView 复用旧 JS 缓存',
+                '版本显示同步为 1.3.3，确保系统说明、侧边栏和 about 页一致',
+                '构建后增加源码与 dist 旧版本扫描，发现旧 Tauri 残留立即阻断发版',
               ],
             },
             {
-              version: '1.8.2',
-              date: '2026-06-15 15:13:58',
-              title: '侧边栏图标彩色化',
+              version: '1.3.2',
+              date: '2026-06-26',
+              title: '修复 Flutter 桌面壳检查更新按钮',
               items: [
-                '导航栏每项图标独立配色 — 仪表盘蓝/内容采集绿/头脑风暴琥珀/专题紫/知识图谱青/综合事务橙/摘要玫红',
-                '底部功能入口同步着色 — 系统设置灰/API 文档靛蓝/系统说明青绿',
-              ],
-            },
-            {
-              version: '1.8.1',
-              date: '2026-06-15 15:03:28',
-              title: '系统设置完善',
-              items: [
-                '知识图谱 tab 新增实体深度分析 prompt — 变量名 system → system_prompt 适配动态提取规则，前端可查看只读模板',
-                '成本估算表补齐 entity_insight（实体深度分析）— 2048 tokens / 0.01 元，20 任务全量覆盖无遗漏',
-                '成本估算表 auto_suggest max_tokens 修正 — 表头 512→256，与专题引擎实际配置统一',
-                '侧边栏版本号修复 — 1.7.1 → 1.8.0 起已滞后，本次更新至 1.8.1',
-              ],
-            },
-            {
-              version: '1.8.0',
-              date: '2026-06-15 14:30:00',
-              title: '知识图谱',
-              items: [
-                '实体提取与关系挖掘 — AI 自动从内容中提取人物/组织/概念/事件等实体，识别主张/反驳/因果/继承等关系类型',
-                '全局知识图谱 — vis-network 力导向图可视化，节点着色按类型区分，支持搜索聚焦和全屏模式',
-                '实体详情面板 — 点击节点展开侧边面板，展示关联内容列表和关联实体关系网',
-                '文档预览弹窗 — 点击关联内容弹出预览窗口，复刻 EventDetailPage 排版（概述+AI总结+Markdown 渲染），点击遮罩关闭',
-                '深度分析 — 实体面板底部一键 AI 分析，基于关联内容和实体关系生成核心定位/关键洞察/脉络关联/待探索方向',
-                'RSS 内容排除 — 知识图谱仅覆盖抖音和上传内容，RSS 新闻源不参与实体提取和图谱展示',
-                '历史回填 — 对已完成内容批量提取实体关系，792 实体/2008 关系/77 事件覆盖',
-              ],
-            },
-            {
-              version: '1.7.3',
-              date: '2026-06-15 12:50:37',
-              title: 'EPUB 注释兼容修复',
-              items: [
-                'KindleGen 生成 EPUB 的 OPF 注释含 -- 导致解析崩溃 — Expat 拒绝 XML 注释中出现双连字符',
-                '修复 — 解析 container.xml / OPF 前用正则剥离 <!-- ... --> 注释块，避免非法 -- 字符被 Expat 捕获',
-                '盐铁论 37.8 万字 EPUB 验证通过 — 14 章提取 + 书级总结 + 分类全链路正常',
-              ],
-            },
-            {
-              version: '1.7.2',
-              date: '2026-06-15 11:37:02',
-              title: '书籍总结 + 状态汉化',
-              items: [
-                '书籍级智能总结 — 超过5万字自动切换书级模板（13板块：全书概述、论证架构、各章要义、思想谱系、独到之处、可商榷之处等），DeepSeek V4 65536 token 输出，全文直投不截断',
-                '内容详情状态标签汉化 — completed → 已完成，digest → 已摘要，标题栏不再显示英文状态',
-              ],
-            },
-            {
-              version: '1.7.1',
-              date: '2026-06-15 09:58:23',
-              title: '抖音解析修复',
-              items: [
-                '抖音下载 403 修复 — parse_share_text 从 iesdouyin.com 页面解析切换为 douyin.com 官方 API，根治 CDN 短时效签名 l= 导致的下载失败',
-                '重试真正生效 — 失败任务重新解析分享文本时走 douyin.com API 获取新 CDN 链接，不再反复拿同一个过期 URL',
-                '代码简化 — 删除 ~40 行 _ROUTER_DATA JSON 手动解析（brace-counting），改为 resp.json() 直读',
-              ],
-            },
-            {
-              version: '1.7.0',
-              date: '2026-06-15 08:34:31',
-              title: '全新总结模板',
-              items: [
-                '方案A 总结模板 — 概述前置、维度标签关键洞察、数据/时间节点扫描列表、叙事脉络因果链',
-                '证据机制降噪 — 括号证据改为[N]引用格式，普通叙述不标，关键数据点和引语才标注',
-                '机会透镜保留 — 中国市场关联/国际视角条件展开，有料就写不强行填「不涉及」',
-                '抖音下载 416 降级 — HEAD 预检 Accept-Ranges，运行时 416 自动转整文件下载',
-                '重新生成总结支持 — force=true 先清空旧 AI 总结再走新模板，侧面板和全页均支持',
-                '仪表盘 completed 汉化为已完成 + 内容总结全页字号 text-sm 对齐专题',
-              ],
-            },
-            {
-              version: '1.6.0',
-              date: '2026-06-13 22:43:33',
-              title: '待确认修复 + 全选重写',
-              items: [
-                '待确认弹窗修复 — 单击条目全选联动：API返回id字段，前端误用s.event_id（undefined）导致9条共享同一key',
-                '待确认弹窗修复 — 全选/取消全选失效：click事件冒泡到父div导致toggle两次（选中即时被取消），改为onClick判断e.target.tagName跳过INPUT',
-                'Ingest 全选重写 — selectedIds从Set<string>改为string[]，表头新增全选checkbox，彻底解决React Set引用相等渲染异常',
-                '版本号统一 — 前端Sidebar/API文档/系统说明统一1.6.0，后端FastAPI从0.2.0同步至1.6.0',
-                'GitHub Release 工作流 — 每次推送同步版本号+更新日志，gh release create 自动发布',
-              ],
-            },
-            {
-              version: '1.5.0',
-              date: '2026-06-13 21:31:48',
-              title: '专题待确认与推荐理由',
-              items: [
-                '专题待确认流程改造 — 去掉「寻找新成员」按钮，专题卡片「N 条内容」旁新增刷新图标，点击即扫描并缓存建议至数据库',
-                '待确认队列自动积累 — 新内容采集入库后 auto_suggest 即时匹配，推荐自动追加至对应专题的待确认列表',
-                '推荐理由系统 — expand 和 auto_suggest 均返回推荐理由，存储格式从纯 ID 数组升级为带 reasons 的对象数组，向后兼容旧格式',
-                '待确认列表增强 — 单行布局（类别标签-标题-操作按钮），推荐理由两行灰色显示，弹窗宽度 xl→2xl',
-                'expand 扫描范围 30→100 条，理由 upsert 更新（已有条目刷新后更新理由不重复追加）',
-                '补齐脚本 backfill_reasons — 历史缺理由建议批量回填，含完整专题上下文的 AI prompt',
-              ],
-            },
-            {
-              version: '1.4.0',
-              date: '2026-06-13 18:50:00',
-              title: '交互体验升级',
-              items: [
-                '详情页展示方式统一 — 内容详情和问题详情从右侧滑出面板改为全页路由视图，与专题详情排版完全一致',
-                '问题详情 Tab 化 — 参考文档区移入第四个 Tab（对话 | 总结 | 概念沉淀 | 参考文档），Tab 栏始终可见',
-                '事件详情页排版重构 — 对齐专题详情规范：面包屑导航、图标标题、状态徽章、元信息卡片、操作按钮统一',
-                '问题详情页加载优化 — 页面立即渲染问题标题和 Tab 栏，文档列表和对话记录后台异步加载',
-                '抖音视频分段下载 — HTTP Range 分段 1MB/段，逐段重试 3 次，解决 CDN 主动断流问题',
-                '专题发现引擎修复 — AI 返回 event_id 带方括号解析容错，中文按主题发现二元分词 OR 匹配',
-                '抖音标题智能处理增强 — 视频/音频上传始终 AI 生成标题，不依赖文件名',
+                '移除前端残留 Tauri updater 调用，改为 Flutter WebView JS Bridge 触发 Sparkle 原生更新检查',
+                '检查更新由 Sparkle 原生弹窗接管，避免前端误显示 Tauri 下载进度',
+                '前端显示版本与桌面端 pubspec.yaml 同步',
               ],
             },
             {
               version: '1.3.0',
-              date: '2026-06-13 09:15:00',
-              title: '系统运维',
+              date: '2026-06-29',
+              title: '修复 macOS WebView 灰屏',
               items: [
-                'AI 调用 token 用量自动记录 — 数据库后台写入，调用方零改动，仪表盘可视化（全局卡片+模块分布+7天趋势）',
-                '系统设置多 tab 架构 — 通用配置 + 6 业务模块独立控制，思考模式下沉至 task 级别，每配置项带建议值',
-                'DeepSeek V4 Pro 适配 — 模型升级，max_tokens 按官方上限重设，端点迁移至 /chat/completions',
-                '系统日志 — TimedRotatingFileHandler 按天轮转保留 30 天，WebUI 实时查看支持级别过滤和搜索',
-                '数据库信息面板 — 库概览卡片 + 14 张表统计（带中文说明和进度条）+ 8 类存储产物双语计数',
-                '凝神静思修复 — JSON 截断容错解析，max_tokens 2048→4096，匹配 200+ 事件不中断',
-                'AI 运转区块左右并排布局 + 表统计间距均匀化',
+                '修复 webview_flutter_wkwebview setBackgroundColor 在 macOS 调用 setOpaque(false) 导致的 UnimplementedError',
+                'macOS 上不再调用 WebViewController.setBackgroundColor，WebView 背景由 React 前端 CSS 控制',
+                'Flutter 3.44.2 + webview_flutter 4.14.0 兼容性验证通过',
               ],
             },
             {
-              version: '1.2.0',
-              date: '2026-06-12 14:30:00',
-              title: '专题系列',
+              version: '1.1.2',
+              date: '2026-06-25',
+              title: '修复托盘图标导致启动崩溃',
               items: [
-                '新增专题系列引擎 — AI 按主题聚类事件，支持候选审核→保存工作流',
-                '新增内容概述 — 每条内容 AI 生成 ≤500 字概述，支撑专题聚类与快速浏览',
-                '新增采集即匹配 — 新内容入库后即时 AI 匹配已有专题，无需手动触发',
-                '新增结构化专题总结 — 5 段式结构化速览，论文式深度分析',
-                '移动端全适配 — 底部导航栏含专题入口，详情页响应式重排',
-                '抖音标题智能处理 — 剥离平台标签，短标题/截断标题 AI 重新生成',
-                '版本号统一管理 — constants.ts 单源，三处同步',
+                '托盘图标改用 app bundle 内 AppIcon.icns，不再依赖不存在的 assets/icon.png',
+                '托盘设置包裹 try-catch，防止 main() 在 runApp() 前崩溃导致黑屏',
+              ],
+            },
+            {
+              version: '1.1.1',
+              date: '2026-06-25',
+              title: '修复 MacBook Air 黑屏 + 回退 webview_flutter',
+              items: [
+                '后端离线时展示连接设置界面，不渲染 WebView，避免平台视图黑色错误页遮挡 Flutter UI',
+                'Info.plist 添加 NSAppTransportSecurity 例外，允许本地 HTTP 明文连接',
+                'WebView 引擎回退为 webview_flutter，提升 macOS 兼容性',
               ],
             },
             {
               version: '1.1.0',
-              date: '2026-06-11 15:23:34',
-              title: '知识结构化',
+              date: '2026-06-25',
+              title: '架构重构：Flutter 桌面壳 + 全 WebView 内容',
               items: [
-                '持久化任务队列 — 替换 FastAPI BackgroundTasks，服务重启不丢任务',
-                '概念沉淀与联动 — 用户录入概念 → AI 结构化补全 → 脑暴总结自动关联',
-                '多轮对话系统 — 脑暴问题支持追问，对话式研究，手动触发总结',
-                '双向缓存互通 — 凝神静思结果在内容/问题两侧共享，避免重复 AI 调用',
-                '综合事务引擎 — 纯手工输入 → AI 结构化判断 → 关联内容展示',
-                'FTS5 全文检索 — 事件搜索 + 相似事件预筛选，大幅提升查询性能',
-                '组件化 + 标签统一 — 侧边面板独立组件，sourceLabel/statusLabel 集中管理',
+                '桌面端从多页面原生 Flutter 重构为纯 WebView 壳，业务 UI 统一由 React 前端接管',
+                '新增托盘模式：关闭窗口隐藏到托盘，后端独立运行不受影响',
+                '后端改为 launchd 托管 com.zhiji.backend，开机自启并崩溃重启',
+                '发布链路转为 Sparkle 全量 DMG 更新，bsdiff/manifest/install_helper 已废弃',
               ],
             },
             {
               version: '1.0.x',
-              date: '2026-06-08 20:39:38',
-              title: '初始发布',
+              date: '2026-06-08',
+              title: '初始知识情报中心',
               items: [
-                '抖音分享链接解析 → 视频下载 → 提取音频 → 语音转写 → AI 总结全链路',
-                '上传文件摄入（视频/音频/文档）',
-                '火山引擎 ASR 语音转写',
-                'DeepSeek AI 结构化总结',
-                '四层认知分类 — 格局 / 财富 / 认知 / 前瞻',
-                'MD + SQLite 双写存储架构',
-                '8 源 RSS 定时采集 + 翻译链路',
-                '仪表盘 — 热力图 + 指标卡 + 事件总览',
+                '抖音分享链接解析、视频下载、音频提取、语音转写、AI 总结全链路',
+                '上传文件摄入（视频/音频/文档）与 MD + SQLite 双写存储',
+                '8 源 RSS 定时采集、翻译链路、仪表盘、热力图与事件总览',
               ],
             },
           ].map((v) => (
