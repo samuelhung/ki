@@ -8,6 +8,19 @@
         <language>zh</language>
         <link>https://github.com/samuelhung/ki/releases</link>
     <item>
+      <title>知几桌面端 v1.3.6</title>
+      <description><![CDATA[知几 v1.3.6 — 修复 Dock 点击无法恢复最小化窗口<br><br><b>▸ 修复</b><br>&nbsp;&nbsp;&nbsp;&nbsp;修复 macOS 窗口最小化到 Dock 后，再次点击 Dock 图标无法弹出窗口的问题<br>&nbsp;&nbsp;&nbsp;&nbsp;Dock reopen 逻辑新增 isMiniaturized 判断并调用 deminiaturize 恢复最小化窗口<br>&nbsp;&nbsp;&nbsp;&nbsp;关闭按钮隐藏与最小化两种窗口状态现在都会在 Dock 点击时恢复并置前]]></description>
+      <pubDate>Fri, 26 Jun 2026 12:47:08 +0000</pubDate>
+      <enclosure
+        url="https://github.com/samuelhung/ki/releases/download/v1.3.6%2B81/zhiji_1.3.6.dmg"
+        sparkle:version="81"
+        sparkle:shortVersionString="1.3.6"
+        sparkle:edSignature="Fqcgw2jidCbvIAXYliJOvRoH6GfzQ8HNbvbXdX1bd28JpGb9UftWbG0nVNmTw3Cgn66Ron0vmrnGB1RVyryiAA=="
+        length="19737281"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>知几桌面端 v1.3.5</title>
       <description><![CDATA[知几 v1.3.5 — 修复 Dock 点击无法重新打开窗口<br><br><b>▸ 修复</b><br>&nbsp;&nbsp;&nbsp;&nbsp;修复 macOS 点击窗口关闭按钮后，Dock 图标仍在但再次点击无法重新显示窗口的问题<br>&nbsp;&nbsp;&nbsp;&nbsp;AppDelegate 新增 applicationShouldHandleReopen，在 Dock 重新激活时恢复隐藏窗口并置前<br>&nbsp;&nbsp;&nbsp;&nbsp;保留关闭按钮隐藏到托盘/后台的行为，不影响托盘菜单的显示和退出入口]]></description>
       <pubDate>Fri, 26 Jun 2026 09:15:48 +0000</pubDate>

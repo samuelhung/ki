@@ -252,17 +252,18 @@ class AppDelegate: FlutterAppDelegate {
         return false
     }
 
-    // Dock 图标被点击时，重新显示被关闭按钮隐藏的窗口
+    // Dock 图标被点击时，恢复被关闭按钮隐藏或最小化到 Dock 的窗口
     override func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag {
-            for window in NSApp.windows {
-                if !window.isVisible {
-                    window.setIsVisible(true)
-                }
-                window.makeKeyAndOrderFront(self)
+        for window in NSApp.windows {
+            if window.isMiniaturized {
+                window.deminiaturize(self)
             }
-            NSApp.activate(ignoringOtherApps: true)
+            if !window.isVisible {
+                window.setIsVisible(true)
+            }
+            window.makeKeyAndOrderFront(self)
         }
+        NSApp.activate(ignoringOtherApps: true)
         return true
     }
 
