@@ -290,7 +290,7 @@ export default function SystemSettings() {
     <div className="flex flex-col h-full overflow-hidden bg-[#0B0C10] text-white">
       {/* Sticky header */}
       <div className="shrink-0 sticky top-0 z-10 bg-[#0B0C10] px-4 md:px-8 pt-4 md:pt-8">
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-[1080px] mx-auto">
           {/* Header */}
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -338,7 +338,7 @@ export default function SystemSettings() {
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto custom-scrollbar px-4 md:px-8 pb-4 md:pb-8">
-        <div className="max-w-6xl mx-auto pt-4">
+        <div className="max-w-[1080px] mx-auto pt-4">
 
       {/* Tab: 参数说明 */}
       {tab === 'params_info' && (

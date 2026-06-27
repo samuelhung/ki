@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MoreHorizontal, BookOpen, Code2, Settings, FileText, GitBranch, Lightbulb, Wrench, GraduationCap } from 'lucide-react';
+import { MoreHorizontal, BookOpen, Code2, Settings, GitBranch, Lightbulb, Wrench, GraduationCap } from 'lucide-react';
 
 import { APP_VERSION } from '../constants';
 
@@ -55,14 +55,6 @@ export default function MobileHeader() {
             >
               <GraduationCap size={14} />
               <span>辅导中心</span>
-            </a>
-            <a
-              href="/digest"
-              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-[#1A1B20]"
-              onClick={() => setMenuOpen(false)}
-            >
-              <FileText size={14} />
-              <span>摘要</span>
             </a>
             <a
               href="/knowledge-graph"

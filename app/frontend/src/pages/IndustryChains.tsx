@@ -728,7 +728,7 @@ function ChainDetailModal({ chainName, chainIcon, chainFlowSummary, nodes, allNo
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
-      <div className="bg-[#141518] border border-[#2A2B30] rounded-xl w-full max-w-6xl max-h-[90vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div className="bg-[#141518] border border-[#2A2B30] rounded-xl w-full max-w-[1080px] max-h-[90vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center gap-2.5 px-5 py-3 border-b border-[#2A2B30] shrink-0">
           {getChainIcon(chainName, chainIcon)}
@@ -1091,7 +1091,7 @@ export default function IndustryChains() {
 
   return (
     <div className="flex-1 bg-[#0B0C10] text-white p-4 md:p-8 overflow-y-auto custom-scrollbar">
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-[1080px] mx-auto">
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-2">
             <GitBranch size={24} className="text-emerald-400" />

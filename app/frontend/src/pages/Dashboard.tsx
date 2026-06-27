@@ -73,7 +73,7 @@ export default function Dashboard() {
     <div className="flex-1 bg-[#0B0C10] text-white flex flex-col h-full overflow-hidden">
       {/* Sticky header */}
       <div className="shrink-0 sticky top-0 z-10 bg-[#0B0C10] px-4 md:px-8 pt-4 md:pt-8">
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-[1080px] mx-auto">
 
           {/* Header */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
@@ -99,25 +99,25 @@ export default function Dashboard() {
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto custom-scrollbar px-4 md:px-8 pb-4 md:pb-8">
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-[1080px] mx-auto">
 
         {/* Metric cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8 pt-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-8 pt-4">
           {loading ? (
-            Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="bg-[#141518] border border-[#2A2B30] rounded-xl p-6 animate-pulse">
-                <div className="flex items-center gap-3 mb-4"><div className="w-8 h-8 rounded-lg bg-[#2A2B30]" /><div className="w-16 h-4 rounded bg-[#2A2B30]" /></div>
-                <div className="w-12 h-8 rounded bg-[#2A2B30] mb-1" />
+            Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="bg-[#141518] border border-[#2A2B30] rounded-xl p-4 animate-pulse">
+                <div className="flex items-center gap-2 mb-3"><div className="w-7 h-7 rounded-lg bg-[#2A2B30]" /><div className="w-14 h-3 rounded bg-[#2A2B30]" /></div>
+                <div className="w-10 h-7 rounded bg-[#2A2B30] mb-1" />
                 <div className="w-20 h-3 rounded bg-[#2A2B30]" />
               </div>
             ))
           ) : (
             <>
-              <MetricCard icon={<Radio size={18} />} label="信息源" value={summary.sources_enabled} subtitle="已启用 RSS 源" color="cyan" onClick={openSourcesModal} />
-              <MetricCard icon={<Newspaper size={18} />} label="今日新增" value={summary.today_new} subtitle="内容采集 + 新增问题" color="purple" />
-              <MetricCard icon={<Upload size={18} />} label="内容采集" value={summary.ingest_total} subtitle="累计采集内容" color="pink" />
-              <MetricCard icon={<Lightbulb size={18} />} label="头脑风暴" value={summary.brainstorm_total} subtitle="累计提出问题" color="amber" />
-              <MetricCard icon={<CheckSquare size={18} />} label="待办事务" value={taskStats.total} subtitle={`${taskStats.todo} 待处理 · ${taskStats.overdue} 逾期`} color="blue" />
+              <MetricCard compact icon={<Radio size={16} />} label="信息源" value={summary.sources_enabled} subtitle="已启用 RSS 源" color="cyan" onClick={openSourcesModal} />
+              <MetricCard compact icon={<Newspaper size={16} />} label="今日新增" value={summary.today_new} subtitle="内容 + 问题" color="purple" />
+              <MetricCard compact icon={<Upload size={16} />} label="内容采集" value={summary.ingest_total} subtitle="累计采集" color="pink" />
+              <MetricCard compact icon={<Lightbulb size={16} />} label="头脑风暴" value={summary.brainstorm_total} subtitle="累计问题" color="cyan" />
+              <MetricCard compact icon={<CheckSquare size={16} />} label="待办事务" value={taskStats.total} subtitle={`${taskStats.todo} 待处理 · ${taskStats.overdue} 逾期`} color="blue" />
             </>
           )}
         </div>

@@ -410,7 +410,7 @@ export default function EventDetailPage() {
   if (!detail) {
     return (
       <div className="flex-1 bg-[#0B0C10] text-white p-8">
-        <div className="max-w-6xl mx-auto py-16 text-center">
+        <div className="max-w-[1080px] mx-auto py-16 text-center">
           <p className="text-sm text-red-400">内容不存在</p>
           <button onClick={() => navigate(-1)} className="mt-4 px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors">返回</button>
         </div>
@@ -422,7 +422,7 @@ export default function EventDetailPage() {
 
   return (
     <div className="flex-1 bg-[#0B0C10] text-white p-4 md:p-8 overflow-y-auto custom-scrollbar">
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-[1080px] mx-auto">
 
         {/* Breadcrumb */}
         <div className="flex items-center mb-6">

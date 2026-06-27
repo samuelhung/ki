@@ -70,7 +70,7 @@ export default function Events() {
 
   return (
     <div className="flex-1 bg-[#0B0C10] text-white p-4 md:p-6 overflow-y-auto custom-scrollbar">
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-[1080px] mx-auto">
         <h1 className="text-2xl font-bold mb-6">事件列表</h1>
 
         {error && (

@@ -34,7 +34,7 @@ export default function Sources() {
 
   return (
     <div className="flex-1 bg-[#0B0C10] text-white p-4 md:p-6 overflow-y-auto custom-scrollbar">
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-[1080px] mx-auto">
         <h1 className="text-2xl font-bold mb-6">信息源</h1>
         {error && <div className="mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">{error}<button onClick={load} className="ml-3 underline hover:text-red-300">重试</button></div>}
         {loading ? (

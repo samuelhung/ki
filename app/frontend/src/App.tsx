@@ -12,7 +12,6 @@ import Dashboard from './pages/Dashboard';
 import Ingest from './pages/Ingest';
 import Events from './pages/Events';
 import Sources from './pages/Sources';
-import Digest from './pages/Digest';
 import Brainstorm from './pages/Brainstorm';
 import Tasks from './pages/Tasks';
 import Series from './pages/Series';
@@ -237,7 +236,6 @@ export default function App() {
           <Route path="ingest" element={<Ingest />} />
           <Route path="events" element={<Events />} />
           <Route path="sources" element={<Sources />} />
-          <Route path="digest" element={<Digest />} />
           <Route path="brainstorm" element={<Brainstorm />} />
           <Route path="brainstorm/:id" element={<BrainstormDetailPage />} />
           <Route path="events/:id" element={<EventDetailPage />} />

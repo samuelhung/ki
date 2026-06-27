@@ -108,7 +108,7 @@ export default function SystemDoc() {
     <div className="flex flex-col h-full overflow-hidden bg-[#0B0C10] text-white">
       {/* Sticky header */}
       <div className="shrink-0 sticky top-0 z-10 bg-[#0B0C10] px-4 md:px-8 pt-4 md:pt-8">
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-[1080px] mx-auto">
           {/* Header */}
           <div className="mb-4">
             <div className="flex items-center gap-3">
@@ -168,7 +168,7 @@ export default function SystemDoc() {
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto custom-scrollbar px-4 md:px-8 pb-4 md:pb-8">
-        <div className="max-w-6xl mx-auto pt-4">
+        <div className="max-w-[1080px] mx-auto pt-4">
 
       {/* Tab: 数据架构 */}
       {tab === 'arch' && (
@@ -215,7 +215,6 @@ export default function SystemDoc() {
 │
 ├── brainstorm/        {question_id}.md            ← 问题 + 回答追加写入
 ├── concepts/          evt-concept-{id}.md         ← 沉淀概念结构化文档
-├── digests/           YYYY-MM-DD.md              ← 每日 AI 摘要
 ├── events/            YYYY-MM-DD.jsonl            ← RSS 采集归档（去重用）
 └── state/             rss-{source}.json           ← RSS 水位标记`}
             </pre>
@@ -276,12 +275,6 @@ export default function SystemDoc() {
                     <td className="py-2 pr-4 text-purple-400">brainstorm_questions.content_md</td>
                     <td className="py-2">创建 + 每次回答</td>
                   </tr>
-                  <tr>
-                    <td className="py-2 pr-4 text-gray-400">每日摘要</td>
-                    <td className="py-2 pr-4">digests/YYYY-MM-DD.md</td>
-                    <td className="py-2 pr-4 text-purple-400">digests.markdown</td>
-                    <td className="py-2">每日 8:00</td>
-                  </tr>
                 </tbody>
               </table>
             </div>
@@ -317,8 +310,8 @@ export default function SystemDoc() {
               <div className="flex items-start gap-3">
                 <span className="text-purple-400 shrink-0 mt-0.5">8:00</span>
                 <div>
-                  <span className="text-white font-medium">每日摘要 + 深度日报</span>
-                  <p className="text-gray-500 mt-0.5">取当天所有事件 → DeepSeek 生成结构化 MD → 双写 SQLite + .md</p>
+                  <span className="text-white font-medium">深度日报</span>
+                  <p className="text-gray-500 mt-0.5">取当天所有事件 → DeepSeek 生成结构化快报 → 写入内容流与归档</p>
                 </div>
               </div>
             </div>
@@ -346,13 +339,12 @@ export default function SystemDoc() {
             <h2 className="text-sm font-semibold text-white mb-4">核心模块</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[
-                { name: '仪表盘', desc: '热力图 + 指标卡 + 事件总览' },
+                { name: '仪表盘', desc: '五项指标单行展示 + 热力图 + AI 运转 + 事件总览' },
                 { name: '内容采集', desc: '抖音/文件摄入，4 认知 tab，即时快报，AI 概述' },
                 { name: '专题系列', desc: 'AI 聚类发现，候选审核→保存，结构化总结，论文式深度分析' },
                 { name: '沉淀概念', desc: '手工录入 + 脑暴总结一键沉淀，AI 结构化补全，原文依据带脚注' },
                 { name: '头脑风暴', desc: '手工创建问题，多文档 AI 综合回答，多轮对话，概念沉淀联动' },
                 { name: '综合事务', desc: '纯手动输入事务，AI 结构化判断，关联内容展示' },
-                { name: '每日摘要', desc: 'AI 生成要闻 + QA 对 + 可拓展问题' },
                 { name: '事件列表', desc: 'FTS5 全文检索 + 分页 + 批量操作' },
                 { name: '信息源管理', desc: '8 源 RSS，采集页卡片 + 弹窗启停' },
                 { name: '知识图谱', desc: '实体关系提取、力导向图可视化、深度分析' },
@@ -425,6 +417,16 @@ export default function SystemDoc() {
       {tab === 'changelog' && (
         <div className="space-y-8">
           {[
+            {
+              version: '1.3.7',
+              date: '2026-06-27',
+              title: '优化仪表盘布局并移除摘要入口',
+              items: [
+                '仪表盘顶部五个指标卡调整为桌面端单行展示，整体更紧凑',
+                '左侧导航和右侧内容宽度收窄，适配 MacBook Air 最大窗口',
+                '移除独立摘要模块入口，系统说明同步更新数据架构、数据流和功能体系内容',
+              ],
+            },
             {
               version: '1.3.6',
               date: '2026-06-26',

@@ -14,6 +14,7 @@ export default function MetricCard({
   subtitle,
   color = 'purple',
   onClick,
+  compact = false,
 }: {
   icon: ReactNode;
   label: string;
@@ -21,22 +22,23 @@ export default function MetricCard({
   subtitle?: string;
   color?: 'purple' | 'pink' | 'blue' | 'cyan';
   onClick?: () => void;
+  compact?: boolean;
 }) {
   const colorClass = colorMap[color] ?? colorMap.purple;
   return (
     <div
       onClick={onClick}
-      className={`bg-[#141518] border border-[#2A2B30] rounded-xl p-6 transition-all hover:border-[#3A3B40] hover:bg-[#1A1B20] ${onClick ? 'cursor-pointer' : ''}`}
+      className={`bg-[#141518] border border-[#2A2B30] rounded-xl transition-all hover:border-[#3A3B40] hover:bg-[#1A1B20] ${compact ? 'p-4' : 'p-6'} ${onClick ? 'cursor-pointer' : ''}`}
     >
-      <div className="flex items-center gap-3 text-gray-400 mb-4">
-        <div className={`p-2 rounded-lg ${colorClass}`}>{icon}</div>
-        <span className="font-medium text-sm">{label}</span>
+      <div className={`flex items-center gap-2 text-gray-400 ${compact ? 'mb-3' : 'mb-4'}`}>
+        <div className={`rounded-lg ${compact ? 'p-1.5' : 'p-2'} ${colorClass}`}>{icon}</div>
+        <span className={`font-medium ${compact ? 'text-xs' : 'text-sm'}`}>{label}</span>
       </div>
-      <div className="text-3xl font-bold mb-1 text-white">{value}</div>
+      <div className={`${compact ? 'text-2xl' : 'text-3xl'} font-bold mb-1 text-white`}>{value}</div>
       {subtitle ? (
-        <div className="text-sm text-gray-500">{subtitle}</div>
+        <div className={`${compact ? 'text-[11px]' : 'text-sm'} text-gray-500 truncate`}>{subtitle}</div>
       ) : (
-        <div className="text-sm text-gray-500">&nbsp;</div>
+        <div className={`${compact ? 'text-[11px]' : 'text-sm'} text-gray-500`}>&nbsp;</div>
       )}
     </div>
   );

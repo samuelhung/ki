@@ -296,7 +296,7 @@ export default function StudyDetail() {
   return (
     <div className="flex-1 bg-[#0B0C10] text-white flex flex-col h-full overflow-hidden">
       <div className="shrink-0 sticky top-0 z-10 bg-[#0B0C10] px-4 md:px-8 pt-4 md:pt-8">
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-[1080px] mx-auto">
           <button onClick={() => navigate('/study')} className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 mb-3 transition-colors">
             <ArrowLeft size={14} /> 辅导中心
           </button>
@@ -372,7 +372,7 @@ export default function StudyDetail() {
       </div>
 
       <div className="flex-1 overflow-y-auto custom-scrollbar px-4 md:px-8 pb-4 md:pb-8">
-        <div className="max-w-6xl mx-auto pt-4">
+        <div className="max-w-[1080px] mx-auto pt-4">
           {!showTabs ? (
             <div className="text-center text-gray-600 py-16">
               <Sparkles size={48} className="mx-auto mb-4 opacity-40" />

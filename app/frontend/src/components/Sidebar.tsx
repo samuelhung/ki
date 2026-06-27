@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Upload, FileText, Lightbulb, CheckSquare, Layers, BookOpen, Code2, Settings, GitBranch, GraduationCap, Wrench, Link2 } from 'lucide-react';
+import { LayoutDashboard, Upload, Lightbulb, CheckSquare, Layers, BookOpen, Code2, Settings, GitBranch, GraduationCap, Wrench, Link2 } from 'lucide-react';
 
 import { APP_VERSION } from '../constants';
 
@@ -13,7 +13,6 @@ const navItems = [
   { to: '/chains', icon: Link2, label: '产业链', color: 'text-emerald-400' },
   { to: '/tasks', icon: CheckSquare, label: '待办事务', color: 'text-sky-400' },
   { to: '/tools', icon: Wrench, label: '工具箱', color: 'text-orange-400' },
-  { to: '/digest', icon: FileText, label: '摘要', color: 'text-rose-400' },
   { to: '/study', icon: GraduationCap, label: '辅导中心', color: 'text-amber-400' },
 ];
 
@@ -43,7 +42,7 @@ export default function Sidebar() {
     return () => { cancelled = true; clearInterval(interval); };
   }, []);
   return (
-    <aside className="w-72 bg-[#141518] border-r border-[#2A2B30] flex flex-col h-full text-gray-300">
+    <aside className="w-64 bg-[#141518] border-r border-[#2A2B30] flex flex-col h-full text-gray-300">
       <div className="p-4 flex flex-col items-center border-b border-[#2A2B30] gap-1">
         <div className="text-center">
           <span className="font-semibold text-white text-2xl tracking-wide">知几</span>
