@@ -7,6 +7,7 @@ import Modal from '../components/Modal';
 import Checkbox from '../components/Checkbox';
 import EmptyState from '../components/EmptyState';
 import { formatTimeBeijing, sourceLabel, sourceBadgeClass } from '../utils';
+import { apiFetch } from '../api';
 
 interface IngestStats { today_submissions: number; processing: number; completed: number; }
 
@@ -132,7 +133,7 @@ export default function Ingest() {
 
   async function loadQueue() {
     try {
-      const r = await fetch('/api/ingest/queue?limit=30');
+      const r = await apiFetch('/api/ingest/queue?limit=30');
       const d = await r.json();
       const items = d.items || [];
       setQueueItems(items);
@@ -141,21 +142,21 @@ export default function Ingest() {
 
   async function deleteQueueTask(taskId: string) {
     try {
-      await fetch(`/api/ingest/queue/${taskId}`, { method: 'DELETE' });
+      await apiFetch(`/api/ingest/queue/${taskId}`, { method: 'DELETE' });
       setQueueItems(prev => prev.filter(t => t.id !== taskId));
     } catch (_) { /* silent */ }
   }
 
   async function retryQueueTask(taskId: string) {
     try {
-      await fetch(`/api/ingest/queue/${taskId}/retry`, { method: 'POST' });
+      await apiFetch(`/api/ingest/queue/${taskId}/retry`, { method: 'POST' });
       loadQueue();
     } catch (_) { /* silent */ }
   }
 
   async function loadTopicCounts() {
     try {
-      const r = await fetch('/api/events/topic-counts');
+      const r = await apiFetch('/api/events/topic-counts');
       const d = await r.json();
       setTopicCounts(d);
     } catch (e: any) { console.error('加载话题计数失败', e); }
@@ -163,7 +164,7 @@ export default function Ingest() {
 
   async function loadStats() {
     try {
-      const r = await fetch('/api/ingest/stats');
+      const r = await apiFetch('/api/ingest/stats');
       const d = await r.json();
       setStats(d);
     } catch (e: any) { console.error('加载统计数据失败', e); }
@@ -172,7 +173,7 @@ export default function Ingest() {
   async function loadBriefing() {
     setBriefingLoading(true);
     try {
-      const r = await fetch('/api/briefing/latest?briefing_type=quick');
+      const r = await apiFetch('/api/briefing/latest?briefing_type=quick');
       if (r.ok) {
         const d = await r.json();
         setBriefingTopics(d.topics || []);
@@ -187,7 +188,7 @@ export default function Ingest() {
     const topicFilter = ['格局','财富','认知','前瞻'].includes(historyTab) ? `&topic=${historyTab}` : '';
     const searchParam = search ? `&search=${encodeURIComponent(search)}` : '';
     try {
-      const r = await fetch(`${API_BASE}?source_id=${sourceId}${topicFilter}${searchParam}&limit=${PAGE_SIZE}&offset=${(page-1)*PAGE_SIZE}&count=1`);
+      const r = await apiFetch(`${API_BASE}?source_id=${sourceId}${topicFilter}${searchParam}&limit=${PAGE_SIZE}&offset=${(page-1)*PAGE_SIZE}&count=1`);
       const d = await r.json();
       if (d && typeof d === 'object' && 'items' in d) {
         setEvents(d.items || []);
@@ -202,7 +203,11 @@ export default function Ingest() {
   async function handleCollect() {
     setCollecting(true); setToast(null); setCollectStages(null);
     try {
-      const r = await fetch('/api/collect', { method: 'POST' });
+      const r = await apiFetch('/api/collect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
       const d = await r.json();
       setToast({ text: `采集完成：新增 ${d.new_events || 0} 条`, type: 'success' });
       await loadEvents();
@@ -217,7 +222,7 @@ export default function Ingest() {
     if (!douyinText.trim()) return;
     setSubmitting(true); setDyError('');
     try {
-      const r = await fetch('/api/ingest/douyin', {
+      const r = await apiFetch('/api/ingest/douyin', {
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ share_text: douyinText.trim(), topic: douyinTopic || 'uncategorized' }),
       });
@@ -235,7 +240,7 @@ export default function Ingest() {
     for (let i = 0; i < 120; i++) {
       await new Promise(r => setTimeout(r, 2000));
       try {
-        const r = await fetch(`/api/ingest/status/${eventId}`);
+        const r = await apiFetch(`/api/ingest/status/${eventId}`);
         if (!r.ok) continue;
         const d = await r.json();
         setPollStatus(d);
@@ -263,7 +268,7 @@ export default function Ingest() {
       fd.append('file', selectedFile);
       fd.append('title', fileTitle);
       fd.append('topic', fileTopic || 'uncategorized');
-      const r = await fetch('/api/ingest/file', { method: 'POST', body: fd });
+      const r = await apiFetch('/api/ingest/file', { method: 'POST', body: fd });
       if (!r.ok) { const d = await r.json(); throw new Error(d.detail || '上传失败'); }
       const d = await r.json();
       setPollId(d.event_id); setPollStatus({ event_id: d.event_id, status: 'processing' });
@@ -279,7 +284,7 @@ export default function Ingest() {
     if (!conceptTitle.trim()) { setCeError('请输入概念名称'); return; }
     setConceptSubmitting(true); setCeError('');
     try {
-      const r = await fetch('/api/ingest/concept', {
+      const r = await apiFetch('/api/ingest/concept', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: conceptTitle.trim(), topic: conceptTopic || 'uncategorized', description: conceptDesc.trim() }),
@@ -297,7 +302,7 @@ export default function Ingest() {
   async function toggleSource(id: string) {
     setTogglingSrc(id);
     try {
-      const res = await fetch(`/api/sources/${id}/toggle`, { method: 'PUT' });
+      const res = await apiFetch(`/api/sources/${id}/toggle`, { method: 'PUT' });
       const data = await res.json();
       setSources(prev => prev.map(s => s.id === id ? { ...s, enabled: data.enabled ? 1 : 0 } : s));
     } catch (e: any) { console.error('切换信息源失败', e); }
@@ -308,7 +313,7 @@ export default function Ingest() {
     e.stopPropagation();
     if (!confirm('确定要删除这条记录吗？')) return;
     try {
-      await fetch(`${API_BASE}/${eventId}`, { method: 'DELETE' });
+      await apiFetch(`${API_BASE}/${eventId}`, { method: 'DELETE' });
       loadEvents(); loadStats();
     } catch (e: any) { console.error('删除事件失败', e); }
   }
@@ -317,7 +322,7 @@ export default function Ingest() {
     if (selectedIds.length === 0) return;
     if (!confirm(`确定要删除选中的 ${selectedIds.length} 条记录吗？`)) return;
     try {
-      await fetch('/api/events/batch-delete', {
+      await apiFetch('/api/events/batch-delete', {
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ event_ids: selectedIds }),
       });

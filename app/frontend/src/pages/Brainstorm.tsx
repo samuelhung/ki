@@ -6,6 +6,7 @@ import EmptyState from '../components/EmptyState';
 import Checkbox from '../components/Checkbox';
 import MetricCard from '../components/MetricCard';
 import { formatTimeBeijing } from '../utils';
+import { apiFetch } from '../api';
 
 interface BrainstormQuestion {
   id: string;
@@ -74,7 +75,7 @@ export default function Brainstorm() {
     if (!newQuestion.trim()) return;
     setCreateLoading(true); setCreateError('');
     try {
-      const r = await fetch('/api/brainstorm', {
+      const r = await apiFetch('/api/brainstorm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: newQuestion.trim() }),
@@ -98,7 +99,7 @@ export default function Brainstorm() {
     const params = new URLSearchParams();
     params.set('topic', tab);
     const qs = params.toString();
-    fetch(`/api/brainstorm${qs ? '?' + qs : ''}`)
+    apiFetch(`/api/brainstorm${qs ? '?' + qs : ''}`)
       .then((r) => { if (!r.ok) throw new Error('加载失败'); return r.json(); })
       .then((data) => setQuestions(data.questions || []))
       .catch((e) => setError(e.message))
@@ -108,7 +109,7 @@ export default function Brainstorm() {
   async function remove(id: string) {
     if (!confirm('确认删除这条问题？')) return;
     try {
-      await fetch(`/api/brainstorm/${id}`, { method: 'DELETE' });
+      await apiFetch(`/api/brainstorm/${id}`, { method: 'DELETE' });
       await load();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '删除失败');
@@ -119,7 +120,7 @@ export default function Brainstorm() {
     if (selectedIds.size === 0) return;
     if (!confirm(`确定要删除选中的 ${selectedIds.size} 条问题吗？`)) return;
     try {
-      await fetch('/api/brainstorm/batch-delete', {
+      await apiFetch('/api/brainstorm/batch-delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question_ids: Array.from(selectedIds) }),
@@ -144,7 +145,7 @@ export default function Brainstorm() {
 
   async function loadTopicCounts() {
     try {
-      const r = await fetch('/api/brainstorm/topic-counts');
+      const r = await apiFetch('/api/brainstorm/topic-counts');
       const d = await r.json();
       setTopicCounts(d);
     } catch (e: any) { console.error('加载话题计数失败', e); }

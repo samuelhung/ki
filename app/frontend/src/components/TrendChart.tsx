@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useState } from 'react';
+import { apiFetch } from '../api';
 
 interface TrendDay {
   day: string;
@@ -11,7 +12,7 @@ export default function TrendChart() {
   const gradientId = useId();
 
   useEffect(() => {
-    fetch('/api/dashboard/trend?days=7')
+    apiFetch('/api/dashboard/trend?days=7')
       .then(r => r.json())
       .then(d => { setData(d || []); setLoading(false); })
       .catch((e) => { console.error('趋势图加载失败', e); setLoading(false); });

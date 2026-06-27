@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 
 import fitz
-from backend.ingest.pdf_ocr import ocr_page
+from zhiji_backend.ingest.pdf_ocr import ocr_page
 
 PDF_PATH = Path("/Users/mrh/Documents/Projects/KnowledgeIntelligence/data/study/3517596a-e7ab-46e6-a32f-e68d5bbdb20e/raw/original.pdf")
 OUT_PATH = Path("/tmp/textbook_ocr.json")

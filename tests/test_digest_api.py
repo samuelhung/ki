@@ -4,10 +4,10 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "app"))
+sys.path.insert(0, str(ROOT / "src"))
 
-from backend.db import connect, init_db, seed_default_sources
-from backend.main import app
+from zhiji_backend.db import connect, init_db, seed_default_sources
+from zhiji_backend.main import app
 
 
 def test_generate_digest_api_creates_digest_and_candidates(tmp_path, monkeypatch):

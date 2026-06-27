@@ -35,8 +35,6 @@ APP_BINARY = FLUTTER_APP / "Contents" / "Frameworks" / "App.framework" / "Versio
 
 GITHUB_REPO = "samuelhung/ki"
 GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}"
-BACKEND_DMG_URL = "http://10.8.0.105:9120/releases"  # 内网后端分发（两台 Mac 通过 OpenVPN 可达）
-RELEASES_DIR_LOCAL = Path.home() / ".zhiji" / "data" / "releases"  # 后端静态目录
 
 
 def _read_desktop_version() -> str:
@@ -285,14 +283,7 @@ def main():
     )
     print("✅ DMG 签名完成")
 
-    # 4. 复制 DMG 到后端静态目录（内网快速下载，替代 GitHub Release 慢速下载）
-    RELEASES_DIR_LOCAL.mkdir(parents=True, exist_ok=True)
-    target = RELEASES_DIR_LOCAL / dmg_path.name
-    shutil.copy2(dmg_path, target)
-    print(f"📡 DMG 已复制到后端: {target}")
-    print(f"   下载地址: {BACKEND_DMG_URL}/{dmg_path.name}")
-
-    # 5. 生成/更新 Sparkle appcast
+    # 4. 生成/更新 Sparkle appcast
     appcast_path = PROJECT_ROOT / "appcast.xml"
     appcast_entry = _generate_appcast_entry(version, dmg_path)
     if appcast_entry:

@@ -6,6 +6,7 @@ import EmptyState from '../components/EmptyState';
 import HeatmapChart from '../components/HeatmapChart';
 import UsageWidget from '../components/UsageWidget';
 import type { DashboardSummary, Event } from '../types';
+import { apiFetch } from '../api';
 
 export default function Dashboard() {
   const [summary, setSummary] = useState<DashboardSummary>({
@@ -22,7 +23,7 @@ export default function Dashboard() {
 
   function loadSummary() {
     setLoading(true); setError('');
-    fetch('/api/dashboard/summary')
+    apiFetch('/api/dashboard/summary')
       .then((r) => { if (!r.ok) throw new Error('加载仪表盘失败'); return r.json(); })
       .then((s) => setSummary(s))
       .catch((e) => setError(e.message))
@@ -33,7 +34,7 @@ export default function Dashboard() {
     const p = page ?? eventPage;
     setEventLoading(true);
     const offset = (p - 1) * EVENT_PAGE_SIZE;
-    fetch(`/api/events?offset=${offset}&limit=${EVENT_PAGE_SIZE}&count=1`)
+    apiFetch(`/api/events?offset=${offset}&limit=${EVENT_PAGE_SIZE}&count=1`)
       .then((r) => { if (!r.ok) throw new Error('加载事件失败'); return r.json(); })
       .then((e) => {
         if (Array.isArray(e)) setEvents(e);
@@ -50,7 +51,7 @@ export default function Dashboard() {
   const [sources, setSources] = useState<any[]>([]);
 
   function loadTaskStats() {
-    fetch('/api/tasks/stats')
+    apiFetch('/api/tasks/stats')
       .then(r => r.json())
       .then(s => setTaskStats(s))
       .catch(() => {});
@@ -58,7 +59,7 @@ export default function Dashboard() {
 
   async function loadSources() {
     try {
-      const r = await fetch('/api/sources');
+      const r = await apiFetch('/api/sources');
       const d = await r.json();
       setSources(d || []);
     } catch (e: any) { console.error('加载信息源列表失败', e); }

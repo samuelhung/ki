@@ -1,42 +1,41 @@
-     1|schema_version: 1
-     2|slug: knowledge-intelligence
-     3|name: 知几
-     4|description: 持续追踪外部信息源，把碎片信息采集、去重、筛选、摘要、归类、沉淀，并在需要时转化为 Hermes Projects / Kanban 行动任务的知识情报中心。
-     5|created_at: '2026-05-21T04:07:47Z'
-     6|updated_at: '2026-05-21T04:07:47Z'
-     7|tenant: knowledge-intelligence
-     8|kanban_board: default
-     9|root: /Users/mrh/Documents/Projects/zhiji
-    10|wiki_dir: /Users/mrh/Documents/Projects/zhiji/wiki
-    11|artifacts_dir: /Users/mrh/Documents/Projects/zhiji/artifacts
-    12|orchestrator_profile: orchestrator
-    13|profiles:
-    14|  orchestrator: orchestrator
-    15|  engineering: engineer
-    16|  research: researcher
-    17|  review: reviewer
-    18|  writing: writer
-    19|  teaching: teacher
-    20|wiki:
-    21|  required_before_orchestration:
-    22|  - Home.md
-    23|  - Context.md
-    24|  - History.md
-    25|  - Decisions.md
-    26|  - Roadmap.md
-    27|  - Architecture.md
-    28|  - Agents.md
-    29|  - Glossary.md
-    30|  - OpenQuestions.md
-    31|  - Sources.md
-    32|  - DailyDigest.md
-    33|  - Topics.md
-    34|  - ActionCandidates.md
-    35|  - IndependentWebMVP.md
-    36|worker_update_policy:
-    37|  update_history: true
-    38|  update_decisions_if_needed: true
-    39|  update_architecture_if_changed: true
-    40|  write_handoff_summary: true
-    41|  append_task_log: true
-    42|
+schema_version: 1
+slug: zhiji
+name: 知几
+description: 持续追踪外部信息源，把碎片信息采集、去重、筛选、摘要、归类、沉淀，并在需要时转化为 Hermes Projects / Kanban 行动任务的知识情报中心。
+created_at: '2026-05-21T04:07:47Z'
+updated_at: '2026-06-27T00:00:00Z'
+tenant: knowledge-intelligence
+kanban_board: default
+root: /Users/mrh/Documents/Projects/zhiji
+wiki_dir: /Users/mrh/Documents/Projects/zhiji/wiki
+artifacts_dir: /Users/mrh/Documents/Projects/zhiji/artifacts
+orchestrator_profile: orchestrator
+profiles:
+  orchestrator: orchestrator
+  engineering: engineer
+  research: researcher
+  review: reviewer
+  writing: writer
+  teaching: teacher
+wiki:
+  required_before_orchestration:
+    - Home.md
+    - Context.md
+    - History.md
+    - Decisions.md
+    - Roadmap.md
+    - Architecture.md
+    - Agents.md
+    - Glossary.md
+    - OpenQuestions.md
+    - Sources.md
+    - DailyDigest.md
+    - Topics.md
+    - ActionCandidates.md
+    - IndependentWebMVP.md
+worker_update_policy:
+  update_history: true
+  update_decisions_if_needed: true
+  update_architecture_if_changed: true
+  write_handoff_summary: true
+  append_task_log: true

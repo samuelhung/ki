@@ -11,6 +11,8 @@ import json
 import logging
 import shutil
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -26,6 +28,18 @@ PENDING_DIR = INGEST_ROOT / "pending"
 
 _worker: threading.Thread | None = None
 _shutdown_flag = threading.Event()
+
+
+def _safe_pending_unlink(path_value: str) -> None:
+    try:
+        pending_root = PENDING_DIR.resolve()
+        path = Path(path_value).expanduser().resolve()
+        if path == pending_root or pending_root in path.parents:
+            path.unlink(missing_ok=True)
+        else:
+            logger.warning("Refusing to delete pending file outside %s: %s", pending_root, path)
+    except Exception:
+        logger.warning("Failed to delete pending file safely: %s", path_value, exc_info=True)
 
 
 def enqueue(event_id: str, ingest_type: str, content, topic: str, title: str) -> str:
@@ -116,10 +130,10 @@ _TASK_TIMEOUT_SECONDS = 900
 def _process_one(task_id: str) -> None:
     """Process a single pending task with a timeout guard.
 
-    The actual pipeline runs in a child thread so the main worker thread can
-    detect hangs.  If the timeout fires the child is abandoned (Python cannot
-    kill threads safely), but the task is marked as error in the database.
-    On the next server restart ``recover_stuck()`` will clean up the orphan.
+    The actual pipeline runs in a child process so the main worker thread can
+    detect hangs and terminate real work. If the timeout fires, both the queue
+    task and its event are moved out of ``running``/``processing`` states so
+    later polls cannot race against orphaned pipeline writes.
     """
     with connect() as conn:
         row = conn.execute(
@@ -150,24 +164,25 @@ def _process_one(task_id: str) -> None:
             (task_id,),
         )
 
-    # Run pipeline in a child thread so we can enforce a timeout
-    pipeline_error: Exception | None = None
-
-    def _run_pipeline() -> None:
-        nonlocal pipeline_error
+    # Run pipeline in a child process so timeout can terminate real work.
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "zhiji_backend.ingest_task_runner", task_id],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=_TASK_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        proc.terminate()
         try:
-            from .routes.ingest_routes import _process_ingest
-            _process_ingest(event_id, ingest_type, content, topic, title)
-        except Exception as e:
-            pipeline_error = e
+            stdout, stderr = proc.communicate(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout, stderr = proc.communicate()
 
-    child = threading.Thread(target=_run_pipeline, daemon=True, name=f"ingest-{task_id[:12]}")
-    child.start()
-    child.join(timeout=_TASK_TIMEOUT_SECONDS)
-
-    if child.is_alive():
-        # Pipeline may have actually completed but the child thread
-        # hasn't exited yet. Check the event status first.
+        # Pipeline may have actually completed but the child process did not
+        # exit in time. Check the event status first.
         with connect() as conn:
             event_status = conn.execute(
                 "SELECT status FROM events WHERE id = ?", (event_id,)
@@ -198,6 +213,11 @@ def _process_one(task_id: str) -> None:
                         "retry_count = COALESCE(retry_count, 0) + 1 WHERE id = ?",
                         (task_id,),
                     )
+                    conn.execute(
+                        "UPDATE events SET status = 'pending', last_error = NULL "
+                        "WHERE id = ? AND status = 'processing'",
+                        (event_id,),
+                    )
                 else:
                     # Already retried once — permanent error
                     error_msg = f"任务超时（{_TASK_TIMEOUT_SECONDS}s），已自动重试1次仍失败，可能卡在下载或转写步骤"
@@ -205,17 +225,27 @@ def _process_one(task_id: str) -> None:
                         "UPDATE ingest_tasks SET status = 'error', error = ?, finished_at = datetime('now') WHERE id = ?",
                         (error_msg, task_id),
                     )
+                    conn.execute(
+                        "UPDATE events SET status = 'error', last_error = ? "
+                        "WHERE id = ? AND status = 'processing'",
+                        (error_msg, event_id),
+                    )
                     logger.error("Task %s timed out after %ds + 1 retry — permanent error", task_id, _TASK_TIMEOUT_SECONDS)
         return
 
-    if pipeline_error is not None:
-        error_msg = str(pipeline_error)[:500]
+    if proc.returncode != 0:
+        error_msg = (stderr or stdout or f"ingest child exited with {proc.returncode}")[-500:]
         with connect() as conn:
             conn.execute(
                 "UPDATE ingest_tasks SET status = 'error', error = ?, finished_at = datetime('now') WHERE id = ?",
                 (error_msg, task_id),
             )
-        logger.exception("Task %s failed for event %s: %s", task_id, event_id, error_msg)
+            conn.execute(
+                "UPDATE events SET status = 'error', last_error = ? "
+                "WHERE id = ? AND status = 'processing'",
+                (error_msg, event_id),
+            )
+        logger.error("Task %s failed for event %s: %s", task_id, event_id, error_msg)
         return
 
     # Success
@@ -226,7 +256,7 @@ def _process_one(task_id: str) -> None:
         )
     # Cleanup pending file if any
     if content_path := payload.get("content_path"):
-        Path(content_path).unlink(missing_ok=True)
+        _safe_pending_unlink(str(content_path))
     logger.info("Task %s completed for event %s", task_id, event_id)
 
     # Auto-suggest: AI checks if this event belongs to any existing series
@@ -273,30 +303,58 @@ def _worker_loop() -> None:
 
     while not _shutdown_flag.is_set():
         try:
+            task_id = None
             with connect() as conn:
                 row = conn.execute(
                     "SELECT id FROM ingest_tasks WHERE status = 'pending' ORDER BY created_at LIMIT 1"
                 ).fetchone()
+                if row:
+                    candidate = row["id"]
+                    cur = conn.execute(
+                        "UPDATE ingest_tasks SET status = 'running', started_at = datetime('now') "
+                        "WHERE id = ? AND status = 'pending'",
+                        (candidate,),
+                    )
+                    if cur.rowcount:
+                        task_id = candidate
 
-            if row:
-                _process_one(row["id"])
+            if task_id:
+                _process_one(task_id)
             else:
                 # No pending tasks — idle, reset error counter
                 idle_cycles += 1
                 consecutive_errors = 0
 
-                # Periodic recover_stuck: clean up orphaned processing events every 60s
+                # Periodic cleanup: only reset events whose queue task has been stuck for over 1 hour.
                 if idle_cycles % 30 == 0:
                     try:
                         with connect() as conn:
-                            stuck = conn.execute(
-                                "SELECT COUNT(*) FROM events WHERE status = 'processing'"
-                            ).fetchone()[0]
-                            if stuck:
-                                conn.execute("UPDATE events SET status = 'pending' WHERE status = 'processing'")
-                                logger.warning("Periodic cleanup: reset %d stuck processing event(s) → pending", stuck)
+                            stuck_rows = conn.execute(
+                                """SELECT e.id
+                                   FROM events e
+                                   WHERE e.status = 'processing'
+                                     AND NOT EXISTS (
+                                       SELECT 1 FROM ingest_tasks t
+                                       WHERE t.event_id = e.id
+                                         AND t.status = 'running'
+                                     )
+                                     AND EXISTS (
+                                       SELECT 1 FROM ingest_tasks t
+                                       WHERE t.event_id = e.id
+                                         AND t.status IN ('pending', 'error', 'done')
+                                         AND COALESCE(t.started_at, t.created_at) < datetime('now', '-1 hour')
+                                     )"""
+                            ).fetchall()
+                            if stuck_rows:
+                                ids = [row["id"] for row in stuck_rows]
+                                placeholders = ",".join("?" for _ in ids)
+                                conn.execute(
+                                    f"UPDATE events SET status = 'pending' WHERE id IN ({placeholders})",
+                                    ids,
+                                )
+                                logger.warning("Periodic cleanup: reset %d stale processing event(s) → pending", len(ids))
                     except Exception:
-                        pass
+                        logger.warning("Periodic cleanup failed", exc_info=True)
 
                 _shutdown_flag.wait(timeout=2)
         except Exception:
@@ -322,6 +380,9 @@ def _worker_loop() -> None:
 def start_worker() -> None:
     """Start the background task worker thread."""
     global _worker, _shutdown_flag
+    if _worker and _worker.is_alive():
+        logger.info("Ingest task worker already running")
+        return
     _shutdown_flag.clear()
 
     # Recover any tasks that were running when the server crashed

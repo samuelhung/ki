@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useCurtain } from '../CurtainContext';
 import { Layers, Lightbulb, Loader2, ExternalLink, Search, Zap, Plus, AlertTriangle, Check, PenTool, ArrowRight, RefreshCw } from 'lucide-react';
 import Modal from '../components/Modal';
+import { apiFetch } from '../api';
 
 interface SeriesMember {
   id: string;
@@ -87,7 +88,7 @@ export default function Series() {
   async function loadSeries() {
     setLoading(true);
     try {
-      const r = await fetch('/api/ingest/series');
+      const r = await apiFetch('/api/ingest/series');
       const d = await r.json();
       setSeries(d.items || []);
     } catch (e: any) { setError(e.message); }
@@ -137,7 +138,7 @@ export default function Series() {
     setStage1Message('');
     setStage1Groups([]);
     try {
-      const r = await fetch('/api/ingest/series/discover/stage1', { method: 'POST' });
+      const r = await apiFetch('/api/ingest/series/discover/stage1', { method: 'POST' });
       const d = await r.json();
       if (d.message && !d.groups?.length) {
         setStage1Message(d.message);
@@ -190,7 +191,7 @@ export default function Series() {
     setCandidates([]);
     setDuplicates([]);
     try {
-      const r = await fetch('/api/ingest/series/discover/stage2', {
+      const r = await apiFetch('/api/ingest/series/discover/stage2', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ event_ids: selectedIds, name_hint: selectedNames.join('、') }),
@@ -220,7 +221,7 @@ export default function Series() {
     setDuplicates([]);
     setDiscoverSummary('');
     try {
-      const r = await fetch('/api/ingest/series/discover/by-topic', {
+      const r = await apiFetch('/api/ingest/series/discover/by-topic', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ topic: t }),
@@ -246,7 +247,7 @@ export default function Series() {
     if (!c) return;
     setSaving(prev => new Set([...prev, idx]));
     try {
-      const r = await fetch('/api/ingest/series', {
+      const r = await apiFetch('/api/ingest/series', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: c.name, description: c.description, member_ids: c.member_ids }),
@@ -271,7 +272,7 @@ export default function Series() {
     setDiscoveryMode('manual_create');
     setEventsLoading(true);
     try {
-      const r = await fetch('/api/events?limit=500');
+      const r = await apiFetch('/api/events?limit=500');
       const d = await r.json();
       setAvailableEvents(Array.isArray(d) ? d : []);
     } catch (_) { setAvailableEvents([]); }
@@ -294,7 +295,7 @@ export default function Series() {
 
     setSaving(new Set([-1]));
     try {
-      const r = await fetch('/api/ingest/series', {
+      const r = await apiFetch('/api/ingest/series', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: title, member_ids: ids }),
@@ -321,7 +322,7 @@ export default function Series() {
     setSuggestedName('');
     setSuggestedDescription('');
     try {
-      const r = await fetch('/api/ingest/series/suggest-name', {
+      const r = await apiFetch('/api/ingest/series/suggest-name', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ member_ids: memberIds, current_name: currentName || manualCreatedName }),
@@ -341,7 +342,7 @@ export default function Series() {
     if (!manualCreatedId || !suggestedName) return;
     setAdopting(true);
     try {
-      await fetch(`/api/ingest/series/${manualCreatedId}`, {
+      await apiFetch(`/api/ingest/series/${manualCreatedId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: suggestedName, description: suggestedDescription }),

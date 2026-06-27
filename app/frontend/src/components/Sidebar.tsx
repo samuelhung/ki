@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { LayoutDashboard, Upload, Lightbulb, CheckSquare, Layers, BookOpen, Code2, Settings, GitBranch, GraduationCap, Wrench, Link2 } from 'lucide-react';
+import { apiFetch } from '../api';
 
 import { APP_VERSION } from '../constants';
 
@@ -28,8 +29,8 @@ export default function Sidebar() {
     let cancelled = false;
     const refresh = () => {
       Promise.all([
-        fetch('/api/tasks/stats').then(r => r.json()),
-        fetch('/api/chains/hints/count').then(r => r.json())
+        apiFetch('/api/tasks/stats').then(r => r.json()),
+        apiFetch('/api/chains/hints/count').then(r => r.json())
       ]).then(([taskData, hintData]) => {
         if (!cancelled) {
           setPendingCount(taskData.todo || 0);

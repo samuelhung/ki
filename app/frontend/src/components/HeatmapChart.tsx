@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { apiFetch } from '../api';
 
 interface TrendDay {
   day: string;
@@ -80,7 +81,7 @@ export default function HeatmapChart() {
   }, [cells.length]);
 
   useEffect(() => {
-    fetch('/api/dashboard/trend?days=84')
+    apiFetch('/api/dashboard/trend?days=84')
       .then(r => r.json())
       .then((rawData: TrendDay[]) => {
         const countMap = new Map<string, number>();

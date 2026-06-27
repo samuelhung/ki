@@ -2,10 +2,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "app"))
+sys.path.insert(0, str(ROOT / "src"))
 
-from backend.collector import collect_once, parse_rss_items
-from backend.db import connect, init_db, seed_default_sources
+from zhiji_backend.collector import collect_once, parse_rss_items
+from zhiji_backend.db import connect, init_db, seed_default_sources
 
 
 SAMPLE_FEED_V1 = """<?xml version="1.0" encoding="UTF-8" ?>

@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2, ChevronDown, ChevronRight, Globe, GitBranch, GitMerge, Zap, Cpu, Sun, Factory, ShoppingCart, Edit3, Trash2, Plus, Save, X, Sparkles, Database, Link2, Bell, Check, Trash, Search, Wheat, Flame, Hammer, Shirt, Truck, Heart, Building, Cloud, DollarSign, Leaf, Anchor, Microscope, Droplets, Ship, Plane, Shield, Radio, MessageCircle, Send, Eraser } from 'lucide-react';
+import { ChainReport } from '../components/ChainReport';
+import { apiFetch } from '../api';
 
 interface GlobalShare {
   c: string;
@@ -275,7 +277,7 @@ function EditModal({ node, allNodes, defaultChain, onClose, onSaved }: { node: C
 
   function del() {
     if (!confirm(`确认删除「${form.name}」？此操作不可撤销。`)) return;
-    fetch(`/api/chains/nodes/${form.id}`, { method: 'DELETE' })
+    apiFetch(`/api/chains/nodes/${form.id}`, { method: 'DELETE' })
       .then(r => r.json())
       .then(d => { if (d.ok) onSaved(); else alert('删除失败'); })
       .catch(e => alert(e.message));
@@ -283,7 +285,7 @@ function EditModal({ node, allNodes, defaultChain, onClose, onSaved }: { node: C
 
   function aiUpdate() {
     setAiLoading(true); setAiResult('');
-    fetch('/api/chains/nodes/ai-update', {
+    apiFetch('/api/chains/nodes/ai-update', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ node_id: form.id, source_text: aiText })
     }).then(r => r.json()).then(d => {
@@ -484,7 +486,7 @@ function HintsReviewModal({ hints, onClose, onResolved }: { hints: ChainHint[]; 
 
   function resolve(action: 'accept' | 'reject') {
     setResolving(true);
-    fetch(`/api/chains/hints/${hint.id}/resolve`, {
+    apiFetch(`/api/chains/hints/${hint.id}/resolve`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, edited_value: action === 'accept' ? editedValue : '' })
     }).then(r => r.json()).then(() => {
@@ -571,34 +573,6 @@ function HintsReviewModal({ hints, onClose, onResolved }: { hints: ChainHint[]; 
   );
 }
 
-/** Convert chain report markdown to HTML (matches SeriesDetail summaryToHtml style) */
-function reportToHtml(md: string): string {
-  // Strip AI preamble
-  md = md.replace(/^好的，[^。\n]+。\n\n/i, '');
-  md = md.replace(/^以下为[^。\n]*报告[^。]*[。\n]\n*/i, '');
-  function boldify(s: string): string {
-    return s.replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold text-gray-200">$1</strong>');
-  }
-  let html = '';
-  for (const raw of md.split('\n')) {
-    const line = raw;
-    if (line.startsWith('## ')) {
-      html += `<h3 class="text-sm font-semibold text-purple-400 mt-5 mb-2">${boldify(line.slice(3))}</h3>`;
-    } else if (line.startsWith('### ') || line.startsWith('#### ')) {
-      html += `<p class="mb-2 text-purple-400 leading-relaxed font-medium text-xs">${boldify(line.replace(/^#+ /, ''))}</p>`;
-    } else if (/^- /.test(line)) {
-      html += `<div class="flex gap-1.5 ml-2"><span class="text-gray-500 shrink-0">•</span><span class="text-gray-300">${boldify(line.replace(/^- /, ''))}</span></div>`;
-    } else if (line.trim() === '') {
-      html += '<div class="h-1"></div>';
-    } else if (/^[-*]{3,}$/.test(line.trim())) {
-      html += '<hr class="border-[#2A2B30] my-2" />';
-    } else {
-      html += `<p class="mb-2 text-gray-300 leading-relaxed">${boldify(line)}</p>`;
-    }
-  }
-  return html;
-}
-
 // ── Transition label helper ──
 const TRANSITION_LABELS: Record<string, Record<string, string>> = {
   '原材料': { '中间品': '提炼/合成', '零部件': '加工', '终端': '直接应用', '原材料': '并列' },
@@ -653,7 +627,7 @@ function ChainDetailModal({ chainName, chainIcon, chainFlowSummary, nodes, allNo
     // 3. AI generate
     setFlowSummary('');
     const nodeInfo = sorted.map(n => `[${n.node_type}]${n.name}`).join(' → ');
-    fetch('/api/chains/chat', {
+    apiFetch('/api/chains/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -666,7 +640,7 @@ function ChainDetailModal({ chainName, chainIcon, chainFlowSummary, nodes, allNo
         flowSummaryCache.current.set(chainName, d.reply);
         setFlowSummary(d.reply);
         // Persist to backend
-        fetch('/api/chains/flow-summary', {
+        apiFetch('/api/chains/flow-summary', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ chain_name: chainName, flow_summary: d.reply }),
@@ -684,7 +658,7 @@ function ChainDetailModal({ chainName, chainIcon, chainFlowSummary, nodes, allNo
     setChatMessages(updated);
     setChatInput('');
     setChatLoading(true);
-    fetch('/api/chains/chat', {
+    apiFetch('/api/chains/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chain_name: chainName, message: msg, history: chatMessages }),
@@ -705,7 +679,7 @@ function ChainDetailModal({ chainName, chainIcon, chainFlowSummary, nodes, allNo
   function loadReport(force = false) {
     setReportLoading(true);
     setReportError('');
-    fetch('/api/chains/report', {
+    apiFetch('/api/chains/report', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chain_name: chainName, force }),
@@ -893,11 +867,7 @@ function ChainDetailModal({ chainName, chainIcon, chainFlowSummary, nodes, allNo
             {reportError && (
               <div className="text-red-400 text-sm py-4">{reportError}</div>
             )}
-            {report && !reportLoading && (
-              <div className="text-xs leading-relaxed"
-                dangerouslySetInnerHTML={{ __html: reportToHtml(report) }}
-              />
-            )}
+            {report && !reportLoading && <ChainReport report={report} />}
           </div>
 
             {/* ── RIGHT: 智能答疑 ── */}
@@ -993,8 +963,8 @@ export default function IndustryChains() {
 
   const fetchData = () => {
     Promise.all([
-      fetch('/api/chains/nodes').then(r => r.json()),
-      fetch('/api/chains').then(r => r.json()),
+      apiFetch('/api/chains/nodes').then(r => r.json()),
+      apiFetch('/api/chains').then(r => r.json()),
     ]).then(([nd, ch]) => {
       setNodes(nd.nodes || []);
       const iconMap = new Map<string, string>();
@@ -1009,7 +979,7 @@ export default function IndustryChains() {
   };
 
   const fetchHints = () => {
-    fetch('/api/chains/hints?status=pending&limit=50')
+    apiFetch('/api/chains/hints?status=pending&limit=50')
       .then(r => r.json())
       .then(d => setHints(d.hints || []))
       .catch(() => {});
@@ -1019,7 +989,7 @@ export default function IndustryChains() {
     const key = `${chainA}|||${chainB}|||${into}`;
     setMergingOverlap(key);
     try {
-      const r = await fetch('/api/chains/merge', {
+      const r = await apiFetch('/api/chains/merge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chain_a: chainA, chain_b: chainB, into }),
@@ -1037,8 +1007,8 @@ export default function IndustryChains() {
 
   const fetchSuggestions = () => {
     Promise.all([
-      fetch('/api/chains/suggestions?status=pending').then(r => r.json()),
-      fetch('/api/chains/suggestions/count').then(r => r.json()),
+      apiFetch('/api/chains/suggestions?status=pending').then(r => r.json()),
+      apiFetch('/api/chains/suggestions/count').then(r => r.json()),
     ]).then(([data, cnt]) => {
       setSuggestions(data.suggestions || []);
       setSuggestionsCount(cnt.pending || 0);
@@ -1048,7 +1018,7 @@ export default function IndustryChains() {
   const handleCollectNode = async (nodeId: string) => {
     setCollectingNode(nodeId);
     try {
-      const r = await fetch('/api/chains/nodes/ai-collect', {
+      const r = await apiFetch('/api/chains/nodes/ai-collect', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ node_id: nodeId, use_web: true }),
       });
@@ -1069,7 +1039,7 @@ export default function IndustryChains() {
     }) || chainNodes[0];
     setCollectingChain(chainName);
     try {
-      const r = await fetch('/api/chains/ai-collect-all', {
+      const r = await apiFetch('/api/chains/ai-collect-all', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ node_id: refNode.id, use_web: true }),
       });
@@ -1119,7 +1089,7 @@ export default function IndustryChains() {
               onClick={async () => {
                 setCheckingOverlap(true);
                 try {
-                  const r = await fetch('/api/chains/overlap-check');
+                  const r = await apiFetch('/api/chains/overlap-check');
                   const d = await r.json();
                   setOverlaps(d.overlaps || []);
                   setOverlapOpen(true);
@@ -1346,14 +1316,14 @@ export default function IndustryChains() {
                       <div className="flex gap-2 shrink-0">
                         <button
                           onClick={async () => {
-                            await fetch(`/api/chains/suggestions/${sug.id}/dismiss`, { method: 'POST' });
+                            await apiFetch(`/api/chains/suggestions/${sug.id}/dismiss`, { method: 'POST' });
                             fetchSuggestions();
                           }}
                           className="px-3 py-1.5 rounded-lg text-xs text-red-400 hover:bg-red-500/10 border border-red-500/20 transition-colors"
                         >忽略</button>
                         <button
                           onClick={async () => {
-                            const r = await fetch(`/api/chains/suggestions/${sug.id}/adopt`, { method: 'POST' });
+                            const r = await apiFetch(`/api/chains/suggestions/${sug.id}/adopt`, { method: 'POST' });
                             const d = await r.json();
                             if (d.ok) { fetchSuggestions(); fetchData(); }
                           }}

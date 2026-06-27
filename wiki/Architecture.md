@@ -24,15 +24,20 @@
 
 - 技术栈：React + Vite + Tailwind v4 + React Router v7。
 - API 策略：统一使用同源相对路径 `/api/...`，不硬编码 `127.0.0.1`。
+- 请求封装：前端通过 `apiFetch` 显式拼接远程后端，不再 monkey patch `window.fetch`。
+- 媒体地址：`/ingest/...`、`/releases/...` 等后端静态资源通过统一 backend URL resolver 生成，避免远程后端/前后端分离时指向前端 origin。
 - 构建策略：Vite 产物文件名带版本号，如 `assets/index-1.3.4-*.js`，降低 WebView/浏览器旧缓存命中概率。
+- 拆包策略：页面组件通过 `React.lazy` 按路由懒加载，主入口 chunk 控制在可读范围，重页面独立加载。
 - 检查更新：不再使用 Tauri API；源码和 dist 不应出现 `__TAURI_INTERNALS__`、`@tauri-apps`、`tauriInvoke`、`tauriListen`、`get_desktop_version`。
 
 ## 3. 后端服务
 
 - 技术栈：Python + FastAPI + SQLite + FTS5。
+- 源码入口：`src/zhiji_backend` 是唯一维护后端；旧 `app/backend` 已移出仓库归档，不参与运行和测试。
 - 端口：生产形态 API 与 Web 静态资源合一，均为 `:9120`。
+- 安全边界：本地回环访问保持零配置；非回环客户端访问 `/api`、`/ingest`、`/releases` 必须携带 `KI_API_TOKEN`。
 - 托管：macOS 用户级 launchd `com.zhiji.backend`，开机自启，崩溃重启。
-- 主要能力：内容采集、RSS 情报、AI 摘要、专题系列、头脑风暴、综合事务、知识图谱、辅导中心、系统日志和数据库状态。
+- 主要能力：内容采集、RSS 情报、即时快报、专题系列、头脑风暴、综合事务、知识图谱、辅导中心、系统日志和数据库状态。
 
 ## 4. 数据层
 
@@ -47,7 +52,6 @@ data/
 │   └── documents/                   # 原始文档
 ├── brainstorm/                      # 问题与回答 Markdown
 ├── concepts/                        # 概念沉淀文档
-├── digests/                         # 每日摘要
 ├── events/                          # RSS JSONL 归档
 └── state/                           # RSS 水位标记
 ```
@@ -65,10 +69,10 @@ data/
           → 替换 /Applications/知几.app
 ```
 
-- 发布物：只上传 `zhiji_X.Y.Z.dmg`，不再使用 bsdiff、manifest.json、install_helper.sh。
+- 发布物：只上传 `zhiji_X.Y.Z.dmg` 到 GitHub Release，不再使用 bsdiff、manifest.json、install_helper.sh，也不再将 Sparkle 下载入口指向内网后端。
 - appcast：由 `scripts/build_release.py` 生成，但必须 `git add appcast.xml && git commit && git push` 后用户端才可见。
 - 版本同步：`desktop/pubspec.yaml`、`src/zhiji_backend/__init__.py`、`app/frontend/src/constants.ts`、`app/frontend/vite.config.ts`、`desktop/lib/main.dart`、`desktop/changelog.json`、系统说明/架构说明必须一起更新。
-- 验证：`npm run build`、Flutter release build、`scripts/build_release.py --skip-build`、`scripts/release-check.py X.Y.Z`、远端 appcast 和 GitHub Release asset 对齐、实机安装/更新提示。
+- 验证：优先运行 `./scripts/check.sh`；它会校验版本一致性、前端版本化构建、旧 backend/Tauri/增量更新/内网 DMG 分发残留。完整发版再跑 Flutter release build、`scripts/build_release.py --skip-build`、`scripts/release-check.py X.Y.Z`、远端 appcast 和 GitHub Release asset 对齐、实机安装/更新提示。
 
 ## 6. 情报闭环
 

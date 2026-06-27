@@ -17,6 +17,20 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def _safe_unlink(path_value: str | None, root: Path) -> None:
+    if not path_value:
+        return
+    try:
+        root_resolved = root.resolve()
+        path = Path(path_value).expanduser().resolve()
+        if path == root_resolved or root_resolved in path.parents:
+            path.unlink(missing_ok=True)
+        else:
+            logger.warning("Refusing to delete file outside ingest root: %s", path)
+    except Exception:
+        logger.warning("Failed to delete ingest file safely: %s", path_value, exc_info=True)
+
+
 @router.get("/api/events")
 def list_events(
     topic: str | None = None, status: str | None = None,
@@ -109,6 +123,9 @@ def list_events(
         if "status" in params:
             count_query += " AND status = :status"
             count_params["status"] = params["status"]
+        if "content_type" in params:
+            count_query += " AND content_type = :content_type"
+            count_params["content_type"] = params["content_type"]
         if source_id:
             ids = [s.strip() for s in source_id.split(",") if s.strip()]
             if len(ids) == 1:
@@ -199,7 +216,7 @@ def delete_event(event_id: str) -> dict[str, object]:
     for path_col in ("video_path", "audio_path", "document_path"):
         p = row[path_col]
         if p:
-            Path(p).unlink(missing_ok=True)
+            _safe_unlink(str(p), ingest_root)
 
     with connect() as conn:
         conn.execute("DELETE FROM events WHERE id = ?", (event_id,))
@@ -226,7 +243,7 @@ def batch_delete_events(payload: dict[str, object]) -> dict[str, object]:
         for path_col in ("video_path", "audio_path", "document_path"):
             p = row[path_col]
             if p:
-                Path(p).unlink(missing_ok=True)
+                _safe_unlink(str(p), ingest_root)
         with connect() as conn:
             conn.execute("DELETE FROM events WHERE id = ?", (eid,))
         deleted += 1
@@ -295,6 +312,8 @@ def summarize_event(event_id: str, background_tasks: BackgroundTasks, force: boo
 
 @router.post("/api/collect")
 def collect(request: CollectRequest) -> dict[str, object]:
+    if request.source_ids is not None and not request.source_ids:
+        raise HTTPException(status_code=400, detail="source_ids must not be empty")
     seed_default_sources()
     return collect_once(source_ids=request.source_ids, fetcher=fetch_url)
 

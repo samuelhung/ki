@@ -338,7 +338,10 @@ def review_mistake(material_id: str, req: MistakeReviewRequest):
 @router.get("/{material_id}/file/{fmt}")
 def get_study_file(material_id: str, fmt: str):
     """返回讲题稿文件（md/html/pdf）"""
-    md_dir = STUDY_DATA_DIR / material_id
+    md_dir = (STUDY_DATA_DIR / material_id).resolve()
+    root = STUDY_DATA_DIR.resolve()
+    if root not in md_dir.parents and md_dir != root:
+        raise HTTPException(status_code=400, detail="非法资料路径")
     file_map = {
         "md": "讲题稿版.md",
         "html": "讲题稿打印版.html",
@@ -353,11 +356,15 @@ def get_study_file(material_id: str, fmt: str):
             row = conn.execute("SELECT raw_content FROM study_materials WHERE id = ?", (material_id,)).fetchone()
         if not row or not row["raw_content"]:
             raise HTTPException(status_code=404, detail="原始文件不存在")
-        orig_path = STUDY_DATA_DIR.parent / row["raw_content"]
+        orig_path = (STUDY_DATA_DIR.parent / row["raw_content"]).resolve()
+        if root not in orig_path.parents and orig_path != root:
+            raise HTTPException(status_code=400, detail="非法文件路径")
         if not orig_path.exists():
             raise HTTPException(status_code=404, detail="原始文件已丢失")
         return FileResponse(orig_path)
-    path = md_dir / file_map[fmt]
+    path = (md_dir / file_map[fmt]).resolve()
+    if root not in path.parents and path != root:
+        raise HTTPException(status_code=400, detail="非法文件路径")
     if not path.exists():
         raise HTTPException(status_code=404, detail="文件尚未生成")
     return FileResponse(path)
@@ -365,7 +372,7 @@ def get_study_file(material_id: str, fmt: str):
 
 # ── 图片上传 + OCR ──
 
-@router.post("/upload")
+@router.post("/upload-image")
 def upload_image(
     file: UploadFile = File(...),
     subject: str = Form("语文"),

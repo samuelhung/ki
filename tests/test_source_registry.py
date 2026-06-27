@@ -4,10 +4,10 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "app"))
+sys.path.insert(0, str(ROOT / "src"))
 
-from backend.db import connect, init_db, seed_default_sources
-from backend.main import app
+from zhiji_backend.db import connect, init_db, seed_default_sources
+from zhiji_backend.main import app
 
 
 def test_seed_default_sources_inserts_initial_rss_sources(tmp_path, monkeypatch):
@@ -86,6 +86,7 @@ def test_dashboard_summary_counts_seeded_sources_and_events(tmp_path, monkeypatc
     response = client.get("/api/dashboard/summary")
 
     assert response.status_code == 200
-    assert response.json()["today_events"] == 1
-    assert response.json()["high_priority_events"] == 1
+    assert response.json()["today_new"] == 0
+    assert response.json()["ingest_total"] == 0
+    assert response.json()["brainstorm_total"] == 0
     assert response.json()["sources_enabled"] >= 7

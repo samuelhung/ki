@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { BookOpen, FileText, RefreshCw, Search, Database, HardDrive, Table, CheckCircle, AlertCircle, Upload } from 'lucide-react';
+import { apiFetch } from '../api';
 
 import { APP_VERSION } from '../constants';
+import { ARCHITECTURE_FEATURES, CHANGELOG_ENTRIES, CORE_MODULES, DATA_DIRECTORY_TREE, RELEASE_GUARDRAILS, RUNTIME_ARCHITECTURE, SYSTEM_DOC_TABS, TECH_STACK } from '../systemDocData';
 
 declare global {
   interface Window {
@@ -11,14 +13,7 @@ declare global {
 
 const canCheckUpdates = () => typeof window !== 'undefined' && Boolean(window.zhiji_checkUpdates);
 
-const tabs = [
-  { key: 'arch', label: '数据架构' },
-  { key: 'flow', label: '数据流' },
-  { key: 'features', label: '功能体系' },
-  { key: 'changelog', label: '版本更新' },
-  { key: 'database', label: '数据库' },
-  { key: 'logs', label: '系统日志' },
-] as const;
+const tabs = SYSTEM_DOC_TABS;
 
 interface LogEntry {
   timestamp: string;
@@ -81,7 +76,7 @@ export default function SystemDoc() {
 
   const loadDbInfo = useCallback(() => {
     setDbLoading(true);
-    fetch('/api/system/database')
+    apiFetch('/api/system/database')
       .then(r => r.json())
       .then(setDbInfo)
       .catch(() => setDbInfo(null))
@@ -92,7 +87,7 @@ export default function SystemDoc() {
     setLogLoading(true);
     const params = new URLSearchParams({ level: logLevel, limit: '500' });
     if (logSearch) params.set('search', logSearch);
-    fetch(`/api/logs?${params}`)
+    apiFetch(`/api/logs?${params}`)
       .then(r => r.json())
       .then(d => { setLogEntries(d.entries || []); setLogTotal(d.total || 0); })
       .catch(() => setLogEntries([]))
@@ -176,23 +171,7 @@ export default function SystemDoc() {
           <div className="bg-[#141518] border border-[#2A2B30] rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-4">运行架构</h2>
             <pre className="text-xs leading-relaxed text-gray-300 bg-[#0B0C10] rounded-lg p-4 overflow-x-auto font-mono mb-4">
-{`macOS 知几.app
-├── Flutter WebView 壳
-│   ├── 窗口 / 托盘 / 关闭隐藏
-│   ├── 后端健康检查 + 连接设置页
-│   ├── WKWebView 加载 React 前端
-│   ├── JS Bridge: zhiji_checkUpdates → Sparkle
-│   └── 每次创建 WebView 清理缓存并追加 desktop_version/cache_bust
-│
-├── React + Vite + Tailwind 前端
-│   ├── 所有业务页面、移动端适配、过场动画
-│   ├── API 使用同源相对路径，支持 127.0.0.1 / 10.8.0.105 等后端地址
-│   └── 构建产物文件名带版本号，避免旧 JS 缓存
-│
-└── Python / FastAPI 后端
-    ├── launchd: com.zhiji.backend 开机自启 + 崩溃重启
-    ├── SQLite + 文件系统双写
-    └── API 与静态 Web 单端口 :9120`}
+{RUNTIME_ARCHITECTURE}
             </pre>
             <p className="text-xs text-gray-500 leading-relaxed">
               桌面端只承担壳层能力，业务界面全部由 Web 前端渲染；自动更新由 Sparkle 读取 GitHub 上的 appcast.xml，再下载 GitHub Release 中的全量 DMG。
@@ -202,21 +181,7 @@ export default function SystemDoc() {
           <div className="bg-[#141518] border border-[#2A2B30] rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-4">数据目录结构</h2>
             <pre className="text-xs leading-relaxed text-gray-300 bg-[#0B0C10] rounded-lg p-4 overflow-x-auto font-mono">
-{`data/
-│
-│  📊 intelligence.sqlite                          ← SQLite 主库
-│
-├── ingest/                                        ← 摄入管线全部产物
-│   ├── transcripts/   evt-ingest-{id}.md          ← 转写全文（四种类型通用）
-│   ├── summaries/     evt-ingest-{id}.md          ← AI 结构化总结
-│   ├── videos/        evt-ingest-{id}.mp4         ← 原始视频（抖音+上传）
-│   ├── audio/         evt-ingest-{id}.ext         ← 原始音频
-│   └── documents/     evt-ingest-{id}.ext         ← 原始文档
-│
-├── brainstorm/        {question_id}.md            ← 问题 + 回答追加写入
-├── concepts/          evt-concept-{id}.md         ← 沉淀概念结构化文档
-├── events/            YYYY-MM-DD.jsonl            ← RSS 采集归档（去重用）
-└── state/             rss-{source}.json           ← RSS 水位标记`}
+{DATA_DIRECTORY_TREE}
             </pre>
           </div>
 
@@ -338,20 +303,7 @@ export default function SystemDoc() {
           <div className="bg-[#141518] border border-[#2A2B30] rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-4">核心模块</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {[
-                { name: '仪表盘', desc: '五项指标单行展示 + 热力图 + AI 运转 + 事件总览' },
-                { name: '内容采集', desc: '抖音/文件摄入，4 认知 tab，即时快报，AI 概述' },
-                { name: '专题系列', desc: 'AI 聚类发现，候选审核→保存，结构化总结，论文式深度分析' },
-                { name: '沉淀概念', desc: '手工录入 + 脑暴总结一键沉淀，AI 结构化补全，原文依据带脚注' },
-                { name: '头脑风暴', desc: '手工创建问题，多文档 AI 综合回答，多轮对话，概念沉淀联动' },
-                { name: '综合事务', desc: '纯手动输入事务，AI 结构化判断，关联内容展示' },
-                { name: '事件列表', desc: 'FTS5 全文检索 + 分页 + 批量操作' },
-                { name: '信息源管理', desc: '8 源 RSS，采集页卡片 + 弹窗启停' },
-                { name: '知识图谱', desc: '实体关系提取、力导向图可视化、深度分析' },
-                { name: '辅导中心', desc: '教材PDF上传→逐课解读，支持孩子版/家长版/教材解读三种模式，课文目录+附录' },
-                { name: '桌面壳', desc: 'Flutter WebView 壳，负责托盘、连接设置、缓存刷新和 Sparkle 更新桥接' },
-                { name: '自动更新', desc: 'Sparkle 读取 GitHub appcast，下载 GitHub Release 全量 DMG 并验签安装' },
-              ].map(m => (
+              {CORE_MODULES.map(m => (
                 <div key={m.name} className="bg-[#0B0C10] rounded-lg p-3">
                   <div className="text-sm font-medium text-white">{m.name}</div>
                   <div className="text-[11px] text-gray-500 mt-0.5">{m.desc}</div>
@@ -363,19 +315,7 @@ export default function SystemDoc() {
           <div className="bg-[#141518] border border-[#2A2B30] rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-4">技术栈</h2>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[
-                { label: '后端', value: 'FastAPI + SQLite' },
-                { label: '前端', value: 'React + Vite + Tailwind v4' },
-                { label: '路由', value: 'React Router v7' },
-                { label: 'AI', value: 'DeepSeek Chat' },
-                { label: '语音', value: '火山引擎 ASR' },
-                { label: '搜索', value: 'FTS5 全文检索' },
-                { label: '图标', value: 'lucide-react' },
-                { label: '图谱', value: 'vis-network' },
-                { label: '桌面壳', value: 'Flutter + webview_flutter' },
-                { label: '更新', value: 'Sparkle 2 + GitHub Release' },
-                { label: '构建', value: 'Vite + Rolldown' },
-              ].map(t => (
+              {TECH_STACK.map(t => (
                 <div key={t.label} className="bg-[#0B0C10] rounded-lg p-3">
                   <div className="text-[11px] text-gray-500">{t.label}</div>
                   <div className="text-xs text-gray-300 mt-0.5">{t.value}</div>
@@ -387,27 +327,18 @@ export default function SystemDoc() {
           <div className="bg-[#141518] border border-[#2A2B30] rounded-xl p-5">
             <h2 className="text-sm font-semibold text-white mb-4">v{APP_VERSION} 架构特征</h2>
             <div className="space-y-2 text-xs text-gray-400">
-              <p>• <span className="text-gray-300">Flutter WebView 桌面壳</span> — macOS App 只负责窗口、托盘、连接设置、JS Bridge 和 Sparkle 更新，业务页面统一由 React 前端承载</p>
-              <p>• <span className="text-gray-300">WebView 缓存刷新</span> — 创建 WebView 时清理 WKWebView 缓存和 localStorage，加载 URL 追加 desktop_version/cache_bust，避免新版继续运行旧 JS</p>
-              <p>• <span className="text-gray-300">GitHub Sparkle 更新链路</span> — appcast.xml 通过 raw.githubusercontent.com 分发，DMG 通过 GitHub Release 下载，Sparkle EdDSA 验签后安装</p>
-              <p>• <span className="text-gray-300">检查更新桥接</span> — React 前端不再调用 Tauri，改用 window.zhiji_checkUpdates.postMessage('check') 触发 Flutter 原生 Sparkle 通道</p>
-              <p>• <span className="text-gray-300">专题待确认流程</span> — 刷新扫描取代"寻找新成员"，建议缓存至数据库归入待确认队列，新内容采集后自动匹配追加</p>
-              <p>• <span className="text-gray-300">推荐理由系统</span> — expand/auto_suggest 返回推荐理由，存储格式升级为含理由的对象数组，向后兼容</p>
-              <p>• <span className="text-gray-300">专题系列引擎</span> — AI 按主题聚类事件，候选审核→保存，结构化总结 + 论文式深度分析</p>
-              <p>• <span className="text-gray-300">内容概述</span> — 每条内容 AI 生成 ≤500 字概述，用于专题聚类和快速浏览</p>
-              <p>• <span className="text-gray-300">采集即匹配</span> — 新内容入库后即时 AI 匹配已有专题（方案 A），不超过 5s</p>
-              <p>• <span className="text-gray-300">移动端全适配</span> — 底部导航栏含专题入口，详情页响应式重排，弹窗触屏优化</p>
-              <p>• <span className="text-gray-300">抖音标题智能处理</span> — 自动剥离平台标签；标题过短或截断时 AI 生成标题</p>
-              <p>• <span className="text-gray-300">MD + SQLite 双写</span> — 所有内容物两份存储，互备不丢</p>
-              <p>• <span className="text-gray-300">持久化任务队列</span> — 替换 BackgroundTasks，服务重启不丢任务，10 步细粒度节点</p>
-              <p>• <span className="text-gray-300">概念沉淀与联动</span> — 用户录入概念 → AI 结构化补全 → 脑暴总结自动关联</p>
-              <p>• <span className="text-gray-300">多轮对话系统</span> — 脑暴问题支持追问，对话式研究，手动触发总结</p>
-              <p>• <span className="text-gray-300">双向缓存互通</span> — 凝神静思结果在内容/问题两侧共享，避免重复 AI 调用</p>
-              <p>• <span className="text-gray-300">综合事务引擎</span> — 纯手工输入 → AI 结构化判断 → 关联内容展示</p>
-              <p>• <span className="text-gray-300">FTS5 全文检索</span> — 事件搜索 + 相似事件预筛选，O(n) → O(log n)</p>
-              <p>• <span className="text-gray-300">组件化 + 统一标签</span> — 侧边面板独立组件，sourceLabel/statusLabel 集中管理</p>
-              <p>• <span className="text-gray-300">知识图谱</span> — AI 提取人物/组织/概念/事件实体及关系，vis-network 力导向图可视化，实体详情+关联内容弹窗预览，深度 AI 分析</p>
-              <p>• <span className="text-gray-300">辅导中心</span> — 独立模块 study_materials 表隔离存储，教材 PDF 上传→PyMuPDF 提取→DeepSeek 目录识别→逐课解读，孩子版/家长版/教材解读三种模式</p>
+              {ARCHITECTURE_FEATURES.map((feature) => (
+                <p key={feature.name}>• <span className="text-gray-300">{feature.name}</span> — {feature.desc}</p>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-[#141518] border border-[#2A2B30] rounded-xl p-5">
+            <h2 className="text-sm font-semibold text-white mb-4">发布门禁</h2>
+            <div className="space-y-2 text-xs text-gray-400">
+              {RELEASE_GUARDRAILS.map((item) => (
+                <p key={item}>• {item}</p>
+              ))}
             </div>
           </div>
         </div>
@@ -416,119 +347,7 @@ export default function SystemDoc() {
       {/* Tab: 版本更新 */}
       {tab === 'changelog' && (
         <div className="space-y-8">
-          {[
-            {
-              version: '1.3.7',
-              date: '2026-06-27',
-              title: '优化仪表盘布局并移除摘要入口',
-              items: [
-                '仪表盘顶部五个指标卡调整为桌面端单行展示，整体更紧凑',
-                '左侧导航和右侧内容宽度收窄，适配 MacBook Air 最大窗口',
-                '移除独立摘要模块入口，系统说明同步更新数据架构、数据流和功能体系内容',
-              ],
-            },
-            {
-              version: '1.3.6',
-              date: '2026-06-26',
-              title: '修复 Dock 点击无法恢复最小化窗口',
-              items: [
-                '修复 macOS 窗口最小化到 Dock 后，再次点击 Dock 图标无法弹出窗口的问题',
-                'Dock reopen 逻辑新增 isMiniaturized 判断并调用 deminiaturize 恢复最小化窗口',
-                '关闭按钮隐藏与最小化两种窗口状态现在都会在 Dock 点击时恢复并置前',
-              ],
-            },
-            {
-              version: '1.3.5',
-              date: '2026-06-26',
-              title: '修复 Dock 点击无法重新打开窗口',
-              items: [
-                '修复 macOS 点击窗口关闭按钮后，Dock 图标仍在但再次点击无法重新显示窗口的问题',
-                'AppDelegate 新增 applicationShouldHandleReopen，在 Dock 重新激活时恢复隐藏窗口并置前',
-                '保留关闭按钮隐藏到托盘/后台的行为，不影响托盘菜单的显示和退出入口',
-              ],
-            },
-            {
-              version: '1.3.4',
-              date: '2026-06-26',
-              title: '强制刷新 Flutter WebView 中的 Web 前端缓存',
-              items: [
-                '修复安装新版后 WebView 仍复用旧首页/旧 JS，导致系统说明继续显示旧版本和旧更新入口',
-                'Flutter 壳创建 WebView 时先清理 WKWebView 缓存与 localStorage，再加载后端 Web 前端',
-                'WebView 加载 URL 自动追加 desktop_version 和 cache_bust 参数，强制重新获取当前页面',
-                '发布验证补齐远端 appcast、GitHub Release asset、实机安装与 Sparkle 更新提醒',
-              ],
-            },
-            {
-              version: '1.3.3',
-              date: '2026-06-26',
-              title: '修复 WebView 缓存导致旧前端继续运行',
-              items: [
-                '前端构建产物文件名加入版本号，避免 WKWebView 复用旧 JS 缓存',
-                '版本显示同步为 1.3.3，确保系统说明、侧边栏和 about 页一致',
-                '构建后增加源码与 dist 旧版本扫描，发现旧 Tauri 残留立即阻断发版',
-              ],
-            },
-            {
-              version: '1.3.2',
-              date: '2026-06-26',
-              title: '修复 Flutter 桌面壳检查更新按钮',
-              items: [
-                '移除前端残留 Tauri updater 调用，改为 Flutter WebView JS Bridge 触发 Sparkle 原生更新检查',
-                '检查更新由 Sparkle 原生弹窗接管，避免前端误显示 Tauri 下载进度',
-                '前端显示版本与桌面端 pubspec.yaml 同步',
-              ],
-            },
-            {
-              version: '1.3.0',
-              date: '2026-06-29',
-              title: '修复 macOS WebView 灰屏',
-              items: [
-                '修复 webview_flutter_wkwebview setBackgroundColor 在 macOS 调用 setOpaque(false) 导致的 UnimplementedError',
-                'macOS 上不再调用 WebViewController.setBackgroundColor，WebView 背景由 React 前端 CSS 控制',
-                'Flutter 3.44.2 + webview_flutter 4.14.0 兼容性验证通过',
-              ],
-            },
-            {
-              version: '1.1.2',
-              date: '2026-06-25',
-              title: '修复托盘图标导致启动崩溃',
-              items: [
-                '托盘图标改用 app bundle 内 AppIcon.icns，不再依赖不存在的 assets/icon.png',
-                '托盘设置包裹 try-catch，防止 main() 在 runApp() 前崩溃导致黑屏',
-              ],
-            },
-            {
-              version: '1.1.1',
-              date: '2026-06-25',
-              title: '修复 MacBook Air 黑屏 + 回退 webview_flutter',
-              items: [
-                '后端离线时展示连接设置界面，不渲染 WebView，避免平台视图黑色错误页遮挡 Flutter UI',
-                'Info.plist 添加 NSAppTransportSecurity 例外，允许本地 HTTP 明文连接',
-                'WebView 引擎回退为 webview_flutter，提升 macOS 兼容性',
-              ],
-            },
-            {
-              version: '1.1.0',
-              date: '2026-06-25',
-              title: '架构重构：Flutter 桌面壳 + 全 WebView 内容',
-              items: [
-                '桌面端从多页面原生 Flutter 重构为纯 WebView 壳，业务 UI 统一由 React 前端接管',
-                '新增托盘模式：关闭窗口隐藏到托盘，后端独立运行不受影响',
-                '后端改为 launchd 托管 com.zhiji.backend，开机自启并崩溃重启',
-                '发布链路转为 Sparkle 全量 DMG 更新，bsdiff/manifest/install_helper 已废弃',
-              ],
-            },
-            {
-              version: '1.0.x',
-              date: '2026-06-08',
-              title: '初始知识情报中心',
-              items: [
-                '抖音分享链接解析、视频下载、音频提取、语音转写、AI 总结全链路',
-                '上传文件摄入（视频/音频/文档）与 MD + SQLite 双写存储',
-                '8 源 RSS 定时采集、翻译链路、仪表盘、热力图与事件总览',
-              ],
-            },
-          ].map((v) => (
+          {CHANGELOG_ENTRIES.map((v) => (
             <div key={v.version} className="bg-[#141518] border border-[#2A2B30] rounded-xl p-5">
               <div className="flex items-center gap-3 mb-4">
                 <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-purple-500/20 text-purple-400">v{v.version}</span>

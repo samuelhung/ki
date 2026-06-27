@@ -10,16 +10,16 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "app"))
+sys.path.insert(0, str(ROOT / "src"))
 
-from backend.main import app
-from backend.db import init_db, get_db_path
+from zhiji_backend.main import app
+from zhiji_backend.db import init_db, get_db_path
 
 client = TestClient(app)
 
 
 class TestDouyinIngest:
-    @patch("backend.routes.ingest_routes._process_ingest")
+    @patch("zhiji_backend.routes.ingest_routes._process_ingest")
     def test_accepts_share_text_and_creates_event(self, mock_process):
         """POST /api/ingest/douyin creates a pending event and returns immediately."""
         response = client.post("/api/ingest/douyin", json={
@@ -33,7 +33,7 @@ class TestDouyinIngest:
         assert data["event_id"].startswith("evt-ingest-")
         assert data["type"] == "douyin_share"
 
-    @patch("backend.routes.ingest_routes._process_ingest")
+    @patch("zhiji_backend.routes.ingest_routes._process_ingest")
     def test_event_appears_in_events_list(self, mock_process):
         """Created event should be visible in GET /api/events."""
         resp = client.post("/api/ingest/douyin", json={
@@ -50,7 +50,7 @@ class TestDouyinIngest:
 
 
 class TestFileIngest:
-    @patch("backend.routes.ingest_routes._process_ingest")
+    @patch("zhiji_backend.routes.ingest_routes._process_ingest")
     def test_accepts_document_upload(self, mock_process):
         """POST /api/ingest/file with type=document creates an event."""
         file_content = b"# Test Document\n\nHello World"
@@ -65,7 +65,7 @@ class TestFileIngest:
         assert data["status"] == "processing"
         assert data["type"] == "document"
 
-    @patch("backend.routes.ingest_routes._process_ingest")
+    @patch("zhiji_backend.routes.ingest_routes._process_ingest")
     def test_accepts_audio_file_upload(self, mock_process):
         """POST /api/ingest/file with type=audio_file creates an event."""
         file_content = b"fake audio data"
@@ -78,7 +78,7 @@ class TestFileIngest:
         assert response.status_code == 200
         assert response.json()["type"] == "audio_file"
 
-    @patch("backend.routes.ingest_routes._process_ingest")
+    @patch("zhiji_backend.routes.ingest_routes._process_ingest")
     def test_accepts_video_file_upload(self, mock_process):
         """POST /api/ingest/file with type=video_file creates an event."""
         response = client.post(
@@ -92,7 +92,7 @@ class TestFileIngest:
 
 
 class TestIngestStatus:
-    @patch("backend.routes.ingest_routes._process_ingest")
+    @patch("zhiji_backend.routes.ingest_routes._process_ingest")
     def test_status_returns_event_info(self, mock_process):
         """GET /api/ingest/status/{id} returns the event."""
         resp = client.post("/api/ingest/douyin", json={

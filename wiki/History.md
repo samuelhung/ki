@@ -150,3 +150,27 @@ curl -X POST http://127.0.0.1:9120/api/collect -H 'Content-Type: application/jso
 - `curl http://127.0.0.1:9120/api/health`：通过。
 - `curl http://10.8.0.105:9120/api/health`：通过。
 - 浏览器访问 `http://10.8.0.105:9120/`：确认“行动候选”卡片、状态文案和三个操作按钮可见；使用临时 smoke 候选验证 `accepted` / `done` 状态流转后已清理临时数据。
+
+## Task t_7f0d482d
+
+- task_id: `t_7f0d482d`
+
+P0 backend source consolidation completed in working tree. Migrated active tests/scripts from legacy `backend.*` imports to `zhiji_backend.*`, changed test sys.path from `app` to `src`, moved untracked legacy `app/backend` out of repo to `/Users/mrh/Documents/Projects/zhiji-archives/backend-legacy-20260627`, added `scripts/check.sh` stale backend guards, and updated README/Architecture. Verification: temporary Python 3.12 venv smoke `PYTHONPATH=src .venv-verify/bin/python -m pytest tests/test_backend_smoke.py tests/test_collect_api.py tests/test_digest_api.py tests/test_ingest_api.py tests/test_rss_collector.py tests/test_source_registry.py -q` -> 20 passed, 1 warning; `./scripts/check.sh` -> check ok including frontend build and release-check.
+
+## Task t_b948bdd9
+
+- task_id: `t_b948bdd9`
+
+P1/P2 cleanup completed in working tree. P1: added shared frontend HTML escaping/sanitizer, routed StudyDetail/SeriesDetail/IndustryChains HTML generation through it, protected remote non-loopback access to `/api`, `/ingest`, `/releases` with KI_API_TOKEN while preserving local desktop loopback, replaced global `window.fetch` monkey patch with explicit `apiFetch`, and changed ingest queue task execution to a child process runner so timeouts can terminate work. P2: added route-level React.lazy/Suspense splitting, raised Vite chunk warning threshold to 900KB after splitting, added GitHub Actions workflow, updated frontend legacy smoke scripts and README/Architecture docs. Verification: frontend smoke scripts passed; Python 3.12 temporary venv smoke passed 22 tests with 1 Starlette warning; `./scripts/check.sh` passed including frontend build and release-check; `npm audit --omit=dev` found 0 vulnerabilities.
+
+## Task t_a2c52a11
+
+- task_id: `t_a2c52a11`
+
+当前会话直接接手修复深度代码审查问题（绕过已崩溃的 researcher/orchestrator 链路）。已完成并验证：P0 上传端点、collect JSON body、source_ids=[] 防全量采集、install.sh 行号污染；P1 远程后端 apiFetch/media resolver、/events 路由、SQLite foreign_keys、AI usage KI_DB_PATH、task queue 原子领取+worker 单例、桌面首次启动健康检查+远程 host、事件/Study 文件路径边界、Study iframe sandbox。版本同步到 1.3.9+84，更新 changelog/SystemDoc/README/Architecture。验证通过：python -m pytest tests/test_backend_smoke.py tests/test_collect_api.py tests/test_ingest_api.py tests/test_task_queue.py tests/test_digest_api.py -q → 23 passed；bash tests/test_frontend_quality_gates.sh && bash tests/test_frontend_skeleton.sh → ok；ZHIJI_SKIP_RELEASE_CHECK=1 ./scripts/check.sh → check ok；git diff --check → ok。
+
+## Task t_a2c52a11
+
+- task_id: `t_a2c52a11`
+
+继续优化剩余代码风险：1) Study 后端重复 @router.post('/upload') 已拆分，主上传保留 /api/study/upload，图片 OCR 专用入口改为 /api/study/upload-image，并用临时 hermes-verify-study-upload-* 脚本确认 /upload 唯一；2) task_queue pending 文件清理改为 _safe_pending_unlink，只允许删除 INGEST_ROOT/pending 下文件，周期性 processing cleanup 改为只重置超过 1 小时且无 running task 的 stale event，避免误伤真实运行任务；3) zhiji update 版本解析支持 vX.Y.Z+N 和预发布后缀，新增 tests/test_cli.py。验证通过：python -m pytest tests/test_task_queue.py tests/test_cli.py -q → 6 passed；ZHIJI_SKIP_RELEASE_CHECK=1 ./scripts/check.sh → check ok；ad-hoc study upload route verification ok；python -m pytest tests/test_backend_smoke.py tests/test_collect_api.py tests/test_ingest_api.py tests/test_task_queue.py tests/test_digest_api.py tests/test_cli.py -q → 26 passed；bash tests/test_frontend_quality_gates.sh && bash tests/test_frontend_skeleton.sh && git diff --check → ok。

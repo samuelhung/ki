@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import EmptyState from '../components/EmptyState';
 import { RefreshCw, ChevronDown, ChevronRight, Lightbulb, FileText } from 'lucide-react';
 import type { Digest } from '../types';
+import { apiFetch } from '../api';
 
 interface DigestSection {
   type: 'title' | 'headline' | 'overview' | 'topic' | 'qa' | 'expandable';
@@ -119,7 +120,7 @@ export default function DigestPage() {
 
   function load() {
     setLoading(true); setError('');
-    fetch('/api/digest/latest')
+    apiFetch('/api/digest/latest')
       .then((r) => { if (!r.ok) throw new Error('加载摘要失败'); return r.json(); })
       .then(setDigest)
       .catch((e) => setError(e.message))
@@ -129,7 +130,7 @@ export default function DigestPage() {
   async function handleRegenerate() {
     setGenerating(true);
     try {
-      const res = await fetch('/api/digest/generate', { method: 'POST' });
+      const res = await apiFetch('/api/digest/generate', { method: 'POST' });
       if (!res.ok) throw new Error('摘要生成失败');
       load();
     } catch (e: unknown) {

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import SourceRow from '../components/SourceRow';
 import type { Source } from '../types';
+import { apiFetch } from '../api';
 
 export default function Sources() {
   const [sources, setSources] = useState<Source[]>([]);
@@ -9,7 +10,7 @@ export default function Sources() {
 
   function load() {
     setLoading(true); setError('');
-    fetch('/api/sources')
+    apiFetch('/api/sources')
       .then((r) => { if (!r.ok) throw new Error('加载信息源失败'); return r.json(); })
       .then(setSources)
       .catch((e) => setError(e.message))
@@ -18,7 +19,7 @@ export default function Sources() {
 
   async function handleToggle(id: string) {
     try {
-      const res = await fetch(`/api/sources/${id}/toggle`, { method: 'PUT' });
+      const res = await apiFetch(`/api/sources/${id}/toggle`, { method: 'PUT' });
       if (!res.ok) throw new Error('切换失败');
       const data = await res.json();
       setSources((prev) => prev.map((s) => (s.id === id ? { ...s, enabled: data.enabled ? 1 : 0 } : s)));
@@ -26,7 +27,7 @@ export default function Sources() {
   }
 
   async function handleCollect(id: string) {
-    try { await fetch(`/api/sources/${id}/collect`, { method: 'POST' }); load(); }
+    try { await apiFetch(`/api/sources/${id}/collect`, { method: 'POST' }); load(); }
     catch (e: unknown) { setError(e instanceof Error ? e.message : '采集失败'); }
   }
 

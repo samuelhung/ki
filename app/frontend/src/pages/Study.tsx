@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useCurtain } from '../CurtainContext';
 import { BookOpen, Loader2, Plus, Search, Trash2, Upload, X } from 'lucide-react';
 import { formatTimeBeijing } from '../utils';
+import { apiFetch } from '../api';
 
 interface StudyItem {
   id: string;
@@ -64,7 +65,7 @@ export default function Study() {
     try {
       const params = new URLSearchParams();
       if (subject !== '全部') params.set('subject', subject);
-      const r = await fetch(`/api/study/list?${params.toString()}`);
+      const r = await apiFetch(`/api/study/list?${params.toString()}`);
       if (!r.ok) throw new Error('加载失败');
       const data = await r.json();
       setItems(data.items || []);
@@ -82,7 +83,7 @@ export default function Study() {
     setCreating(true);
     try {
       const actualType = newCategory === '单项训练' ? newType : newCategory;
-      const r = await fetch('/api/study/create', {
+      const r = await apiFetch('/api/study/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -129,7 +130,7 @@ export default function Study() {
       if (newType) formData.append('study_type', newType);
       if (newGrade) formData.append('grade', newGrade);
 
-      const r = await fetch('/api/study/upload', { method: 'POST', body: formData });
+      const r = await apiFetch('/api/study/upload', { method: 'POST', body: formData });
       if (!r.ok) {
         const err = await r.json();
         throw new Error(err.detail || 'OCR 失败');
@@ -168,7 +169,7 @@ export default function Study() {
     if (!window.confirm(`确定删除「${title}」？`)) return;
     setDeletingId(id);
     try {
-      const r = await fetch(`/api/study/${id}`, { method: 'DELETE' });
+      const r = await apiFetch(`/api/study/${id}`, { method: 'DELETE' });
       if (!r.ok) throw new Error('删除失败');
       setItems(prev => prev.filter(i => i.id !== id));
     } catch (e: any) {

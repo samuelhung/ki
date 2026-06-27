@@ -116,3 +116,26 @@ Slice 4: Digest / Topics / ActionCandidates 已完成。
 - 保持“不自动创建 Kanban 任务”的阶段 0 安全边界。
 
 当前 source registry 已包含 7 个默认 RSS 源，独立 Web 可访问 `http://127.0.0.1:9120/` 与 `http://10.8.0.105:9120/`。
+
+
+## P0-P2 清障计划（2026-06-27）
+
+### P0：发布/版本/旧后端收口
+1. 迁移旧后端引用：盘点 `tests/*`、`scripts/*`、`app/scripts/*` 中的 `backend.*` 引用，改向 `src/zhiji_backend` 包或建立明确兼容入口。
+2. 处理 `app/backend`：确认无运行链路依赖后归档或删除旧源码，避免与 `src/zhiji_backend` 双源码漂移。
+3. 收口当前工作区已有改动：废弃旧 release/helper 脚本、移除 Tauri 依赖、统一版本、同步 README/Architecture/SystemDoc、完善 `scripts/check.sh`。
+4. 验证门禁：`./scripts/check.sh`、相关 pytest smoke、`npm run build`，并形成 review-required handoff。
+
+### P1：安全底座
+1. HTML 渲染安全：统一 sanitizer 或替换 `dangerouslySetInnerHTML`，覆盖 `StudyDetail`、`SeriesDetail`、`IndustryChains`。
+2. API 与静态文件暴露：远程模式强制 `KI_API_TOKEN`；限制 `/ingest`、`/releases` 的访问面。
+3. 前端请求层：移除或集中封装 `window.fetch` monkey patch。
+4. 任务队列：设计并实现可真正隔离/终止的超时策略，避免超时线程继续改状态。
+
+### P2：维护性与质量门禁
+1. 拆分大页面：优先 `IndustryChains.tsx`，再处理 `Tasks.tsx`、`Ingest.tsx`、`SystemSettings.tsx`。
+2. 前端拆包：降低 Vite/Rolldown chunk size warning 噪声。
+3. CI：新增 GitHub Actions 最小门禁，覆盖 Python 语法/pytest smoke、前端 build、`scripts/check.sh`。
+4. SystemDoc 数据化：减少版本、模块列表、架构说明的手工漂移。
+
+约束：严禁删除 `/Users/mrh/Documents/Projects/zhiji/data/` 下任何数据；所有功能性改动必须真实验证。

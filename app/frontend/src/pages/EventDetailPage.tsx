@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader2, Sparkles, Globe, FileText, Lightbulb, Plus, Link2 } from 'lucide-react';
 import { renderMarkdown } from '../components/MarkdownRenderer';
 import { formatTimeBeijing, sourceLabel, statusLabel } from '../utils';
+import { apiFetch, backendUrl } from '../api';
 
 const API_BASE = '/api/events';
 
@@ -23,7 +24,7 @@ function toMediaUrl(absolutePath: string | undefined): string | null {
   if (!absolutePath) return null;
   const idx = absolutePath.indexOf('/data/ingest/');
   if (idx === -1) return null;
-  return '/ingest' + absolutePath.substring(idx + '/data/ingest'.length);
+  return backendUrl('/ingest' + absolutePath.substring(idx + '/data/ingest'.length));
 }
 
 function SourceIcon({ sourceId }: { sourceId: string }) {
@@ -62,7 +63,7 @@ export default function EventDetailPage() {
     if (!id) return;
     setContemplateError('');
     setLoading(true);
-    fetch(`${API_BASE}/${id}`)
+    apiFetch(`${API_BASE}/${id}`)
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data) {
@@ -77,7 +78,7 @@ export default function EventDetailPage() {
           setContemplateResults(linked);
         }
         // 加载产业链建议计数
-        fetch('/api/chains/suggestions/count')
+        apiFetch('/api/chains/suggestions/count')
           .then(r => r.ok ? r.json() : { pending: 0 })
           .then(d => setChainSuggestionsCount(d.pending || 0))
           .catch(() => {});
@@ -88,7 +89,7 @@ export default function EventDetailPage() {
   useEffect(() => {
     if (tab === 'questions' && detail) {
       setLinkedQuestionsLoading(true);
-      fetch(`/api/brainstorm/event/${detail.id}/linked-questions`)
+      apiFetch(`/api/brainstorm/event/${detail.id}/linked-questions`)
         .then(r => r.ok ? r.json() : { linked_questions: [] })
         .then(d => setLinkedQuestions(d.linked_questions || []))
         .catch(() => setLinkedQuestions([]))
@@ -99,17 +100,17 @@ export default function EventDetailPage() {
   async function handleSummarize(eventId: string) {
     setSummarizingId(eventId);
     try {
-      const res = await fetch(`${API_BASE}/${eventId}/summarize?force=true`, { method: 'POST' });
+      const res = await apiFetch(`${API_BASE}/${eventId}/summarize?force=true`, { method: 'POST' });
       if (!res.ok) throw new Error('总结失败');
       for (let i = 0; i < 30; i++) {
         await new Promise(r => setTimeout(r, 2000));
-        const dRes = await fetch(`${API_BASE}/${eventId}`);
+        const dRes = await apiFetch(`${API_BASE}/${eventId}`);
         if (!dRes.ok) break;
         const d = await dRes.json();
         if (d.ai_summary) {
           setDetail(d);
           // 总结完成后刷新产业链建议计数
-          fetch('/api/chains/suggestions/count')
+          apiFetch('/api/chains/suggestions/count')
             .then(r => r.ok ? r.json() : { pending: 0 })
             .then(d2 => setChainSuggestionsCount(d2.pending || 0))
             .catch(() => {});
@@ -124,7 +125,7 @@ export default function EventDetailPage() {
     if (!detail) return;
     setContemplating(true); setContemplateError(''); setContemplateSelected(new Set());
     try {
-      const res = await fetch('/api/brainstorm/contemplate', {
+      const res = await apiFetch('/api/brainstorm/contemplate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ direction: 'event_to_questions', entity_id: detail.id }),
       });
@@ -142,12 +143,12 @@ export default function EventDetailPage() {
     setContemplateLinking(true);
     try {
       for (const qid of Array.from(contemplateSelected)) {
-        await fetch('/api/brainstorm/answer', {
+        await apiFetch('/api/brainstorm/answer', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ question_id: qid, question: '', event_ids: [detail.id] }),
         });
       }
-      const dRes = await fetch(`${API_BASE}/${detail.id}`);
+      const dRes = await apiFetch(`${API_BASE}/${detail.id}`);
       if (dRes.ok) setDetail(await dRes.json());
       setContemplateResults([]);
       setContemplateError('');
@@ -160,7 +161,7 @@ export default function EventDetailPage() {
     if (!detail) return;
     setChainLoading(true); setChainError(''); setChainAnalysis(''); setChainHints([]); setSyncResult('');
     try {
-      const res = await fetch('/api/chains/analyze', {
+      const res = await apiFetch('/api/chains/analyze', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ event_id: detail.id }),
       });
@@ -176,7 +177,7 @@ export default function EventDetailPage() {
     if (chainHints.length === 0) return;
     setSyncingHints(true); setSyncResult('');
     try {
-      const res = await fetch('/api/chains/hints/sync', {
+      const res = await apiFetch('/api/chains/hints/sync', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ hints: chainHints }),
       });

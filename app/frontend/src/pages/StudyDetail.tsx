@@ -2,6 +2,8 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, BookOpen, ChevronDown, ChevronRight, FileCode2, FileType2, Globe, Layers, Loader2, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
 import { formatTimeBeijing } from '../utils';
+import { escapeHtml, sanitizeHtml } from '../safeHtml';
+import { apiFetch } from '../api';
 
 /* ── helpers ── */
 
@@ -13,15 +15,6 @@ function parseChars(s: string): { py: string; hz: string }[] {
   });
 }
 
-/** Sanitize HTML: strip script/style/event handlers (XSS guard for AI-generated content) */
-function sanitizeHtml(html: string): string {
-  return html
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-    .replace(/\s+on\w+\s*=\s*["'][^"']*["']/gi, '')
-    .replace(/\s+on\w+\s*=\s*[^\s>]+/gi, '');
-}
-
 /** MD → styled HTML (matches 专题详情 depth analysis) */
 function mdToHtml(md: string): string {
   function bold(s: string): string {
@@ -30,7 +23,7 @@ function mdToHtml(md: string): string {
   let html = '';
   let inList = false;
   for (const raw of md.split('\n')) {
-    const line = raw.trim();
+    const line = escapeHtml(raw.trim());
     if (line.startsWith('#### ')) {
       if (inList) { html += '</ul>'; inList = false; }
       html += `<h4 class="text-xs font-semibold text-purple-400/80 mt-4 mb-1.5">${bold(line.slice(5))}</h4>`;
@@ -217,7 +210,7 @@ export default function StudyDetail() {
     if (!id) return;
     setLoading(true);
     try {
-      const r = await fetch(`/api/study/${id}`);
+      const r = await apiFetch(`/api/study/${id}`);
       if (!r.ok) throw new Error('资料不存在');
       setMaterial(await r.json());
     } catch (e: any) { setError(e.message); } finally { setLoading(false); }
@@ -236,7 +229,7 @@ export default function StudyDetail() {
     if (!id) return;
     setGenerating(true);
     try {
-      const r = await fetch(`/api/study/${id}/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+      const r = await apiFetch(`/api/study/${id}/generate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
       if (!r.ok) throw new Error('生成失败');
       await loadMaterial();
       if (material?.study_type === '教材/课本') setFormat('original');
@@ -249,7 +242,7 @@ export default function StudyDetail() {
     if (!window.confirm(`确定删除「${material?.title}」？此操作不可撤销。`)) return;
     setDeleting(true);
     try {
-      const r = await fetch(`/api/study/${id}`, { method: 'DELETE' });
+      const r = await apiFetch(`/api/study/${id}`, { method: 'DELETE' });
       if (!r.ok) throw new Error('删除失败');
       navigate('/study');
     } catch (e: any) { setError(e.message || '删除失败'); setDeleting(false); }
@@ -478,7 +471,7 @@ export default function StudyDetail() {
               )}
               {(format === 'html' || format === 'pdf' || format === 'original') && (
                 <div className="bg-[#141518] border border-[#2A2B30] rounded-xl overflow-hidden" style={{ height: 'calc(100vh - 220px)' }}>
-                  <iframe src={getFormatUrl()} className="w-full h-full border-0" title={`${format} Preview`} />
+                  <iframe src={getFormatUrl()} className="w-full h-full border-0" title={`${format} Preview`} sandbox="allow-same-origin" />
                 </div>
               )}
             </>

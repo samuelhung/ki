@@ -12,6 +12,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Loader2, Globe, Factory, ShoppingCart, X, Search, ArrowLeft, RefreshCw } from 'lucide-react';
+import { apiFetch } from '../api';
 
 // ── Types ──
 
@@ -176,7 +177,7 @@ export default function IndustryFlow() {
   // Fetch data
   const fetchData = useCallback(() => {
     setLoading(true);
-    fetch('/api/chains/nodes')
+    apiFetch('/api/chains/nodes')
       .then(r => r.json())
       .then(d => setAllNodes(d.nodes || []))
       .catch(() => {})

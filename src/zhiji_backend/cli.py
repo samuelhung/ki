@@ -51,10 +51,16 @@ def _find_whl_asset(release: dict) -> dict | None:
 
 
 def _parse_version(tag: str) -> tuple[int, ...]:
-    """从 tag 名提取版本号 (如 'v1.9.0' → (1,9,0))。"""
-    v = tag.lstrip("v")
+    """从 tag 名提取版本号 (如 'v1.9.0+83' → (1,9,0,83))。"""
+    v = tag.strip().lstrip("v")
+    main, _, build = v.partition("+")
+    main = main.split("-", 1)[0]
+    parts: list[int] = []
     try:
-        return tuple(int(x) for x in v.split("."))
+        parts.extend(int(x) for x in main.split(".") if x != "")
+        if build:
+            parts.append(int(build.split(".", 1)[0]))
+        return tuple(parts) if parts else (0,)
     except ValueError:
         return (0,)
 

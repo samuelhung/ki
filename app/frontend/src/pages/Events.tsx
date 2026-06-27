@@ -4,6 +4,7 @@ import EmptyState from '../components/EmptyState';
 import { X, ExternalLink, Search } from 'lucide-react';
 import type { Event } from '../types';
 import { formatTimeBeijing } from '../utils';
+import { apiFetch } from '../api';
 
 const PAGE_SIZE = 20;
 
@@ -38,7 +39,7 @@ export default function Events() {
     if (search) params.set('search', search);
     params.set('offset', String(newOffset));
     params.set('limit', String(PAGE_SIZE));
-    fetch(`/api/events?${params}`)
+    apiFetch(`/api/events?${params}`)
       .then((r) => { if (!r.ok) throw new Error('加载事件失败'); return r.json(); })
       .then((data: Event[]) => {
         if (reset) setEvents(data);
@@ -59,7 +60,7 @@ export default function Events() {
     setExpandedId(eventId);
     setDetailLoading(true);
     try {
-      const res = await fetch(`/api/events/${eventId}`);
+      const res = await apiFetch(`/api/events/${eventId}`);
       if (!res.ok) throw new Error('加载详情失败');
       setDetail(await res.json());
     } catch (e: unknown) {

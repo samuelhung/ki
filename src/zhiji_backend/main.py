@@ -59,9 +59,11 @@ logging.getLogger("urllib3").setLevel(logging.WARNING)
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 
+from . import __version__
 from .db import get_db_path, init_db, seed_default_sources
 from .migrations import ensure_migrations
 from .task_queue import start_worker, stop_worker
@@ -102,7 +104,7 @@ async def lifespan(app: FastAPI):
     stop_worker()
 
 
-app = FastAPI(title="知几", version="1.9.0", lifespan=lifespan)
+app = FastAPI(title="知几", version=__version__, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -122,27 +124,61 @@ app.add_middleware(
 # FRONTEND_DIST 随包分发（pip install 时一起安装到 site-packages）
 _HAS_FRONTEND = FRONTEND_DIST.exists()
 
-# Optional API token authentication (set KI_API_TOKEN env var to enable)
-_API_TOKEN = os.getenv("KI_API_TOKEN", "").strip()
+# API token authentication. Local loopback remains open for the desktop app;
+# non-loopback clients must provide KI_API_TOKEN for API and sensitive files.
+
+
+class ProtectedPathMiddleware(BaseHTTPMiddleware):
+    """Tag protected paths so SPA fallback never turns denied files into index.html."""
+
+    async def dispatch(self, request: Request, call_next):
+        if _is_protected_path(request.url.path):
+            request.state.protected_path = True
+        return await call_next(request)
+
+
+app.add_middleware(ProtectedPathMiddleware)
+
+
+def _api_token() -> str:
+    return os.getenv("KI_API_TOKEN", "").strip()
+
+
+def _is_loopback_host(host: str | None) -> bool:
+    return (host or "").split("%", 1)[0] in {"127.0.0.1", "::1", "localhost", "testclient"}
+
+
+def _is_protected_path(path: str) -> bool:
+    return path.startswith("/api") or path.startswith("/ingest") or path.startswith("/releases")
+
+
+def _requires_token_for_request(path: str, client_host: str | None) -> bool:
+    if path == "/api/health" or not _is_protected_path(path):
+        return False
+    return not _is_loopback_host(client_host)
+
+
+def _request_token(request: Request) -> str:
+    auth_header = request.headers.get("Authorization", "")
+    api_key_header = request.headers.get("X-API-Key", "")
+    if auth_header.startswith("Bearer "):
+        return auth_header[7:]
+    return api_key_header
 
 
 @app.middleware("http")
 async def api_auth(request: Request, call_next):
-    """Optional API token auth — only enforced when KI_API_TOKEN is set.
-    Skips health check, OPTIONS preflight, and non-API paths.
-    Accepts Authorization: Bearer *** or X-API-Key: <token> headers."""
-    if _API_TOKEN and request.url.path.startswith("/api") and request.url.path != "/api/health":
+    """Protect API and sensitive file paths.
+
+    Local loopback clients keep zero-config desktop behavior. Remote clients
+    must send KI_API_TOKEN; if unset, remote protected paths are still denied.
+    Accepts Authorization: Bearer *** or X-API-Key: *** headers."""
+    client_host = request.client.host if request.client else None
+    if _requires_token_for_request(request.url.path, client_host):
+        api_token = _api_token()
         if request.method == "OPTIONS":
             return await call_next(request)
-        auth_header = request.headers.get("Authorization", "")
-        api_key_header = request.headers.get("X-API-Key", "")
-        token = ""
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
-        elif api_key_header:
-            token = api_key_header
-        if token != _API_TOKEN:
-            from fastapi.responses import JSONResponse
+        if not api_token or _request_token(request) != api_token:
             return JSONResponse({"error": "unauthorized"}, status_code=401)
     return await call_next(request)
 
@@ -152,7 +188,7 @@ async def spa_fallback(request: Request, call_next):
     """Serve index.html for non-API paths (SPA client-side routing).
     Only active when frontend dist exists (dev/browser mode)."""
     response = await call_next(request)
-    if _HAS_FRONTEND and response.status_code == 404 and not request.url.path.startswith("/api"):
+    if _HAS_FRONTEND and response.status_code == 404 and not getattr(request.state, "protected_path", False):
         response = FileResponse(FRONTEND_DIST / "index.html")
     if _HAS_FRONTEND and not request.url.path.startswith("/api"):
         path = request.url.path
@@ -194,11 +230,12 @@ RELEASES_DIR.mkdir(parents=True, exist_ok=True)
 # Use direct route to avoid conflict with root SPA mount (html=True intercepts everything)
 @app.get("/releases/{filename:path}")
 async def serve_release(filename: str):
+    requested = Path(filename)
+    if requested.name != filename or requested.suffix.lower() not in {".dmg", ".xml"}:
+        return JSONResponse({"error": "not found"}, status_code=404)
     file_path = RELEASES_DIR / filename
     if not file_path.exists() or not file_path.is_file():
-        from fastapi.responses import JSONResponse
         return JSONResponse({"error": "not found"}, status_code=404)
-    from fastapi.responses import FileResponse
     return FileResponse(file_path)
 
 if _HAS_FRONTEND:

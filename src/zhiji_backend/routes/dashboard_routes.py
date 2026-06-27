@@ -5,6 +5,7 @@ import json
 import time
 from datetime import datetime, timezone
 from fastapi import APIRouter, Request
+from .. import __version__
 from ..db import connect, init_db
 
 router = APIRouter()
@@ -38,7 +39,7 @@ def health() -> dict[str, object]:
     return {
         "ok": db_ok,
         "service": "knowledge-intelligence",
-        "version": "1.9.0",
+        "version": __version__,
         "uptime_sec": round(uptime_sec, 1),
         "database": {
             "ok": db_ok,

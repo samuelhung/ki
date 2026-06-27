@@ -11,7 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 // ── 默认后端地址 + config 文件 ──
 const _defaultBackendUrl = 'http://127.0.0.1:9120';
-const _desktopVersion = '1.3.7';
+const _desktopVersion = '1.3.9';
 final _configFile = io.File('${io.Platform.environment['HOME']}/.zhiji/config.json');
 
 String _loadBackendUrl() {
@@ -92,13 +92,8 @@ class _ZhijiShellState extends State<ZhijiShell> with TrayListener, WindowListen
       windowManager.addListener(this);
     }
     _urlController.text = _backendUrl;
-    // 首次启动（无配置文件）→ 跳过健康检查，直接进连接设置页
-    if (_hasConfig()) {
-      _checkBackend();
-      _healthTimer = Timer.periodic(const Duration(seconds: 15), (_) => _checkBackend());
-    } else {
-      setState(() { _checking = false; });
-    }
+    _checkBackend();
+    _healthTimer = Timer.periodic(const Duration(seconds: 15), (_) => _checkBackend());
   }
 
   bool _hasConfig() {
@@ -199,9 +194,10 @@ class _ZhijiShellState extends State<ZhijiShell> with TrayListener, WindowListen
         onNavigationRequest: (request) {
           final uri = Uri.tryParse(request.url);
           if (uri == null) return NavigationDecision.navigate;
-          if (uri.host != '127.0.0.1' &&
-              uri.host != 'localhost' &&
-              !uri.host.startsWith('10.8.') &&
+          final backendHost = Uri.tryParse(_backendUrl)?.host;
+          final isBackendNavigation = backendHost != null && uri.host == backendHost;
+          final isLoopback = uri.host == '127.0.0.1' || uri.host == 'localhost';
+          if (!isBackendNavigation && !isLoopback &&
               (uri.scheme == 'http' || uri.scheme == 'https')) {
             launchUrl(uri);
             return NavigationDecision.prevent;

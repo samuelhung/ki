@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { LayoutDashboard, Upload, CheckSquare, Layers, Link2 } from 'lucide-react';
+import { apiFetch } from '../api';
 
 const tabs = [
   { to: '/', icon: LayoutDashboard, label: '仪表盘' },
@@ -15,7 +16,7 @@ export default function BottomTabBar() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/tasks/stats')
+    apiFetch('/api/tasks/stats')
       .then(r => r.json())
       .then(d => { if (!cancelled) setPendingCount(d.todo || 0); })
       .catch(() => {});

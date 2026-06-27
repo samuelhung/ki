@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, Sparkles, Send, MessageSquare, Loader2, Lightbulb, Plus } from 'lucide-react';
 import { renderMarkdown } from '../components/MarkdownRenderer';
 import { formatTimeBeijing } from '../utils';
+import { apiFetch } from '../api';
 
 interface BrainstormQuestion {
   id: string;
@@ -94,7 +95,7 @@ export default function BrainstormDetailPage() {
     setLoading(true);
     setEventsLoading(true);
     try {
-      const qRes = await fetch(`/api/brainstorm/${id}`);
+      const qRes = await apiFetch(`/api/brainstorm/${id}`);
       if (!qRes.ok) {
         if (qRes.status === 404) { setNotFound(true); setLoading(false); return; }
         throw new Error('加载失败');
@@ -122,9 +123,9 @@ export default function BrainstormDetailPage() {
       setLoading(false);
 
       const [douyinRes, uploadRes, conceptRes] = await Promise.all([
-        fetch('/api/events?source_id=douyin&limit=50'),
-        fetch('/api/events?source_id=user-upload&limit=50'),
-        fetch('/api/events?content_type=concept&limit=100'),
+        apiFetch('/api/events?source_id=douyin&limit=50'),
+        apiFetch('/api/events?source_id=user-upload&limit=50'),
+        apiFetch('/api/events?content_type=concept&limit=100'),
       ]);
       const douyinEvts = douyinRes.ok ? (await douyinRes.json()) : [];
       const uploadEvts = uploadRes.ok ? (await uploadRes.json()) : [];
@@ -142,7 +143,7 @@ export default function BrainstormDetailPage() {
 
   async function loadConversation() {
     try {
-      const res = await fetch(`/api/brainstorm/${id}/conversation`);
+      const res = await apiFetch(`/api/brainstorm/${id}/conversation`);
       if (res.ok) {
         const data = await res.json();
         setConversationMessages(data.messages || []);
@@ -207,7 +208,7 @@ export default function BrainstormDetailPage() {
   async function handleContemplate() {
     setContemplating(true); setContemplateError(''); setContemplateResults([]); setContemplateSelected(new Set());
     try {
-      const res = await fetch('/api/brainstorm/contemplate', {
+      const res = await apiFetch('/api/brainstorm/contemplate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ direction: 'question_to_events', entity_id: id }),
@@ -233,7 +234,7 @@ export default function BrainstormDetailPage() {
     if (contemplateSelected.size === 0) return;
     setContemplateLinking(true);
     try {
-      const res = await fetch('/api/brainstorm/answer', {
+      const res = await apiFetch('/api/brainstorm/answer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -261,7 +262,7 @@ export default function BrainstormDetailPage() {
     if (selectedEventIds.size === 0) return;
     setConversationLoading(true);
     try {
-      const res = await fetch(`/api/brainstorm/${id}/conversation/start`, {
+      const res = await apiFetch(`/api/brainstorm/${id}/conversation/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -302,7 +303,7 @@ export default function BrainstormDetailPage() {
     const userMsg: ConversationMessage = { id: -Date.now(), role: 'user', content: text, refs: [], created_at: new Date().toISOString() };
     setConversationMessages(prev => [...prev, userMsg]);
     try {
-      const res = await fetch(`/api/brainstorm/${id}/conversation/message`, {
+      const res = await apiFetch(`/api/brainstorm/${id}/conversation/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: text }),
@@ -331,7 +332,7 @@ export default function BrainstormDetailPage() {
   async function generateSummary() {
     setSummaryLoading(true);
     try {
-      const res = await fetch(`/api/brainstorm/${id}/conversation/summary`, {
+      const res = await apiFetch(`/api/brainstorm/${id}/conversation/summary`, {
         method: 'POST',
       });
       if (res.ok) {
@@ -351,7 +352,7 @@ export default function BrainstormDetailPage() {
   async function loadConcepts() {
     setConceptsLoading(true);
     try {
-      const res = await fetch(`/api/brainstorm/${id}/concepts`);
+      const res = await apiFetch(`/api/brainstorm/${id}/concepts`);
       if (res.ok) {
         const data = await res.json();
         setSummaryConcepts(data.concepts || []);
@@ -363,7 +364,7 @@ export default function BrainstormDetailPage() {
   async function precipitateConcept(name: string, description: string) {
     setPrecipitatingName(name);
     try {
-      const res = await fetch('/api/brainstorm/concepts/precipitate', {
+      const res = await apiFetch('/api/brainstorm/concepts/precipitate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question_id: id, name, description }),
@@ -421,7 +422,7 @@ export default function BrainstormDetailPage() {
             return (
               <span key={j}
                 className="text-purple-400 bg-purple-500/10 px-1 rounded cursor-pointer hover:bg-purple-500/20 transition-colors"
-                onClick={(e) => { e.stopPropagation(); navigate(`/event/${eventId}`); }}
+                onClick={(e) => { e.stopPropagation(); navigate(`/events/${eventId}`); }}
                 title={eventTitleMap.get(eventId) || '点击查看文档详情'}
               >
                 {part}

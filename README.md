@@ -1,6 +1,6 @@
 # 知几
 
-知几是一个本地优先的知识情报中心：把 RSS 情报、视频/音频/文档摄入、AI 摘要、专题系列、头脑风暴、综合事务、知识图谱和辅导中心整合到同一个桌面/Web 系统里。
+知几是一个本地优先的知识情报中心：把 RSS 情报、视频/音频/文档摄入、即时快报、专题系列、头脑风暴、综合事务、知识图谱和辅导中心整合到同一个桌面/Web 系统里。
 
 ## 当前架构
 
@@ -13,16 +13,18 @@ macOS 知几.app
 ```
 
 - 桌面端是 Flutter WebView 壳，业务页面全部由 React 前端渲染。
+- 后端源码唯一入口是 `src/zhiji_backend`；旧 `app/backend` 已移出仓库归档到 `/Users/mrh/Documents/Projects/zhiji-archives/backend-legacy-20260627`，不要再新增 `backend.*` import。
 - 后端由 launchd `com.zhiji.backend` 托管，开机自启并崩溃重启。
 - Web 与 API 在生产形态共用 `:9120`；远程后端地址可配置为 `http://10.8.0.105:9120`。
-- 自动更新使用 Sparkle 2：appcast 走 `raw.githubusercontent.com`，DMG 走 GitHub Release。
-- 发布物只保留全量 DMG：不再使用 bsdiff、manifest.json、install_helper.sh。
+- 本地回环访问保持零配置；非回环客户端访问 `/api`、`/ingest`、`/releases` 必须配置并携带 `KI_API_TOKEN`。
+- 自动更新使用 Sparkle 2：appcast 走 `raw.githubusercontent.com`，DMG 只走 GitHub Release 全量包。
+- 发布物只保留全量 DMG：不再使用 bsdiff、manifest.json、install_helper.sh，也不再把 Sparkle 下载入口指向内网后端。
 
 ## 核心模块
 
-- 仪表盘：热力图、指标卡、事件总览。
+- 仪表盘：五项指标单行展示、热力图、AI 运转和事件总览。
 - 内容采集：抖音/视频/音频/文档摄入，转写、总结、四类认知分类。
-- RSS 情报：采集、翻译、即时快报、每日摘要。
+- RSS 情报：采集、翻译、即时快报和深度日报。
 - 专题系列：AI 聚类、候选审核、结构化总结、深度分析。
 - 头脑风暴：人工录入问题、多文档综合回答、多轮追问、概念沉淀。
 - 综合事务：手工事务输入、AI 结构化判断、关联内容展示。
@@ -50,11 +52,23 @@ cd desktop && flutter build macos --release
 cd /Users/mrh/Documents/Projects/zhiji
 python3 scripts/build_release.py --skip-build
 python3 scripts/release-check.py X.Y.Z
+
+# 统一检查（语法、版本一致性、旧代码扫描、前端构建、可选发布产物检查）
+./scripts/check.sh
+
+# CI/无本机 DMG 环境可跳过 release artifact 检查
+ZHIJI_SKIP_RELEASE_CHECK=1 ./scripts/check.sh
 ```
 
 ## 发布原则
 
-功能性代码改动发版前必须同步：版本号、`desktop/changelog.json`、系统说明/架构文档、前端构建版本 hash、Flutter WebView `desktop_version`。发版后必须验证远端 appcast 首条与 GitHub Release asset 对齐，再做实机安装/更新提示验证。
+功能性代码改动发版前必须同步：版本号、`desktop/changelog.json`、系统说明/架构文档、前端构建版本 hash、Flutter WebView `desktop_version`。发版前优先运行 `./scripts/check.sh`；该脚本会阻断旧 Tauri 更新、旧 backend import、bsdiff/bspatch/manifest/install_helper 和内网后端 DMG 分发残留。发版后必须验证远端 appcast 首条与 GitHub Release asset 对齐，再做实机安装/更新提示验证。
+
+## v1.3.9 深审修复
+
+- 修复拖拽上传端点、手动采集 JSON body、`source_ids=[]` 误触发全量采集、`/event/:id` 错路由等产品级回归。
+- 统一远程后端模式下的 `apiFetch`/媒体 URL 解析，桌面壳首次启动会检查默认本机后端，远程后端不会被误当外链打开。
+- 启用 SQLite 外键，收紧事件/学习资料文件路径边界，任务队列增加原子领取和 worker 单例保护。
 
 ## 重要约束
 

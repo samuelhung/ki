@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Zap, TrendingUp, Database, DollarSign, Activity, BarChart3, Clock } from 'lucide-react';
+import { apiFetch } from '../api';
 
 interface TodayStats {
   total_calls: number;
@@ -75,7 +76,7 @@ export default function UsageWidget() {
   function load() {
     setLoading(true);
     setError('');
-    fetch('/api/usage/dashboard')
+    apiFetch('/api/usage/dashboard')
       .then(r => { if (!r.ok) throw new Error('加载失败'); return r.json(); })
       .then(setData)
       .catch(e => setError(e.message))

@@ -3,6 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Layers, ArrowLeft, Sparkles, Loader2, Trash2, ChevronDown, ExternalLink, Bell, Plus, X, RefreshCw, Check } from 'lucide-react';
 import Modal from '../components/Modal';
 import { formatTimeBeijing, sourceLabel } from '../utils';
+import { escapeHtml, sanitizeHtml } from '../safeHtml';
+import { apiFetch } from '../api';
 
 const TOPIC_COLORS: Record<string, string> = {
   '格局': 'text-blue-400',
@@ -65,7 +67,7 @@ function refColor(n: number): string {
 
 /** Replace [N] references with clickable HTML spans */
 function refsToHtml(text: string): string {
-  return text.replace(/\[(\d+)\]/g, (_, n) => {
+  return escapeHtml(text).replace(/\[(\d+)\]/g, (_, n) => {
     const c = refColor(parseInt(n));
     return `<span class="ref-link ${c}" data-ref="${n}">[${n}]</span>`;
   });
@@ -125,7 +127,7 @@ function summaryToHtml(md: string, mode?: 'summary' | 'paper'): string {
     }
   }
   if (inList) html += '</ul>';
-  return html;
+  return sanitizeHtml(html);
 }
 
 export default function SeriesDetail() {
@@ -177,7 +179,7 @@ export default function SeriesDetail() {
     // Poll until content arrives
     const interval = setInterval(async () => {
       try {
-        const r = await fetch(`/api/ingest/series/${id}`);
+        const r = await apiFetch(`/api/ingest/series/${id}`);
         const d = await r.json();
         let changed = false;
         if (genIntro && d.intro) { setIntroGenerating(false); sessionStorage.removeItem(`series_${id}_gen_intro`); changed = true; }
@@ -192,7 +194,7 @@ export default function SeriesDetail() {
   async function loadDetail() {
     setLoading(true);
     try {
-      const r = await fetch(`/api/ingest/series/${id}`);
+      const r = await apiFetch(`/api/ingest/series/${id}`);
       if (!r.ok) throw new Error('专题不存在');
       const d = await r.json();
       setSeries(d);
@@ -203,7 +205,7 @@ export default function SeriesDetail() {
 
   async function loadSuggestions() {
     try {
-      const r = await fetch(`/api/ingest/series/${id}/suggestions`);
+      const r = await apiFetch(`/api/ingest/series/${id}/suggestions`);
       const d = await r.json();
       const items = d.suggestions || [];
       setSuggestions(items);
@@ -222,7 +224,7 @@ export default function SeriesDetail() {
     sessionStorage.setItem(`series_${id}_gen_intro`, '1');
     setIntroGenerating(true);
     try {
-      const r = await fetch(`/api/ingest/series/${id}/intro`, { method: 'PUT' });
+      const r = await apiFetch(`/api/ingest/series/${id}/intro`, { method: 'PUT' });
       if (!r.ok) { setError((await r.json()).detail || '导言生成失败'); setIntroGenerating(false); sessionStorage.removeItem(`series_${id}_gen_intro`); return; }
       const d = await r.json();
       setSeries(prev => prev ? { ...prev, intro: d.intro } : prev);
@@ -236,7 +238,7 @@ export default function SeriesDetail() {
     sessionStorage.setItem(`series_${id}_gen_summary`, '1');
     setSummaryGenerating(true);
     try {
-      const r = await fetch(`/api/ingest/series/${id}/summary`, { method: 'PUT' });
+      const r = await apiFetch(`/api/ingest/series/${id}/summary`, { method: 'PUT' });
       if (!r.ok) { setError((await r.json()).detail || '总结生成失败'); setSummaryGenerating(false); sessionStorage.removeItem(`series_${id}_gen_summary`); return; }
       const d = await r.json();
       setSeries(prev => prev ? { ...prev, summary: d.summary } : prev);
@@ -250,7 +252,7 @@ export default function SeriesDetail() {
     sessionStorage.setItem(`series_${id}_gen_paper`, '1');
     setPaperGenerating(true);
     try {
-      const r = await fetch(`/api/ingest/series/${id}/paper`, { method: 'PUT' });
+      const r = await apiFetch(`/api/ingest/series/${id}/paper`, { method: 'PUT' });
       if (!r.ok) { setError((await r.json()).detail || '论文生成失败'); setPaperGenerating(false); sessionStorage.removeItem(`series_${id}_gen_paper`); return; }
       const d = await r.json();
       setSeries(prev => prev ? { ...prev, paper: d.paper } : prev);
@@ -262,7 +264,7 @@ export default function SeriesDetail() {
   async function handleDelete() {
     if (!series) return;
     setDeleting(true);
-    try { await fetch(`/api/ingest/series/${id}`, { method: 'DELETE' }); navigate('/series'); }
+    try { await apiFetch(`/api/ingest/series/${id}`, { method: 'DELETE' }); navigate('/series'); }
     catch (_) { setDeleting(false); setConfirmDelete(false); }
   }
 
@@ -284,7 +286,7 @@ export default function SeriesDetail() {
     setProgressStage('adding');
     try {
       // Stage 1: Add members
-      await fetch(`/api/ingest/series/${id}/members`, {
+      await apiFetch(`/api/ingest/series/${id}/members`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ event_ids: [...selectedIds] }),
       });
@@ -293,7 +295,7 @@ export default function SeriesDetail() {
       // Stage 2: Regenerate structured summary
       setSummaryGenerating(true);
       sessionStorage.setItem(`series_${id}_gen_summary`, '1');
-      await fetch(`/api/ingest/series/${id}/summary`, { method: 'PUT' });
+      await apiFetch(`/api/ingest/series/${id}/summary`, { method: 'PUT' });
       setSummaryGenerating(false);
       sessionStorage.removeItem(`series_${id}_gen_summary`);
       setProgressStage('paper');
@@ -301,7 +303,7 @@ export default function SeriesDetail() {
       // Stage 3: Regenerate deep analysis
       setPaperGenerating(true);
       sessionStorage.setItem(`series_${id}_gen_paper`, '1');
-      await fetch(`/api/ingest/series/${id}/paper`, { method: 'PUT' });
+      await apiFetch(`/api/ingest/series/${id}/paper`, { method: 'PUT' });
       setPaperGenerating(false);
       sessionStorage.removeItem(`series_${id}_gen_paper`);
       setProgressStage('done');
@@ -346,7 +348,7 @@ export default function SeriesDetail() {
     setAllProcessed(false);
     sessionStorage.removeItem(`series_${id}_all_processed`);
     try {
-      await fetch(`/api/ingest/series/${id}/expand`, { method: 'POST' });
+      await apiFetch(`/api/ingest/series/${id}/expand`, { method: 'POST' });
       await loadSuggestions();
     } catch (_) {}
     setRefreshing(false);
@@ -357,7 +359,7 @@ export default function SeriesDetail() {
     if (!series) return;
     const idx = n - 1;
     if (idx >= 0 && idx < series.members.length) {
-      navigate(`/event/${series.members[idx].id}`);
+      navigate(`/events/${series.members[idx].id}`);
     }
   }
 
@@ -578,7 +580,7 @@ export default function SeriesDetail() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <h3 className="text-sm font-medium text-white group-hover:text-purple-400 transition-colors">{m.title}</h3>
-                        <button onClick={(e) => { e.stopPropagation(); navigate(`/event/${m.id}`); }}
+                        <button onClick={(e) => { e.stopPropagation(); navigate(`/events/${m.id}`); }}
                           className="text-gray-600 hover:text-purple-400 transition-colors" title="打开详情">
                           <ExternalLink size={12} />
                         </button>
@@ -755,7 +757,7 @@ function SeriesKnowledgeNetwork({ seriesId }: { seriesId: string }) {
 
   React.useEffect(() => {
     setLoading(true);
-    fetch(`/api/entities/graph/series/${seriesId}`)
+    apiFetch(`/api/entities/graph/series/${seriesId}`)
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false); })
       .catch(() => setLoading(false));

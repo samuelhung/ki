@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X, Search, Sparkles, Send, MessageSquare } from 'lucide-react';
 import { renderMarkdown } from '../../components/MarkdownRenderer';
+import { apiFetch } from '../../api';
 
 interface BrainstormQuestion {
   id: string;
@@ -96,7 +97,7 @@ export default function BrainstormDetailPanel({ question, onClose }: Props) {
     setEventsLoading(true);
     try {
       // Load question's answered_event_ids for locking
-      const qRes = await fetch(`/api/brainstorm/${question.id}`);
+      const qRes = await apiFetch(`/api/brainstorm/${question.id}`);
       if (qRes.ok) {
         const qData = await qRes.json();
         let answered: string[] = [];
@@ -118,9 +119,9 @@ export default function BrainstormDetailPanel({ question, onClose }: Props) {
 
       // Load available events + concepts
       const [douyinRes, uploadRes, conceptRes] = await Promise.all([
-        fetch('/api/events?source_id=douyin&limit=50'),
-        fetch('/api/events?source_id=user-upload&limit=50'),
-        fetch('/api/events?content_type=concept&limit=100'),
+        apiFetch('/api/events?source_id=douyin&limit=50'),
+        apiFetch('/api/events?source_id=user-upload&limit=50'),
+        apiFetch('/api/events?content_type=concept&limit=100'),
       ]);
       const douyinEvts = douyinRes.ok ? (await douyinRes.json()) : [];
       const uploadEvts = uploadRes.ok ? (await uploadRes.json()) : [];
@@ -141,7 +142,7 @@ export default function BrainstormDetailPanel({ question, onClose }: Props) {
 
   async function loadConversation() {
     try {
-      const res = await fetch(`/api/brainstorm/${question.id}/conversation`);
+      const res = await apiFetch(`/api/brainstorm/${question.id}/conversation`);
       if (res.ok) {
         const data = await res.json();
         setConversationMessages(data.messages || []);
@@ -212,7 +213,7 @@ export default function BrainstormDetailPanel({ question, onClose }: Props) {
   async function handleContemplate() {
     setContemplating(true); setContemplateError(''); setContemplateResults([]); setContemplateSelected(new Set());
     try {
-      const res = await fetch('/api/brainstorm/contemplate', {
+      const res = await apiFetch('/api/brainstorm/contemplate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ direction: 'question_to_events', entity_id: question.id }),
@@ -238,7 +239,7 @@ export default function BrainstormDetailPanel({ question, onClose }: Props) {
     if (contemplateSelected.size === 0) return;
     setContemplateLinking(true);
     try {
-      const res = await fetch('/api/brainstorm/answer', {
+      const res = await apiFetch('/api/brainstorm/answer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -267,7 +268,7 @@ export default function BrainstormDetailPanel({ question, onClose }: Props) {
     if (selectedEventIds.size === 0) return;
     setConversationLoading(true);
     try {
-      const res = await fetch(`/api/brainstorm/${question.id}/conversation/start`, {
+      const res = await apiFetch(`/api/brainstorm/${question.id}/conversation/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -312,7 +313,7 @@ export default function BrainstormDetailPanel({ question, onClose }: Props) {
     const userMsg: ConversationMessage = { id: -Date.now(), role: 'user', content: text, refs: [], created_at: new Date().toISOString() };
     setConversationMessages(prev => [...prev, userMsg]);
     try {
-      const res = await fetch(`/api/brainstorm/${question.id}/conversation/message`, {
+      const res = await apiFetch(`/api/brainstorm/${question.id}/conversation/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: text }),
@@ -343,7 +344,7 @@ export default function BrainstormDetailPanel({ question, onClose }: Props) {
   async function generateSummary() {
     setSummaryLoading(true);
     try {
-      const res = await fetch(`/api/brainstorm/${question.id}/conversation/summary`, {
+      const res = await apiFetch(`/api/brainstorm/${question.id}/conversation/summary`, {
         method: 'POST',
       });
       if (res.ok) {
@@ -364,7 +365,7 @@ export default function BrainstormDetailPanel({ question, onClose }: Props) {
   async function loadConcepts() {
     setConceptsLoading(true);
     try {
-      const res = await fetch(`/api/brainstorm/${question.id}/concepts`);
+      const res = await apiFetch(`/api/brainstorm/${question.id}/concepts`);
       if (res.ok) {
         const data = await res.json();
         setSummaryConcepts(data.concepts || []);
@@ -376,7 +377,7 @@ export default function BrainstormDetailPanel({ question, onClose }: Props) {
   async function precipitateConcept(name: string, description: string) {
     setPrecipitatingName(name);
     try {
-      const res = await fetch('/api/brainstorm/concepts/precipitate', {
+      const res = await apiFetch('/api/brainstorm/concepts/precipitate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question_id: question.id, name, description }),
@@ -436,7 +437,7 @@ export default function BrainstormDetailPanel({ question, onClose }: Props) {
             return (
               <span key={j}
                 className="text-purple-400 bg-purple-500/10 px-1 rounded cursor-pointer hover:bg-purple-500/20 transition-colors"
-                onClick={(e) => { e.stopPropagation(); navigate(`/event/${eventId}`); }}
+                onClick={(e) => { e.stopPropagation(); navigate(`/events/${eventId}`); }}
                 title={eventTitleMap.get(eventId) || '点击查看文档详情'}
               >
                 {part}

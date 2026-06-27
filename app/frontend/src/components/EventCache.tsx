@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useRef, useCallback } from 'react';
 import type { Event } from '../types';
+import { apiFetch } from '../api';
 
 interface EventCache {
   getEvent: (id: string) => Promise<Event | null>;
@@ -25,7 +26,7 @@ export function EventCacheProvider({ children }: { children: React.ReactNode }) 
     if (inFlight) return inFlight;
 
     // Fetch
-    const promise = fetch(`/api/events/${id}`)
+    const promise = apiFetch(`/api/events/${id}`)
       .then(r => {
         if (!r.ok) throw new Error('not found');
         return r.json() as Promise<Event>;

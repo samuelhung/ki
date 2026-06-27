@@ -282,7 +282,9 @@ def enabled_rss_sources(source_ids: list[str] | None = None) -> list[dict[str, o
     init_db()
     where = "WHERE enabled = 1 AND type = 'rss'"
     params: dict[str, object] = {}
-    if source_ids:
+    if source_ids is not None:
+        if not source_ids:
+            return []
         placeholders = ",".join(f":id{i}" for i, _ in enumerate(source_ids))
         where += f" AND id IN ({placeholders})"
         params.update({f"id{i}": value for i, value in enumerate(source_ids)})

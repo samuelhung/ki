@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useCallback, useRef } from 'react';
 import { Routes, Route, Outlet, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Wifi, WifiOff, Upload } from 'lucide-react';
@@ -8,26 +8,31 @@ import MobileHeader from './components/MobileHeader';
 import ErrorBoundary from './components/ErrorBoundary';
 import { EventCacheProvider } from './components/EventCache';
 import { CurtainProvider, useCurtain } from './CurtainContext';
-import Dashboard from './pages/Dashboard';
-import Ingest from './pages/Ingest';
-import Events from './pages/Events';
-import Sources from './pages/Sources';
-import Brainstorm from './pages/Brainstorm';
-import Tasks from './pages/Tasks';
-import Series from './pages/Series';
-import SeriesDetail from './pages/SeriesDetail';
-import EventDetailPage from './pages/EventDetailPage';
-import BrainstormDetailPage from './pages/BrainstormDetailPage';
-import SystemDoc from './pages/SystemDoc';
-import SystemSettings from './pages/SystemSettings';
-import KnowledgeGraph from './pages/KnowledgeGraph';
-import Study from './pages/Study';
-import StudyDetail from './pages/StudyDetail';
-import StudyMistakes from './pages/StudyMistakes';
-import Toolbox from './pages/Toolbox';
-import IndustryChains from './pages/IndustryChains';
-import IndustryFlow from './pages/IndustryFlow';
-import { getBackendUrl } from './main';
+import { getBackendUrl } from './api';
+
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Ingest = lazy(() => import('./pages/Ingest'));
+const Events = lazy(() => import('./pages/Events'));
+const Sources = lazy(() => import('./pages/Sources'));
+const Brainstorm = lazy(() => import('./pages/Brainstorm'));
+const Tasks = lazy(() => import('./pages/Tasks'));
+const Series = lazy(() => import('./pages/Series'));
+const SeriesDetail = lazy(() => import('./pages/SeriesDetail'));
+const EventDetailPage = lazy(() => import('./pages/EventDetailPage'));
+const BrainstormDetailPage = lazy(() => import('./pages/BrainstormDetailPage'));
+const SystemDoc = lazy(() => import('./pages/SystemDoc'));
+const SystemSettings = lazy(() => import('./pages/SystemSettings'));
+const KnowledgeGraph = lazy(() => import('./pages/KnowledgeGraph'));
+const Study = lazy(() => import('./pages/Study'));
+const StudyDetail = lazy(() => import('./pages/StudyDetail'));
+const StudyMistakes = lazy(() => import('./pages/StudyMistakes'));
+const Toolbox = lazy(() => import('./pages/Toolbox'));
+const IndustryChains = lazy(() => import('./pages/IndustryChains'));
+const IndustryFlow = lazy(() => import('./pages/IndustryFlow'));
+
+function PageLoading() {
+  return <div className="h-full flex items-center justify-center text-xs text-gray-500">加载中...</div>;
+}
 
 function CurtainOverlay() {
   const { curtainPhase, onAnimationComplete } = useCurtain();
@@ -138,7 +143,7 @@ function Layout() {
       const formData = new FormData();
       formData.append('file', file);
       try {
-        await fetch(getBackendUrl() + '/api/ingest/upload', {
+        await fetch(getBackendUrl() + '/api/ingest/file', {
           method: 'POST',
           body: formData,
         });
@@ -203,7 +208,9 @@ function Layout() {
           <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
             <div className="flex-1 overflow-auto custom-scrollbar">
               <ErrorBoundary>
-                <Outlet />
+                <Suspense fallback={<PageLoading />}>
+                  <Outlet />
+                </Suspense>
               </ErrorBoundary>
             </div>
           </div>
@@ -214,7 +221,9 @@ function Layout() {
           <MobileHeader />
           <div className="flex-1 overflow-auto custom-scrollbar">
             <ErrorBoundary>
-              <Outlet />
+              <Suspense fallback={<PageLoading />}>
+                <Outlet />
+              </Suspense>
             </ErrorBoundary>
           </div>
           <BottomTabBar />

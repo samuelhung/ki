@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Maximize2, Trash2, Loader2, Sparkles, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { renderMarkdown } from '../../components/MarkdownRenderer';
 import { formatTimeBeijing, sourceLabel, statusLabel } from '../../utils';
+import { apiFetch, backendUrl } from '../../api';
 
 const API_BASE = '/api/events';
 const eventCache = new Map<string, Event>();
@@ -18,7 +19,7 @@ interface Event {
 
 async function getEvent(id: string): Promise<Event | null> {
   if (eventCache.has(id)) return eventCache.get(id)!;
-  const r = await fetch(`${API_BASE}/${id}`);
+  const r = await apiFetch(`${API_BASE}/${id}`);
   if (!r.ok) return null;
   const d = await r.json();
   eventCache.set(id, d);
@@ -29,7 +30,7 @@ function toMediaUrl(absolutePath: string | undefined): string | null {
   if (!absolutePath) return null;
   const idx = absolutePath.indexOf('/data/ingest/');
   if (idx === -1) return null;
-  return '/ingest' + absolutePath.substring(idx + '/data/ingest'.length);
+  return backendUrl('/ingest' + absolutePath.substring(idx + '/data/ingest'.length));
 }
 
 interface Props {
@@ -98,11 +99,11 @@ export default function IngestDetailPanel({ eventId, onClose }: Props) {
   async function handleSummarize(eventId: string) {
     setSummarizingId(eventId);
     try {
-      const res = await fetch(`${API_BASE}/${eventId}/summarize?force=true`, { method: 'POST' });
+      const res = await apiFetch(`${API_BASE}/${eventId}/summarize?force=true`, { method: 'POST' });
       if (!res.ok) throw new Error('总结失败');
       for (let i = 0; i < 30; i++) {
         await new Promise(r => setTimeout(r, 2000));
-        const dRes = await fetch(`${API_BASE}/${eventId}`);
+        const dRes = await apiFetch(`${API_BASE}/${eventId}`);
         if (!dRes.ok) break;
         const d = await dRes.json();
         if (d.ai_summary) { setDetail(d); break; }
@@ -115,7 +116,7 @@ export default function IngestDetailPanel({ eventId, onClose }: Props) {
   useEffect(() => {
     if (detailTab === 'questions' && detail) {
       setLinkedQuestionsLoading(true);
-      fetch(`/api/brainstorm/event/${detail.id}/linked-questions`)
+      apiFetch(`/api/brainstorm/event/${detail.id}/linked-questions`)
         .then(r => r.ok ? r.json() : { linked_questions: [] })
         .then(d => setLinkedQuestions(d.linked_questions || []))
         .catch(() => setLinkedQuestions([]))
@@ -127,7 +128,7 @@ export default function IngestDetailPanel({ eventId, onClose }: Props) {
     if (!detail) return;
     setContemplating(true); setContemplateError(''); setContemplateSelected(new Set());
     try {
-      const res = await fetch('/api/brainstorm/contemplate', {
+      const res = await apiFetch('/api/brainstorm/contemplate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ direction: 'event_to_questions', entity_id: detail.id }),
       });
@@ -146,12 +147,12 @@ export default function IngestDetailPanel({ eventId, onClose }: Props) {
     setContemplateLinking(true);
     try {
       for (const qid of Array.from(contemplateSelected)) {
-        await fetch('/api/brainstorm/answer', {
+        await apiFetch('/api/brainstorm/answer', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ question_id: qid, question: '', event_ids: [detail.id] }),
         });
       }
-      const dRes = await fetch(`${API_BASE}/${detail.id}`);
+      const dRes = await apiFetch(`${API_BASE}/${detail.id}`);
       if (dRes.ok) setDetail(await dRes.json());
       setContemplateResults([]);
       setContemplateError('');

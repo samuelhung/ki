@@ -23,7 +23,7 @@ if _hermes_env.exists():
             os.environ["DEEPSEEK_API_KEY"] = line.split("=", 1)[1].strip().strip('"').strip("'")
             break
 
-from backend.deepseek_client import chat
+from zhiji_backend.deepseek_client import chat
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("backfill-overview")

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useCurtain } from '../CurtainContext';
 import { ArrowLeft, Loader2, AlertTriangle } from 'lucide-react';
 import { formatTimeBeijing } from '../utils';
+import { apiFetch } from '../api';
 
 interface MistakeItem {
   id: string;
@@ -34,7 +35,7 @@ export default function StudyMistakes() {
     try {
       const params = new URLSearchParams();
       if (subject !== '全部') params.set('subject', subject);
-      const r = await fetch(`/api/study/mistakes/list?${params.toString()}`);
+      const r = await apiFetch(`/api/study/mistakes/list?${params.toString()}`);
       if (!r.ok) throw new Error('加载失败');
       const data = await r.json();
       setItems(data.items || []);

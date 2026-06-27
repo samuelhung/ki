@@ -26,6 +26,7 @@ __pycache__/
 app/frontend/dist/
 app/frontend/node_modules/
 app/.venv/
+.venv-verify/
 ki.db
 
 # 数据目录 — 全部不入库（含 study PDF/转写/脑暴/摘要/日志等）

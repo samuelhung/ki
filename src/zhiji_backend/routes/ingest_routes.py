@@ -257,6 +257,11 @@ def _create_event(ingest_type: str, content, topic: str, title: str = "", conten
 
     with connect() as conn:
         conn.execute(
+            """INSERT OR IGNORE INTO sources (id, name, type, url, topic, priority, enabled)
+               VALUES (?, ?, 'manual', '', ?, 'medium', 1)""",
+            (source_id, '抖音分享' if source_id == 'douyin' else '用户上传', topic),
+        )
+        conn.execute(
             """INSERT INTO events (id, source_id, title, url, topic,
                importance, actionability, decision, status, content_type)
                VALUES (?, ?, ?, '', ?, 4, 4, 'digest', 'processing', ?)""",

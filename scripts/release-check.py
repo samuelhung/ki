@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-知几发版前诊断 — 验证签名、appcast、后端分发全链路
+知几发版前诊断 — 验证签名、appcast、GitHub Release DMG 链路
 用法: python3 scripts/release-check.py [version]
 """
 from __future__ import annotations
@@ -11,7 +11,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DESKTOP = PROJECT_ROOT / "desktop"
 APPCAST = PROJECT_ROOT / "appcast.xml"
 FLUTTER_APP = DESKTOP / "build" / "macos" / "Build" / "Products" / "Release" / "知几.app"
-RELEASES_DIR = Path.home() / ".zhiji" / "data" / "releases"
+
+REQUESTED_VERSION = sys.argv[1] if len(sys.argv) > 1 else None
 
 GREEN = "\033[32m"
 RED = "\033[31m"
@@ -98,12 +99,16 @@ else:
 # ── 4. DMG 完整性 ──
 check("4. DMG 完整性")
 dmg_files = sorted(DESKTOP.glob("build/release/zhiji_*.dmg"), key=lambda p: p.stat().st_mtime, reverse=True)
+if REQUESTED_VERSION:
+    dmg_files = [p for p in dmg_files if p.name == f"zhiji_{REQUESTED_VERSION}.dmg"]
 if dmg_files:
     dmg = dmg_files[0]
     ver = re.search(r'zhiji_(.*?)\.dmg', dmg.name)
     ver_str = ver.group(1) if ver else "?"
     size = dmg.stat().st_size / (1024*1024)
     ok(f"DMG: {dmg.name} ({size:.1f} MB)")
+    if REQUESTED_VERSION and ver_str != REQUESTED_VERSION:
+        fail(f"DMG 版本不匹配: 期望 {REQUESTED_VERSION}, 实际 {ver_str}")
 
     try:
         r = subprocess.run(["codesign", "-dvvv", str(dmg)], capture_output=True, text=True, timeout=10)
@@ -136,43 +141,38 @@ if APPCAST.exists():
             else:
                 fail(f"{key}: 缺失")
 
-        # Check URL is backend
         url_m = re.search(r'url="([^"]+)"', first)
         if url_m:
             url = url_m.group(1)
-            if "10.8.0.105" in url:
-                ok("下载 URL: 后端内网 ✓")
-            elif "github.com" in url:
-                warn("下载 URL: GitHub（中国下载慢，可能超时）")
+            if "github.com/samuelhung/ki/releases/download/" in url:
+                ok("下载 URL: GitHub Release DMG ✓")
+            else:
+                fail(f"下载 URL 不是 GitHub Release: {url}")
 else:
     fail("appcast.xml 不存在")
 
-# ── 6. 后端分发 ──
-check("6. 后端 DMG 分发")
-if dmg_files:
-    backend_path = RELEASES_DIR / dmg_files[0].name
-    if backend_path.exists():
-        bsize = backend_path.stat().st_size
-        dsize = dmg_files[0].stat().st_size
-        if bsize == dsize:
-            ok(f"后端 DMG: {backend_path} ({bsize/(1024*1024):.1f} MB) 与构建一致")
+# ── 6. GitHub Release 链路 ──
+check("6. GitHub Release 链路")
+if APPCAST.exists():
+    content = APPCAST.read_text()
+    items = re.findall(r'<item>.*?</item>', content, re.DOTALL)
+    if items:
+        first = items[0]
+        short_m = re.search(r'sparkle:shortVersionString="([^"]+)"', first)
+        build_m = re.search(r'sparkle:version="([^"]+)"', first)
+        url_m = re.search(r'url="([^"]+)"', first)
+        if short_m and REQUESTED_VERSION and short_m.group(1) != REQUESTED_VERSION:
+            fail(f"appcast 首条版本不匹配: 期望 {REQUESTED_VERSION}, 实际 {short_m.group(1)}")
+        if url_m and short_m and build_m:
+            expected_tag = f"v{short_m.group(1)}%2B{build_m.group(1)}"
+            expected_dmg = f"zhiji_{short_m.group(1)}.dmg"
+            url = url_m.group(1)
+            if expected_tag in url and url.endswith(f"/{expected_dmg}"):
+                ok(f"GitHub Release URL: {url}")
+            else:
+                fail(f"GitHub Release URL 与版本不匹配: {url}")
         else:
-            fail(f"后端 DMG 大小不一致（构建:{dsize} 后端:{bsize}）")
-    else:
-        warn(f"后端 DMG 不存在，运行 build_release.py 会自动拷贝")
-
-    # 测试后端 HTTP
-    import urllib.request
-    dmg_name = dmg_files[0].name
-    try:
-        req = urllib.request.Request(f"http://127.0.0.1:9120/releases/{dmg_name}", method="HEAD")
-        resp = urllib.request.urlopen(req, timeout=5)
-        if resp.status == 200:
-            ok(f"后端 HTTP 可达: /releases/{dmg_name} (200)")
-        else:
-            warn(f"后端 HTTP: {resp.status}")
-    except Exception as e:
-        warn(f"后端 HTTP 检查失败: {e}（需重启后端加载新路由）")
+            fail("appcast 首条缺少版本、build 或 URL")
 
 # ── 7. 证书 ──
 check("7. 代码签名证书")

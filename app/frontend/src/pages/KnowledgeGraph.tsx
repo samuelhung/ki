@@ -4,6 +4,7 @@ import { DataSet } from 'vis-data/standalone';
 import { Search, X, Loader2, Maximize2, Minimize2, Sparkles } from 'lucide-react';
 import { renderMarkdown } from '../components/MarkdownRenderer';
 import { statusLabel } from '../utils';
+import { apiFetch } from '../api';
 
 const API_BASE = '/api/entities';
 
@@ -54,7 +55,7 @@ export default function KnowledgeGraph() {
   // Load graph data
   useEffect(() => {
     setLoading(true);
-    fetch(`${API_BASE}/graph?limit=200`)
+    apiFetch(`${API_BASE}/graph?limit=200`)
       .then(r => r.json())
       .then(data => {
         setNodes(data.nodes || []);
@@ -120,7 +121,7 @@ export default function KnowledgeGraph() {
   useEffect(() => {
     if (!selectedEntity) { setEntityDetail(null); return; }
     setDetailLoading(true);
-    fetch(`${API_BASE}/graph/entity/${selectedEntity}`)
+    apiFetch(`${API_BASE}/graph/entity/${selectedEntity}`)
       .then(r => r.json())
       .then(data => { setEntityDetail(data); setDetailLoading(false); })
       .catch(() => setDetailLoading(false));
@@ -131,7 +132,7 @@ export default function KnowledgeGraph() {
     setPreviewLoading(true);
     setPreviewEvent(null);
     try {
-      const r = await fetch(`/api/events/${eventId}`);
+      const r = await apiFetch(`/api/events/${eventId}`);
       if (!r.ok) throw new Error('Not found');
       const data = await r.json();
       setPreviewEvent(data);
@@ -302,7 +303,7 @@ function EntityPanel({ detail, onClose, onEventClick }: { detail: any; onClose: 
     setInsightError('');
     setInsight(null);
     try {
-      const r = await fetch(`${API_BASE}/graph/entity/${e.id}/insight`);
+      const r = await apiFetch(`${API_BASE}/graph/entity/${e.id}/insight`);
       if (!r.ok) throw new Error('生成失败');
       const data = await r.json();
       setInsight(data.insight || '');
