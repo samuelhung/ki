@@ -92,26 +92,26 @@ def list_series(include_candidates: bool = False):
                 "SELECT * FROM series WHERE status != 'candidate' ORDER BY created_at DESC"
             ).fetchall()
 
-    items = []
-    for row in rows:
-        s = dict(row)
-        try:
-            member_ids = json.loads(s.get("member_ids", "[]"))
-        except (json.JSONDecodeError, TypeError):
-            member_ids = []
-        # Resolve member titles
-        members = []
-        if member_ids:
-            placeholders = ",".join(["?" for _ in member_ids])
-            event_rows = conn.execute(
-                f"SELECT id, title FROM events WHERE id IN ({placeholders})",
-                member_ids,
-            ).fetchall()
-            title_map = {r["id"]: r["title"] for r in event_rows}
-            for mid in member_ids:
-                members.append({"id": mid, "title": title_map.get(mid, "(已删除)")})
-        s["members"] = members
-        items.append(s)
+        items = []
+        for row in rows:
+            s = dict(row)
+            try:
+                member_ids = json.loads(s.get("member_ids", "[]"))
+            except (json.JSONDecodeError, TypeError):
+                member_ids = []
+            # Resolve member titles while the connection is still open.
+            members = []
+            if member_ids:
+                placeholders = ",".join(["?" for _ in member_ids])
+                event_rows = conn.execute(
+                    f"SELECT id, title FROM events WHERE id IN ({placeholders})",
+                    member_ids,
+                ).fetchall()
+                title_map = {r["id"]: r["title"] for r in event_rows}
+                for mid in member_ids:
+                    members.append({"id": mid, "title": title_map.get(mid, "(已删除)")})
+            s["members"] = members
+            items.append(s)
 
     return {"items": items}
 

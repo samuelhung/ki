@@ -17,7 +17,7 @@ export const RUNTIME_ARCHITECTURE = `macOS 知几.app
 │
 ├── React + Vite + Tailwind 前端
 │   ├── 所有业务页面、移动端适配、过场动画
-│   ├── apiFetch 显式处理同源/远程后端，不 monkey patch window.fetch
+│   ├── apiFetch 显式处理同源/远程后端，并为远程 API 自动携带访问令牌
 │   ├── React.lazy 按路由拆包，构建产物文件名带版本号
 │   └── HTML 渲染统一 escapeHtml + sanitizeHtml
 │
@@ -25,7 +25,8 @@ export const RUNTIME_ARCHITECTURE = `macOS 知几.app
     ├── launchd: com.zhiji.backend 开机自启 + 崩溃重启
     ├── SQLite + 文件系统双写
     ├── 非回环客户端访问 /api /ingest /releases 必须 KI_API_TOKEN
-    └── API 与静态 Web 单端口 :9120`;
+    │   ├── 远程首页签发 HttpOnly 会话 cookie，浏览器同源 API 自动授权
+    │   └── API 与静态 Web 单端口 :9120`;
 
 export const RELEASE_GUARDRAILS = [
   '统一入口：./scripts/check.sh 会先校验 Python 3.12，再检查版本一致性、旧代码残留和前端版本化构建。',
@@ -80,6 +81,8 @@ export const ARCHITECTURE_FEATURES = [
   { name: 'GitHub Sparkle 更新链路', desc: 'appcast.xml 通过 raw.githubusercontent.com 分发，DMG 通过 GitHub Release 下载，Sparkle EdDSA 验签后安装' },
   { name: '发布门禁收口', desc: 'scripts/check.sh 阻断旧 Tauri 更新、旧 backend import、增量补丁和内网后端 DMG 分发残留' },
   { name: '检查更新桥接', desc: "React 前端不再调用 Tauri，改用 window.zhiji_checkUpdates.postMessage('check') 触发 Flutter 原生 Sparkle 通道" },
+  { name: '远程访问令牌', desc: '连接设置支持保存 KI_API_TOKEN，apiFetch 自动携带 Authorization，并用受保护业务接口验证远程后端是否真正可用' },
+  { name: '远程同源会话', desc: '直接打开 10.8.x.x:9120 时，后端首页自动签发 HttpOnly 会话 cookie，页面内业务 API 无需手动填写令牌即可加载' },
   { name: '专题待确认流程', desc: '刷新扫描取代“寻找新成员”，建议缓存至数据库归入待确认队列，新内容采集后自动匹配追加' },
   { name: '推荐理由系统', desc: 'expand/auto_suggest 返回推荐理由，存储格式升级为含理由的对象数组，向后兼容' },
   { name: '专题系列引擎', desc: 'AI 按主题聚类事件，候选审核→保存，结构化总结 + 论文式深度分析' },
@@ -100,6 +103,9 @@ export const ARCHITECTURE_FEATURES = [
 ];
 
 export const CHANGELOG_ENTRIES = [
+  { version: '1.3.13', date: '2026-06-28', title: '修复专题系列直达路由加载失败', items: ['后端对 /series 等 SPA 直达页面同样签发 HttpOnly 会话 cookie，避免绕过首页时业务 API 401', '修复专题列表接口在连接关闭后继续查询成员标题导致的 Internal Server Error', '新增专题列表连接生命周期回归测试，防止再次返回非 JSON 错误文本'] },
+  { version: '1.3.12', date: '2026-06-28', title: '修复远程地址直接打开后的仪表盘加载失败', items: ['后端首页在配置 KI_API_TOKEN 后自动签发 HttpOnly 会话 cookie，远程同源页面无需手动填写令牌即可访问业务 API', '业务 API 同时接受 Authorization 令牌与后端签发的会话 cookie，保留非同源直接调用的 401 安全边界', '直接打开 http://10.8.0.105:9120/ 后仪表盘、热力图和事件列表可正常加载'] },
+  { version: '1.3.11', date: '2026-06-28', title: '修复远程后端业务接口授权', items: ['连接设置新增远程访问令牌输入，保存服务器 KI_API_TOKEN 后业务请求会自动携带 Authorization', '远程连接测试不再只检查 /api/health，会额外验证 /api/dashboard/summary，避免页面能打开但列表全部 401', '前端构建版本同步为 1.3.11，远程访问说明同步更新'] },
   { version: '1.3.10', date: '2026-06-28', title: '重组一级导航为知几工作流', items: ['一级导航调整为今日知几、万象资料、深度研究、静观思辨、见微行动、启蒙辅导、系统总览', '桌面侧边栏保留内容采集、事件列表、信息源、专题系列、知识图谱和产业链等二级入口', '移动端底部入口同步简化为今日、资料、研究、行动、辅导', '万象资料顶部统一为 B+ 横向总控条，内容采集、事件列表、信息源共享胶囊分段切换', '系统说明同步更新功能体系，强调输入→整理→研究→思考→行动→复盘的产品链路'] },
   { version: '1.3.9', date: '2026-06-27', title: '修复深度代码审查发现的产品边界问题', items: ['修复拖拽上传端点、手动采集 JSON body 和 source_ids 空数组误触发全量采集的问题', '统一事件详情、图谱、采集列表等页面的远程后端 API 调用与媒体 URL 解析', '修复 /event/:id 与 /events/:id 路由不一致导致的详情页空白问题', '启用 SQLite foreign_keys，收紧文件删除/预览边界，任务队列增加原子领取和 worker 单例保护'] },
   { version: '1.3.8', date: '2026-06-27', title: '收口发布脚本、版本体系与检查门禁', items: ['发布脚本移除旧内网后端 DMG 分发逻辑，Sparkle 更新链路统一走 GitHub Release 全量 DMG', 'release-check 改为校验 GitHub Release URL、appcast 首条版本和指定版本 DMG，避免旧后端分发警告误判', 'check.sh 加入发布脚本旧链路门禁，阻止 Tauri、增量补丁和内网分发残留回流', 'README、架构文档和系统说明同步更新发布收口规则'] },

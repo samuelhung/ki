@@ -16,7 +16,7 @@ macOS 知几.app
 - 后端源码唯一入口是 `src/zhiji_backend`；旧 `app/backend` 已移出仓库归档到 `/Users/mrh/Documents/Projects/zhiji-archives/backend-legacy-20260627`，不要再新增 `backend.*` import。
 - 后端由 launchd `com.zhiji.backend` 托管，开机自启并崩溃重启。
 - Web 与 API 在生产形态共用 `:9120`；远程后端地址可配置为 `http://10.8.0.105:9120`。
-- 本地回环访问保持零配置；非回环客户端访问 `/api`、`/ingest`、`/releases` 必须配置并携带 `KI_API_TOKEN`。
+- 本地回环访问保持零配置；非回环客户端直接调用 `/api`、`/ingest`、`/releases` 必须配置并携带 `KI_API_TOKEN`。直接打开远程 Web 首页时，后端会签发 HttpOnly 会话 cookie，让同源页面内业务 API 自动授权。
 - 自动更新使用 Sparkle 2：appcast 走 `raw.githubusercontent.com`，DMG 只走 GitHub Release 全量包。
 - 发布物只保留全量 DMG：不再使用 bsdiff、manifest.json、install_helper.sh，也不再把 Sparkle 下载入口指向内网后端。
 

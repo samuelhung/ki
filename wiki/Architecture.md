@@ -15,7 +15,7 @@
 ## 1. 桌面壳
 
 - 技术栈：Flutter + `webview_flutter` + `tray_manager` + `window_manager` + `url_launcher`。
-- 默认后端：`http://127.0.0.1:9120`；连接设置支持 `http://10.8.0.105:9120` 等远程后端。
+- 默认后端：`http://127.0.0.1:9120`；连接设置支持 `http://10.8.0.105:9120` 等远程后端。直接打开远程 Web 首页时，后端签发 HttpOnly 会话 cookie 供同源业务接口授权。
 - 后端离线：不创建 WebView，显示 Flutter 原生连接设置页，避免 WKWebView 错误页遮挡 UI。
 - 更新入口：React 调 `window.zhiji_checkUpdates.postMessage('check')`，Flutter 转发到 `com.zhiji.sparkle` 原生通道。
 - 缓存策略：创建 WebView 前清理缓存和 localStorage，加载 URL 追加 `desktop_version` 和 `cache_bust`。
@@ -24,7 +24,7 @@
 
 - 技术栈：React + Vite + Tailwind v4 + React Router v7。
 - API 策略：统一使用同源相对路径 `/api/...`，不硬编码 `127.0.0.1`。
-- 请求封装：前端通过 `apiFetch` 显式拼接远程后端，不再 monkey patch `window.fetch`。
+- 请求封装：前端通过 `apiFetch` 显式拼接远程后端，不再 monkey patch `window.fetch`；保存访问令牌后自动携带 `Authorization: Bearer ...`。
 - 媒体地址：`/ingest/...`、`/releases/...` 等后端静态资源通过统一 backend URL resolver 生成，避免远程后端/前后端分离时指向前端 origin。
 - 构建策略：Vite 产物文件名带版本号，如 `assets/index-1.3.4-*.js`，降低 WebView/浏览器旧缓存命中概率。
 - 拆包策略：页面组件通过 `React.lazy` 按路由懒加载，主入口 chunk 控制在可读范围，重页面独立加载。
@@ -35,7 +35,7 @@
 - 技术栈：Python + FastAPI + SQLite + FTS5。
 - 源码入口：`src/zhiji_backend` 是唯一维护后端；旧 `app/backend` 已移出仓库归档，不参与运行和测试。
 - 端口：生产形态 API 与 Web 静态资源合一，均为 `:9120`。
-- 安全边界：本地回环访问保持零配置；非回环客户端访问 `/api`、`/ingest`、`/releases` 必须携带 `KI_API_TOKEN`。
+- 安全边界：本地回环访问保持零配置；非回环直接 API 调用必须携带 `KI_API_TOKEN`，远程同源 Web 页面通过后端签发的 HttpOnly 会话 cookie 自动授权。
 - 托管：macOS 用户级 launchd `com.zhiji.backend`，开机自启，崩溃重启。
 - 主要能力按工作流组织为：今日知几、万象资料、深度研究、静观思辨、见微行动、启蒙辅导和系统总览。
 

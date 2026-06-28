@@ -49,8 +49,6 @@ export default function Sources() {
               { label: '错误', value: sources.filter(s => s.last_error).length },
             ]}
             actions={[]}
-            flowText="输入 → 整理 → 检索 → 复盘"
-            note="当前视图：信息源 · 顶部固定，内容独立滚动"
           />
         </div>
       </div>

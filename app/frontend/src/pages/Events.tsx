@@ -85,8 +85,36 @@ export default function Events() {
               { label: '加载更多', value: hasMore ? '可用' : '到底' },
             ]}
             actions={[]}
-            flowText="输入 → 整理 → 检索 → 复盘"
-            note="当前视图：事件列表 · 顶部固定，内容独立滚动"
+            filters={
+              <div className="grid gap-2 sm:grid-cols-[minmax(200px,1fr)_150px_150px] xl:w-[620px]">
+                <div className="relative">
+                  <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
+                  <input
+                    className="h-9 w-full pl-8 pr-3 text-sm rounded-xl bg-black/20 border border-white/[0.08] text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50 transition-colors"
+                    placeholder="搜索事件内容…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
+                <select
+                  className="h-9 px-3 text-sm rounded-xl bg-black/20 border border-white/[0.08] text-white focus:outline-none focus:border-purple-500/50 transition-colors"
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                >
+                  <option value="">全部状态</option>
+                  <option value="new">新增</option>
+                  <option value="processing">处理中</option>
+                  <option value="error">失败</option>
+                  <option value="digest">已入摘要</option>
+                </select>
+                <input
+                  className="h-9 px-3 text-sm rounded-xl bg-black/20 border border-white/[0.08] text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50 transition-colors"
+                  placeholder="按主题筛选"
+                  value={topic}
+                  onChange={(e) => setTopic(e.target.value)}
+                />
+              </div>
+            }
           />
         </div>
       </div>
@@ -96,33 +124,6 @@ export default function Events() {
         {error && (
           <div className="mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">{error}</div>
         )}
-
-        <div className="flex gap-3 mb-4 flex-wrap">
-          <div className="relative flex-1 min-w-[200px] max-w-[320px]">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
-            <input
-              className="w-full pl-9 pr-3 py-2 rounded-lg bg-[#141518] border border-[#2A2B30] text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50 transition-colors"
-              placeholder="搜索事件内容…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-          <select
-            className="px-3 py-2 rounded-lg bg-[#141518] border border-[#2A2B30] text-white focus:outline-none focus:border-purple-500/50 transition-colors"
-            value={status} onChange={(e) => setStatus(e.target.value)}
-          >
-            <option value="">全部状态</option>
-            <option value="new">新增</option>
-            <option value="processing">处理中</option>
-            <option value="error">失败</option>
-            <option value="digest">已入摘要</option>
-          </select>
-          <input
-            className="px-3 py-2 rounded-lg bg-[#141518] border border-[#2A2B30] text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50 transition-colors"
-            placeholder="按主题筛选" value={topic}
-            onChange={(e) => setTopic(e.target.value)}
-          />
-        </div>
 
         {loading && events.length === 0 ? (
           <div className="bg-[#141518] border border-[#2A2B30] rounded-xl p-8 flex items-center justify-center">

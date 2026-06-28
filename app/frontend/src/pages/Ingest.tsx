@@ -93,7 +93,6 @@ export default function Ingest() {
   const [pollId, setPollId] = useState<string | null>(null);
   const [pollStatus, setPollStatus] = useState<IngestStatus | null>(null);
   const [progressStages, setProgressStages] = useState<ProgressStage[] | null>(null);
-  const [showMobileSearch, setShowMobileSearch] = useState(false);
   const [mobileSelectMode, setMobileSelectMode] = useState(false);
   const [topicCounts, setTopicCounts] = useState<Record<string, number>>({});
   const [eventsError, setEventsError] = useState('');
@@ -373,12 +372,21 @@ export default function Ingest() {
                 { label: '信息源', value: 8 },
               ]}
               actions={[
-                { label: '处理队列', tone: 'purple', onClick: () => { loadQueue(); setQueueShowAllDone(false); openModal('queue'); } },
-                { label: '抖音分享', tone: 'pink', onClick: () => openModal('douyin') },
-                { label: '上传文件', tone: 'emerald', onClick: () => openModal('file') },
+                { label: '处理队列', icon: <List size={14} />, tone: 'purple', onClick: () => { loadQueue(); setQueueShowAllDone(false); openModal('queue'); } },
+                { label: '抖音分享', icon: <Zap size={14} />, tone: 'pink', onClick: () => openModal('douyin') },
+                { label: '上传文件', icon: <Upload size={14} />, tone: 'emerald', onClick: () => openModal('file') },
               ]}
-              flowText="输入 → 整理 → 检索 → 复盘"
-              note="当前视图：内容采集 · 顶部固定，内容独立滚动"
+              filters={
+                <div className="relative xl:w-[360px]">
+                  <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
+                  <input
+                    value={search}
+                    onChange={e => { setSearch(e.target.value); setPage(1); }}
+                    placeholder="搜索内容标题…"
+                    className="h-9 w-full pl-8 pr-3 text-sm bg-black/20 border border-white/[0.08] rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
+                  />
+                </div>
+              }
             />
           </div>
         </div>
@@ -571,19 +579,6 @@ export default function Ingest() {
           {/* Search + Batch delete + Pagination — only for history tabs */}
           {historyTab !== 'briefing' && (
           <div className="flex items-center justify-between mt-4 text-sm">
-            {/* 桌面搜索 */}
-            <div className="relative w-52 hidden md:block">
-              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
-              <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="搜索..."
-                className="w-full pl-8 pr-3 py-1.5 text-sm bg-[#141518] border border-[#2A2B30] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50" />
-            </div>
-            {/* 手机搜索图标 */}
-            <button
-              className="md:hidden p-2 rounded-lg text-gray-400 hover:text-white hover:bg-[#2A2B30]"
-              onClick={() => setShowMobileSearch(!showMobileSearch)}
-            >
-              <Search size={16} />
-            </button>
             <div>
               {selectedIds.length > 0 && (
                 <button onClick={handleBatchDelete} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500/15 text-red-400 hover:bg-red-500/25 border border-red-500/20 transition-colors">
@@ -868,19 +863,6 @@ export default function Ingest() {
           })()}
           </div>
         </Modal>
-      )}
-
-      {/* 手机搜索展开 */}
-      {showMobileSearch && (
-        <div className="md:hidden mt-3">
-          <input
-            autoFocus
-            value={search}
-            onChange={e => { setSearch(e.target.value); setPage(1); }}
-            placeholder="搜索标题..."
-            className="w-full px-3 py-2 text-sm bg-[#141518] border border-[#2A2B30] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
-          />
-        </div>
       )}
 
       {/* 手机批量删除栏 */}

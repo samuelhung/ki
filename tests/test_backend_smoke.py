@@ -7,7 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from zhiji_backend.main import app, _requires_token_for_request
-from zhiji_backend.db import init_db, get_db_path
+from zhiji_backend.db import init_db, get_db_path, connect
 
 
 def test_health_endpoint_returns_ok():
@@ -33,6 +33,32 @@ def test_dashboard_bootstrap_summary_shape(tmp_path, monkeypatch):
     assert payload["today_new"] == 0
     assert payload["ingest_total"] == 0
     assert payload["brainstorm_total"] == 0
+
+
+def test_series_list_resolves_members_before_connection_closes(tmp_path, monkeypatch):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    init_db()
+    with connect() as conn:
+        conn.execute(
+            """INSERT OR IGNORE INTO sources (id, name, type, url, topic, priority)
+               VALUES ('manual', '手动', 'manual', '', '认知', 1)"""
+        )
+        conn.execute(
+            """INSERT INTO events (id, source_id, title, url, topic, status)
+               VALUES ('evt-series-1', 'manual', '专题成员一', 'https://example.com/1', '认知', 'completed')"""
+        )
+        conn.execute(
+            """INSERT INTO series (id, name, description, member_ids, status)
+               VALUES ('series-1', '测试专题', '用于连接生命周期回归', '["evt-series-1"]', 'published')"""
+        )
+
+    client = TestClient(app)
+
+    response = client.get("/api/ingest/series")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["items"][0]["members"] == [{"id": "evt-series-1", "title": "专题成员一"}]
 
 
 def test_init_db_creates_sqlite_file(tmp_path, monkeypatch):

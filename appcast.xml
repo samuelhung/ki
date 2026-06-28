@@ -8,6 +8,19 @@
         <language>zh</language>
         <link>https://github.com/samuelhung/ki/releases</link>
     <item>
+      <title>知几桌面端 v1.3.13</title>
+      <description><![CDATA[知几 v1.3.13 — 修复专题系列直达路由加载失败<br><br><b>▸ 修复</b><br>&nbsp;&nbsp;&nbsp;&nbsp;后端对 /series 等 SPA 直达页面同样签发 HttpOnly 会话 cookie，避免绕过首页时业务 API 401<br>&nbsp;&nbsp;&nbsp;&nbsp;修复专题列表接口在连接关闭后继续查询成员标题导致的 Internal Server Error<br>&nbsp;&nbsp;&nbsp;&nbsp;新增专题列表连接生命周期回归测试，防止再次返回非 JSON 错误文本<br><br><b>▸ 说明</b><br>&nbsp;&nbsp;&nbsp;&nbsp;前端、桌面端、后端版本号同步为 1.3.13]]></description>
+      <pubDate>Sun, 28 Jun 2026 06:00:08 +0000</pubDate>
+      <enclosure
+        url="https://github.com/samuelhung/ki/releases/download/v1.3.13%2B88/zhiji_1.3.13.dmg"
+        sparkle:version="88"
+        sparkle:shortVersionString="1.3.13"
+        sparkle:edSignature="YXwkU5IIyKP8IWYsK2CtebDSyEAhXlCoPfPSyRPa2cOEUauE+C/ZR9dlUslG/CaUK0LOsY1RUdW5+MjJMROJAg=="
+        length="19739729"
+        type="application/octet-stream"
+      />
+    </item>
+    <item>
       <title>知几桌面端 v1.3.10</title>
       <description><![CDATA[知几 v1.3.10 — 重组一级导航为知几工作流<br><br><b>▸ 导航</b><br>&nbsp;&nbsp;&nbsp;&nbsp;一级导航调整为今日知几、万象资料、深度研究、静观思辨、见微行动、启蒙辅导、系统总览<br>&nbsp;&nbsp;&nbsp;&nbsp;桌面侧边栏保留内容采集、事件列表、信息源、专题系列、知识图谱和产业链等二级入口<br>&nbsp;&nbsp;&nbsp;&nbsp;移动端底部入口同步简化为今日、资料、研究、行动、辅导<br>&nbsp;&nbsp;&nbsp;&nbsp;万象资料顶部统一为 B+ 横向总控条，内容采集、事件列表、信息源共享胶囊分段切换<br><br><b>▸ 说明</b><br>&nbsp;&nbsp;&nbsp;&nbsp;系统说明同步更新功能体系，强调输入→整理→研究→思考→行动→复盘的产品链路<br>&nbsp;&nbsp;&nbsp;&nbsp;前端、桌面端、后端版本号同步为 1.3.10]]></description>
       <pubDate>Sun, 28 Jun 2026 03:52:00 +0000</pubDate>

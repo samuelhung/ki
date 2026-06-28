@@ -15,36 +15,38 @@ export default function Dashboard() {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [eventLoading, setEventLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [summaryError, setSummaryError] = useState('');
+  const [eventError, setEventError] = useState('');
   const [eventPage, setEventPage] = useState(1);
   const [eventTotal, setEventTotal] = useState(0);
   const EVENT_PAGE_SIZE = 5;
   const [taskStats, setTaskStats] = useState({ todo: 0, in_progress: 0, done: 0, overdue: 0, total: 0 });
 
   function loadSummary() {
-    setLoading(true); setError('');
+    setLoading(true); setSummaryError('');
     apiFetch('/api/dashboard/summary')
       .then((r) => { if (!r.ok) throw new Error('加载仪表盘失败'); return r.json(); })
-      .then((s) => setSummary(s))
-      .catch((e) => setError(e.message))
+      .then((s) => { setSummary(s); setSummaryError(''); })
+      .catch((e) => setSummaryError(e.message))
       .finally(() => setLoading(false));
   }
 
   function loadEvents(page?: number) {
     const p = page ?? eventPage;
-    setEventLoading(true);
+    setEventLoading(true); setEventError('');
     const offset = (p - 1) * EVENT_PAGE_SIZE;
     apiFetch(`/api/events?offset=${offset}&limit=${EVENT_PAGE_SIZE}&count=1`)
       .then((r) => { if (!r.ok) throw new Error('加载事件失败'); return r.json(); })
       .then((e) => {
         if (Array.isArray(e)) setEvents(e);
         else { setEvents(e.items || []); setEventTotal(e.total || 0); }
+        setEventError('');
       })
-      .catch((e) => setError(e.message))
+      .catch((e) => setEventError(e.message))
       .finally(() => setEventLoading(false));
   }
 
-  useEffect(() => { loadSummary(); loadEvents(1); loadTaskStats(); }, []);
+  useEffect(() => { loadSummary(); loadTaskStats(); }, []);
   useEffect(() => { loadEvents(eventPage); }, [eventPage]);
 
   const [showSourcesModal, setShowSourcesModal] = useState(false);
@@ -89,10 +91,11 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {error && (
-            <div className="mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-              {error}
-              <button onClick={() => { loadSummary(); loadEvents(1); }} className="ml-3 underline hover:text-red-300">重试</button>
+          {(summaryError || eventError) && (
+            <div className="mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm space-y-1">
+              {summaryError && <div>{summaryError}</div>}
+              {eventError && <div>{eventError}</div>}
+              <button onClick={() => { loadSummary(); loadEvents(eventPage); }} className="underline hover:text-red-300">重试</button>
             </div>
           )}
         </div>

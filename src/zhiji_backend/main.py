@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import logging
 import logging.handlers
+import hmac
+import hashlib
 from pathlib import Path
 from dotenv import load_dotenv
 from .paths import ZHIJI_HOME, FRONTEND_DIST, LOG_DIR, INGEST_ROOT, RELEASES_DIR, ensure_data_dirs
@@ -166,6 +168,16 @@ def _request_token(request: Request) -> str:
     return api_key_header
 
 
+def _session_cookie_value(api_token: str) -> str:
+    digest = hmac.new(api_token.encode("utf-8"), b"zhiji-remote-session", hashlib.sha256).hexdigest()
+    return digest
+
+
+def _has_valid_session_cookie(request: Request, api_token: str) -> bool:
+    cookie = request.cookies.get("ki_session", "")
+    return bool(cookie) and hmac.compare_digest(cookie, _session_cookie_value(api_token))
+
+
 @app.middleware("http")
 async def api_auth(request: Request, call_next):
     """Protect API and sensitive file paths.
@@ -178,7 +190,9 @@ async def api_auth(request: Request, call_next):
         api_token = _api_token()
         if request.method == "OPTIONS":
             return await call_next(request)
-        if not api_token or _request_token(request) != api_token:
+        if not api_token:
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        if _request_token(request) != api_token and not _has_valid_session_cookie(request, api_token):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
     return await call_next(request)
 
@@ -196,6 +210,14 @@ async def spa_fallback(request: Request, call_next):
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
+        if _api_token() and (path in ("", "/") or path.endswith(".html") or "." not in Path(path).name):
+            response.set_cookie(
+                "ki_session",
+                _session_cookie_value(_api_token()),
+                httponly=True,
+                samesite="lax",
+                max_age=60 * 60 * 24 * 30,
+            )
     return response
 
 

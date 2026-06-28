@@ -16,6 +16,7 @@ interface HeroChip {
 interface HeroAction {
   label: string;
   onClick: () => void;
+  icon?: React.ReactNode;
   tone?: 'purple' | 'pink' | 'emerald' | 'default';
   disabled?: boolean;
 }
@@ -27,8 +28,7 @@ interface ModuleHeroTabsProps {
   tabs: HeroTab[];
   chips?: HeroChip[];
   actions?: HeroAction[];
-  flowText?: string;
-  note?: string;
+  filters?: React.ReactNode;
 }
 
 export const WANXIANG_TABS: HeroTab[] = [
@@ -57,8 +57,7 @@ export default function ModuleHeroTabs({
   tabs,
   chips = [],
   actions = [],
-  flowText,
-  note,
+  filters,
 }: ModuleHeroTabsProps) {
   return (
     <div className="relative overflow-hidden rounded-3xl border border-[#2A2B30] bg-gradient-to-br from-[#171821] via-[#111217] to-[#10161A] shadow-[0_24px_80px_rgba(0,0,0,0.32)]">
@@ -81,8 +80,9 @@ export default function ModuleHeroTabs({
                   key={action.label}
                   onClick={action.onClick}
                   disabled={action.disabled}
-                  className={`px-3 py-2 rounded-xl text-sm font-medium border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${actionClass(action.tone)}`}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${actionClass(action.tone)}`}
                 >
+                  {action.icon}
                   {action.label}
                 </button>
               ))}
@@ -90,28 +90,25 @@ export default function ModuleHeroTabs({
           )}
         </div>
 
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-          {chips.length > 0 && (
-            <div className="flex gap-2 flex-wrap">
-              {chips.map((chip) => (
-                <span key={chip.label} className="px-3 py-1.5 rounded-full text-xs text-gray-300 bg-white/[0.045] border border-white/[0.075]">
-                  {chip.label} <strong className="text-white font-semibold">{chip.value}</strong>
-                </span>
-              ))}
-            </div>
-          )}
-          {flowText && <div className="text-xs text-gray-500 whitespace-nowrap">{flowText}</div>}
-        </div>
+        {chips.length > 0 && (
+          <div className="flex gap-2 flex-wrap">
+            {chips.map((chip) => (
+              <span key={chip.label} className="px-3 py-1.5 rounded-full text-xs text-gray-300 bg-white/[0.045] border border-white/[0.075]">
+                {chip.label} <strong className="text-white font-semibold">{chip.value}</strong>
+              </span>
+            ))}
+          </div>
+        )}
 
-        <div className="grid gap-3 border-t border-white/[0.07] pt-3 lg:grid-cols-[auto_1fr] lg:items-center">
-          <div className="inline-grid grid-cols-3 gap-1 p-1 rounded-2xl bg-black/25 border border-[#25272E] w-full sm:w-auto">
+        <div className="grid gap-3 border-t border-white/[0.07] pt-3 xl:grid-cols-[auto_1fr] xl:items-center">
+          <div className="inline-grid h-9 grid-cols-3 gap-1 p-0.5 rounded-xl bg-black/25 border border-[#25272E] w-full sm:w-auto">
             {tabs.map((tab) => (
               <NavLink
                 key={tab.to}
                 to={tab.to}
                 end={tab.to === '/ingest'}
                 className={({ isActive }) =>
-                  `text-center rounded-xl px-3 py-2 text-sm transition-colors whitespace-nowrap ${
+                  `h-full inline-flex items-center justify-center rounded-lg px-3 text-sm transition-colors whitespace-nowrap ${
                     isActive
                       ? 'text-white bg-purple-500/20 ring-1 ring-purple-500/30 shadow-[0_8px_22px_rgba(168,85,247,0.08)]'
                       : 'text-gray-500 hover:text-gray-300 hover:bg-white/[0.04]'
@@ -123,7 +120,7 @@ export default function ModuleHeroTabs({
               </NavLink>
             ))}
           </div>
-          {note && <div className="text-xs text-gray-500 lg:text-right">{note}</div>}
+          {filters && <div className="min-w-0 xl:justify-self-end">{filters}</div>}
         </div>
       </div>
     </div>

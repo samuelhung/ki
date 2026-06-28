@@ -21,9 +21,34 @@ export function setBackendUrl(url: string): void {
   } catch { /* localStorage blocked */ }
 }
 
+export function getApiToken(): string {
+  try {
+    return localStorage.getItem('ki_api_token')?.trim() || '';
+  } catch { /* localStorage blocked */ }
+  return '';
+}
+
+export function setApiToken(token: string): void {
+  try {
+    const value = token.trim();
+    if (value) localStorage.setItem('ki_api_token', value);
+    else localStorage.removeItem('ki_api_token');
+  } catch { /* localStorage blocked */ }
+}
+
+function withAuth(init?: RequestInit): RequestInit | undefined {
+  const token = getApiToken();
+  if (!token) return init;
+  const headers = new Headers(init?.headers || {});
+  if (!headers.has('Authorization') && !headers.has('X-API-Key')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+  return { ...init, headers };
+}
+
 export function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   if (typeof input === 'string' && input.startsWith('/api/')) {
-    return fetch(getBackendUrl() + input, init);
+    return fetch(getBackendUrl() + input, withAuth(init));
   }
   return fetch(input, init);
 }

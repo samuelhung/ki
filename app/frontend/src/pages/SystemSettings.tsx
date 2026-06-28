@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, Save, Wifi, WifiOff, Globe, Server, Activity } from 'lucide-react';
-import { getBackendUrl, setBackendUrl } from '../api';
+import { getApiToken, getBackendUrl, setApiToken, setBackendUrl } from '../api';
 import { APP_VERSION } from '../constants';
 import { apiFetch } from '../api';
 import { NumberInput, PromptSection, TaskRow, Toggle, type TaskConfig } from '../components/SystemSettingsControls';
@@ -127,6 +127,7 @@ export default function SystemSettings() {
   const [backendUrl, setBackendUrlState] = useState(getBackendUrl());
   const [urlMode, setUrlMode] = useState<'auto' | 'manual'>(getBackendUrl() === 'http://127.0.0.1:9120' ? 'auto' : 'manual');
   const [urlInput, setUrlInput] = useState(getBackendUrl() === 'http://127.0.0.1:9120' ? '' : getBackendUrl());
+  const [apiTokenInput, setApiTokenInput] = useState(getApiToken());
   const [health, setHealth] = useState<{ data: HealthData | null; latency_ms: number; error: string | null }>({ data: null, latency_ms: 0, error: null });
   const [testing, setTesting] = useState(false);
   const [connSaved, setConnSaved] = useState(false);
@@ -149,12 +150,20 @@ export default function SystemSettings() {
   }, []);
 
   const testConnection = async () => {
-    const target = urlMode === 'auto' ? 'http://127.0.0.1:9120' : urlInput.trim();
+    const target = urlMode === 'auto' ? 'http://127.0.0.1:9120' : urlInput.trim().replace(/\/+$/, '');
+    const token = apiTokenInput.trim();
     setTesting(true);
     const t0 = performance.now();
     try {
-      const r = await fetch(target + '/api/health');
-      const json = await r.json();
+      const authHeaders = token ? { Authorization: `Bearer ${token}` } : undefined;
+      const healthRes = await fetch(target + '/api/health');
+      const json = await healthRes.json();
+      if (!healthRes.ok || !json.ok) throw new Error('健康检查失败');
+      const protectedRes = await fetch(target + '/api/dashboard/summary', { headers: authHeaders });
+      if (!protectedRes.ok) {
+        if (protectedRes.status === 401) throw new Error('业务接口未授权，请填写后端 KI_API_TOKEN');
+        throw new Error(`业务接口异常：HTTP ${protectedRes.status}`);
+      }
       setHealth({ data: json, latency_ms: Math.round(performance.now() - t0), error: null });
       setConnSaved(false);
     } catch (e: any) {
@@ -167,6 +176,7 @@ export default function SystemSettings() {
   const saveConnection = () => {
     const target = urlMode === 'auto' ? '' : urlInput.trim(); // empty = revert to default
     setBackendUrl(target);
+    setApiToken(apiTokenInput);
     setBackendUrlState(getBackendUrl());
     setConnSaved(true);
     setTimeout(() => setConnSaved(false), 3000);
@@ -627,23 +637,34 @@ export default function SystemSettings() {
             </div>
 
             {urlMode === 'manual' && (
-              <div className="flex gap-3">
+              <div className="space-y-3">
+                <div className="flex gap-3">
+                  <input
+                    type="text"
+                    value={urlInput}
+                    onChange={(e) => setUrlInput(e.target.value)}
+                    placeholder="http://10.8.0.105:9120"
+                    className="flex-1 bg-[#0B0C10] border border-[#2A2B30] rounded-lg px-3 py-2 text-sm text-white
+                      placeholder-gray-600 focus:outline-none focus:border-purple-500"
+                  />
+                  <button
+                    onClick={testConnection}
+                    disabled={testing || !urlInput.trim()}
+                    className="px-4 py-2 rounded-lg text-xs font-medium bg-[#2A2B30] text-gray-300
+                      hover:bg-[#3A3B40] disabled:opacity-40 transition-colors shrink-0"
+                  >
+                    {testing ? '测试中...' : '测试连接'}
+                  </button>
+                </div>
                 <input
-                  type="text"
-                  value={urlInput}
-                  onChange={(e) => setUrlInput(e.target.value)}
-                  placeholder="http://10.8.0.105:9120"
-                  className="flex-1 bg-[#0B0C10] border border-[#2A2B30] rounded-lg px-3 py-2 text-sm text-white
+                  type="password"
+                  value={apiTokenInput}
+                  onChange={(e) => setApiTokenInput(e.target.value)}
+                  placeholder="远程访问令牌（服务器 KI_API_TOKEN）"
+                  autoComplete="off"
+                  className="w-full bg-[#0B0C10] border border-[#2A2B30] rounded-lg px-3 py-2 text-sm text-white
                     placeholder-gray-600 focus:outline-none focus:border-purple-500"
                 />
-                <button
-                  onClick={testConnection}
-                  disabled={testing || !urlInput.trim()}
-                  className="px-4 py-2 rounded-lg text-xs font-medium bg-[#2A2B30] text-gray-300
-                    hover:bg-[#3A3B40] disabled:opacity-40 transition-colors shrink-0"
-                >
-                  {testing ? '测试中...' : '测试连接'}
-                </button>
               </div>
             )}
 
@@ -688,8 +709,8 @@ export default function SystemSettings() {
 
             <p className="text-[11px] text-gray-600 mt-4 leading-relaxed">
               本地模式：后端运行在本机 127.0.0.1:9120，数据存在本地。<br />
-              远程模式：填入 VPN 地址（如 <code className="text-gray-500 bg-[#0B0C10] px-1 rounded">http://10.8.0.105:9120</code>），
-              多设备共享同一后端和数据。切换后即刻生效。
+              远程模式：填入 VPN 地址（如 <code className="text-gray-500 bg-[#0B0C10] px-1 rounded">http://10.8.0.105:9120</code>）和后端 <code className="text-gray-500 bg-[#0B0C10] px-1 rounded">KI_API_TOKEN</code>，
+              多设备共享同一后端和数据；测试连接会同时验证健康检查与业务接口授权。切换后即刻生效。
             </p>
           </div>
         </div>
