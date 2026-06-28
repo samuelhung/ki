@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import EventRow from '../components/EventRow';
 import EmptyState from '../components/EmptyState';
+import ModuleHeroTabs, { WANXIANG_TABS } from '../components/ModuleHeroTabs';
 import { X, ExternalLink, Search } from 'lucide-react';
 import type { Event } from '../types';
 import { formatTimeBeijing } from '../utils';
@@ -70,9 +71,27 @@ export default function Events() {
   }
 
   return (
-    <div className="flex-1 bg-[#0B0C10] text-white p-4 md:p-6 overflow-y-auto custom-scrollbar">
-      <div className="max-w-[1080px] mx-auto">
-        <h1 className="text-2xl font-bold mb-6">事件列表</h1>
+    <div className="flex-1 bg-[#0B0C10] text-white flex flex-col h-full overflow-hidden">
+      <div className="shrink-0 sticky top-0 z-10 bg-[#0B0C10] px-4 md:px-8 pt-4 md:pt-8 pb-3">
+        <div className="max-w-[1080px] mx-auto">
+          <ModuleHeroTabs
+            title="万象资料"
+            subtitle="每一份内容，都是一粒思想的种子"
+            tabs={WANXIANG_TABS.map(tab => tab.to === '/events' ? { ...tab, count: events.length } : tab)}
+            chips={[
+              { label: '当前列表', value: events.length },
+              { label: '筛选状态', value: status || '全部' },
+              { label: '主题', value: topic || '全部' },
+              { label: '加载更多', value: hasMore ? '可用' : '到底' },
+            ]}
+            actions={[]}
+            flowText="输入 → 整理 → 检索 → 复盘"
+            note="当前视图：事件列表 · 顶部固定，内容独立滚动"
+          />
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto custom-scrollbar px-4 md:px-8 pb-4 md:pb-8">
+        <div className="max-w-[1080px] mx-auto pt-4">
 
         {error && (
           <div className="mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">{error}</div>
@@ -175,6 +194,7 @@ export default function Events() {
             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-500"></div>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

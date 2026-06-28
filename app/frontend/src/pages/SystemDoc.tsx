@@ -110,7 +110,7 @@ export default function SystemDoc() {
               <div className="flex items-center gap-3">
                 <BookOpen size={40} className="text-purple-400 shrink-0" />
                 <div className="flex items-center gap-3">
-                  <h1 className="text-2xl font-bold text-white">系统说明</h1>
+                  <h1 className="text-2xl font-bold text-white">系统总览</h1>
                   <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-purple-500/20 text-purple-400">v{APP_VERSION}</span>
                   {canCheckUpdates() && (
                     <button

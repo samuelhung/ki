@@ -6,6 +6,7 @@ import MetricCard from '../components/MetricCard';
 import Modal from '../components/Modal';
 import Checkbox from '../components/Checkbox';
 import EmptyState from '../components/EmptyState';
+import ModuleHeroTabs, { WANXIANG_TABS } from '../components/ModuleHeroTabs';
 import { formatTimeBeijing, sourceLabel, sourceBadgeClass } from '../utils';
 import { apiFetch } from '../api';
 
@@ -334,7 +335,7 @@ export default function Ingest() {
     navigateWithCurtain(`/events/${eventId}`);
   }
 
-  function openModal(type: 'douyin' | 'file' | 'concept') {
+  function openModal(type: 'douyin' | 'file' | 'concept' | 'queue') {
     setDyError(''); setFlError(''); setPollStatus(null); setProgressStages(null);
     setModalType(type);
   }
@@ -357,38 +358,37 @@ export default function Ingest() {
   return (
     <>
       <div className="flex-1 bg-[#0B0C10] text-white flex flex-col h-full overflow-hidden">
-        {/* Sticky header */}
-        <div className="shrink-0 sticky top-0 z-10 bg-[#0B0C10] px-4 md:px-8 pt-4 md:pt-8">
+        {/* Sticky module hero */}
+        <div className="shrink-0 sticky top-0 z-10 bg-[#0B0C10] px-4 md:px-8 pt-4 md:pt-8 pb-3">
           <div className="max-w-[1080px] mx-auto">
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
-              <div>
-                <div className="flex items-center gap-3">
-                  <Download size={40} className="text-purple-400 shrink-0" />
-                  <div>
-                    <h1 className="text-2xl font-bold">内容采集</h1>
-                    <p className="text-sm text-gray-400 mt-0.5">每一份内容，都是一粒思想的种子</p>
-                  </div>
-                </div>
-              </div>
-              <div className="hidden md:flex gap-2">
-                <button onClick={() => { loadQueue(); setQueueShowAllDone(false); openModal('queue'); }} className="px-4 py-2 rounded-lg text-sm font-medium bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 border border-purple-500/30 transition-colors">
-                  处理队列
-                </button>
-                <button onClick={() => openModal('douyin')} className="px-4 py-2 rounded-lg text-sm font-medium bg-pink-500/20 text-pink-400 hover:bg-pink-500/30 border border-pink-500/30 transition-colors">
-                  抖音分享
-                </button>
-                <button onClick={() => openModal('file')} className="px-4 py-2 rounded-lg text-sm font-medium bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 border border-cyan-500/30 transition-colors">
-                  上传文件
-                </button>
-                <button onClick={() => openModal('concept')} className="px-4 py-2 rounded-lg text-sm font-medium bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30 transition-colors">
-                  沉淀概念
-                </button>
-              </div>
-            </div>
+            <ModuleHeroTabs
+              title="万象资料"
+              subtitle="每一份内容，都是一粒思想的种子"
+              icon={<Download size={23} />}
+              tabs={WANXIANG_TABS.map(tab => tab.to === '/ingest' ? { ...tab, count: total || stats.completed || undefined } : tab)}
+              chips={[
+                { label: '今日新增', value: stats.today_submissions },
+                { label: '累计采集', value: stats.completed },
+                { label: '队列处理中', value: stats.processing || queueItems.filter((t: any) => t.status === 'running' || t.status === 'pending').length },
+                { label: '信息源', value: 8 },
+              ]}
+              actions={[
+                { label: '处理队列', tone: 'purple', onClick: () => { loadQueue(); setQueueShowAllDone(false); openModal('queue'); } },
+                { label: '抖音分享', tone: 'pink', onClick: () => openModal('douyin') },
+                { label: '上传文件', tone: 'emerald', onClick: () => openModal('file') },
+              ]}
+              flowText="输入 → 整理 → 检索 → 复盘"
+              note="当前视图：内容采集 · 顶部固定，内容独立滚动"
+            />
+          </div>
+        </div>
 
-            {/* 桌面 tab */}
-            <div className="hidden md:block border-b border-[#2A2B30]">
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar px-4 md:px-8 pb-4 md:pb-8">
+          <div className="max-w-[1080px] mx-auto pt-4">
+
+            {/* 内容分类 tab */}
+            <div className="hidden md:block border-b border-[#2A2B30] mb-4">
               <div className="flex gap-6 overflow-x-auto">
                 {([
                   { key: '格局' as const, label: '格局', sub: '地缘政治·大国博弈·国际关系', icon: Globe, color: 'text-blue-400' },
@@ -407,9 +407,8 @@ export default function Ingest() {
               </div>
             </div>
 
-            {/* 手机下拉 */}
             <select
-              className="md:hidden w-full px-3 py-2 text-sm bg-[#141518] border border-[#2A2B30] rounded-lg text-white focus:outline-none focus:border-purple-500/50 mt-4"
+              className="md:hidden w-full px-3 py-2 text-sm bg-[#141518] border border-[#2A2B30] rounded-lg text-white focus:outline-none focus:border-purple-500/50 mb-4"
               value={historyTab}
               onChange={e => { setHistoryTab(e.target.value as any); setPage(1); }}
             >
@@ -425,12 +424,6 @@ export default function Ingest() {
                 </option>
               ))}
             </select>
-          </div>
-        </div>
-
-        {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar px-4 md:px-8 pb-4 md:pb-8">
-          <div className="max-w-[1080px] mx-auto pt-4">
 
           {/* Event list — only for history tabs (not briefing) */}
           {historyTab !== 'briefing' && (

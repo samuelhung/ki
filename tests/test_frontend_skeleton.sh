@@ -24,9 +24,28 @@ if ! grep -q "version=__version__" "$ROOT/src/zhiji_backend/main.py"; then
   exit 1
 fi
 
-for text in "仪表盘" "内容采集" "头脑风暴" "专题系列" "待办事务" "系统说明"; do
+for text in "今日知几" "万象资料" "深度研究" "静观思辨" "见微行动" "启蒙辅导" "系统总览"; do
   if ! grep -q "$text" "$ROOT/app/frontend/src"/*.tsx "$ROOT/app/frontend/src/components"/*.tsx 2>/dev/null; then
     echo "frontend Chinese text missing: $text" >&2
+    exit 1
+  fi
+done
+
+if [[ ! -f "$ROOT/app/frontend/src/components/ModuleHeroTabs.tsx" ]]; then
+  echo "missing shared ModuleHeroTabs component" >&2
+  exit 1
+fi
+
+for page in Ingest Events Sources; do
+  if ! grep -q "ModuleHeroTabs" "$ROOT/app/frontend/src/pages/$page.tsx"; then
+    echo "$page must use shared ModuleHeroTabs" >&2
+    exit 1
+  fi
+done
+
+for tab in "内容采集" "事件列表" "信息源"; do
+  if ! grep -q "$tab" "$ROOT/app/frontend/src/components/ModuleHeroTabs.tsx"; then
+    echo "ModuleHeroTabs missing Wanxiang data tab: $tab" >&2
     exit 1
   fi
 done

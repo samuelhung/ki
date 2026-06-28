@@ -1,25 +1,75 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Upload, Lightbulb, CheckSquare, Layers, BookOpen, Code2, Settings, GitBranch, GraduationCap, Wrench, Link2 } from 'lucide-react';
+import { LayoutDashboard, Upload, Lightbulb, CheckSquare, Layers, Code2, Settings, GitBranch, GraduationCap, List, Radio, Brain, Compass, Network, Library, Database, Wrench } from 'lucide-react';
 import { apiFetch } from '../api';
 
 import { APP_VERSION } from '../constants';
 
-const navItems = [
-  { to: '/', icon: LayoutDashboard, label: '仪表盘', color: 'text-blue-400' },
-  { to: '/ingest', icon: Upload, label: '内容采集', color: 'text-emerald-400' },
-  { to: '/brainstorm', icon: Lightbulb, label: '头脑风暴', color: 'text-amber-400' },
-  { to: '/series', icon: Layers, label: '专题系列', color: 'text-purple-400' },
-  { to: '/knowledge-graph', icon: GitBranch, label: '知识图谱', color: 'text-cyan-400' },
-  { to: '/chains', icon: Link2, label: '产业链', color: 'text-emerald-400' },
-  { to: '/tasks', icon: CheckSquare, label: '待办事务', color: 'text-sky-400' },
-  { to: '/tools', icon: Wrench, label: '工具箱', color: 'text-orange-400' },
-  { to: '/study', icon: GraduationCap, label: '辅导中心', color: 'text-amber-400' },
+const navSections = [
+  {
+    to: '/',
+    icon: LayoutDashboard,
+    label: '今日知几',
+    color: 'text-blue-400',
+    children: [] as NavChild[],
+  },
+  {
+    to: '/ingest',
+    icon: Library,
+    label: '万象资料',
+    color: 'text-emerald-400',
+    children: [
+      { to: '/ingest', icon: Upload, label: '内容采集' },
+      { to: '/events', icon: List, label: '事件列表' },
+      { to: '/sources', icon: Radio, label: '信息源' },
+    ],
+  },
+  {
+    to: '/series',
+    icon: Compass,
+    label: '深度研究',
+    color: 'text-purple-400',
+    children: [
+      { to: '/series', icon: Layers, label: '专题系列' },
+      { to: '/knowledge-graph', icon: GitBranch, label: '知识图谱' },
+      { to: '/chains', icon: Network, label: '产业链' },
+    ],
+  },
+  {
+    to: '/brainstorm',
+    icon: Brain,
+    label: '静观思辨',
+    color: 'text-amber-400',
+    children: [
+      { to: '/brainstorm', icon: Lightbulb, label: '头脑风暴' },
+    ],
+  },
+  {
+    to: '/tasks',
+    icon: CheckSquare,
+    label: '见微行动',
+    color: 'text-sky-400',
+    children: [] as NavChild[],
+  },
+  {
+    to: '/study',
+    icon: GraduationCap,
+    label: '启蒙辅导',
+    color: 'text-amber-400',
+    children: [] as NavChild[],
+  },
 ];
 
 const bottomItems = [
-  { to: '/system', icon: BookOpen, label: '系统说明', color: 'text-teal-400' },
+  { to: '/tools', icon: Wrench, label: '工具箱', color: 'text-orange-400' },
+  { to: '/system', icon: Database, label: '系统总览', color: 'text-teal-400' },
 ];
+
+interface NavChild {
+  to: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  label: string;
+}
 
 export default function Sidebar() {
   const [pendingCount, setPendingCount] = useState(0);
@@ -51,33 +101,56 @@ export default function Sidebar() {
         </div>
         <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-purple-500/20 text-purple-400">v{APP_VERSION}</span>
       </div>
-      <nav className="px-2 pt-5 pb-2 space-y-1 flex-1">
-        {navItems.map((item) => {
-          const Icon = item.icon;
+      <nav className="px-2 pt-5 pb-2 space-y-1 flex-1 overflow-y-auto custom-scrollbar">
+        {navSections.map((section) => {
+          const Icon = section.icon;
           return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === '/'}
-              className={({ isActive }) =>
-                `w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                  isActive ? 'bg-[#2A2B30] text-white' : 'hover:bg-[#1A1B20]'
-                }`
-              }
-            >
-              <Icon size={18} className={item.color} />
-              <span className="flex-1">{item.label}</span>
-              {item.to === '/tasks' && pendingCount > 0 && (
-                <span className="shrink-0 min-w-[20px] h-5 flex items-center justify-center rounded-full bg-red-500 text-white text-[11px] font-semibold px-1.5">
-                  {pendingCount}
-                </span>
+            <div key={section.label} className="space-y-1">
+              <NavLink
+                to={section.to}
+                end={section.to === '/'}
+                className={({ isActive }) =>
+                  `w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                    isActive ? 'bg-[#2A2B30] text-white' : 'hover:bg-[#1A1B20]'
+                  }`
+                }
+              >
+                <Icon size={18} className={section.color} />
+                <span className="flex-1">{section.label}</span>
+                {section.to === '/tasks' && pendingCount > 0 && (
+                  <span className="shrink-0 min-w-[20px] h-5 flex items-center justify-center rounded-full bg-red-500 text-white text-[11px] font-semibold px-1.5">
+                    {pendingCount}
+                  </span>
+                )}
+              </NavLink>
+              {section.children.length > 0 && (
+                <div className="ml-5 pl-3 border-l border-[#2A2B30]/70 space-y-0.5">
+                  {section.children.map((child) => {
+                    const ChildIcon = child.icon;
+                    return (
+                      <NavLink
+                        key={child.to}
+                        to={child.to}
+                        end={child.to === '/ingest' || child.to === '/series' || child.to === '/brainstorm'}
+                        className={({ isActive }) =>
+                          `w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-xs transition-colors ${
+                            isActive ? 'text-white bg-[#1A1B20]' : 'text-gray-500 hover:text-gray-300 hover:bg-[#1A1B20]'
+                          }`
+                        }
+                      >
+                        <ChildIcon size={13} className="shrink-0" />
+                        <span className="flex-1">{child.label}</span>
+                        {child.to === '/chains' && chainHintsCount > 0 && (
+                          <span className="shrink-0 min-w-[18px] h-4 flex items-center justify-center rounded-full bg-amber-500 text-white text-[10px] font-semibold px-1 animate-pulse">
+                            {chainHintsCount}
+                          </span>
+                        )}
+                      </NavLink>
+                    );
+                  })}
+                </div>
               )}
-              {item.to === '/chains' && chainHintsCount > 0 && (
-                <span className="shrink-0 min-w-[20px] h-5 flex items-center justify-center rounded-full bg-amber-500 text-white text-[11px] font-semibold px-1.5 animate-pulse">
-                  {chainHintsCount}
-                </span>
-              )}
-            </NavLink>
+            </div>
           );
         })}
       </nav>
