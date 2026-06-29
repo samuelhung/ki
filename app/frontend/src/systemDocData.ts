@@ -65,7 +65,7 @@ export const TECH_STACK = [
   { label: '后端', value: 'FastAPI + SQLite' },
   { label: '前端', value: 'React + Vite + Tailwind v4' },
   { label: '路由', value: 'React Router v7' },
-  { label: 'AI', value: 'DeepSeek Chat' },
+  { label: 'AI', value: 'OpenAI 兼容接口（内网网关）' },
   { label: '语音', value: '火山引擎 ASR' },
   { label: '搜索', value: 'FTS5 全文检索' },
   { label: '图标', value: 'lucide-react' },
@@ -99,10 +99,11 @@ export const ARCHITECTURE_FEATURES = [
   { name: 'FTS5 全文检索', desc: '事件搜索 + 相似事件预筛选，O(n) → O(log n)' },
   { name: '组件化 + 统一标签', desc: '侧边面板独立组件，sourceLabel/statusLabel 集中管理' },
   { name: '知识图谱', desc: 'AI 提取人物/组织/概念/事件实体及关系，vis-network 力导向图可视化，实体详情+关联内容弹窗预览，深度 AI 分析' },
-  { name: '辅导中心', desc: '独立模块 study_materials 表隔离存储，教材 PDF 上传→PyMuPDF 提取→DeepSeek 目录识别→逐课解读，孩子版/家长版/教材解读三种模式' },
+  { name: '辅导中心', desc: '独立模块 study_materials 表隔离存储，教材 PDF 上传→PyMuPDF 提取→AI 目录识别→逐课解读，孩子版/家长版/教材解读三种模式' },
 ];
 
 export const CHANGELOG_ENTRIES = [
+  { version: '1.3.14', date: '2026-06-28', title: '收口 AI 调用为 OpenAI 兼容接口', items: ['后端新增统一 ai_client，AI 调用默认走内网 OpenAI-compatible 网关与 deepseek-v4-pro-max', '配置 API 优先支持 AI_API_KEY / OPENAI_API_KEY，并保留 DEEPSEEK_API_KEY 兼容旧环境', '系统设置页同步新增 max 模型选项，移除 DeepSeek 原生接口推荐文案'] },
   { version: '1.3.13', date: '2026-06-28', title: '修复专题系列直达路由加载失败', items: ['后端对 /series 等 SPA 直达页面同样签发 HttpOnly 会话 cookie，避免绕过首页时业务 API 401', '修复专题列表接口在连接关闭后继续查询成员标题导致的 Internal Server Error', '新增专题列表连接生命周期回归测试，防止再次返回非 JSON 错误文本'] },
   { version: '1.3.12', date: '2026-06-28', title: '修复远程地址直接打开后的仪表盘加载失败', items: ['后端首页在配置 KI_API_TOKEN 后自动签发 HttpOnly 会话 cookie，远程同源页面无需手动填写令牌即可访问业务 API', '业务 API 同时接受 Authorization 令牌与后端签发的会话 cookie，保留非同源直接调用的 401 安全边界', '直接打开 http://10.8.0.105:9120/ 后仪表盘、热力图和事件列表可正常加载'] },
   { version: '1.3.11', date: '2026-06-28', title: '修复远程后端业务接口授权', items: ['连接设置新增远程访问令牌输入，保存服务器 KI_API_TOKEN 后业务请求会自动携带 Authorization', '远程连接测试不再只检查 /api/health，会额外验证 /api/dashboard/summary，避免页面能打开但列表全部 401', '前端构建版本同步为 1.3.11，远程访问说明同步更新'] },

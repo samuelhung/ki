@@ -275,17 +275,17 @@ export default function SystemSettings() {
       {/* Tab: 参数说明 */}
       {tab === 'params_info' && (
         <div className="space-y-6">
-          {/* DeepSeek 模型规格 */}
+          {/* AI 模型规格 */}
           <div className="bg-[#141518] border border-[#2A2B30] rounded-xl p-5">
-            <h2 className="text-sm font-semibold text-white mb-1">DeepSeek 模型规格</h2>
-            <p className="text-[11px] text-gray-500 mb-4">官方数据，来源 api-docs.deepseek.com</p>
+            <h2 className="text-sm font-semibold text-white mb-1">OpenAI 兼容模型规格</h2>
+            <p className="text-[11px] text-gray-500 mb-4">当前通过内网 OpenAI-compatible 网关调用，模型能力以网关 /models 返回为准</p>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-[#2A2B30] text-gray-400">
                     <th className="text-left py-2 pr-4 font-medium">参数</th>
-                    <th className="text-center py-2 px-3 font-medium">V4 Flash</th>
-                    <th className="text-center py-2 pl-3 font-medium text-purple-400">V4 Pro（当前）</th>
+                    <th className="text-center py-2 px-3 font-medium">V4 Flash Max</th>
+                    <th className="text-center py-2 pl-3 font-medium text-purple-400">V4 Pro Max（当前）</th>
                   </tr>
                 </thead>
                 <tbody className="text-gray-300">
@@ -381,8 +381,8 @@ export default function SystemSettings() {
               <div>
                 <h3 className="text-xs font-medium text-purple-400 mb-1">上下文硬盘缓存</h3>
                 <p className="text-xs text-gray-400 leading-relaxed">
-                  DeepSeek 的云端缓存机制。相同 system prompt + 消息历史触达缓存时，<br />
-                  输入价格从 3 元/百万 token 降至 0.025 元/百万 token（节省 99%）。<br />
+                  OpenAI 兼容网关的缓存能力。相同 system prompt + 消息历史触达缓存时，<br />
+                  输入价格可显著低于未命中请求，实际计费以当前网关/模型为准。<br />
                   <span className="text-gray-500">KI 的摘要、快报等定时任务 prompt 高度重复，强烈建议开启。</span>
                 </p>
               </div>
@@ -391,7 +391,7 @@ export default function SystemSettings() {
 
           {/* 当前消耗估算 */}
           <div className="bg-[#141518] border border-[#2A2B30] rounded-xl p-5">
-            <h2 className="text-sm font-semibold text-white mb-4">各任务单次调用成本估算（V4 Pro）</h2>
+            <h2 className="text-sm font-semibold text-white mb-4">各任务单次调用成本估算（当前模型）</h2>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
@@ -435,7 +435,7 @@ export default function SystemSettings() {
               </table>
             </div>
             <p className="text-[10px] text-gray-600 mt-3">
-              *仅估算输出成本（6 元/百万 token）。输入成本和思考模式 token 另行计算。
+              *按当前模型常见价格估算，仅供排序参考；输入成本、缓存命中和思考模式 token 以网关实际账单为准。
             </p>
           </div>
         </div>
@@ -450,7 +450,7 @@ export default function SystemSettings() {
               <label className="flex items-center justify-between py-2">
                 <span className="text-xs text-gray-400">
                   选用模型
-                  <span className="text-[10px] text-gray-600 ml-1">（建议 deepseek-v4-pro）</span>
+                  <span className="text-[10px] text-gray-600 ml-1">（建议 deepseek-v4-pro-max）</span>
                 </span>
                 <select
                   value={config.general.model}
@@ -458,15 +458,18 @@ export default function SystemSettings() {
                   className="bg-[#0B0C10] border border-[#2A2B30] rounded px-2 py-1 text-xs text-white
                     focus:outline-none focus:border-purple-500"
                 >
+                  <option value="deepseek-v4-pro-max">deepseek-v4-pro-max</option>
+                  <option value="deepseek-v4-flash-max">deepseek-v4-flash-max</option>
                   <option value="deepseek-v4-pro">deepseek-v4-pro</option>
                   <option value="deepseek-v4-flash">deepseek-v4-flash</option>
-                  <option value="deepseek-chat">deepseek-chat（即将弃用）</option>
+                  <option value="gpt-5.5">gpt-5.5</option>
+                  <option value="gpt-5.4">gpt-5.4</option>
                 </select>
               </label>
               <label className="flex items-center justify-between py-2">
                 <span className="text-xs text-gray-400">
                   接口地址
-                  <span className="text-[10px] text-gray-600 ml-1">（建议 https://api.deepseek.com）</span>
+                  <span className="text-[10px] text-gray-600 ml-1">（建议 http://10.8.0.13:3000/v1）</span>
                 </span>
                 <input
                   type="text" value={config.general.base_url}

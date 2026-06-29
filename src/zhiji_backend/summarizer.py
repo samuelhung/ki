@@ -1,11 +1,11 @@
-"""Generate structured summaries from transcripts and documents using DeepSeek API.
+"""Generate structured summaries from transcripts and documents using the configured AI API.
 """
 
 from __future__ import annotations
 
 import logging
 
-from .deepseek_client import chat
+from .ai_client import chat
 
 logger = logging.getLogger(__name__)
 

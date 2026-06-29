@@ -276,7 +276,7 @@ export default function SystemDoc() {
                 <span className="text-purple-400 shrink-0 mt-0.5">8:00</span>
                 <div>
                   <span className="text-white font-medium">深度日报</span>
-                  <p className="text-gray-500 mt-0.5">取当天所有事件 → DeepSeek 生成结构化快报 → 写入内容流与归档</p>
+                  <p className="text-gray-500 mt-0.5">取当天所有事件 → AI 生成结构化快报 → 写入内容流与归档</p>
                 </div>
               </div>
             </div>

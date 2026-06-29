@@ -1,4 +1,4 @@
-"""AI-powered structured news briefing generation using DeepSeek API.
+"""AI-powered structured news briefing generation using the configured AI API.
 
 Produces topic-grouped Chinese overviews from translated RSS events.
 Two modes: 'quick' (post-collection snapshot) and 'daily' (in-depth digest).
@@ -12,7 +12,7 @@ import uuid
 from typing import Any
 
 from .db import connect, init_db
-from .deepseek_client import chat
+from .ai_client import chat
 
 logger = logging.getLogger(__name__)
 
@@ -40,9 +40,9 @@ SOURCE_LABELS: dict[str, str] = {
 }
 
 
-def _call_deepseek(system_prompt: str, user_prompt: str, max_tokens: int = 4096, timeout: int = 120,
+def _call_ai(system_prompt: str, user_prompt: str, max_tokens: int = 4096, timeout: int = 120,
                    module: str = "digest_briefing", task: str = "briefing_quick") -> str:
-    """Call DeepSeek chat API and return the content string."""
+    """Call the configured AI API and return the content string."""
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
@@ -50,7 +50,7 @@ def _call_deepseek(system_prompt: str, user_prompt: str, max_tokens: int = 4096,
     content = chat(messages, temperature=0.5, max_tokens=max_tokens, response_format={"type": "json_object"}, timeout=timeout,
                    module=module, task=task)
     if content is None:
-        raise RuntimeError("DeepSeek API not configured or call failed")
+        raise RuntimeError("AI API not configured or call failed")
     return content
 
 
@@ -130,7 +130,7 @@ def generate_briefing(briefing_type: str = "quick", limit: int = 80) -> dict[str
 
     user_prompt = f"请根据以下新闻事件生成{'即时快报' if is_quick else '每日深度日报'}：\n\n{events_text}"
 
-    raw = _call_deepseek(system_prompt=system_prompt, user_prompt=user_prompt, max_tokens=4096, timeout=120,
+    raw = _call_ai(system_prompt=system_prompt, user_prompt=user_prompt, max_tokens=4096, timeout=120,
                         task="briefing_quick" if is_quick else "briefing_daily")
 
     # Parse and validate the AI response
@@ -317,7 +317,7 @@ def _batch_contemplate_briefing_events(topics: list[dict[str, Any]]) -> None:
     )
 
     try:
-        raw = _call_deepseek(system_prompt=system_prompt, user_prompt=user_prompt, max_tokens=4096, timeout=180)
+        raw = _call_ai(system_prompt=system_prompt, user_prompt=user_prompt, max_tokens=4096, timeout=180)
         matches = json.loads(raw)
         if not isinstance(matches, list):
             logger.warning("Batch contemplate: AI returned non-list, got %s", type(matches).__name__)

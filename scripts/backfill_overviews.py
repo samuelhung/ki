@@ -14,16 +14,18 @@ from pathlib import Path
 # Add app to path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 
-# Load DeepSeek API key from Hermes .env
+# Load AI API key from Hermes .env when available
 _hermes_env = Path.home() / ".hermes" / ".env"
 if _hermes_env.exists():
     for line in _hermes_env.read_text().splitlines():
         line = line.strip()
-        if line.startswith("DEEPSEEK_API_KEY="):
-            os.environ["DEEPSEEK_API_KEY"] = line.split("=", 1)[1].strip().strip('"').strip("'")
+        if line.startswith(("AI_API_KEY=", "OPENAI_API_KEY=", "DEEPSEEK_API_KEY=")):
+            key_name, key_value = line.split("=", 1)
+            os.environ.setdefault(key_name, key_value.strip().strip('"').strip("'"))
+            os.environ.setdefault("AI_API_KEY", key_value.strip().strip('"').strip("'"))
             break
 
-from zhiji_backend.deepseek_client import chat
+from zhiji_backend.ai_client import chat
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("backfill-overview")
@@ -64,8 +66,8 @@ def main():
         conn.close()
         return
 
-    if not os.environ.get("DEEPSEEK_API_KEY"):
-        logger.error("DEEPSEEK_API_KEY not configured — aborting")
+    if not (os.environ.get("AI_API_KEY") or os.environ.get("OPENAI_API_KEY") or os.environ.get("DEEPSEEK_API_KEY")):
+        logger.error("AI API key not configured — aborting")
         conn.close()
         return
 

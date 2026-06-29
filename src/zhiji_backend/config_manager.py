@@ -1,6 +1,6 @@
 """System configuration manager — single source of truth for AI params.
 
-Reads from data/system_config.json at startup.  deepseek_client.chat() merges
+Reads from data/system_config.json at startup.  ai_client.chat() merges
 per-call overrides on top of the module-level settings from this config.
 """
 
@@ -13,6 +13,9 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_AI_MODEL = "deepseek-v4-pro-max"
+DEFAULT_AI_BASE_URL = "http://10.8.0.13:3000/v1"
+
 from .paths import CONFIG_PATH
 _config: dict[str, Any] = {}
 
@@ -20,8 +23,8 @@ _config: dict[str, Any] = {}
 def _defaults() -> dict:
     return {
         "general": {
-            "model": "deepseek-v4-pro",
-            "base_url": "https://api.deepseek.com",
+            "model": DEFAULT_AI_MODEL,
+            "base_url": DEFAULT_AI_BASE_URL,
             "api_key": "",
             "disk_cache": True,
             "default_temperature": 0.3,
@@ -115,8 +118,8 @@ def get_module_config(module: str, task: str) -> dict:
     t = m.get(task, {}) if isinstance(m, dict) else {}
 
     return {
-        "model": g.get("model", "deepseek-v4-pro"),
-        "base_url": g.get("base_url", "https://api.deepseek.com"),
+        "model": g.get("model", DEFAULT_AI_MODEL),
+        "base_url": g.get("base_url", DEFAULT_AI_BASE_URL),
         "thinking": t.get("thinking", g.get("default_thinking", False)),
         "reasoning_effort": g.get("reasoning_effort", "high"),
         "disk_cache": g.get("disk_cache", True),

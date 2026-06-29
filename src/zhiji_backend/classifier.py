@@ -1,6 +1,6 @@
 """Content classifier — assigns one of four cognitive layers to non-RSS events.
 
-Uses DeepSeek to classify content into:
+Uses the configured AI API to classify content into:
   格局 (geopolitics), 财富 (finance/business), 认知 (cognition/methodology), 前瞻 (technology/trends)
 """
 
@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 from .db import connect, init_db
-from .deepseek_client import chat
+from .ai_client import chat
 
 logger = logging.getLogger(__name__)
 

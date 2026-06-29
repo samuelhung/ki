@@ -17,10 +17,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/ingest", tags=["series"])
 
 
-def _call_deepseek_chat(messages, temperature=0.3, max_tokens=3072, timeout=120, response_format=None,
+def _call_ai_chat(messages, temperature=0.3, max_tokens=3072, timeout=120, response_format=None,
                         module=None, task=None):
-    """Lazy import to avoid circular dependencies with deepseek_client."""
-    from ..deepseek_client import chat
+    """Lazy import to avoid circular dependencies with ai_client."""
+    from ..ai_client import chat
     return chat(messages, temperature=temperature, max_tokens=max_tokens, timeout=timeout,
                 response_format=response_format, module=module, task=task)
 
@@ -265,7 +265,7 @@ def discover_series():
     ]
 
     try:
-        raw = _call_deepseek_chat(messages, temperature=0.4, max_tokens=4096, timeout=120,
+        raw = _call_ai_chat(messages, temperature=0.4, max_tokens=4096, timeout=120,
                                   response_format={"type": "json_object"},
                                   module="series", task="discover")
         if not raw:
@@ -418,7 +418,7 @@ def discover_stage1():
     ]
 
     try:
-        raw = _call_deepseek_chat(messages, temperature=0.3, max_tokens=4096, timeout=120,
+        raw = _call_ai_chat(messages, temperature=0.3, max_tokens=4096, timeout=120,
                                   response_format={"type": "json_object"},
                                   module="series", task="discover_stage1")
         if not raw:
@@ -519,7 +519,7 @@ def discover_stage2(data: dict):
     ]
 
     try:
-        raw = _call_deepseek_chat(messages, temperature=0.4, max_tokens=4096, timeout=120,
+        raw = _call_ai_chat(messages, temperature=0.4, max_tokens=4096, timeout=120,
                                   response_format={"type": "json_object"},
                                   module="series", task="discover_stage2")
         if not raw:
@@ -683,7 +683,7 @@ def discover_by_topic(data: dict):
     ]
 
     try:
-        raw = _call_deepseek_chat(messages, temperature=0.4, max_tokens=4096, timeout=120,
+        raw = _call_ai_chat(messages, temperature=0.4, max_tokens=4096, timeout=120,
                                   response_format={"type": "json_object"},
                                   module="series", task="discover_by_topic")
         if not raw:
@@ -865,7 +865,7 @@ def expand_series(series_id: str):
     ]
 
     try:
-        raw = _call_deepseek_chat(messages, temperature=0.2, max_tokens=2048, timeout=120,
+        raw = _call_ai_chat(messages, temperature=0.2, max_tokens=2048, timeout=120,
                                   response_format={"type": "json_object"},
                                   module="series", task="expand")
         if not raw:
@@ -1005,7 +1005,7 @@ def suggest_series_name(data: dict):
     ]
 
     try:
-        raw = _call_deepseek_chat(messages, temperature=0.4, max_tokens=512, timeout=60,
+        raw = _call_ai_chat(messages, temperature=0.4, max_tokens=512, timeout=60,
                                   response_format={"type": "json_object"},
                                   module="series", task="suggest_name")
         if not raw:
@@ -1289,7 +1289,7 @@ def generate_series_intro(series_id: str):
         {"role": "user", "content": prompt},
     ]
 
-    intro = _call_deepseek_chat(messages, temperature=0.5, max_tokens=1024, timeout=120,
+    intro = _call_ai_chat(messages, temperature=0.5, max_tokens=1024, timeout=120,
                                module="series", task="intro")
     if not intro:
         raise HTTPException(status_code=500, detail="AI 导言生成失败")
@@ -1386,7 +1386,7 @@ def generate_series_summary(series_id: str):
         {"role": "user", "content": prompt},
     ]
 
-    summary = _call_deepseek_chat(messages, temperature=0.3, max_tokens=3072, timeout=120,
+    summary = _call_ai_chat(messages, temperature=0.3, max_tokens=3072, timeout=120,
                                  module="series", task="summary")
     if not summary:
         raise HTTPException(status_code=500, detail="AI 总结生成失败")
@@ -1475,7 +1475,7 @@ def generate_series_paper(series_id: str):
         {"role": "user", "content": prompt},
     ]
 
-    paper = _call_deepseek_chat(messages, temperature=0.5, max_tokens=4096, timeout=180,
+    paper = _call_ai_chat(messages, temperature=0.5, max_tokens=4096, timeout=180,
                                module="series", task="paper")
     if not paper:
         raise HTTPException(status_code=500, detail="AI 论文生成失败")
@@ -1596,7 +1596,7 @@ def auto_suggest_series(event_id: str) -> None:
     Stores suggestions in events.suggested_series_json as a JSON array of series IDs.
     Non-blocking — failures are logged but not raised.
     """
-    from ..deepseek_client import chat
+    from ..ai_client import chat
 
     try:
         with connect() as conn:

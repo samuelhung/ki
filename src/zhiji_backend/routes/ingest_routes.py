@@ -285,7 +285,7 @@ def _create_concept(title: str, topic: str, description: str = "", force_ai: boo
     When context_docs is provided, inject original document excerpts for grounded explanation.
     Auto-classifies topic if not provided by user."""
     init_db()
-    from ..deepseek_client import chat
+    from ..ai_client import chat
     from ..classifier import classify_content
 
     concept_id = f"evt-concept-{uuid.uuid4().hex[:12]}"

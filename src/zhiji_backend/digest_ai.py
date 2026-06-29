@@ -1,4 +1,4 @@
-"""AI-powered daily digest generation using DeepSeek API.
+"""AI-powered daily digest generation using the configured AI API.
 
 Produces structured Markdown digest from today's new events, including:
 - Headline summary
@@ -18,16 +18,16 @@ from typing import Any
 
 from .db import connect, init_db
 from .paths import DATA_DIR
-from .deepseek_client import chat
+from .ai_client import chat
 
 logger = logging.getLogger(__name__)
 
 
-def _call_deepseek_text(
+def _call_ai_text(
     system_prompt: str, user_prompt: str,
     max_tokens: int = 8192, timeout: int = 180,
 ) -> str:
-    """Call DeepSeek chat API for free-text (non-JSON) output."""
+    """Call the configured AI API for free-text (non-JSON) output."""
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
@@ -35,7 +35,7 @@ def _call_deepseek_text(
     content = chat(messages, temperature=0.5, max_tokens=max_tokens, timeout=timeout,
                    module="digest_briefing", task="digest")
     if content is None:
-        raise RuntimeError("DeepSeek API not configured or call failed")
+        raise RuntimeError("AI API not configured or call failed")
     return content
 
 
@@ -198,14 +198,14 @@ A: [回答]
     # Try AI generation; fall back to simple digest if AI fails
     markdown = None
     try:
-        markdown = _call_deepseek_text(
+        markdown = _call_ai_text(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             max_tokens=8192,
             timeout=180,
         )
     except RuntimeError:
-        logger.exception("DeepSeek API failed for digest %s, falling back to simple digest", date_key)
+        logger.exception("AI API failed for digest %s, falling back to simple digest", date_key)
 
     if not markdown:
         # Fallback: simple template-based digest

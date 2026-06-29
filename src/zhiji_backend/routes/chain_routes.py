@@ -9,7 +9,7 @@ import uuid
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException
 from ..db import connect
-from ..deepseek_client import chat
+from ..ai_client import chat
 
 logger = logging.getLogger(__name__)
 
@@ -373,7 +373,7 @@ def _extract_hints_from_analysis(analysis: str, title: str, summary: str) -> lis
 如果没有可提取的量化数据，返回空数组: []
 只输出 JSON。"""
 
-        from .deepseek_client import chat
+        from ..ai_client import chat
         result = chat(
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
@@ -1619,7 +1619,7 @@ def merge_chains(req: MergeRequest):
                     merged_nodes.append(n)
                     existing_names.add(n["name"])
 
-        # AI-assisted re-sort: ask DeepSeek to order nodes by real industrial flow
+        # AI-assisted re-sort: ask AI to order nodes by real industrial flow
         try:
             node_list = "\n".join(
                 f"- [{n['node_type']}] {n['name']}" + (f" — {n.get('description','')[:60]}" if n.get('description') else "")

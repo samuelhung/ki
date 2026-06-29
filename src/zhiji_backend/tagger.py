@@ -1,4 +1,4 @@
-"""Auto-tag events using DeepSeek NER — extract people, places, organizations.
+"""Auto-tag events using AI NER — extract people, places, organizations.
 
 Stores results in events.tags_json as:
   [{"type": "person", "value": "特朗普"}, {"type": "org", "value": "BBC"}, ...]
@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 
-from .deepseek_client import chat
+from .ai_client import chat
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ TAG_TYPES = {
 
 
 def tag_event(title: str, text: str, title_cn: str | None = None) -> list[dict[str, str]]:
-    """Extract tags from an event using DeepSeek. Returns list of {type, value} dicts."""
+    """Extract tags from an event using AI. Returns list of {type, value} dicts."""
     # Use Chinese title if available
     display_title = title_cn or title
     snippet = text[:3000] if len(text) > 3000 else text
@@ -56,7 +56,7 @@ def tag_event(title: str, text: str, title_cn: str | None = None) -> list[dict[s
         parsed = json.loads(content)
         # Handle both array and object-wrapped responses
         if isinstance(parsed, dict):
-            # DeepSeek json_object mode wraps in an object — find the array value
+            # JSON object mode wraps in an object — find the array value
             for v in parsed.values():
                 if isinstance(v, list):
                     parsed = v

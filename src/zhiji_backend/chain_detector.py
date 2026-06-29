@@ -7,7 +7,7 @@ import logging
 import uuid
 
 from .db import connect
-from .deepseek_client import chat
+from .ai_client import chat
 
 logger = logging.getLogger(__name__)
 

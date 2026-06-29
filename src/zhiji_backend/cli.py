@@ -182,7 +182,9 @@ def cmd_init(args: argparse.Namespace) -> None:
     if not env_path.exists():
         env_path.write_text(
             "# 知几配置文件 — 在此设置 API Key\n"
-            "# DEEPSEEK_API_KEY=sk-xxx\n"
+            "# AI_API_KEY=sk-xxx\n"
+            "# OPENAI_API_KEY=sk-xxx\n"
+            "# DEEPSEEK_API_KEY=sk-xxx  # 兼容旧版本，可不填\n"
             "# KI_API_TOKEN=your-secret-token\n"
         )
         print(f"  已创建默认配置: {env_path}")

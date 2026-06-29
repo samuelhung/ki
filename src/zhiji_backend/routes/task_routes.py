@@ -241,7 +241,7 @@ def judge_task(task_id: str):
 
 def _run_task_ai_judge(task_id: str, title: str, description: str):
     """Run AI judgment on a task and update the record."""
-    from ..deepseek_client import chat
+    from ..ai_client import chat
     
     body = f"标题：{title}\n\n描述：{description or '（无详细描述）'}"
     messages = [

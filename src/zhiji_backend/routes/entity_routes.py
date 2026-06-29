@@ -451,7 +451,7 @@ def get_entity_insight(entity_id: str):
     related entities with relationship types, then asks the AI to produce
     actionable insights in structured markdown.
     """
-    from ..deepseek_client import chat
+    from ..ai_client import chat
 
     with connect() as conn:
         entity = conn.execute(

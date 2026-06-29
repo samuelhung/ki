@@ -324,7 +324,7 @@ class TagRequest(BaseModel):
 
 @router.post("/api/events/{event_id}/tag")
 def tag_single_event(event_id: str) -> dict[str, object]:
-    """Extract tags for a single event using DeepSeek NER."""
+    """Extract tags for a single event using AI NER."""
 
     with connect() as conn:
         row = conn.execute(

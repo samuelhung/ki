@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from ..db import connect, init_db
 from ..classifier import classify_content
 from ..translator import translate
-from ..deepseek_client import chat
+from ..ai_client import chat
 
 from ..paths import BRAINSTORM_DIR
 logger = logging.getLogger(__name__)
@@ -310,13 +310,13 @@ class ConversationMessageRequest(BaseModel):
     content: str
 
 
-def _call_deepseek_chat(messages: list[dict], temperature: float = 0.3, max_tokens: int = 2000,
+def _call_ai_chat(messages: list[dict], temperature: float = 0.3, max_tokens: int = 2000,
                         module: str = "", task: str = "") -> str:
-    """Call DeepSeek chat API and return the assistant's text response."""
+    """Call the configured AI API and return the assistant's text response."""
     content = chat(messages, temperature=temperature, max_tokens=max_tokens, timeout=120,
                    module=module, task=task)
     if content is None:
-        raise RuntimeError("DeepSeek API 未配置")
+        raise RuntimeError("AI API 未配置")
     return content
 
 
@@ -392,7 +392,7 @@ def start_conversation(question_id: str, request: ConversationStartRequest) -> d
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": request.question},
         ]
-        answer = _call_deepseek_chat(messages, temperature=0.3, max_tokens=2000,
+        answer = _call_ai_chat(messages, temperature=0.3, max_tokens=2000,
                                      module="brainstorm", task="answer")
     except Exception as e:
         logger.warning("Conversation start failed for question %s: %s", question_id, e)
@@ -467,7 +467,7 @@ def send_conversation_message(question_id: str, request: ConversationMessageRequ
         messages = [{"role": "system", "content": system_prompt}]
         messages.extend(history)
         messages.append({"role": "user", "content": request.content})
-        answer = _call_deepseek_chat(messages, temperature=0.3, max_tokens=2000,
+        answer = _call_ai_chat(messages, temperature=0.3, max_tokens=2000,
                                      module="brainstorm", task="answer")
     except Exception as e:
         logger.warning("Conversation message failed for question %s: %s", question_id, e)
@@ -595,7 +595,7 @@ def generate_conversation_summary(question_id: str) -> dict[str, object]:
             {"role": "system", "content": "你是严谨的研究总结助手，请基于对话和参考文档生成结构化总结。"},
             {"role": "user", "content": prompt},
         ]
-        summary = _call_deepseek_chat(messages, temperature=0.3, max_tokens=3000,
+        summary = _call_ai_chat(messages, temperature=0.3, max_tokens=3000,
                                      module="brainstorm", task="summary")
     except Exception as e:
         logger.warning("Summary generation failed for question %s: %s", question_id, e)
@@ -728,7 +728,7 @@ def _contemplate_event_to_questions(event_id: str) -> dict[str, object]:
                 "link_status": "unlinked",
             })
 
-    # 5. Ask DeepSeek for new candidates
+    # 5. Ask AI for new candidates
     new_suggestions: list[dict] = []
     if candidates:
         event_title = event["title"] or ""
@@ -879,7 +879,7 @@ def _contemplate_question_to_events(question_id: str) -> dict[str, object]:
     if not candidates and not cached_suggestions:
         return {"entity_id": question_id, "entity_title": q["question"], "suggestions": [], "note": "所有内容已关联或已判断"}
 
-    # 5. Ask DeepSeek for new candidates (full text, not snippet)
+    # 5. Ask AI for new candidates (full text, not snippet)
     new_suggestions: list[dict] = []
     if candidates:
         event_lines = []

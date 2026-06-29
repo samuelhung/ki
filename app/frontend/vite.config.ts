@@ -2,7 +2,7 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
-const appVersion = '1.3.13';
+const appVersion = '1.3.14';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],

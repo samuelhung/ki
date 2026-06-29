@@ -1,11 +1,11 @@
-"""Translate English news content to Chinese using DeepSeek API."""
+"""Translate English news content to Chinese using the configured AI API."""
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
 
-from .deepseek_client import chat
+from .ai_client import chat
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +17,7 @@ class TranslationResult:
     error: str | None = None
 
 
-def _call_deepseek(system_prompt: str, user_prompt: str, max_tokens: int, timeout: int) -> TranslationResult:
+def _call_ai(system_prompt: str, user_prompt: str, max_tokens: int, timeout: int) -> TranslationResult:
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
@@ -25,12 +25,12 @@ def _call_deepseek(system_prompt: str, user_prompt: str, max_tokens: int, timeou
     content = chat(messages, temperature=0.3, max_tokens=max_tokens, timeout=timeout,
                    module="ingest_pipeline", task="translate")
     if content is None:
-        return TranslationResult(text="", success=False, error="DeepSeek API not configured or call failed")
+        return TranslationResult(text="", success=False, error="AI API not configured or call failed")
     return TranslationResult(text=content, success=True)
 
 
 def translate(text: str, max_chars: int = 5000) -> TranslationResult:
-    """Translate English text to Chinese using DeepSeek Chat API."""
+    """Translate English text to Chinese using the configured AI API."""
     if not text or not text.strip():
         return TranslationResult(text=text, success=True)
 
@@ -45,7 +45,7 @@ def translate(text: str, max_chars: int = 5000) -> TranslationResult:
         "4. 只输出翻译结果，不要加任何解释或前缀"
     )
 
-    return _call_deepseek(
+    return _call_ai(
         system_prompt=system_prompt,
         user_prompt=f"请翻译以下新闻内容：\n\n{truncated}",
         max_tokens=4096,
@@ -63,7 +63,7 @@ def translate_title(title: str) -> TranslationResult:
         "只输出翻译结果，不要加引号、解释或前缀。"
     )
 
-    return _call_deepseek(
+    return _call_ai(
         system_prompt=system_prompt,
         user_prompt=f"翻译：{title}",
         max_tokens=256,
