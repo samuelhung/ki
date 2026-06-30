@@ -97,9 +97,9 @@ export default function Sidebar() {
       <div className="p-4 flex flex-col items-center border-b border-[#2A2B30] gap-1">
         <div className="text-center">
           <span className="font-semibold text-white text-2xl tracking-wide">知几</span>
-          <p className="text-gray-500 text-[10px] mt-0.5 leading-tight">知几其神乎<br/>见微知著</p>
+          <p className="text-gray-500 text-[10px] mt-0.5 leading-tight">知几其神乎，见微知著</p>
+          <p className="text-purple-400/80 text-[10px] mt-1 leading-tight">v{APP_VERSION} · Copyright © 2026 Mr.H ✨</p>
         </div>
-        <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-purple-500/20 text-purple-400">v{APP_VERSION}</span>
       </div>
       <nav className="px-2 pt-5 pb-2 space-y-1 flex-1 overflow-y-auto custom-scrollbar">
         {navSections.map((section) => {
