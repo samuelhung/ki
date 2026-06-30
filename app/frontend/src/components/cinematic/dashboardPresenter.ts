@@ -1,5 +1,13 @@
 import type { DashboardSummary, Event } from '../../types';
-import type { CinematicDashboardData, CinematicIndexItem, CinematicSignal, TaskStats } from './types';
+import type {
+  CinematicDashboardData,
+  CinematicHeatmapData,
+  CinematicIndexItem,
+  CinematicSignal,
+  HeatmapTrendDay,
+  TaskStats,
+  UsageData,
+} from './types';
 
 const fallbackSummary: DashboardSummary = {
   sources_enabled: 0,
@@ -15,6 +23,24 @@ const fallbackTaskStats: TaskStats = {
   overdue: 0,
   total: 0,
 };
+
+function addDays(dateStr: string, n: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+
+function getDowIndex(dateStr: string): number {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  return dow === 0 ? 6 : dow - 1;
+}
+
+function getHeatLevel(count: number): 0 | 1 | 2 | 3 {
+  if (count === 0) return 0;
+  if (count === 1) return 1;
+  if (count <= 3) return 2;
+  return 3;
+}
 
 function formatCount(value: number, prefix = ''): string {
   const safeValue = Number.isFinite(value) ? value : 0;
@@ -90,7 +116,7 @@ function createIndexItems(summary: DashboardSummary, taskStats: TaskStats): Cine
       id: 'heatmap',
       title: '事件热力图',
       meta: '信号密度',
-      desc: '用最近 90 天的信号密度识别持续升温或异常活跃的主题。',
+      desc: '用最近 84 天的信号密度识别持续升温或异常活跃的主题。',
     },
     {
       id: 'signals',
@@ -149,19 +175,73 @@ function createIndexItems(summary: DashboardSummary, taskStats: TaskStats): Cine
   ];
 }
 
+function createHeatmapData(trend: HeatmapTrendDay[]): CinematicHeatmapData {
+  const countMap = new Map<string, number>();
+  let total = 0;
+  for (const item of trend || []) {
+    countMap.set(item.day, item.count);
+    total += item.count;
+  }
+
+  const allDates = Array.from(countMap.keys()).sort();
+  const endDate = allDates.length > 0 ? allDates[allDates.length - 1] : new Date().toISOString().slice(0, 10);
+  const rangeStart = addDays(endDate, -83);
+  let startDate = rangeStart;
+  const startDow = getDowIndex(startDate);
+  startDate = addDays(startDate, -startDow);
+  const endDow = getDowIndex(endDate);
+  const extraDays = 6 - endDow;
+  const totalDays = 84 + startDow + extraDays;
+  const weeks = Math.ceil(totalDays / 7);
+  const totalCells = weeks * 7;
+
+  const cells = Array.from({ length: totalCells }, (_, index) => {
+    const date = addDays(startDate, index);
+    const isPadding = date < rangeStart || date > endDate;
+    const count = isPadding ? 0 : countMap.get(date) || 0;
+    return {
+      date,
+      count,
+      level: getHeatLevel(count),
+      isToday: date === endDate,
+      isPadding,
+    };
+  });
+
+  let streak = 0;
+  let checkDate = endDate;
+  while ((countMap.get(checkDate) || 0) > 0) {
+    streak += 1;
+    checkDate = addDays(checkDate, -1);
+  }
+
+  return {
+    cells,
+    total,
+    streak,
+    maxDay: Math.max(0, ...Array.from(countMap.values())),
+    weeks,
+  };
+}
+
 export function createCinematicDashboardData(
   summaryInput: DashboardSummary,
   taskStatsInput: TaskStats,
-  events: Event[]
+  events: Event[],
+  usage: UsageData | null,
+  heatmapTrend: HeatmapTrendDay[]
 ): CinematicDashboardData {
   const summary = { ...fallbackSummary, ...summaryInput };
   const taskStats = { ...fallbackTaskStats, ...taskStatsInput };
   const signals = createSignals(events);
+  const heatmap = createHeatmapData(heatmapTrend);
 
   return {
     summary,
     taskStats,
     events,
+    usage,
+    heatmap,
     signals,
     indexItems: createIndexItems(summary, taskStats),
     metrics: [

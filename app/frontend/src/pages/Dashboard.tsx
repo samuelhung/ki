@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { X, Globe } from 'lucide-react';
 import CinematicDashboard from '../components/cinematic/CinematicDashboard';
 import type { DashboardSummary, Event } from '../types';
+import type { HeatmapTrendDay, UsageData } from '../components/cinematic/types';
 import { apiFetch } from '../api';
 
 export default function Dashboard() {
@@ -13,6 +14,10 @@ export default function Dashboard() {
   const [eventLoading, setEventLoading] = useState(false);
   const [summaryError, setSummaryError] = useState('');
   const [eventError, setEventError] = useState('');
+  const [usage, setUsage] = useState<UsageData | null>(null);
+  const [usageError, setUsageError] = useState('');
+  const [heatmapTrend, setHeatmapTrend] = useState<HeatmapTrendDay[]>([]);
+  const [heatmapError, setHeatmapError] = useState('');
   const EVENT_PAGE_SIZE = 5;
   const [taskStats, setTaskStats] = useState({ todo: 0, in_progress: 0, done: 0, overdue: 0, total: 0 });
 
@@ -38,7 +43,23 @@ export default function Dashboard() {
       .finally(() => setEventLoading(false));
   }
 
-  useEffect(() => { loadSummary(); loadTaskStats(); }, []);
+  function loadUsage() {
+    setUsageError('');
+    apiFetch('/api/usage/dashboard')
+      .then((r) => { if (!r.ok) throw new Error('加载 AI 运转失败'); return r.json(); })
+      .then((data) => { setUsage(data); setUsageError(''); })
+      .catch((e) => setUsageError(e.message));
+  }
+
+  function loadHeatmapTrend() {
+    setHeatmapError('');
+    apiFetch('/api/dashboard/trend?days=84')
+      .then((r) => { if (!r.ok) throw new Error('加载热力图失败'); return r.json(); })
+      .then((data) => { setHeatmapTrend(Array.isArray(data) ? data : []); setHeatmapError(''); })
+      .catch((e) => setHeatmapError(e.message));
+  }
+
+  useEffect(() => { loadSummary(); loadTaskStats(); loadUsage(); loadHeatmapTrend(); }, []);
   useEffect(() => { loadEvents(); }, []);
 
   const [showSourcesModal, setShowSourcesModal] = useState(false);
@@ -70,10 +91,12 @@ export default function Dashboard() {
         summary={summary}
         events={events}
         taskStats={taskStats}
+        usage={usage}
+        heatmapTrend={heatmapTrend}
         loading={loading || eventLoading}
         summaryError={summaryError}
-        eventError={eventError}
-        onRetry={() => { loadSummary(); loadEvents(); loadTaskStats(); }}
+        eventError={[eventError, usageError, heatmapError].filter(Boolean).join(' · ')}
+        onRetry={() => { loadSummary(); loadEvents(); loadTaskStats(); loadUsage(); loadHeatmapTrend(); }}
         onOpenSources={openSourcesModal}
       />
         {/* 信息源弹窗 */}

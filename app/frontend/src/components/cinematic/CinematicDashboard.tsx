@@ -3,13 +3,15 @@ import type { DashboardSummary, Event } from '../../types';
 import CinematicHud from './CinematicHud';
 import CinematicScene from './CinematicScene';
 import { createCinematicDashboardData } from './dashboardPresenter';
-import type { TaskStats } from './types';
+import type { HeatmapTrendDay, TaskStats, UsageData } from './types';
 import './cinematic.css';
 
 interface Props {
   summary: DashboardSummary;
   events: Event[];
   taskStats: TaskStats;
+  usage: UsageData | null;
+  heatmapTrend: HeatmapTrendDay[];
   loading: boolean;
   summaryError: string;
   eventError: string;
@@ -20,8 +22,8 @@ interface Props {
 export default function CinematicDashboard(props: Props) {
   const [focus, setFocus] = useState(0);
   const data = useMemo(
-    () => createCinematicDashboardData(props.summary, props.taskStats, props.events),
-    [props.summary, props.taskStats, props.events]
+    () => createCinematicDashboardData(props.summary, props.taskStats, props.events, props.usage, props.heatmapTrend),
+    [props.summary, props.taskStats, props.events, props.usage, props.heatmapTrend]
   );
 
   return (
