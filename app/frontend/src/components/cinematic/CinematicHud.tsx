@@ -114,6 +114,10 @@ export default function CinematicHud({
     onFocusChange(pinned.focusValue || 0);
   }
 
+  function isPinned(title: string) {
+    return pinnedFocus?.title === title;
+  }
+
   const hasError = Boolean(summaryError || eventError);
   const usage = data.usage;
   const today = usage?.today;
@@ -186,7 +190,7 @@ export default function CinematicHud({
         </p>
       </main>
 
-      <aside className="cinematic-observation">
+      <aside className={`cinematic-observation${activeFocus.pinned ? ' is-pinned' : ''}`}>
         <div className="panel-status">
           <i className="signal-dot" />
           <span>{activeFocus.pinned ? '详情已固定' : loading ? '仪表盘同步中' : '仪表盘在线'}</span>
@@ -244,7 +248,7 @@ export default function CinematicHud({
         {data.metrics.map((metric, index) => (
           <button
             key={metric.id}
-            className={`cinematic-metric m${index + 1}`}
+            className={`cinematic-metric m${index + 1} tone-${index + 1}`}
             onMouseEnter={() => {
               focus({ title: metric.title, meta: `${metric.label} / ${metric.meta}`, desc: metric.desc, focusValue: index + 1 });
             }}
@@ -261,7 +265,7 @@ export default function CinematicHud({
       </div>
 
       <section
-        className="cinematic-ai-runtime"
+        className={`cinematic-ai-runtime${isPinned(aiFocus.title) ? ' is-pinned' : ''}`}
         onMouseEnter={() => focus(aiFocus)}
         onFocus={() => focus(aiFocus)}
         onMouseLeave={resetFocus}
@@ -282,6 +286,7 @@ export default function CinematicHud({
           <span>缓存命中<b>{today?.cache_hit_rate || 0}%</b></span>
           <span>今日花费<b>{fmtCost(today?.cost_rmb || 0)}</b></span>
         </div>
+        <div className="pin-affordance">点击固定到观察窗</div>
       </section>
 
       <section className="cinematic-signal-stream">
@@ -300,7 +305,7 @@ export default function CinematicHud({
       </section>
 
       <section
-        className="cinematic-heat-ribbon"
+        className={`cinematic-heat-ribbon${isPinned(heatmapFocus.title) ? ' is-pinned' : ''}`}
         onMouseEnter={() => focus(heatmapFocus)}
         onFocus={() => focus(heatmapFocus)}
         onMouseLeave={resetFocus}
@@ -309,6 +314,12 @@ export default function CinematicHud({
         tabIndex={0}
       >
         <div className="heat-title">近 84 天信号密度 · {heatmap.total} 条 · 连续 {heatmap.streak} 天 · 单日最多 {heatmap.maxDay}</div>
+        <div className="heat-legend" aria-hidden="true">
+          <span><i className="heat-level-0" />无</span>
+          <span><i className="heat-level-1" />低</span>
+          <span><i className="heat-level-2" />中</span>
+          <span><i className="heat-level-3" />高</span>
+        </div>
         <div className="heat-grid" style={{ '--heat-weeks': heatmap.weeks } as React.CSSProperties}>
           {heatmap.cells.map((cell, index) => {
             const cellFocus: FocusContent = {
