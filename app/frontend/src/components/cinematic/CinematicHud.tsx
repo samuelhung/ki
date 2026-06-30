@@ -1,6 +1,34 @@
 import React, { useEffect, useState } from 'react';
 import type { CinematicDashboardData, UsageModuleStat } from './types';
 
+interface FocusDetailRow {
+  label: string;
+  value: string;
+}
+
+interface FocusModuleRow {
+  label: string;
+  value: string;
+  percent: number;
+}
+
+interface FocusTrendBar {
+  title: string;
+  primary: number;
+  secondary?: number;
+}
+
+interface FocusContent {
+  title: string;
+  meta: string;
+  desc: string;
+  focusValue?: number;
+  pinned?: boolean;
+  details?: FocusDetailRow[];
+  modules?: FocusModuleRow[];
+  trend?: FocusTrendBar[];
+}
+
 interface Props {
   data: CinematicDashboardData;
   loading: boolean;
@@ -46,6 +74,13 @@ function modulePercent(module: UsageModuleStat, maxTokens: number): number {
   return Math.max(module.tokens > 0 ? 4 : 0, Math.round((module.tokens / maxTokens) * 100));
 }
 
+function heatLevelLabel(level: number): string {
+  if (level === 0) return '无事件';
+  if (level === 1) return '低密度';
+  if (level === 2) return '中密度';
+  return '高密度';
+}
+
 export default function CinematicHud({
   data,
   loading,
@@ -55,21 +90,28 @@ export default function CinematicHud({
   onOpenSources,
   onFocusChange,
 }: Props) {
-  const [focusCopy, setFocusCopy] = useState(data.defaultFocus);
-  const [heatTooltip, setHeatTooltip] = useState<{ x: number; y: number; date: string; count: number } | null>(null);
+  const [hoverFocus, setHoverFocus] = useState<FocusContent | null>(null);
+  const [pinnedFocus, setPinnedFocus] = useState<FocusContent | null>(null);
 
   useEffect(() => {
-    setFocusCopy(data.defaultFocus);
+    setHoverFocus(null);
   }, [data.defaultFocus]);
 
-  function focus(title: string, meta: string, desc: string, focusValue = 0) {
-    setFocusCopy({ title, meta, desc });
-    onFocusChange(focusValue);
+  function focus(content: FocusContent) {
+    setHoverFocus(content);
+    onFocusChange(content.focusValue || 0);
   }
 
   function resetFocus() {
-    setFocusCopy(data.defaultFocus);
-    onFocusChange(0);
+    setHoverFocus(null);
+    onFocusChange(pinnedFocus?.focusValue || 0);
+  }
+
+  function pinFocus(content: FocusContent) {
+    const pinned = { ...content, pinned: true };
+    setPinnedFocus(pinned);
+    setHoverFocus(null);
+    onFocusChange(pinned.focusValue || 0);
   }
 
   const hasError = Boolean(summaryError || eventError);
@@ -82,6 +124,46 @@ export default function CinematicHud({
   const maxTrendCost = Math.max(...usageTrend.map((item) => item.cost), 0.01);
   const heatmap = data.heatmap;
   const hasUsage = Boolean(today && (today.total_calls > 0 || usageTrend.some((item) => item.calls > 0)));
+  const activeFocus: FocusContent = hoverFocus || pinnedFocus || data.defaultFocus;
+  const aiFocus: FocusContent = {
+    title: 'AI 运转核心',
+    meta: `${today?.total_calls || 0} 次调用 / ${fmtTokens(today?.total_tokens || 0)} token / ${fmtCost(today?.cost_rmb || 0)}`,
+    desc: hasUsage
+      ? '这里接入 /api/usage/dashboard，展示真实 AI 调用、吞吐、缓存、成本、模块消耗和 7 天趋势。'
+      : '暂无数据，AI 调用后将自动记录。',
+    focusValue: 6,
+    details: [
+      { label: '今日调用', value: `${today?.total_calls || 0} 次` },
+      { label: '成功 / 失败', value: `${today?.success_calls || 0} / ${today?.error_calls || 0}` },
+      { label: '知识吞吐', value: fmtTokens(today?.total_tokens || 0) },
+      { label: '输入 / 输出', value: `${fmtTokens(today?.prompt_tokens || 0)} / ${fmtTokens(today?.completion_tokens || 0)}` },
+      { label: '缓存命中', value: `${today?.cache_hit_rate || 0}%` },
+      { label: '今日花费', value: fmtCost(today?.cost_rmb || 0) },
+      { label: '均耗时', value: today?.avg_duration_ms ? `${(today.avg_duration_ms / 1000).toFixed(1)}s` : '-' },
+    ],
+    modules: modules.slice(0, 4).map((item) => ({
+      label: moduleName(item.module),
+      value: `${item.calls} 次 · ${fmtTokens(item.tokens)}`,
+      percent: modulePercent(item, maxModuleTokens),
+    })),
+    trend: usageTrend.map((item) => ({
+      title: `${item.day}: ${fmtTokens(item.tokens)} token / ${fmtCost(item.cost)} / ${item.calls} 次`,
+      primary: Math.max(item.tokens > 0 ? 8 : 2, (item.tokens / maxTrendTokens) * 100),
+      secondary: Math.max(item.cost > 0 ? 8 : 2, (item.cost / maxTrendCost) * 100),
+    })),
+  };
+  const heatmapFocus: FocusContent = {
+    title: '事件热力图',
+    meta: `近 84 天 / ${heatmap.total} 条事件 / 连续 ${heatmap.streak} 天`,
+    desc: '热力格来自 /api/dashboard/trend?days=84，颜色按每日事件数量分级。',
+    focusValue: 3,
+    details: [
+      { label: '总事件', value: `${heatmap.total} 条` },
+      { label: '连续活跃', value: `${heatmap.streak} 天` },
+      { label: '单日最多', value: `${heatmap.maxDay} 条` },
+      { label: '统计窗口', value: '84 天' },
+    ],
+  };
 
   return (
     <div className="cinematic-dashboard-shell">
@@ -107,11 +189,39 @@ export default function CinematicHud({
       <aside className="cinematic-observation">
         <div className="panel-status">
           <i className="signal-dot" />
-          <span>{loading ? '仪表盘同步中' : '仪表盘在线'}</span>
+          <span>{activeFocus.pinned ? '详情已固定' : loading ? '仪表盘同步中' : '仪表盘在线'}</span>
         </div>
-        <b>{focusCopy.title}</b>
-        <span>{focusCopy.meta}</span>
-        <p>{focusCopy.desc}</p>
+        <b>{activeFocus.title}</b>
+        <span>{activeFocus.meta}</span>
+        <p>{activeFocus.desc}</p>
+        {activeFocus.details && (
+          <div className="panel-detail-grid">
+            {activeFocus.details.map((item) => (
+              <span key={item.label}>{item.label}<b>{item.value}</b></span>
+            ))}
+          </div>
+        )}
+        {activeFocus.modules && activeFocus.modules.length > 0 && (
+          <div className="panel-module-stack">
+            {activeFocus.modules.map((item) => (
+              <div key={item.label} className="panel-module-row">
+                <span>{item.label}</span>
+                <i><b style={{ width: `${item.percent}%` }} /></i>
+                <em>{item.value}</em>
+              </div>
+            ))}
+          </div>
+        )}
+        {activeFocus.trend && activeFocus.trend.length > 0 && (
+          <div className="panel-trend-bars">
+            {activeFocus.trend.map((item) => (
+              <span key={item.title} title={item.title}>
+                <i style={{ height: `${item.primary}%` }} />
+                {item.secondary !== undefined && <b style={{ height: `${item.secondary}%` }} />}
+              </span>
+            ))}
+          </div>
+        )}
       </aside>
 
       <nav className="cinematic-work-index" aria-label="知几功能索引">
@@ -119,8 +229,8 @@ export default function CinematicHud({
           <button
             key={item.id}
             className={item.id === 'brand' ? 'hot' : ''}
-            onMouseEnter={() => focus(item.title, item.meta, item.desc, (index % 6) + 1)}
-            onFocus={() => focus(item.title, item.meta, item.desc, (index % 6) + 1)}
+            onMouseEnter={() => focus({ title: item.title, meta: item.meta, desc: item.desc, focusValue: (index % 6) + 1 })}
+            onFocus={() => focus({ title: item.title, meta: item.meta, desc: item.desc, focusValue: (index % 6) + 1 })}
             onMouseLeave={resetFocus}
             onBlur={resetFocus}
           >
@@ -136,9 +246,9 @@ export default function CinematicHud({
             key={metric.id}
             className={`cinematic-metric m${index + 1}`}
             onMouseEnter={() => {
-              focus(metric.title, `${metric.label} / ${metric.meta}`, metric.desc, index + 1);
+              focus({ title: metric.title, meta: `${metric.label} / ${metric.meta}`, desc: metric.desc, focusValue: index + 1 });
             }}
-            onFocus={() => focus(metric.title, `${metric.label} / ${metric.meta}`, metric.desc, index + 1)}
+            onFocus={() => focus({ title: metric.title, meta: `${metric.label} / ${metric.meta}`, desc: metric.desc, focusValue: index + 1 })}
             onClick={metric.id === 'sources' ? onOpenSources : undefined}
             onMouseLeave={resetFocus}
             onBlur={resetFocus}
@@ -152,8 +262,12 @@ export default function CinematicHud({
 
       <section
         className="cinematic-ai-runtime"
-        onMouseEnter={() => focus('AI 运转核心', '今日调用 / token / 成本 / 模块分布', '这里接入 /api/usage/dashboard，展示真实 AI 调用、吞吐、缓存、成本、模块消耗和 7 天趋势。', 6)}
+        onMouseEnter={() => focus(aiFocus)}
+        onFocus={() => focus(aiFocus)}
         onMouseLeave={resetFocus}
+        onBlur={resetFocus}
+        onClick={() => pinFocus(aiFocus)}
+        tabIndex={0}
       >
         <div className="label">AI 运转核心</div>
         <div className="model">{hasUsage ? `${today?.total_calls || 0} 次调用 · ${fmtTokens(today?.total_tokens || 0)} token` : '等待 AI 调用数据'}</div>
@@ -168,41 +282,14 @@ export default function CinematicHud({
           <span>缓存命中<b>{today?.cache_hit_rate || 0}%</b></span>
           <span>今日花费<b>{fmtCost(today?.cost_rmb || 0)}</b></span>
         </div>
-        <div className="ai-detail-grid">
-          <span>成功<b>{today?.success_calls || 0}</b></span>
-          <span>失败<b>{today?.error_calls || 0}</b></span>
-          <span>输入<b>{fmtTokens(today?.prompt_tokens || 0)}</b></span>
-          <span>输出<b>{fmtTokens(today?.completion_tokens || 0)}</b></span>
-          <span>缓存 token<b>{fmtTokens(today?.cached_tokens || 0)}</b></span>
-          <span>均耗时<b>{today?.avg_duration_ms ? `${(today.avg_duration_ms / 1000).toFixed(1)}s` : '-'}</b></span>
-        </div>
-        <div className="ai-module-stack">
-          {modules.slice(0, 4).map((item) => (
-            <div key={item.module} className="ai-module-row">
-              <span>{moduleName(item.module)}</span>
-              <i><b style={{ width: `${modulePercent(item, maxModuleTokens)}%` }} /></i>
-              <em>{item.calls} 次 · {fmtTokens(item.tokens)}</em>
-            </div>
-          ))}
-          {modules.length === 0 && <div className="ai-empty">暂无模块消耗数据</div>}
-        </div>
-        <div className="ai-trend-bars">
-          {usageTrend.map((item) => (
-            <span key={item.day} title={`${item.day}: ${fmtTokens(item.tokens)} token / ${fmtCost(item.cost)} / ${item.calls} 次`}>
-              <i style={{ height: `${Math.max(item.tokens > 0 ? 8 : 2, (item.tokens / maxTrendTokens) * 100)}%` }} />
-              <b style={{ height: `${Math.max(item.cost > 0 ? 8 : 2, (item.cost / maxTrendCost) * 100)}%` }} />
-            </span>
-          ))}
-        </div>
-        <small>{hasUsage ? '模块消耗、token 与花费均来自真实 AI usage 记录。' : '暂无数据，AI 调用后将自动记录。'}</small>
       </section>
 
       <section className="cinematic-signal-stream">
         {data.signals.map((signal) => (
           <button
             key={signal.id}
-            onMouseEnter={() => focus(signal.title, signal.meta, signal.desc, signal.focus)}
-            onFocus={() => focus(signal.title, signal.meta, signal.desc, signal.focus)}
+            onMouseEnter={() => focus({ title: signal.title, meta: signal.meta, desc: signal.desc, focusValue: signal.focus })}
+            onFocus={() => focus({ title: signal.title, meta: signal.meta, desc: signal.desc, focusValue: signal.focus })}
             onMouseLeave={resetFocus}
             onBlur={resetFocus}
           >
@@ -214,36 +301,45 @@ export default function CinematicHud({
 
       <section
         className="cinematic-heat-ribbon"
-        onMouseEnter={() => focus('事件热力图', `近 84 天 / ${heatmap.total} 条事件 / 连续 ${heatmap.streak} 天`, '热力格来自 /api/dashboard/trend?days=84，颜色按每日事件数量分级。', 3)}
+        onMouseEnter={() => focus(heatmapFocus)}
+        onFocus={() => focus(heatmapFocus)}
         onMouseLeave={resetFocus}
+        onBlur={resetFocus}
+        onClick={() => pinFocus(heatmapFocus)}
+        tabIndex={0}
       >
         <div className="heat-title">近 84 天信号密度 · {heatmap.total} 条 · 连续 {heatmap.streak} 天 · 单日最多 {heatmap.maxDay}</div>
         <div className="heat-grid" style={{ '--heat-weeks': heatmap.weeks } as React.CSSProperties}>
-          {heatmap.cells.map((cell, index) => (
-            <i
-              key={`${cell.date}-${index}`}
-              className={`heat-level-${cell.level}${cell.isToday ? ' today' : ''}${cell.isPadding ? ' padding' : ''}`}
-              style={{ '--heat-index': index } as React.CSSProperties}
-              title={`${formatDateLabel(cell.date)}: ${cell.count} 条事件`}
-              onMouseEnter={(event) => {
-                const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-                setHeatTooltip({ x: rect.left + rect.width / 2, y: rect.top - 8, date: cell.date, count: cell.count });
-              }}
-              onMouseLeave={() => setHeatTooltip(null)}
-            />
-          ))}
+          {heatmap.cells.map((cell, index) => {
+            const cellFocus: FocusContent = {
+              title: formatDateLabel(cell.date),
+              meta: `${cell.count} 条事件 / ${heatLevelLabel(cell.level)}`,
+              desc: cell.isPadding ? '这是补齐周视图的窗口外日期。' : `这一天记录了 ${cell.count} 条事件，属于 ${heatLevelLabel(cell.level)} 区间。`,
+              focusValue: 3,
+              details: [
+                { label: '日期', value: formatDateLabel(cell.date) },
+                { label: '事件数', value: `${cell.count} 条` },
+                { label: '密度等级', value: heatLevelLabel(cell.level) },
+                { label: '统计窗口', value: cell.isPadding ? '窗口外' : '近 84 天内' },
+              ],
+            };
+            return (
+              <i
+                key={`${cell.date}-${index}`}
+                className={`heat-level-${cell.level}${cell.isToday ? ' today' : ''}${cell.isPadding ? ' padding' : ''}`}
+                style={{ '--heat-index': index } as React.CSSProperties}
+                title={`${formatDateLabel(cell.date)}: ${cell.count} 条事件`}
+                onMouseEnter={(event) => { event.stopPropagation(); focus(cellFocus); }}
+                onFocus={() => focus(cellFocus)}
+                onMouseLeave={(event) => { event.stopPropagation(); resetFocus(); }}
+                onBlur={resetFocus}
+                onClick={(event) => { event.stopPropagation(); pinFocus(cellFocus); }}
+                tabIndex={0}
+              />
+            );
+          })}
         </div>
       </section>
-
-      {heatTooltip && (
-        <div
-          className="cinematic-heat-tooltip"
-          style={{ left: heatTooltip.x, top: heatTooltip.y }}
-        >
-          <b>{formatDateLabel(heatTooltip.date)}</b>
-          <span>{heatTooltip.count} 条事件</span>
-        </div>
-      )}
     </div>
   );
 }
