@@ -36,25 +36,55 @@ function PageLoading() {
 
 function CurtainOverlay() {
   const { curtainPhase, onAnimationComplete } = useCurtain();
+  const active = curtainPhase !== 'idle';
 
   return (
-    <motion.div
-      className="fixed inset-0 z-50 pointer-events-none"
-      style={{ background: '#0B0C10' }}
-      initial={{ x: '100%' }}
-      animate={{
-        x: curtainPhase === 'idle'
-          ? '100%'
-          : curtainPhase === 'covering'
-          ? 0
-          : '-100%'
-      }}
-      transition={{
-        duration: 0.35,
-        ease: [0.4, 0, 0.2, 1]
-      }}
-      onAnimationComplete={onAnimationComplete}
-    />
+    <div className="fixed inset-0 z-50 pointer-events-none overflow-hidden">
+      <motion.div
+        className="absolute inset-y-0 left-0 w-1/2"
+        style={{
+          background: 'linear-gradient(90deg, rgba(3, 4, 8, 0.98), rgba(12, 10, 18, 0.94) 78%, rgba(214, 163, 76, 0.16))',
+          boxShadow: active ? '18px 0 70px rgba(214, 163, 76, 0.18)' : 'none',
+        }}
+        initial={{ x: '-104%' }}
+        animate={{
+          x: curtainPhase === 'covering' ? 0 : '-104%'
+        }}
+        transition={{
+          duration: curtainPhase === 'covering' ? 0.42 : 0.58,
+          ease: [0.16, 1, 0.3, 1]
+        }}
+      />
+      <motion.div
+        className="absolute inset-y-0 right-0 w-1/2"
+        style={{
+          background: 'linear-gradient(270deg, rgba(3, 4, 8, 0.98), rgba(12, 10, 18, 0.94) 78%, rgba(167, 139, 250, 0.14))',
+          boxShadow: active ? '-18px 0 70px rgba(167, 139, 250, 0.16)' : 'none',
+        }}
+        initial={{ x: '104%' }}
+        animate={{
+          x: curtainPhase === 'covering' ? 0 : '104%'
+        }}
+        transition={{
+          duration: curtainPhase === 'covering' ? 0.42 : 0.58,
+          ease: [0.16, 1, 0.3, 1]
+        }}
+        onAnimationComplete={onAnimationComplete}
+      />
+      <motion.div
+        className="absolute left-1/2 top-0 h-full w-px"
+        style={{
+          background: 'linear-gradient(to bottom, transparent, rgba(255, 232, 184, 0.72), transparent)',
+          boxShadow: '0 0 34px rgba(214, 163, 76, 0.58)',
+        }}
+        initial={{ opacity: 0, scaleY: 0.2 }}
+        animate={{
+          opacity: active ? 1 : 0,
+          scaleY: curtainPhase === 'covering' ? 1 : 0.2,
+        }}
+        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+      />
+    </div>
   );
 }
 
@@ -167,12 +197,12 @@ function Layout() {
       >
         {/* Offline banner */}
         {!isOnline && (
-          <div className="absolute top-0 left-0 right-0 z-50 bg-amber-600/90 text-white text-xs px-4 py-1.5 flex items-center justify-center gap-2">
+          <div className="absolute top-0 left-0 right-0 z-50 bg-black/45 border-b border-amber-300/20 text-amber-100/80 text-xs px-4 py-1.5 flex items-center justify-center gap-2 backdrop-blur-sm shadow-[0_0_24px_rgba(214,163,76,0.12)]">
             <WifiOff size={12} />
             <span>后端未连接 — 部分功能不可用</span>
             <button
               onClick={() => window.location.reload()}
-              className="underline hover:text-amber-200"
+              className="underline hover:text-amber-100"
             >
               重试
             </button>
@@ -204,32 +234,48 @@ function Layout() {
           </div>
         )}
 
-        {/* Desktop layout */}
-        <div className={isCinematicFullScreen ? 'flex h-full' : 'hidden md:flex h-full'}>
-          {!isCinematicFullScreen && <Sidebar />}
-          <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-            <div className="flex-1 overflow-auto custom-scrollbar">
-              <ErrorBoundary>
-                <Suspense fallback={<PageLoading />}>
-                  <Outlet />
-                </Suspense>
-              </ErrorBoundary>
+        {isCinematicFullScreen ? (
+          <div className="flex h-full">
+            <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+              <div className="flex-1 overflow-auto custom-scrollbar">
+                <ErrorBoundary>
+                  <Suspense fallback={<PageLoading />}>
+                    <Outlet />
+                  </Suspense>
+                </ErrorBoundary>
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          <>
+            {/* Desktop layout */}
+            <div className="hidden md:flex h-full">
+              <Sidebar />
+              <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+                <div className="flex-1 overflow-auto custom-scrollbar">
+                  <ErrorBoundary>
+                    <Suspense fallback={<PageLoading />}>
+                      <Outlet />
+                    </Suspense>
+                  </ErrorBoundary>
+                </div>
+              </div>
+            </div>
 
-        {/* Mobile layout */}
-        <div className={isCinematicFullScreen ? 'hidden' : 'md:hidden flex flex-col h-full'}>
-          <MobileHeader />
-          <div className="flex-1 overflow-auto custom-scrollbar">
-            <ErrorBoundary>
-              <Suspense fallback={<PageLoading />}>
-                <Outlet />
-              </Suspense>
-            </ErrorBoundary>
-          </div>
-          <BottomTabBar />
-        </div>
+            {/* Mobile layout */}
+            <div className="md:hidden flex flex-col h-full">
+              <MobileHeader />
+              <div className="flex-1 overflow-auto custom-scrollbar">
+                <ErrorBoundary>
+                  <Suspense fallback={<PageLoading />}>
+                    <Outlet />
+                  </Suspense>
+                </ErrorBoundary>
+              </div>
+              <BottomTabBar />
+            </div>
+          </>
+        )}
 
         {/* Curtain overlay for Wipe transition */}
         <CurtainOverlay />

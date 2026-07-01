@@ -14,6 +14,7 @@ import {
   Sparkles,
   Trash2,
   Upload,
+  X,
   Zap,
 } from 'lucide-react';
 import { useCurtain } from '../CurtainContext';
@@ -158,6 +159,7 @@ export default function CinematicIngest() {
   const [toast, setToast] = useState<{ text: string; type: 'success' | 'info' } | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [activeHub, setActiveHub] = useState<string | null>(null);
+  const [commandOpen, setCommandOpen] = useState(false);
   const currentPath = window.location.hash.replace(/^#/, '') || window.location.pathname || '/';
 
   const running = queueItems.find((item) => item.status === 'running');
@@ -166,6 +168,14 @@ export default function CinematicIngest() {
   const done = queueItems.filter((item) => item.status === 'done');
   const activeTopic = TOPICS.find((item) => item.key === historyTab) || TOPICS[0];
   const focusValue = activeMode === 'file' ? 4 : activeMode === 'concept' ? 5 : activeMode === 'scan' ? 2 : 3;
+  const queueVisible = Boolean(running || pending.length > 0 || errors.length > 0);
+  const commandModes = [
+    { key: 'douyin', label: '抖音分享', meta: '解析外部短视频线索', icon: Zap },
+    { key: 'file', label: '文件上传', meta: '投送文档 / 音视频', icon: FileUp },
+    { key: 'concept', label: '概念沉淀', meta: '注入手动认知节点', icon: Brain },
+    { key: 'scan', label: '信息源扫描', meta: '启动全源巡航', icon: Radio },
+  ] as const;
+  const activeCommand = commandModes.find((mode) => mode.key === activeMode) || commandModes[0];
 
   const signalStats = useMemo(() => [
     { label: '今日新增', value: stats.today_submissions },
@@ -474,167 +484,86 @@ export default function CinematicIngest() {
       </div>
 
       <main className="cinematic-ingest-shell">
-        <section className="ingest-status-hud" aria-label="采集状态">
-          <div className="hud-kicker">INTAKE ONLINE</div>
-          <h1>万象接入舱</h1>
-          <p>把外部信号接入知几：解析、转写、摘要、分类、入库。</p>
-          <div className="ingest-status-grid">
+        <section className="ingest-observation cinematic-observation" aria-label="采集观察">
+          <div className="panel-status">
+            <i className="signal-dot" />
+            <span>{queueVisible ? '处理轨道有信号' : '采集舱待命'}</span>
+          </div>
+          <b>万象接入舱</b>
+          <span>{stats.today_submissions} 条今日新增 / {stats.completed || total} 条累计采集</span>
+          <p>把外部信号压入知几：短视频、文件、概念和信息源扫描都会在这里完成解析、摘要、分类与入库。</p>
+          <div className="panel-detail-grid">
             {signalStats.map((item) => (
-              <div key={item.label}>
-                <strong>{item.value}</strong>
-                <span>{item.label}</span>
-              </div>
+              <span key={item.label}>{item.label}<b>{item.value}</b></span>
             ))}
           </div>
         </section>
 
-        <section className="ingest-command-deck" aria-label="信号接入核心">
-          <div className="ingest-mode-rail">
-            {[
-              { key: 'douyin', label: '抖音分享', icon: Zap },
-              { key: 'file', label: '文件上传', icon: FileUp },
-              { key: 'concept', label: '概念沉淀', icon: Brain },
-              { key: 'scan', label: '信息源扫描', icon: Radio },
-            ].map((mode) => {
+        <section className="ingest-command-launcher" aria-label="采集入口">
+          <div className="launcher-core" aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </div>
+          <div className="launcher-title">
+            <span>INTAKE COMMAND</span>
+            <b>选择接入方式</b>
+          </div>
+          <div className="launcher-actions">
+            {commandModes.map((mode) => {
               const Icon = mode.icon;
-              const active = activeMode === mode.key;
               return (
                 <button
                   key={mode.key}
-                  className={active ? 'is-active' : ''}
-                  onClick={() => { setActiveMode(mode.key as typeof activeMode); setSubmitError(''); }}
+                  className={`launcher-action is-${mode.key}`}
+                  onClick={() => {
+                    setActiveMode(mode.key);
+                    setSubmitError('');
+                    setCommandOpen(true);
+                  }}
                 >
-                  <Icon size={15} />
-                  <span>{mode.label}</span>
+                  <Icon size={18} />
+                  <b>{mode.label}</b>
+                  <span>{mode.meta}</span>
                 </button>
               );
             })}
           </div>
-
-          <div className="ingest-core-panel">
-            <div className="ingest-core-heading">
-              <span> SIGNAL DOCK </span>
-              <b>{activeMode === 'douyin' ? '解析分享文本' : activeMode === 'file' ? '拖入文件轨迹' : activeMode === 'concept' ? '注入思想节点' : '扫描订阅源'}</b>
-            </div>
-
-            {activeMode === 'douyin' && (
-              <form onSubmit={submitDouyin} className="ingest-form">
-                <textarea
-                  value={douyinText}
-                  onChange={(event) => setDouyinText(event.target.value)}
-                  placeholder="粘贴从抖音复制的分享文本..."
-                />
-                <div className="ingest-form-row">
-                  <input value={douyinTopic} onChange={(event) => setDouyinTopic(event.target.value)} placeholder="分类：格局 / 财富 / 认知 / 前瞻" />
-                  <button type="submit" disabled={submitting || !douyinText.trim()}>
-                    {submitting ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
-                    接入轨道
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {activeMode === 'file' && (
-              <form onSubmit={submitFile} className="ingest-form">
-                <div
-                  className={`ingest-drop-zone${dragActive ? ' is-dragging' : ''}`}
-                  onDragEnter={(event) => { event.preventDefault(); setDragActive(true); }}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDragLeave={() => setDragActive(false)}
-                  onDrop={handleDrop}
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <Upload size={22} />
-                  <strong>{selectedFile ? selectedFile.name : '拖入文件，或点击选择'}</strong>
-                  <span>视频 / 音频 / 文档 / PDF / EPUB</span>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    className="hidden"
-                    onChange={(event) => chooseFile(event.target.files?.[0] || null)}
-                  />
-                </div>
-                <div className="ingest-form-row">
-                  <input value={fileTitle} onChange={(event) => setFileTitle(event.target.value)} placeholder="标题" />
-                  <input value={fileTopic} onChange={(event) => setFileTopic(event.target.value)} placeholder="分类" />
-                  <button type="submit" disabled={fileSubmitting || !selectedFile}>
-                    {fileSubmitting ? <Loader2 size={14} className="animate-spin" /> : <FileUp size={14} />}
-                    上传
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {activeMode === 'concept' && (
-              <form onSubmit={submitConcept} className="ingest-form">
-                <div className="ingest-form-row">
-                  <input value={conceptTitle} onChange={(event) => setConceptTitle(event.target.value)} placeholder="概念名称" />
-                  <input value={conceptTopic} onChange={(event) => setConceptTopic(event.target.value)} placeholder="认知层级" />
-                </div>
-                <textarea
-                  value={conceptDesc}
-                  onChange={(event) => setConceptDesc(event.target.value)}
-                  placeholder="说明可留空，AI 会自动结构化补全..."
-                />
-                <div className="ingest-form-actions">
-                  <button type="submit" disabled={conceptSubmitting || !conceptTitle.trim()}>
-                    {conceptSubmitting ? <Loader2 size={14} className="animate-spin" /> : <Brain size={14} />}
-                    沉淀节点
-                  </button>
-                </div>
-              </form>
-            )}
-
-            {activeMode === 'scan' && (
-              <div className="ingest-scan-panel">
-                <p>从已启用的信息源拉取最新外部信号，完成去重、翻译、摘要和快报生成。</p>
-                <button onClick={collectSources} disabled={collecting}>
-                  {collecting ? <Loader2 size={14} className="animate-spin" /> : <Radio size={14} />}
-                  立即扫描
-                </button>
-              </div>
-            )}
-
-            {submitError && (
-              <div className="ingest-error"><AlertTriangle size={13} />{submitError}</div>
-            )}
-          </div>
         </section>
 
-        <aside className="ingest-queue-hud" aria-label="处理队列">
-          <div className="hud-kicker">PROCESSING ORBIT</div>
-          <div className="queue-title">
-            <h2>处理轨道</h2>
-            <span>{queueItems.length} 项</span>
-          </div>
-          {running ? (
-            <div className="queue-running">
-              <span className="queue-pulse" />
-              <b>{taskTitle(running)}</b>
-              <small>{statusLabel(running.status)}</small>
-              <div className="stage-track">
-                {(running.progress_stages || []).map((stage) => (
-                  <div key={stage.key} className={`stage-dot is-${stage.status}`}>
-                    <i />
-                    <span>{stage.label}</span>
-                    <em>{stageLabel(stage.status)}</em>
-                  </div>
-                ))}
-                {(running.progress_stages || []).length === 0 && (
-                  <div className="stage-empty">等待处理阶段回传...</div>
-                )}
-              </div>
+        {queueVisible && (
+          <aside className="ingest-queue-hud is-live" aria-label="处理队列">
+            <div className="hud-kicker">PROCESSING ORBIT</div>
+            <div className="queue-title">
+              <h2>处理轨道</h2>
+              <span>{pending.length + errors.length + (running ? 1 : 0)} 项活跃</span>
             </div>
-          ) : (
-            <div className="queue-empty">暂无运行任务，接入信号后会在这里点亮轨道。</div>
-          )}
+            {running && (
+              <div className="queue-running">
+                <span className="queue-pulse" />
+                <b>{taskTitle(running)}</b>
+                <small>{statusLabel(running.status)}</small>
+                <div className="stage-track">
+                  {(running.progress_stages || []).map((stage) => (
+                    <div key={stage.key} className={`stage-dot is-${stage.status}`}>
+                      <i />
+                      <span>{stage.label}</span>
+                      <em>{stageLabel(stage.status)}</em>
+                    </div>
+                  ))}
+                  {(running.progress_stages || []).length === 0 && (
+                    <div className="stage-empty">等待处理阶段回传...</div>
+                  )}
+                </div>
+              </div>
+            )}
 
-          <div className="queue-groups">
-            <QueueGroup title="排队等待" items={pending} tone="pending" onRetry={retryQueueTask} onDelete={deleteQueueTask} />
-            <QueueGroup title="失败断点" items={errors} tone="error" onRetry={retryQueueTask} onDelete={deleteQueueTask} />
-            <QueueGroup title="完成轨迹" items={done.slice(0, 5)} tone="done" onRetry={retryQueueTask} onDelete={deleteQueueTask} />
-          </div>
-        </aside>
+            <div className="queue-groups">
+              <QueueGroup title="排队等待" items={pending} tone="pending" onRetry={retryQueueTask} onDelete={deleteQueueTask} />
+              <QueueGroup title="失败断点" items={errors} tone="error" onRetry={retryQueueTask} onDelete={deleteQueueTask} />
+            </div>
+          </aside>
+        )}
 
         <section className="ingest-stream" aria-label="采集内容流">
           <div className="stream-toolbar">
@@ -690,8 +619,108 @@ export default function CinematicIngest() {
         </section>
       </main>
 
+      {commandOpen && (
+        <div className="ingest-command-overlay" role="dialog" aria-modal="true" aria-label={activeCommand.label}>
+          <button className="command-backdrop" aria-label="关闭采集浮窗" onClick={() => setCommandOpen(false)} />
+          <section className="command-screen">
+            <div className="command-scanlines" aria-hidden="true" />
+            <div className="command-screen-header">
+              <div>
+                <span>TRANSMISSION WINDOW</span>
+                <h2>{activeCommand.label}</h2>
+              </div>
+              <button onClick={() => setCommandOpen(false)} aria-label="关闭">
+                <X size={16} />
+              </button>
+            </div>
+
+            {activeMode === 'douyin' && (
+              <form onSubmit={submitDouyin} className="ingest-form">
+                <textarea
+                  value={douyinText}
+                  onChange={(event) => setDouyinText(event.target.value)}
+                  placeholder="粘贴从抖音复制的分享文本..."
+                />
+                <div className="ingest-form-row">
+                  <input value={douyinTopic} onChange={(event) => setDouyinTopic(event.target.value)} placeholder="分类：格局 / 财富 / 认知 / 前瞻" />
+                  <button type="submit" disabled={submitting || !douyinText.trim()}>
+                    {submitting ? <Loader2 size={14} className="animate-spin" /> : <Zap size={14} />}
+                    接入轨道
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {activeMode === 'file' && (
+              <form onSubmit={submitFile} className="ingest-form">
+                <div
+                  className={`ingest-drop-zone${dragActive ? ' is-dragging' : ''}`}
+                  onDragEnter={(event) => { event.preventDefault(); setDragActive(true); }}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDragLeave={() => setDragActive(false)}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload size={24} />
+                  <strong>{selectedFile ? selectedFile.name : '拖入文件，或点击选择'}</strong>
+                  <span>视频 / 音频 / 文档 / PDF / EPUB</span>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="hidden"
+                    onChange={(event) => chooseFile(event.target.files?.[0] || null)}
+                  />
+                </div>
+                <div className="ingest-form-row">
+                  <input value={fileTitle} onChange={(event) => setFileTitle(event.target.value)} placeholder="标题" />
+                  <input value={fileTopic} onChange={(event) => setFileTopic(event.target.value)} placeholder="分类" />
+                  <button type="submit" disabled={fileSubmitting || !selectedFile}>
+                    {fileSubmitting ? <Loader2 size={14} className="animate-spin" /> : <FileUp size={14} />}
+                    上传
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {activeMode === 'concept' && (
+              <form onSubmit={submitConcept} className="ingest-form">
+                <div className="ingest-form-row">
+                  <input value={conceptTitle} onChange={(event) => setConceptTitle(event.target.value)} placeholder="概念名称" />
+                  <input value={conceptTopic} onChange={(event) => setConceptTopic(event.target.value)} placeholder="认知层级" />
+                </div>
+                <textarea
+                  value={conceptDesc}
+                  onChange={(event) => setConceptDesc(event.target.value)}
+                  placeholder="说明可留空，AI 会自动结构化补全..."
+                />
+                <div className="ingest-form-actions">
+                  <button type="submit" disabled={conceptSubmitting || !conceptTitle.trim()}>
+                    {conceptSubmitting ? <Loader2 size={14} className="animate-spin" /> : <Brain size={14} />}
+                    沉淀节点
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {activeMode === 'scan' && (
+              <div className="ingest-scan-panel">
+                <p>从已启用的信息源拉取最新外部信号，完成去重、翻译、摘要和快报生成。</p>
+                <button onClick={collectSources} disabled={collecting}>
+                  {collecting ? <Loader2 size={14} className="animate-spin" /> : <Radio size={14} />}
+                  立即扫描
+                </button>
+              </div>
+            )}
+
+            {submitError && (
+              <div className="ingest-error"><AlertTriangle size={13} />{submitError}</div>
+            )}
+          </section>
+        </div>
+      )}
+
       <nav
-        className="ingest-mini-hub"
+        className="ingest-mini-hub cinematic-work-index"
         aria-label="知几功能索引"
         onMouseLeave={() => setActiveHub(null)}
       >
