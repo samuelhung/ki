@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 import {
   AlertTriangle,
   Brain,
@@ -80,6 +81,12 @@ const TOPICS = [
   { key: '前瞻', label: '前瞻', accent: 'cyan', icon: Radio },
   { key: 'briefing', label: '即时快报', accent: 'rose', icon: Zap },
 ] as const;
+const COMMAND_MODES = [
+  { key: 'douyin', label: '抖音分享', meta: '解析外部短视频线索', icon: Zap },
+  { key: 'file', label: '文件上传', meta: '投送文档 / 音视频', icon: FileUp },
+  { key: 'concept', label: '概念沉淀', meta: '注入手动认知节点', icon: Brain },
+  { key: 'scan', label: '信息源扫描', meta: '启动全源巡航', icon: Radio },
+] as const;
 
 function taskTypeLabel(ingestType: string): string {
   switch (ingestType) {
@@ -123,6 +130,53 @@ function stageLabel(status: ProgressStage['status']) {
   if (status === 'active') return '运行';
   if (status === 'error') return '异常';
   return '等待';
+}
+
+function CometCommandButton({
+  mode,
+  onOpen,
+}: {
+  mode: typeof COMMAND_MODES[number];
+  onOpen: () => void;
+}) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const Icon = mode.icon;
+
+  function handleMove(event: React.MouseEvent<HTMLButtonElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = (event.clientX - rect.left) / rect.width;
+    const y = (event.clientY - rect.top) / rect.height;
+    event.currentTarget.style.setProperty('--comet-x', `${x * 100}%`);
+    event.currentTarget.style.setProperty('--comet-y', `${y * 100}%`);
+    event.currentTarget.style.setProperty('--comet-ry', `${(x - 0.5) * 18}deg`);
+    event.currentTarget.style.setProperty('--comet-rx', `${(0.5 - y) * 14}deg`);
+  }
+
+  function handleLeave() {
+    if (!ref.current) return;
+    ref.current.style.setProperty('--comet-x', '50%');
+    ref.current.style.setProperty('--comet-y', '50%');
+    ref.current.style.setProperty('--comet-rx', '0deg');
+    ref.current.style.setProperty('--comet-ry', '0deg');
+  }
+
+  return (
+    <motion.button
+      ref={ref}
+      type="button"
+      className={`launcher-action comet-command is-${mode.key}`}
+      onMouseMove={handleMove}
+      onMouseLeave={handleLeave}
+      onClick={onOpen}
+      whileHover={{ scale: 1.06, z: 36 }}
+      whileTap={{ scale: 0.98 }}
+    >
+      <Icon size={18} />
+      <i aria-hidden="true" />
+      <b>{mode.label}</b>
+      <span>{mode.meta}</span>
+    </motion.button>
+  );
 }
 
 export default function CinematicIngest() {
@@ -169,13 +223,7 @@ export default function CinematicIngest() {
   const activeTopic = TOPICS.find((item) => item.key === historyTab) || TOPICS[0];
   const focusValue = activeMode === 'file' ? 4 : activeMode === 'concept' ? 5 : activeMode === 'scan' ? 2 : 3;
   const queueVisible = Boolean(running || pending.length > 0 || errors.length > 0);
-  const commandModes = [
-    { key: 'douyin', label: '抖音分享', meta: '解析外部短视频线索', icon: Zap },
-    { key: 'file', label: '文件上传', meta: '投送文档 / 音视频', icon: FileUp },
-    { key: 'concept', label: '概念沉淀', meta: '注入手动认知节点', icon: Brain },
-    { key: 'scan', label: '信息源扫描', meta: '启动全源巡航', icon: Radio },
-  ] as const;
-  const activeCommand = commandModes.find((mode) => mode.key === activeMode) || commandModes[0];
+  const activeCommand = COMMAND_MODES.find((mode) => mode.key === activeMode) || COMMAND_MODES[0];
 
   const signalStats = useMemo(() => [
     { label: '今日新增', value: stats.today_submissions },
@@ -510,24 +558,17 @@ export default function CinematicIngest() {
             <b>选择接入方式</b>
           </div>
           <div className="launcher-actions">
-            {commandModes.map((mode) => {
-              const Icon = mode.icon;
-              return (
-                <button
-                  key={mode.key}
-                  className={`launcher-action is-${mode.key}`}
-                  onClick={() => {
+            {COMMAND_MODES.map((mode) => (
+              <CometCommandButton
+                key={mode.key}
+                mode={mode}
+                onOpen={() => {
                     setActiveMode(mode.key);
                     setSubmitError('');
                     setCommandOpen(true);
                   }}
-                >
-                  <Icon size={18} />
-                  <b>{mode.label}</b>
-                  <span>{mode.meta}</span>
-                </button>
-              );
-            })}
+              />
+            ))}
           </div>
         </section>
 
@@ -622,8 +663,26 @@ export default function CinematicIngest() {
       {commandOpen && (
         <div className="ingest-command-overlay" role="dialog" aria-modal="true" aria-label={activeCommand.label}>
           <button className="command-backdrop" aria-label="关闭采集浮窗" onClick={() => setCommandOpen(false)} />
-          <section className="command-screen">
+          <motion.section
+            className="command-screen"
+            onMouseMove={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect();
+              const x = (event.clientX - rect.left) / rect.width - 0.5;
+              const y = (event.clientY - rect.top) / rect.height - 0.5;
+              event.currentTarget.style.setProperty('--screen-ry', `${x * 7}deg`);
+              event.currentTarget.style.setProperty('--screen-rx', `${y * -5}deg`);
+              event.currentTarget.style.setProperty('--screen-glare-x', `${(x + 0.5) * 100}%`);
+              event.currentTarget.style.setProperty('--screen-glare-y', `${(y + 0.5) * 100}%`);
+            }}
+            onMouseLeave={(event) => {
+              event.currentTarget.style.setProperty('--screen-ry', '0deg');
+              event.currentTarget.style.setProperty('--screen-rx', '0deg');
+              event.currentTarget.style.setProperty('--screen-glare-x', '50%');
+              event.currentTarget.style.setProperty('--screen-glare-y', '0%');
+            }}
+          >
             <div className="command-scanlines" aria-hidden="true" />
+            <div className="command-glare" aria-hidden="true" />
             <div className="command-screen-header">
               <div>
                 <span>TRANSMISSION WINDOW</span>
@@ -715,7 +774,7 @@ export default function CinematicIngest() {
             {submitError && (
               <div className="ingest-error"><AlertTriangle size={13} />{submitError}</div>
             )}
-          </section>
+          </motion.section>
         </div>
       )}
 
@@ -835,42 +894,97 @@ function EventStream({
   onBatchDelete: () => void;
   onPage: (update: number | ((prev: number) => number)) => void;
 }) {
-  if (error) {
-    return <div className="stream-error">{error}<button onClick={onRetry}>重试</button></div>;
-  }
   if (loading) {
     return <div className="stream-loading"><Loader2 size={22} className="animate-spin" /> 正在同步内容流</div>;
   }
-  if (events.length === 0) {
-    return <div className="stream-empty">暂无内容，接入一个外部信号开始沉淀。</div>;
+  if (error || events.length === 0) {
+    return (
+      <div className={`signal-stack signal-stack-placeholder${error ? ' is-error' : ''}`}>
+        <div className="signal-stack-stage" aria-label="信号占位舞台">
+          {[0, 1, 2].map((index) => (
+            <div
+              key={index}
+              className="signal-card signal-card-ghost"
+              style={{
+                '--stack-index': index,
+                '--stack-scale': 1 - index * 0.055,
+                '--stack-y': `${index * -18}px`,
+                '--stack-x': `${index * 18}px`,
+                '--stack-opacity': 0.82 - index * 0.2,
+              } as React.CSSProperties}
+            >
+              <div className="signal-card-beam" aria-hidden="true" />
+              <span>{error ? 'LINK INTERRUPTED' : 'AWAITING SIGNAL'}</span>
+              <b>{error || '等待外部信号进入采集轨道'}</b>
+            </div>
+          ))}
+        </div>
+        <div className="signal-stack-rail signal-stack-brief">
+          <label>{error ? '链路状态' : '采集状态'}</label>
+          <p>{error ? '后端未连接，采集舱保持待命。' : '接入一个短视频、文件、概念或信息源扫描后，这里会展开信号卡堆。'}</p>
+          {error && <button type="button" onClick={onRetry}>重新连接</button>}
+        </div>
+      </div>
+    );
   }
+  const stackedEvents = events.slice(0, 5);
   return (
     <>
-      <div className="stream-table">
-        <div className="stream-head">
-          <Checkbox checked={events.length > 0 && selectedIds.length === events.length} onChange={onToggleAll} />
-          <span>信号标题</span>
-          <span>来源</span>
-          <span>入库时间</span>
-          <span>操作</span>
+      <div className="signal-stack">
+        <div className="signal-stack-stage" aria-label="信号卡堆">
+          {stackedEvents.map((event, index) => {
+            const active = index === 0;
+            return (
+              <motion.article
+                key={event.id}
+                className={`signal-card${active ? ' is-active' : ''}${selectedIds.includes(event.id) ? ' is-selected' : ''}`}
+                style={{
+                  '--stack-index': index,
+                  '--stack-scale': 1 - index * 0.045,
+                  '--stack-y': `${index * -18}px`,
+                  '--stack-x': `${index * 18}px`,
+                  '--stack-opacity': 1 - index * 0.16,
+                } as React.CSSProperties}
+                whileHover={active ? { rotateY: -4, rotateX: 3, z: 28 } : undefined}
+                onClick={() => active ? onOpen(event.id) : onToggle(event.id)}
+              >
+                <div className="signal-card-beam" aria-hidden="true" />
+                <div className="signal-card-top">
+                  <span className={`stream-badge ${sourceBadgeClass(event.source_id)}`}>{sourceLabel(event.source_id)}</span>
+                  <span className="stream-time">{formatTimeBeijing(event.created_at)}</span>
+                </div>
+                <button className="signal-card-title" onClick={(e) => { e.stopPropagation(); onOpen(event.id); }}>
+                  <b>{event.title_cn || event.title}</b>
+                  <small>{event.topic || 'uncategorized'}</small>
+                </button>
+                <div className="signal-card-actions" onClick={(e) => e.stopPropagation()}>
+                  <label>
+                    <Checkbox checked={selectedIds.includes(event.id)} onChange={() => onToggle(event.id)} />
+                    <span>锁定</span>
+                  </label>
+                  <button onClick={() => onOpen(event.id)} title="详情"><Maximize2 size={14} /></button>
+                  <button onClick={(e) => onDelete(event.id, e)} title="删除"><Trash2 size={14} /></button>
+                </div>
+              </motion.article>
+            );
+          })}
         </div>
-        {events.map((event) => (
-          <div key={event.id} className={`stream-row${selectedIds.includes(event.id) ? ' is-selected' : ''}`} onClick={() => onToggle(event.id)}>
-            <div onClick={(e) => e.stopPropagation()}>
-              <Checkbox checked={selectedIds.includes(event.id)} onChange={() => onToggle(event.id)} />
-            </div>
-            <button className="stream-title" onClick={(e) => { e.stopPropagation(); onOpen(event.id); }}>
-              <b>{event.title_cn || event.title}</b>
-              <small>{event.topic || 'uncategorized'}</small>
+        <div className="signal-stack-rail">
+          <label>
+            <Checkbox checked={events.length > 0 && selectedIds.length === events.length} onChange={onToggleAll} />
+            <span>全选本页</span>
+          </label>
+          {events.slice(1, 8).map((event) => (
+            <button
+              key={event.id}
+              className={selectedIds.includes(event.id) ? 'is-selected' : ''}
+              onClick={() => onToggle(event.id)}
+            >
+              <i />
+              <span>{event.title_cn || event.title}</span>
             </button>
-            <span className={`stream-badge ${sourceBadgeClass(event.source_id)}`}>{sourceLabel(event.source_id)}</span>
-            <span className="stream-time">{formatTimeBeijing(event.created_at)}</span>
-            <div className="stream-actions" onClick={(e) => e.stopPropagation()}>
-              <button onClick={() => onOpen(event.id)} title="详情"><Maximize2 size={14} /></button>
-              <button onClick={(e) => onDelete(event.id, e)} title="删除"><Trash2 size={14} /></button>
-            </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
       <div className="stream-footer">
         <div>
