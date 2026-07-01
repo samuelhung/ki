@@ -19,6 +19,7 @@ export default defineConfig({
           if (id.includes('react-markdown') || id.includes('remark-gfm')) return 'markdown-vendor';
           if (id.includes('framer-motion')) return 'motion-vendor';
           if (id.includes('lucide-react')) return 'icons-vendor';
+          if (id.includes('three')) return 'three-vendor';
           if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) return 'react-vendor';
           return 'vendor';
         },

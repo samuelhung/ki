@@ -60,6 +60,7 @@ function CurtainOverlay() {
 
 function Layout() {
   const location = useLocation();
+  const isDashboardHome = location.pathname === '/';
 
   // ---- Offline detection ----
   const [isOnline, setIsOnline] = useState(true);
@@ -203,8 +204,8 @@ function Layout() {
         )}
 
         {/* Desktop layout */}
-        <div className="hidden md:flex h-full">
-          <Sidebar />
+        <div className={isDashboardHome ? 'flex h-full' : 'hidden md:flex h-full'}>
+          {!isDashboardHome && <Sidebar />}
           <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
             <div className="flex-1 overflow-auto custom-scrollbar">
               <ErrorBoundary>
@@ -217,7 +218,7 @@ function Layout() {
         </div>
 
         {/* Mobile layout */}
-        <div className="md:hidden flex flex-col h-full">
+        <div className={isDashboardHome ? 'hidden' : 'md:hidden flex flex-col h-full'}>
           <MobileHeader />
           <div className="flex-1 overflow-auto custom-scrollbar">
             <ErrorBoundary>
