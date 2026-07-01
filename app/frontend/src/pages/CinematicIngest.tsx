@@ -164,6 +164,7 @@ function CometCommandButton({
     <motion.button
       ref={ref}
       type="button"
+      aria-label={`${mode.label}：${mode.meta}`}
       className={`launcher-action comet-command is-${mode.key}`}
       onMouseMove={handleMove}
       onMouseLeave={handleLeave}
@@ -573,37 +574,45 @@ export default function CinematicIngest() {
         </section>
 
         {queueVisible && (
-          <aside className="ingest-queue-hud is-live" aria-label="处理队列">
-            <div className="hud-kicker">PROCESSING ORBIT</div>
-            <div className="queue-title">
-              <h2>处理轨道</h2>
-              <span>{pending.length + errors.length + (running ? 1 : 0)} 项活跃</span>
-            </div>
-            {running && (
-              <div className="queue-running">
-                <span className="queue-pulse" />
-                <b>{taskTitle(running)}</b>
-                <small>{statusLabel(running.status)}</small>
-                <div className="stage-track">
-                  {(running.progress_stages || []).map((stage) => (
-                    <div key={stage.key} className={`stage-dot is-${stage.status}`}>
-                      <i />
-                      <span>{stage.label}</span>
-                      <em>{stageLabel(stage.status)}</em>
-                    </div>
-                  ))}
-                  {(running.progress_stages || []).length === 0 && (
-                    <div className="stage-empty">等待处理阶段回传...</div>
-                  )}
-                </div>
+          <details className="ingest-queue-hud is-live" aria-label="处理队列">
+            <summary>
+              <span className="queue-pulse" />
+              <div>
+                <small>PROCESSING ORBIT</small>
+                <b>{errors.length > 0 ? '异常轨道' : running ? '处理中' : '待处理'}</b>
               </div>
-            )}
+              <em>{pending.length + errors.length + (running ? 1 : 0)}</em>
+            </summary>
+            <div className="queue-popover">
+              <div className="queue-title">
+                <h2>处理轨道</h2>
+                <span>{pending.length + errors.length + (running ? 1 : 0)} 项活跃</span>
+              </div>
+              {running && (
+                <div className="queue-running">
+                  <b>{taskTitle(running)}</b>
+                  <small>{statusLabel(running.status)}</small>
+                  <div className="stage-track">
+                    {(running.progress_stages || []).map((stage) => (
+                      <div key={stage.key} className={`stage-dot is-${stage.status}`}>
+                        <i />
+                        <span>{stage.label}</span>
+                        <em>{stageLabel(stage.status)}</em>
+                      </div>
+                    ))}
+                    {(running.progress_stages || []).length === 0 && (
+                      <div className="stage-empty">等待处理阶段回传...</div>
+                    )}
+                  </div>
+                </div>
+              )}
 
-            <div className="queue-groups">
-              <QueueGroup title="排队等待" items={pending} tone="pending" onRetry={retryQueueTask} onDelete={deleteQueueTask} />
-              <QueueGroup title="失败断点" items={errors} tone="error" onRetry={retryQueueTask} onDelete={deleteQueueTask} />
+              <div className="queue-groups">
+                <QueueGroup title="排队等待" items={pending} tone="pending" onRetry={retryQueueTask} onDelete={deleteQueueTask} />
+                <QueueGroup title="失败断点" items={errors} tone="error" onRetry={retryQueueTask} onDelete={deleteQueueTask} />
+              </div>
             </div>
-          </aside>
+          </details>
         )}
 
         <section className="ingest-stream" aria-label="采集内容流">
@@ -949,22 +958,31 @@ function EventStream({
                 onClick={() => active ? onOpen(event.id) : onToggle(event.id)}
               >
                 <div className="signal-card-beam" aria-hidden="true" />
-                <div className="signal-card-top">
-                  <span className={`stream-badge ${sourceBadgeClass(event.source_id)}`}>{sourceLabel(event.source_id)}</span>
-                  <span className="stream-time">{formatTimeBeijing(event.created_at)}</span>
-                </div>
-                <button className="signal-card-title" onClick={(e) => { e.stopPropagation(); onOpen(event.id); }}>
-                  <b>{event.title_cn || event.title}</b>
-                  <small>{event.topic || 'uncategorized'}</small>
-                </button>
-                <div className="signal-card-actions" onClick={(e) => e.stopPropagation()}>
-                  <label>
-                    <Checkbox checked={selectedIds.includes(event.id)} onChange={() => onToggle(event.id)} />
-                    <span>锁定</span>
-                  </label>
-                  <button onClick={() => onOpen(event.id)} title="详情"><Maximize2 size={14} /></button>
-                  <button onClick={(e) => onDelete(event.id, e)} title="删除"><Trash2 size={14} /></button>
-                </div>
+                {active ? (
+                  <>
+                    <div className="signal-card-top">
+                      <span className={`stream-badge ${sourceBadgeClass(event.source_id)}`}>{sourceLabel(event.source_id)}</span>
+                      <span className="stream-time">{formatTimeBeijing(event.created_at)}</span>
+                    </div>
+                    <button className="signal-card-title" onClick={(e) => { e.stopPropagation(); onOpen(event.id); }}>
+                      <b>{event.title_cn || event.title}</b>
+                      <small>{event.topic || 'uncategorized'}</small>
+                    </button>
+                    <div className="signal-card-actions" onClick={(e) => e.stopPropagation()}>
+                      <label>
+                        <Checkbox checked={selectedIds.includes(event.id)} onChange={() => onToggle(event.id)} />
+                        <span>锁定</span>
+                      </label>
+                      <button onClick={() => onOpen(event.id)} title="详情"><Maximize2 size={14} /></button>
+                      <button onClick={(e) => onDelete(event.id, e)} title="删除"><Trash2 size={14} /></button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="signal-card-shadow" aria-hidden="true">
+                    <span>{String(index + 1).padStart(2, '0')}</span>
+                    <i />
+                  </div>
+                )}
               </motion.article>
             );
           })}

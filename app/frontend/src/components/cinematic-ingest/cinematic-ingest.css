@@ -1254,10 +1254,105 @@
   grid-column: 3;
   grid-row: 1;
   align-self: start;
-  padding: 18px 0 0 14px;
-  border-left: 1px solid rgba(167, 139, 250, 0.28);
-  filter: drop-shadow(0 0 24px rgba(167, 139, 250, 0.14));
+  justify-self: end;
+  position: relative;
+  width: 192px;
+  padding: 0;
+  border-left: 0;
+  filter: drop-shadow(0 0 24px rgba(167, 139, 250, 0.12));
   animation: ingestQueueFlash 0.72s cubic-bezier(0.16, 1, 0.3, 1) both, ingestQueueBreath 2.8s ease-in-out 0.8s infinite;
+}
+
+.ingest-queue-hud summary {
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0 8px 12px;
+  border-left: 1px solid rgba(167, 139, 250, 0.32);
+  color: rgba(244, 236, 255, 0.88);
+  cursor: pointer;
+  list-style: none;
+  background: linear-gradient(90deg, rgba(167, 139, 250, 0.09), transparent 76%);
+}
+
+.ingest-queue-hud summary::-webkit-details-marker {
+  display: none;
+}
+
+.ingest-queue-hud summary small {
+  display: block;
+  color: rgba(167, 139, 250, 0.72);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+}
+
+.ingest-queue-hud summary b {
+  display: block;
+  margin-top: 5px;
+  color: rgba(255, 248, 226, 0.92);
+  font-size: 14px;
+  letter-spacing: 0.08em;
+}
+
+.ingest-queue-hud summary em {
+  min-width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 232, 184, 0.9);
+  font-size: 11px;
+  font-style: normal;
+  border: 1px solid rgba(214, 163, 76, 0.2);
+  background: rgba(214, 163, 76, 0.07);
+}
+
+.ingest-queue-hud summary .queue-pulse {
+  position: relative;
+  left: auto;
+  top: auto;
+}
+
+.queue-popover {
+  position: absolute;
+  right: 0;
+  top: 66px;
+  z-index: 9;
+  width: min(330px, 28vw);
+  max-height: 390px;
+  overflow: hidden;
+  padding: 17px 18px 18px;
+  border: 1px solid rgba(167, 139, 250, 0.18);
+  background:
+    linear-gradient(180deg, rgba(167, 139, 250, 0.08), transparent 34%),
+    rgba(5, 6, 10, 0.74);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.42), 0 0 56px rgba(167, 139, 250, 0.12);
+  backdrop-filter: blur(10px);
+  animation: ingestQueueFlash 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.ingest-queue-hud:not([open]) .queue-popover {
+  display: none;
+}
+
+.queue-popover .queue-running {
+  padding: 10px 0 14px 14px;
+}
+
+.queue-popover .queue-groups {
+  margin-top: 12px;
+  max-height: 236px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(167, 139, 250, 0.28) transparent;
+}
+
+.queue-popover .queue-groups::-webkit-scrollbar {
+  width: 3px;
+}
+
+.queue-popover .queue-groups::-webkit-scrollbar-thumb {
+  background: rgba(167, 139, 250, 0.28);
 }
 
 .ingest-stream {
@@ -1572,6 +1667,16 @@
   border-color: rgba(255, 232, 184, 0.28);
 }
 
+.signal-card:not(.is-active) {
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(255, 232, 184, 0.065), transparent 1px) left top / 1px 100% no-repeat,
+    linear-gradient(115deg, rgba(255, 255, 255, 0.018), transparent 38%),
+    radial-gradient(circle at 80% 18%, var(--ingest-accent-soft), transparent 48%),
+    rgba(5, 6, 10, 0.26);
+  filter: saturate(0.82);
+}
+
 .signal-card:hover,
 .signal-card.is-selected {
   filter: brightness(1.12);
@@ -1653,6 +1758,30 @@
   background: transparent;
   color: rgba(244, 236, 218, 0.56);
   cursor: pointer;
+}
+
+.signal-card-shadow {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: end;
+  justify-items: end;
+  padding: 16px 18px;
+  opacity: 0.68;
+}
+
+.signal-card-shadow span {
+  color: rgba(214, 163, 76, 0.36);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+}
+
+.signal-card-shadow i {
+  width: 34%;
+  height: 1px;
+  margin-top: 10px;
+  background: linear-gradient(90deg, transparent, rgba(255, 232, 184, 0.32));
+  box-shadow: 0 0 14px rgba(214, 163, 76, 0.16);
 }
 
 .signal-card-ghost {
@@ -1819,9 +1948,72 @@
 }
 
 @media (max-width: 760px) {
+  .cinematic-ingest.cinematic-dashboard {
+    min-height: 100svh;
+    height: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    --cinematic-ui-scale: 1;
+  }
+
+  .cinematic-ingest .cinematic-ingest-shell {
+    width: 100%;
+    min-height: 100svh;
+    height: auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    gap: 18px;
+    padding: 28px 26px 48px;
+    overflow: visible;
+  }
+
+  .cinematic-ingest .ingest-observation,
+  .cinematic-ingest .ingest-command-launcher,
+  .cinematic-ingest .ingest-queue-hud,
+  .cinematic-ingest .ingest-stream {
+    position: relative;
+    left: auto;
+    right: auto;
+    top: auto;
+    bottom: auto;
+    grid-column: 1;
+    grid-row: auto;
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    transform: none;
+    justify-self: stretch;
+    align-self: start;
+  }
+
+  .cinematic-ingest .ingest-observation {
+    max-height: none;
+  }
+
+  .cinematic-ingest .ingest-queue-hud.is-live {
+    order: 2;
+    width: 100%;
+  }
+
+  .cinematic-ingest .ingest-queue-hud summary {
+    grid-template-columns: 16px 1fr auto;
+    min-height: 52px;
+  }
+
+  .cinematic-ingest .queue-popover {
+    position: relative;
+    right: auto;
+    top: auto;
+    width: 100%;
+    max-height: 260px;
+    margin-top: 8px;
+  }
+
   .ingest-command-launcher {
     min-height: auto;
     place-items: stretch;
+    order: 3;
   }
 
   .launcher-core,
@@ -1835,7 +2027,7 @@
     gap: 10px;
   }
 
-  .launcher-action {
+  .cinematic-ingest .launcher-action {
     position: relative;
     left: auto !important;
     right: auto !important;
@@ -1845,13 +2037,41 @@
     min-height: 70px;
   }
 
+  .cinematic-ingest .ingest-stream {
+    order: 4;
+    padding-top: 0;
+  }
+
+  .cinematic-ingest .stream-toolbar {
+    gap: 10px;
+  }
+
+  .cinematic-ingest .topic-switcher {
+    max-width: 100%;
+  }
+
   .signal-stack,
   .signal-stack-stage {
     min-height: 190px;
   }
 
-  .signal-card {
+  .cinematic-ingest .signal-card {
     min-height: 176px;
+    width: 100%;
+  }
+
+  .cinematic-ingest .signal-stack {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .cinematic-ingest .signal-card:not(.is-active) {
+    opacity: 0.38;
+  }
+
+  .cinematic-ingest .ingest-mini-hub {
+    display: none;
   }
 
   .command-screen {
