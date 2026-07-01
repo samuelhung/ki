@@ -1,4 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useCurtain } from '../../CurtainContext';
+import { cinematicNavHubs } from '../../navigation';
 import type { CinematicDashboardData, UsageModuleStat } from './types';
 
 interface FocusDetailRow {
@@ -48,6 +50,40 @@ const MODULE_NAMES: Record<string, string> = {
   concept: '概念沉淀',
 };
 
+const NAV_DESCRIPTIONS: Record<string, string> = {
+  '/': '回到今日知几首页，重新观察总览、热力图、AI 运转和最新信号。',
+  '/ingest': '提交视频、文档、图片或链接，让系统完成转写、摘要与入库。',
+  '/events': '查看系统沉淀的事件列表，按时间、主题与重要度继续追踪。',
+  '/sources': '管理信息源接入状态，确认哪些源持续提供新的观测材料。',
+  '/series': '把零散信号归并成专题系列，沉淀可持续研究的结构。',
+  '/knowledge-graph': '打开知识图谱，查看概念、事件和主题之间的关联。',
+  '/chains': '进入产业链视图，把公司、环节、供需和风险放进结构里观察。',
+  '/brainstorm': '进入静观思辨，把问题、假设和洞察整理成可追踪线索。',
+  '/tasks': '查看见微行动，把观测到的征兆转成下一步可执行事项。',
+  '/study': '进入启蒙辅导，沉淀学习材料、错题和解释路径。',
+  '/tools': '打开工具箱，使用系统里的辅助工具和快捷能力。',
+  '/system': '查看系统总览，确认运行版本、接口、数据库和模块状态。',
+  '/settings': '调整系统配置、模型、采集与运行参数。',
+  '/docs': '打开 API 文档，查看后端接口和调试入口。',
+};
+
+const NAV_META: Record<string, (data: CinematicDashboardData) => string> = {
+  '/': (data) => `${data.summary.today_new} 条今日新增`,
+  '/ingest': (data) => `${data.summary.ingest_total} 条采集内容`,
+  '/events': (data) => `${data.events.length} 条近期信号`,
+  '/sources': (data) => `${data.summary.sources_enabled} 个源在线`,
+  '/series': () => '专题系列',
+  '/knowledge-graph': () => '知识图谱',
+  '/chains': () => '产业链',
+  '/brainstorm': (data) => `${data.summary.brainstorm_total} 个思辨问题`,
+  '/tasks': (data) => `${data.taskStats.todo} 项待处理`,
+  '/study': () => '启蒙辅导',
+  '/tools': () => '工具箱',
+  '/system': () => '系统总览',
+  '/settings': () => '系统配置',
+  '/docs': () => 'API 文档',
+};
+
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
@@ -90,12 +126,41 @@ export default function CinematicHud({
   onOpenSources,
   onFocusChange,
 }: Props) {
+  const { navigateWithCurtain } = useCurtain();
   const [hoverFocus, setHoverFocus] = useState<FocusContent | null>(null);
   const [pinnedFocus, setPinnedFocus] = useState<FocusContent | null>(null);
+  const [activeHub, setActiveHub] = useState<string | null>(null);
+  const hubCloseTimer = useRef<number | null>(null);
 
   useEffect(() => {
     setHoverFocus(null);
   }, [data.defaultFocus]);
+
+  useEffect(() => () => {
+    if (hubCloseTimer.current) {
+      window.clearTimeout(hubCloseTimer.current);
+    }
+  }, []);
+
+  function clearHubCloseTimer() {
+    if (hubCloseTimer.current) {
+      window.clearTimeout(hubCloseTimer.current);
+      hubCloseTimer.current = null;
+    }
+  }
+
+  function openHub(to: string | null) {
+    clearHubCloseTimer();
+    setActiveHub(to);
+  }
+
+  function scheduleHubClose() {
+    clearHubCloseTimer();
+    hubCloseTimer.current = window.setTimeout(() => {
+      setActiveHub(null);
+      resetFocus();
+    }, 240);
+  }
 
   function focus(content: FocusContent) {
     setHoverFocus(content);
@@ -116,6 +181,32 @@ export default function CinematicHud({
 
   function isPinned(title: string) {
     return pinnedFocus?.title === title;
+  }
+
+  function navFocus(item: { to: string; label: string }, focusValue: number): FocusContent {
+    return {
+      title: item.label,
+      meta: NAV_META[item.to]?.(data) || '进入模块',
+      desc: NAV_DESCRIPTIONS[item.to] || '进入知几模块继续处理当前线索。',
+      focusValue,
+    };
+  }
+
+  function handleHubClick(hub: typeof cinematicNavHubs[number]) {
+    if (hub.children.length > 0) {
+      clearHubCloseTimer();
+      setActiveHub(hub.to);
+      return;
+    }
+    navigateTo(hub.to);
+  }
+
+  function navigateTo(to: string) {
+    if (to === '/docs') {
+      window.open('/docs', '_blank', 'noopener,noreferrer');
+      return;
+    }
+    navigateWithCurtain(to);
   }
 
   const hasError = Boolean(summaryError || eventError);
@@ -168,6 +259,17 @@ export default function CinematicHud({
       { label: '统计窗口', value: '84 天' },
     ],
   };
+  const activeHubIndex = Math.max(0, cinematicNavHubs.findIndex((hub) => hub.to === activeHub));
+  const activeHubChildren = cinematicNavHubs.find((hub) => hub.to === activeHub)?.children || [];
+  const hubRowHeight = 40;
+  const hubBottomPadding = 24;
+  const hubHeight = 330;
+  const childMenuHeight = Math.max(134, activeHubChildren.length * hubRowHeight + 18);
+  const activeHubCenter = hubBottomPadding + ((cinematicNavHubs.length - 1 - activeHubIndex) * hubRowHeight) + 15;
+  const childMenuBottom = Math.max(
+    hubBottomPadding,
+    Math.min(hubHeight - childMenuHeight - 20, activeHubCenter - (childMenuHeight / 2)),
+  );
 
   return (
     <div className="cinematic-dashboard-shell">
@@ -228,20 +330,62 @@ export default function CinematicHud({
         )}
       </aside>
 
-      <nav className="cinematic-work-index" aria-label="知几功能索引">
-        {data.indexItems.map((item, index) => (
-          <button
-            key={item.id}
-            className={item.id === 'brand' ? 'hot' : ''}
-            onMouseEnter={() => focus({ title: item.title, meta: item.meta, desc: item.desc, focusValue: (index % 6) + 1 })}
-            onFocus={() => focus({ title: item.title, meta: item.meta, desc: item.desc, focusValue: (index % 6) + 1 })}
-            onMouseLeave={resetFocus}
-            onBlur={resetFocus}
+      <nav
+        className="cinematic-work-index"
+        aria-label="知几功能索引"
+        onMouseEnter={clearHubCloseTimer}
+        onMouseLeave={scheduleHubClose}
+      >
+        <div className="cinematic-hub-primary">
+          {cinematicNavHubs.map((hub, index) => {
+            const Icon = hub.icon;
+            const hasChildren = hub.children.length > 0;
+            const isActive = activeHub === hub.to;
+            const content = navFocus(hub, (index % 6) + 1);
+            return (
+              <button
+                key={hub.to}
+                className={`${isActive ? ' is-active' : ''}${hasChildren ? ' has-children' : ''}`}
+                aria-expanded={hasChildren ? isActive : undefined}
+                onMouseEnter={() => { openHub(hasChildren ? hub.to : null); focus(content); }}
+                onFocus={() => { openHub(hasChildren ? hub.to : null); focus(content); }}
+                onBlur={resetFocus}
+                onClick={() => handleHubClick(hub)}
+              >
+                <Icon size={14} aria-hidden="true" />
+                <b>{hub.label}</b>
+              </button>
+            );
+          })}
+        </div>
+
+        {activeHub && activeHubChildren.length > 0 && (
+          <div
+            className="cinematic-hub-children"
+            style={{
+              '--hub-child-height': `${childMenuHeight}px`,
+              bottom: `${childMenuBottom}px`,
+            } as React.CSSProperties}
+            onMouseEnter={clearHubCloseTimer}
           >
-            <b>{item.title}</b>
-            <small>{item.meta}</small>
-          </button>
-        ))}
+            {activeHubChildren.map((item, index) => {
+              const Icon = item.icon;
+              const content = navFocus(item, index + 1);
+              return (
+                <button
+                  key={item.to}
+                  onMouseEnter={() => focus(content)}
+                  onFocus={() => focus(content)}
+                  onBlur={resetFocus}
+                  onClick={() => navigateTo(item.to)}
+                >
+                  <Icon size={13} aria-hidden="true" />
+                  <b>{item.label}</b>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </nav>
 
       <div className="cinematic-metric-orbit">

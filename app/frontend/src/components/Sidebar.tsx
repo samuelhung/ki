@@ -1,79 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Upload, Lightbulb, CheckSquare, Layers, Code2, Settings, GitBranch, GraduationCap, List, Radio, Brain, Compass, Network, Library, Database, Wrench } from 'lucide-react';
 import { apiFetch } from '../api';
+import { apiDocsItem, bottomItems, navSections, settingsItem } from '../navigation';
 
 import { APP_VERSION } from '../constants';
-
-const navSections = [
-  {
-    to: '/',
-    icon: LayoutDashboard,
-    label: '今日知几',
-    color: 'text-blue-400',
-    children: [] as NavChild[],
-  },
-  {
-    to: '/ingest',
-    icon: Library,
-    label: '万象资料',
-    color: 'text-emerald-400',
-    children: [
-      { to: '/ingest', icon: Upload, label: '内容采集' },
-      { to: '/events', icon: List, label: '事件列表' },
-      { to: '/sources', icon: Radio, label: '信息源' },
-    ],
-  },
-  {
-    to: '/series',
-    icon: Compass,
-    label: '深度研究',
-    color: 'text-purple-400',
-    children: [
-      { to: '/series', icon: Layers, label: '专题系列' },
-      { to: '/knowledge-graph', icon: GitBranch, label: '知识图谱' },
-      { to: '/chains', icon: Network, label: '产业链' },
-    ],
-  },
-  {
-    to: '/brainstorm',
-    icon: Brain,
-    label: '静观思辨',
-    color: 'text-amber-400',
-    children: [
-      { to: '/brainstorm', icon: Lightbulb, label: '头脑风暴' },
-    ],
-  },
-  {
-    to: '/tasks',
-    icon: CheckSquare,
-    label: '见微行动',
-    color: 'text-sky-400',
-    children: [] as NavChild[],
-  },
-  {
-    to: '/study',
-    icon: GraduationCap,
-    label: '启蒙辅导',
-    color: 'text-amber-400',
-    children: [] as NavChild[],
-  },
-];
-
-const bottomItems = [
-  { to: '/tools', icon: Wrench, label: '工具箱', color: 'text-orange-400' },
-  { to: '/system', icon: Database, label: '系统总览', color: 'text-teal-400' },
-];
-
-interface NavChild {
-  to: string;
-  icon: React.ComponentType<{ size?: number; className?: string }>;
-  label: string;
-}
 
 export default function Sidebar() {
   const [pendingCount, setPendingCount] = useState(0);
   const [chainHintsCount, setChainHintsCount] = useState(0);
+  const SettingsIcon = settingsItem.icon;
+  const ApiDocsIcon = apiDocsItem.icon;
 
   useEffect(() => {
     let cancelled = false;
@@ -156,24 +92,24 @@ export default function Sidebar() {
       </nav>
       <div className="px-2 pb-2 space-y-1">
         <NavLink
-          to="/settings"
+          to={settingsItem.to}
           className={({ isActive }) =>
             `w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
               isActive ? 'bg-[#2A2B30] text-white' : 'text-gray-400 hover:text-gray-200 hover:bg-[#1A1B20]'
             }`
           }
         >
-          <Settings size={18} className="text-gray-400" />
-          <span>系统设置</span>
+          <SettingsIcon size={18} className={settingsItem.color} />
+          <span>{settingsItem.label}</span>
         </NavLink>
         <a
-          href="/docs"
+          href={apiDocsItem.to}
           target="_blank"
           rel="noopener noreferrer"
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-gray-200 hover:bg-[#1A1B20] transition-colors"
         >
-          <Code2 size={18} className="text-indigo-400" />
-          <span>API 文档</span>
+          <ApiDocsIcon size={18} className={apiDocsItem.color} />
+          <span>{apiDocsItem.label}</span>
         </a>
         {bottomItems.map((item) => {
           const Icon = item.icon;
