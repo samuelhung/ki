@@ -11,7 +11,7 @@ import { CurtainProvider, useCurtain } from './CurtainContext';
 import { getBackendUrl } from './api';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
-const Ingest = lazy(() => import('./pages/Ingest'));
+const CinematicIngest = lazy(() => import('./pages/CinematicIngest'));
 const Events = lazy(() => import('./pages/Events'));
 const Sources = lazy(() => import('./pages/Sources'));
 const Brainstorm = lazy(() => import('./pages/Brainstorm'));
@@ -61,6 +61,7 @@ function CurtainOverlay() {
 function Layout() {
   const location = useLocation();
   const isDashboardHome = location.pathname === '/';
+  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest';
 
   // ---- Offline detection ----
   const [isOnline, setIsOnline] = useState(true);
@@ -204,8 +205,8 @@ function Layout() {
         )}
 
         {/* Desktop layout */}
-        <div className={isDashboardHome ? 'flex h-full' : 'hidden md:flex h-full'}>
-          {!isDashboardHome && <Sidebar />}
+        <div className={isCinematicFullScreen ? 'flex h-full' : 'hidden md:flex h-full'}>
+          {!isCinematicFullScreen && <Sidebar />}
           <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
             <div className="flex-1 overflow-auto custom-scrollbar">
               <ErrorBoundary>
@@ -218,7 +219,7 @@ function Layout() {
         </div>
 
         {/* Mobile layout */}
-        <div className={isDashboardHome ? 'hidden' : 'md:hidden flex flex-col h-full'}>
+        <div className={isCinematicFullScreen ? 'hidden' : 'md:hidden flex flex-col h-full'}>
           <MobileHeader />
           <div className="flex-1 overflow-auto custom-scrollbar">
             <ErrorBoundary>
@@ -243,7 +244,7 @@ export default function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<Dashboard />} />
-          <Route path="ingest" element={<Ingest />} />
+          <Route path="ingest" element={<CinematicIngest />} />
           <Route path="events" element={<Events />} />
           <Route path="sources" element={<Sources />} />
           <Route path="brainstorm" element={<Brainstorm />} />
