@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from zhiji_backend.main import app
-from zhiji_backend.db import init_db, get_db_path
+from zhiji_backend.db import connect, init_db, get_db_path
 
 client = TestClient(app)
 
@@ -111,3 +111,83 @@ class TestIngestStatus:
         """Non-existent event returns 404."""
         resp = client.get("/api/ingest/status/evt-nonexistent")
         assert resp.status_code == 404
+
+
+class TestQueueDelete:
+    def test_queue_returns_full_status_counts_independent_of_limit(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+        init_db()
+        with connect() as conn:
+            conn.execute(
+                """INSERT OR IGNORE INTO sources (id, name, type, url, topic, priority)
+                   VALUES ('douyin', '抖音分享', 'manual', '', 'test', 'medium')"""
+            )
+            for index in range(4):
+                conn.execute(
+                    """INSERT INTO events (id, source_id, title, url, topic,
+                       importance, actionability, decision, status, content_type)
+                       VALUES (?, 'douyin', '待处理', '', 'test', 4, 4, 'digest', 'error', 'event')""",
+                    (f"evt-error-{index}",),
+                )
+                conn.execute(
+                    """INSERT INTO ingest_tasks (id, event_id, ingest_type, payload_json, status, error)
+                       VALUES (?, ?, 'douyin_share',
+                       '{"content_text":"https://v.douyin.com/test/","topic":"test","title":""}', 'error', 'failed')""",
+                    (f"task-error-{index}", f"evt-error-{index}"),
+                )
+            conn.execute(
+                """INSERT INTO events (id, source_id, title, url, topic,
+                   importance, actionability, decision, status, content_type)
+                   VALUES ('evt-done', 'douyin', '完成', '', 'test', 4, 4, 'digest', 'completed', 'event')"""
+            )
+            conn.execute(
+                """INSERT INTO ingest_tasks (id, event_id, ingest_type, payload_json, status)
+                   VALUES ('task-done', 'evt-done', 'douyin_share',
+                   '{"content_text":"done","topic":"test","title":""}', 'done')"""
+            )
+
+        response = client.get("/api/ingest/queue?limit=2")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["items"]) == 2
+        assert data["status_counts"]["error"] == 4
+        assert data["status_counts"]["done"] == 1
+
+    def test_delete_queue_task_removes_task_and_event(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+        init_db()
+        with connect() as conn:
+            conn.execute(
+                """INSERT OR IGNORE INTO sources (id, name, type, url, topic, priority)
+                   VALUES ('douyin', '抖音分享', 'manual', '', 'test', 'medium')"""
+            )
+            conn.execute(
+                """INSERT INTO events (id, source_id, title, url, topic,
+                   importance, actionability, decision, status, content_type)
+                   VALUES ('evt-delete-api', 'douyin', '待处理', '', 'test', 4, 4, 'digest', 'error', 'event')"""
+            )
+            conn.execute(
+                """INSERT INTO ingest_tasks (id, event_id, ingest_type, payload_json, status, error)
+                   VALUES ('task-delete-api', 'evt-delete-api', 'douyin_share',
+                   '{"content_text":"https://v.douyin.com/test/","topic":"test","title":""}', 'error', 'failed')"""
+            )
+
+        response = client.delete("/api/ingest/queue/task-delete-api")
+
+        assert response.status_code == 200
+        assert response.json()["deleted"] == "task-delete-api"
+        with connect() as conn:
+            task = conn.execute("SELECT id FROM ingest_tasks WHERE id = 'task-delete-api'").fetchone()
+            event = conn.execute("SELECT id FROM events WHERE id = 'evt-delete-api'").fetchone()
+        assert task is None
+        assert event is None
+
+    def test_delete_queue_task_is_idempotent_when_task_already_missing(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+        init_db()
+
+        response = client.delete("/api/ingest/queue/task-missing")
+
+        assert response.status_code == 200
+        assert response.json() == {"deleted": "task-missing", "missing": True}

@@ -103,18 +103,29 @@ def ingest_file(
 @router.get("/queue")
 def ingest_queue(limit: int = 30):
     """List recent ingest tasks with event info for the queue UI panel."""
-    init_db()
     with connect() as conn:
+        count_rows = conn.execute(
+            "SELECT status, COUNT(*) AS count FROM ingest_tasks GROUP BY status"
+        ).fetchall()
         rows = conn.execute(
             """SELECT t.id, t.event_id, t.ingest_type, t.status, t.error,
                       t.payload_json, t.created_at, t.started_at, t.finished_at,
                       e.title, e.progress_stages
                FROM ingest_tasks t
                LEFT JOIN events e ON e.id = t.event_id
-               ORDER BY t.created_at DESC
+               ORDER BY CASE t.status
+                 WHEN 'running' THEN 0
+                 WHEN 'error' THEN 1
+                 WHEN 'pending' THEN 2
+                 ELSE 3
+               END, t.created_at DESC
                LIMIT ?""",
             (limit,),
         ).fetchall()
+
+    status_counts = {"pending": 0, "running": 0, "done": 0, "error": 0}
+    for row in count_rows:
+        status_counts[row["status"]] = row["count"]
 
     items = []
     for row in rows:
@@ -125,7 +136,7 @@ def ingest_queue(limit: int = 30):
             except (json.JSONDecodeError, TypeError):
                 item["progress_stages"] = []
         items.append(item)
-    return {"items": items}
+    return {"items": items, "status_counts": status_counts}
 
 
 # ── Status endpoint ──
@@ -171,14 +182,13 @@ def clear_old_ingest():
 @router.delete("/queue/{task_id}")
 def delete_queue_task(task_id: str):
     """Delete a single ingest task. Also cleans up its associated event."""
-    init_db()
     with connect() as conn:
         # Look up the event_id before deleting
         row = conn.execute(
             "SELECT event_id FROM ingest_tasks WHERE id = ?", (task_id,)
         ).fetchone()
         if not row:
-            raise HTTPException(status_code=404, detail="Task not found")
+            return {"deleted": task_id, "missing": True}
         event_id = row["event_id"]
 
         # Delete the task
@@ -191,7 +201,7 @@ def delete_queue_task(task_id: str):
         if remaining == 0:
             conn.execute("DELETE FROM events WHERE id = ?", (event_id,))
 
-    return {"deleted": task_id}
+    return {"deleted": task_id, "missing": False}
 
 
 @router.post("/queue/{task_id}/retry")

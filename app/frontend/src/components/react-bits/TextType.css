@@ -1,0 +1,24 @@
+.text-type {
+  display: inline-block;
+  white-space: pre-wrap;
+}
+
+.text-type__cursor {
+  margin-left: 0.25rem;
+  display: inline-block;
+  opacity: 1;
+  animation: textTypeCursorBlink var(--cursor-blink-duration, 0.5s) infinite alternate ease-in-out;
+}
+
+.text-type__cursor--hidden {
+  display: none;
+}
+
+@keyframes textTypeCursorBlink {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}

@@ -395,6 +395,7 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at);
             CREATE INDEX IF NOT EXISTS idx_events_topic ON events(topic);
             CREATE INDEX IF NOT EXISTS idx_events_translation_status ON events(translation_status);
+            CREATE INDEX IF NOT EXISTS idx_ingest_tasks_created_at ON ingest_tasks(created_at);
             CREATE INDEX IF NOT EXISTS idx_briefings_type ON briefings(type);
             CREATE INDEX IF NOT EXISTS idx_brainstorm_event_id ON brainstorm_questions(event_id);
             CREATE INDEX IF NOT EXISTS idx_brainstorm_status ON brainstorm_questions(status);
