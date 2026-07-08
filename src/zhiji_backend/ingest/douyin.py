@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from html import unescape
 from pathlib import Path
 
 import requests  # type: ignore
@@ -20,6 +21,48 @@ def extract_first_url(text: str) -> str:
     if not match:
         return ""
     return match.group(0).rstrip("/)")
+
+
+def _decode_json_object_after(text: str, marker: str) -> dict | None:
+    """Decode a JSON object that appears immediately after a marker."""
+    marker_index = text.find(marker)
+    if marker_index < 0:
+        return None
+    colon_index = text.find(":", marker_index + len(marker))
+    if colon_index < 0:
+        return None
+    object_start = text.find("{", colon_index)
+    if object_start < 0:
+        return None
+    try:
+        value, _ = json.JSONDecoder().raw_decode(text[object_start:])
+    except json.JSONDecodeError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _aweme_from_page_html(page_html: str) -> dict:
+    """Extract aweme metadata from Douyin's share landing page HTML."""
+    text = unescape(page_html or "")
+
+    video_info = _decode_json_object_after(text, '"videoInfoRes"')
+    if video_info:
+        item_list = video_info.get("item_list") or []
+        if item_list:
+            return item_list[0] or {}
+
+    router_data = _decode_json_object_after(text, "window._ROUTER_DATA")
+    if router_data:
+        video_info = (
+            router_data.get("loaderData", {})
+            .get("video_(id)/page", {})
+            .get("videoInfoRes", {})
+        )
+        item_list = video_info.get("item_list") or []
+        if item_list:
+            return item_list[0] or {}
+
+    return {}
 
 
 def parse_share_text(share_text: str) -> dict:
@@ -51,10 +94,22 @@ def parse_share_text(share_text: str) -> dict:
     )
     detail_resp.raise_for_status()
 
-    data = detail_resp.json()
+    data = {}
+    if (detail_resp.text or "").strip():
+        try:
+            data = detail_resp.json()
+        except ValueError:
+            data = {}
     aweme = data.get("aweme_detail") or {}
     if not aweme:
-        raise RuntimeError("API 返回中未找到 aweme_detail")
+        aweme = _aweme_from_page_html(r.text)
+    if not aweme:
+        raise RuntimeError(
+            "抖音详情接口未返回可解析数据，且落地页未找到 videoInfoRes"
+            f"（status={detail_resp.status_code}, "
+            f"content_type={detail_resp.headers.get('content-type', '')}, "
+            f"body_len={len(detail_resp.text or '')}）"
+        )
 
     desc = (aweme.get("desc") or "").strip() or f"douyin_{aweme_id}"
     video_info = aweme.get("video") or {}

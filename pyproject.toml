@@ -17,6 +17,7 @@ dependencies = [
     "feedparser>=6.0",
     "openai>=1.12",
     "yt-dlp>=2024",
+    "tos>=2.9",
     "trafilatura>=1.6",
     "pyyaml>=6.0",
     "aiofiles>=23.2",
@@ -24,7 +25,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-volc = ["tos>=2.9"]
+volc = []
 all = ["zhiji-backend[volc]"]
 
 [project.scripts]

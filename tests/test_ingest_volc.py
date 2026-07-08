@@ -2,25 +2,24 @@
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app" / "backend"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from ingest.volc_transcriber import (
+from zhiji_backend.ingest.volc_transcriber import (
     transcribe,
     submit_transcription,
     poll_result,
-    upload_to_tos,
 )
 
 
 class TestSubmitTranscription:
-    @patch("ingest.volc_transcriber.requests")
+    @patch("zhiji_backend.ingest.volc_transcriber.requests")
+    @patch.dict("os.environ", {"VOLC_API_KEY": "app"})
     def test_submit_returns_req_id_and_logid(self, mock_requests):
         """Successful submit returns request id and log id from headers."""
         resp = MagicMock()
@@ -35,8 +34,11 @@ class TestSubmitTranscription:
 
         assert req_id  # non-empty uuid
         assert logid == "test-logid-123"
+        headers = mock_requests.post.call_args.kwargs["headers"]
+        assert headers["X-Api-Key"] == "app"
 
-    @patch("ingest.volc_transcriber.requests")
+    @patch("zhiji_backend.ingest.volc_transcriber.requests")
+    @patch.dict("os.environ", {"VOLC_API_KEY": "app"})
     def test_submit_raises_on_api_error(self, mock_requests):
         """Non-20000000 status should raise RuntimeError."""
         resp = MagicMock()
@@ -49,10 +51,16 @@ class TestSubmitTranscription:
         with pytest.raises(RuntimeError, match="45000030"):
             submit_transcription("https://example.com/audio.wav")
 
+    @patch.dict("os.environ", {}, clear=True)
+    def test_submit_requires_api_key(self):
+        with pytest.raises(RuntimeError, match="VOLC_API_KEY"):
+            submit_transcription("https://example.com/audio.wav")
+
 
 class TestPollResult:
-    @patch("ingest.volc_transcriber.requests")
-    @patch("ingest.volc_transcriber.time")
+    @patch("zhiji_backend.ingest.volc_transcriber.requests")
+    @patch("zhiji_backend.ingest.volc_transcriber.time")
+    @patch.dict("os.environ", {"VOLC_API_KEY": "app"})
     def test_poll_returns_text_when_done(self, mock_time, mock_requests):
         """Poll returns transcription text when status is 20000000."""
         resp = MagicMock()
@@ -68,8 +76,9 @@ class TestPollResult:
 
         assert text == "这是转写结果文本"
 
-    @patch("ingest.volc_transcriber.requests")
-    @patch("ingest.volc_transcriber.time")
+    @patch("zhiji_backend.ingest.volc_transcriber.requests")
+    @patch("zhiji_backend.ingest.volc_transcriber.time")
+    @patch.dict("os.environ", {"VOLC_API_KEY": "app"})
     def test_poll_retries_while_processing(self, mock_time, mock_requests):
         """Poll retries while status is 20000001 (processing)."""
         processing = MagicMock()
@@ -87,8 +96,9 @@ class TestPollResult:
         assert text == "final text"
         assert mock_requests.post.call_count == 3
 
-    @patch("ingest.volc_transcriber.requests")
-    @patch("ingest.volc_transcriber.time")
+    @patch("zhiji_backend.ingest.volc_transcriber.requests")
+    @patch("zhiji_backend.ingest.volc_transcriber.time")
+    @patch.dict("os.environ", {"VOLC_API_KEY": "app"})
     def test_poll_raises_on_error_status(self, mock_time, mock_requests):
         """Unexpected error status raises RuntimeError."""
         resp = MagicMock()
@@ -99,8 +109,9 @@ class TestPollResult:
         with pytest.raises(RuntimeError, match="45000006"):
             poll_result("req-123", "logid-456", max_attempts=3)
 
-    @patch("ingest.volc_transcriber.requests")
-    @patch("ingest.volc_transcriber.time")
+    @patch("zhiji_backend.ingest.volc_transcriber.requests")
+    @patch("zhiji_backend.ingest.volc_transcriber.time")
+    @patch.dict("os.environ", {"VOLC_API_KEY": "app"})
     def test_poll_timeout_raises(self, mock_time, mock_requests):
         """Max attempts exceeded should raise TimeoutError."""
         resp = MagicMock()
@@ -113,9 +124,9 @@ class TestPollResult:
 
 
 class TestTranscribeIntegration:
-    @patch("ingest.volc_transcriber.upload_to_tos")
-    @patch("ingest.volc_transcriber.submit_transcription")
-    @patch("ingest.volc_transcriber.poll_result")
+    @patch("zhiji_backend.ingest.volc_transcriber.upload_to_tos")
+    @patch("zhiji_backend.ingest.volc_transcriber.submit_transcription")
+    @patch("zhiji_backend.ingest.volc_transcriber.poll_result")
     def test_transcribe_orchestrates_full_flow(
         self, mock_poll, mock_submit, mock_upload, tmp_path: Path
     ):

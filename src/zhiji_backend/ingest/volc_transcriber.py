@@ -9,18 +9,31 @@ from pathlib import Path
 
 import requests  # type: ignore
 
-VOLC_API_KEY = os.getenv("VOLC_API_KEY", "")
-VOLC_RESOURCE_ID = os.getenv("VOLC_RESOURCE_ID", "volc.seedasr.auc")
-VOLC_MODEL_NAME = os.getenv("VOLC_MODEL_NAME", "bigmodel")
-TOS_ENDPOINT = os.getenv("TOS_ENDPOINT", "tos-cn-beijing.volces.com")
-TOS_REGION = os.getenv("TOS_REGION", "cn-beijing")
-TOS_BUCKET = os.getenv("TOS_BUCKET", "douyin11")
-TOS_AK = os.getenv("TOS_AK", "")
-TOS_SK = os.getenv("TOS_SK", "")
 TOS_EXPIRES = 7200
 
 SUBMIT_URL = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit"
 QUERY_URL = "https://openspeech.bytedance.com/api/v3/auc/bigmodel/query"
+
+
+def _env(name: str, default: str = "") -> str:
+    return os.getenv(name, default).strip()
+
+
+def _volc_headers(req_id: str, logid: str | None = None) -> dict[str, str]:
+    api_key = _env("VOLC_API_KEY") or _env("VOLC_APP_KEY")
+    if not api_key:
+        raise RuntimeError("VOLC_API_KEY 未配置，无法调用火山 AUC 转写")
+
+    headers = {
+        "X-Api-Key": api_key,
+        "X-Api-Resource-Id": _env("VOLC_RESOURCE_ID", "volc.seedasr.auc"),
+        "X-Api-Request-Id": req_id,
+    }
+    if logid:
+        headers["X-Tt-Logid"] = logid
+    else:
+        headers["X-Api-Sequence"] = "-1"
+    return headers
 
 
 def upload_to_tos(audio_path: Path) -> str:
@@ -30,17 +43,23 @@ def upload_to_tos(audio_path: Path) -> str:
     except ImportError as e:
         raise RuntimeError("缺少依赖 tos：请先安装 `pip install tos`") from e
 
-    client = TosClientV2(ak=TOS_AK, sk=TOS_SK, endpoint=TOS_ENDPOINT, region=TOS_REGION)
+    client = TosClientV2(
+        ak=_env("TOS_AK"),
+        sk=_env("TOS_SK"),
+        endpoint=_env("TOS_ENDPOINT", "tos-cn-beijing.volces.com"),
+        region=_env("TOS_REGION", "cn-beijing"),
+    )
     object_key = f"asr-upload/{uuid.uuid4().hex}{audio_path.suffix}"
 
-    client.put_object_from_file(TOS_BUCKET, object_key, str(audio_path))
+    bucket = _env("TOS_BUCKET", "douyin11")
+    client.put_object_from_file(bucket, object_key, str(audio_path))
 
     # Generate presigned URL for public access
     from tos.enum import HttpMethodType  # type: ignore
 
     presigned = client.pre_signed_url(
         HttpMethodType.Http_Method_Get,
-        TOS_BUCKET,
+        bucket,
         object_key,
         TOS_EXPIRES,
     )
@@ -62,17 +81,12 @@ def submit_transcription(audio_url: str) -> tuple[str, str]:
                 "format": "wav",
             },
             "request": {
-                "model_name": VOLC_MODEL_NAME,
+                "model_name": _env("VOLC_MODEL_NAME", "bigmodel"),
                 "enable_punc": True,
                 "enable_itn": True,
             },
         },
-        headers={
-            "X-Api-Key": VOLC_API_KEY,
-            "X-Api-Resource-Id": VOLC_RESOURCE_ID,
-            "X-Api-Request-Id": req_id,
-            "X-Api-Sequence": "-1",
-        },
+        headers=_volc_headers(req_id),
         timeout=15,
     )
 
@@ -100,12 +114,7 @@ def poll_result(req_id: str, logid: str, max_attempts: int = 200) -> str:
         resp = requests.post(
             QUERY_URL,
             json={},
-            headers={
-                "X-Api-Key": VOLC_API_KEY,
-                "X-Api-Resource-Id": VOLC_RESOURCE_ID,
-                "X-Api-Request-Id": req_id,
-                "X-Tt-Logid": logid,
-            },
+            headers=_volc_headers(req_id, logid),
             timeout=15,
         )
 

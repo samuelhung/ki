@@ -1,0 +1,1928 @@
+/* Final Laser Flow ingest layout overrides. Keep this block last so legacy
+   ingest experiments above cannot pull the screen back into card/list layouts. */
+.cinematic-ingest .cinematic-ingest-shell {
+  position: relative !important;
+  display: block !important;
+  width: 100% !important;
+  height: 100svh !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+.cinematic-ingest .ingest-observation {
+  position: absolute !important;
+  left: clamp(28px, 3.2vw, 58px) !important;
+  top: clamp(30px, 4.2vh, 56px) !important;
+  z-index: 14 !important;
+  width: min(348px, 27vw) !important;
+  max-height: 344px !important;
+  padding: 15px 18px 13px !important;
+}
+
+.cinematic-ingest .ingest-observation.is-processing-track {
+  width: min(446px, 33vw) !important;
+  max-height: 382px !important;
+  padding: 17px 21px 15px !important;
+  transition:
+    opacity 220ms ease,
+    filter 220ms ease,
+    max-height 220ms ease !important;
+}
+
+.cinematic-ingest .ingest-observation.is-processing-track.is-queue-idle {
+  max-height: 254px !important;
+  opacity: 0.74 !important;
+  filter: saturate(0.82) brightness(0.88) !important;
+}
+
+.cinematic-ingest .ingest-observation.is-processing-track.is-queue-active {
+  opacity: 1 !important;
+  filter: saturate(1.06) brightness(1.05) !important;
+}
+
+.cinematic-ingest .ingest-observation.is-processing-track.is-queue-idle .panel-detail-grid {
+  opacity: 0.68 !important;
+}
+
+.cinematic-ingest .ingest-observation.is-processing-track.is-queue-idle .observation-queue-list {
+  display: none !important;
+}
+
+.cinematic-ingest .ingest-observation.is-processing-track.is-queue-idle .observation-recent-list {
+  border-top-color: rgba(163, 230, 216, 0.055) !important;
+  opacity: 0.72 !important;
+}
+
+.cinematic-ingest .ingest-observation p {
+  display: none !important;
+}
+
+.cinematic-ingest .ingest-observation .panel-status {
+  margin-bottom: 7px !important;
+}
+
+.cinematic-ingest .ingest-observation.is-processing-track .panel-status {
+  margin-bottom: 10px !important;
+  font-size: 24.2px !important;
+  line-height: 1 !important;
+}
+
+.cinematic-ingest .ingest-observation.is-processing-track .panel-status span {
+  color: rgba(255, 248, 226, 0.94) !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.08em !important;
+  text-shadow: 0 0 18px rgba(207, 158, 255, 0.22) !important;
+}
+
+.cinematic-ingest .ingest-observation.is-processing-track .panel-status .signal-dot {
+  transform: translateY(1px) scale(1.25) !important;
+}
+
+.cinematic-ingest .ingest-observation b {
+  margin-bottom: 6px !important;
+}
+
+.cinematic-ingest .ingest-observation > span {
+  margin-bottom: 8px !important;
+}
+
+.cinematic-ingest .ingest-observation .panel-detail-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  margin-top: 9px !important;
+  padding-top: 9px !important;
+  gap: 8px 14px !important;
+}
+
+.cinematic-ingest .ingest-observation.is-processing-track .panel-detail-grid span {
+  font-size: 9.8px !important;
+}
+
+.cinematic-ingest .ingest-observation.is-processing-track .panel-detail-grid b {
+  font-size: 15.8px !important;
+}
+
+.cinematic-ingest .ingest-observation.is-processing-track p {
+  display: block !important;
+  margin: 4px 0 0 !important;
+  max-width: 398px !important;
+  color: rgba(244, 236, 218, 0.5) !important;
+  font-size: 11.8px !important;
+  line-height: 1.55 !important;
+}
+
+.cinematic-ingest .ingest-observation.is-processing-track > span {
+  max-width: 398px !important;
+  overflow: hidden !important;
+  color: rgba(255, 248, 226, 0.9) !important;
+  font-size: 12px !important;
+  line-height: 1.35 !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.cinematic-ingest .observation-stage-track {
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+  margin-top: 10px !important;
+}
+
+.cinematic-ingest .observation-stage-track > span {
+  position: relative !important;
+  min-width: 0 !important;
+  padding-top: 12px !important;
+  color: rgba(244, 236, 218, 0.48) !important;
+}
+
+.cinematic-ingest .observation-stage-track > span i {
+  position: absolute !important;
+  left: 0 !important;
+  top: 0 !important;
+  width: 100% !important;
+  height: 2px !important;
+  background: rgba(244, 236, 218, 0.14) !important;
+  box-shadow: 0 0 10px rgba(244, 236, 218, 0.08) !important;
+}
+
+.cinematic-ingest .observation-stage-track > span.is-active i {
+  background: rgba(207, 158, 255, 0.8) !important;
+  box-shadow: 0 0 16px rgba(207, 158, 255, 0.46) !important;
+}
+
+.cinematic-ingest .observation-stage-track > span.is-done i {
+  background: rgba(163, 230, 216, 0.72) !important;
+  box-shadow: 0 0 14px rgba(93, 211, 190, 0.34) !important;
+}
+
+.cinematic-ingest .observation-stage-track > span.is-error i {
+  background: rgba(251, 113, 133, 0.8) !important;
+  box-shadow: 0 0 16px rgba(251, 113, 133, 0.38) !important;
+}
+
+.cinematic-ingest .observation-stage-track > span.is-current {
+  color: rgba(207, 158, 255, 0.92) !important;
+}
+
+.cinematic-ingest .observation-stage-track > span.is-current i {
+  height: 3px !important;
+  box-shadow:
+    0 0 12px currentColor,
+    0 0 22px rgba(207, 158, 255, 0.32) !important;
+}
+
+.cinematic-ingest .observation-stage-track > span.is-current b {
+  color: rgba(255, 252, 240, 0.95) !important;
+}
+
+.cinematic-ingest .observation-stage-track > span b {
+  display: block !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+  color: rgba(255, 248, 226, 0.78) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0.05em !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.cinematic-ingest .observation-stage-track > span small {
+  display: block !important;
+  margin-top: 3px !important;
+  color: currentColor !important;
+  font-size: 9.2px !important;
+  line-height: 1 !important;
+  letter-spacing: 0.12em !important;
+}
+
+.cinematic-ingest .observation-stage-track > em {
+  grid-column: 1 / -1 !important;
+  color: rgba(207, 158, 255, 0.62) !important;
+  font-size: 10px !important;
+  font-style: normal !important;
+  letter-spacing: 0.12em !important;
+}
+
+.cinematic-ingest .observation-queue-list {
+  display: grid !important;
+  gap: 5px !important;
+  margin-top: 9px !important;
+  padding-top: 8px !important;
+  border-top: 1px solid rgba(244, 236, 218, 0.08) !important;
+  max-height: 91px !important;
+  overflow: hidden !important;
+}
+
+.cinematic-ingest .observation-recent-list {
+  display: grid !important;
+  gap: 5px !important;
+  margin-top: 9px !important;
+  padding-top: 8px !important;
+  border-top: 1px solid rgba(163, 230, 216, 0.08) !important;
+  max-height: 76px !important;
+  overflow: hidden !important;
+}
+
+.cinematic-ingest .observation-recent-list label {
+  color: rgba(163, 230, 216, 0.58) !important;
+  font-size: 9.2px !important;
+  line-height: 1 !important;
+  letter-spacing: 0.18em !important;
+}
+
+.cinematic-ingest .observation-queue-row {
+  display: grid !important;
+  grid-template-columns: 14px minmax(0, 1fr) auto auto auto !important;
+  align-items: center !important;
+  gap: 6px !important;
+  min-height: 18px !important;
+  color: rgba(224, 216, 255, 0.8) !important;
+}
+
+.cinematic-ingest .observation-queue-row.is-running {
+  color: rgba(207, 158, 255, 0.82) !important;
+}
+
+.cinematic-ingest .observation-queue-row.is-pending {
+  color: rgba(255, 232, 184, 0.76) !important;
+}
+
+.cinematic-ingest .observation-queue-row.is-error {
+  color: rgba(251, 113, 133, 0.82) !important;
+}
+
+.cinematic-ingest .observation-queue-row.is-done {
+  grid-template-columns: 14px minmax(0, 1fr) auto !important;
+  color: rgba(163, 230, 216, 0.72) !important;
+}
+
+.cinematic-ingest .observation-queue-row svg {
+  filter: drop-shadow(0 0 10px currentColor) !important;
+}
+
+.cinematic-ingest .observation-queue-row.is-running > svg {
+  animation: cinematicSpin 1.4s linear infinite !important;
+}
+
+.cinematic-ingest .observation-queue-row span {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  color: rgba(255, 248, 226, 0.82) !important;
+  font-size: 10.8px !important;
+  line-height: 1.2 !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.cinematic-ingest .observation-queue-row small {
+  min-width: 28px !important;
+  color: currentColor !important;
+  font-size: 9.2px !important;
+  line-height: 1 !important;
+  letter-spacing: 0.08em !important;
+  text-align: right !important;
+}
+
+.cinematic-ingest .observation-queue-row button {
+  width: 17px !important;
+  height: 17px !important;
+  display: inline-grid !important;
+  place-items: center !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: currentColor !important;
+  cursor: pointer !important;
+}
+
+.cinematic-ingest .observation-queue-row button:hover {
+  color: rgba(255, 255, 255, 0.96) !important;
+  filter: brightness(1.2) !important;
+}
+
+.cinematic-ingest .observation-queue-empty {
+  color: rgba(244, 236, 218, 0.42) !important;
+  font-size: 9.5px !important;
+  line-height: 1.3 !important;
+  letter-spacing: 0.12em !important;
+}
+
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher {
+  position: absolute !important;
+  right: clamp(36px, 4.8vw, 86px) !important;
+  top: clamp(34px, 4.4vh, 62px) !important;
+  left: auto !important;
+  bottom: auto !important;
+  z-index: 19 !important;
+  width: min(430px, 32vw) !important;
+  height: 150px !important;
+  min-height: 150px !important;
+  margin: 0 !important;
+  display: block !important;
+  transform: none !important;
+}
+
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .launcher-actions {
+  height: 150px !important;
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 16px 20px !important;
+}
+
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .launcher-action,
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .launcher-action.is-douyin,
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .launcher-action.is-file,
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .launcher-action.is-concept,
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .launcher-action.is-scan {
+  position: relative !important;
+  inset: auto !important;
+  left: auto !important;
+  right: auto !important;
+  top: auto !important;
+  bottom: auto !important;
+  width: auto !important;
+  height: 58px !important;
+  min-height: 58px !important;
+  overflow: hidden !important;
+  transform: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border: 0 !important;
+  backdrop-filter: none !important;
+  display: grid !important;
+  grid-template-columns: 22px 1fr !important;
+  align-content: center !important;
+  gap: 2px 10px !important;
+  padding: 7px 0 7px 12px !important;
+  text-align: left !important;
+  color: rgba(244, 236, 218, 0.82) !important;
+}
+
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .launcher-action .pixel-canvas {
+  height: 58px !important;
+}
+
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .launcher-action button {
+  height: 58px !important;
+  min-height: 58px !important;
+}
+
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .launcher-action > svg {
+  grid-row: 1 / span 2 !important;
+  align-self: center !important;
+}
+
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .launcher-action > b,
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .launcher-action > span {
+  min-width: 0 !important;
+}
+
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .launcher-action > b {
+  font-size: 12px !important;
+  line-height: 1.15 !important;
+}
+
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .launcher-action > span {
+  color: rgba(214, 163, 76, 0.54) !important;
+  font-size: 9px !important;
+  line-height: 1.2 !important;
+}
+
+.cinematic-ingest .ingest-laser-console {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 9 !important;
+  pointer-events: none !important;
+}
+
+.cinematic-ingest .ingest-index-strip {
+  position: absolute !important;
+  left: calc(clamp(300px, 23vw, 410px) + var(--ingest-list-shift, clamp(28px, 3vw, 64px))) !important;
+  top: clamp(138px, 18vh, 196px) !important;
+  bottom: auto !important;
+  z-index: 18 !important;
+  width: clamp(430px, 24vw, 520px) !important;
+  height: clamp(543px, 52vh, 665px) !important;
+  min-height: 0 !important;
+  pointer-events: auto !important;
+  opacity: 0.96 !important;
+  padding-left: 0 !important;
+  padding-right: clamp(92px, 5.4vw, 116px) !important;
+  perspective: 920px !important;
+  perspective-origin: 100% 48% !important;
+  transform-style: preserve-3d !important;
+  --index-search-h: 0px;
+}
+
+.cinematic-ingest .ingest-index-strip .stream-toolbar {
+  position: absolute !important;
+  left: 8px !important;
+  right: clamp(92px, 5.4vw, 116px) !important;
+  top: 0 !important;
+  z-index: 3 !important;
+  height: var(--index-search-h) !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: flex-start !important;
+  pointer-events: auto !important;
+}
+
+.cinematic-ingest .ingest-index-strip .stream-search {
+  width: 100% !important;
+  max-width: none !important;
+}
+
+.cinematic-ingest .ingest-index-strip .stream-search input {
+  height: 24px !important;
+  font-size: 10px !important;
+  border-color: rgba(207, 158, 255, 0.16) !important;
+  background: linear-gradient(90deg, rgba(6, 0, 16, 0.5), rgba(6, 0, 16, 0.12)) !important;
+  color: rgba(238, 232, 255, 0.82) !important;
+  box-shadow: inset 0 0 18px rgba(207, 158, 255, 0.05) !important;
+}
+
+.cinematic-ingest .ingest-search-dock {
+  position: absolute !important;
+  left: 61px !important;
+  bottom: clamp(460px, 36.5vh, 540px) !important;
+  z-index: 19 !important;
+  width: clamp(165px, 9vw, 215px) !important;
+  pointer-events: auto !important;
+  opacity: 0.96 !important;
+}
+
+.cinematic-ingest .ingest-search-dock .stream-search {
+  width: 100% !important;
+  max-width: none !important;
+}
+
+.cinematic-ingest .ingest-search-dock .stream-search svg {
+  left: 13px !important;
+  color: rgba(232, 220, 255, 0.72) !important;
+  filter: drop-shadow(0 0 8px rgba(207, 158, 255, 0.36)) !important;
+}
+
+.cinematic-ingest .ingest-search-dock .stream-search input {
+  height: 32px !important;
+  padding: 0 14px 0 38px !important;
+  border: 1px solid rgba(207, 158, 255, 0.34) !important;
+  border-radius: 2px !important;
+  background:
+    linear-gradient(90deg, rgba(10, 6, 20, 0.9), rgba(10, 5, 18, 0.56) 72%, rgba(10, 5, 18, 0.22)),
+    rgba(5, 4, 10, 0.72) !important;
+  color: rgba(248, 244, 255, 0.94) !important;
+  font: 12px Monaco, Consolas, "PingFang SC", monospace !important;
+  letter-spacing: 0.04em !important;
+  text-shadow: 0 0 10px rgba(207, 158, 255, 0.2) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.035),
+    inset 0 0 20px rgba(207, 158, 255, 0.08),
+    0 0 22px rgba(0, 0, 0, 0.42) !important;
+}
+
+.cinematic-ingest .ingest-search-dock .stream-search input::placeholder {
+  color: rgba(232, 220, 255, 0.48) !important;
+}
+
+.cinematic-ingest .ingest-search-dock .stream-search input:focus {
+  border-color: rgba(232, 220, 255, 0.62) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08),
+    inset 0 0 24px rgba(207, 158, 255, 0.12),
+    0 0 26px rgba(207, 158, 255, 0.14) !important;
+}
+
+.cinematic-ingest .ingest-index-list {
+  display: grid !important;
+  justify-items: end !important;
+  max-height: 100% !important;
+  gap: 4px !important;
+  overflow: auto !important;
+  scrollbar-width: none !important;
+  margin-top: 0 !important;
+  padding: 8px 0 10px 8px !important;
+  transform: rotateX(6deg) rotateY(-8deg) translateZ(0) !important;
+  transform-origin: right center !important;
+  transform-style: preserve-3d !important;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 calc(100% - 24px), transparent 100%) !important;
+}
+
+.cinematic-ingest .ingest-index-list::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.cinematic-ingest .ingest-index-item {
+  display: block !important;
+  position: relative !important;
+  width: min(100%, 340px) !important;
+  min-height: 33px !important;
+  padding: 6px 0 6px 8px !important;
+  border-left-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  --index-depth-scale: 0.86;
+  --index-depth-z: -12px;
+  --index-depth-opacity: 0.94;
+  opacity: var(--index-depth-opacity) !important;
+  transform: translateZ(var(--index-depth-z)) scale(var(--index-depth-scale)) !important;
+  transform-origin: right center !important;
+  transition:
+    opacity 180ms ease,
+    filter 180ms ease,
+    transform 180ms ease,
+    background 180ms ease,
+    border-color 180ms ease !important;
+}
+
+.cinematic-ingest .ingest-index-item:before {
+  content: none !important;
+  display: none !important;
+}
+
+.cinematic-ingest .ingest-index-item:after {
+  content: none !important;
+  display: none !important;
+}
+
+.cinematic-ingest .ingest-index-item:hover,
+.cinematic-ingest .ingest-index-item.is-active {
+  opacity: var(--index-depth-opacity) !important;
+  border-left-color: transparent !important;
+  background: transparent !important;
+  filter: none !important;
+  transform: translateZ(var(--index-depth-z)) scale(var(--index-depth-scale)) !important;
+  box-shadow: none !important;
+}
+
+.cinematic-ingest .ingest-index-item.is-active {
+  border-left-color: transparent !important;
+}
+
+.cinematic-ingest .index-title {
+  width: min(306px, calc(100% - 34px)) !important;
+  margin-left: auto !important;
+  margin-right: 0 !important;
+  padding-right: 0 !important;
+  text-align: right !important;
+}
+
+.cinematic-ingest .index-title b {
+  -webkit-font-smoothing: antialiased !important;
+  color: rgba(255, 255, 255, 1) !important;
+  font-size: 15px !important;
+  font-weight: 430 !important;
+  line-height: 1.34 !important;
+  letter-spacing: 0.04em !important;
+  display: block !important;
+  width: fit-content !important;
+  max-width: 100% !important;
+  margin-left: auto !important;
+  overflow: hidden !important;
+  text-align: right !important;
+  text-shadow:
+    0 0 10px rgba(255, 255, 255, 0.1),
+    0 0 18px rgba(207, 158, 255, 0.08) !important;
+}
+
+.cinematic-ingest .index-title span {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 5px !important;
+  margin-top: 2px !important;
+  color: rgba(221, 210, 255, 0.72) !important;
+  font-size: 11px !important;
+  line-height: 1.15 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.cinematic-ingest .index-title span time {
+  flex: 0 0 auto !important;
+}
+
+.cinematic-ingest .index-source-tag,
+.cinematic-ingest .index-title span em {
+  display: inline-flex !important;
+  align-items: center !important;
+  flex: 0 0 auto !important;
+  height: 13px !important;
+  padding: 0 5px !important;
+  font-style: normal !important;
+  font-size: 8.5px !important;
+  line-height: 1 !important;
+}
+
+.cinematic-ingest .index-source-tag.is-douyin {
+  border: 1px solid rgba(248, 113, 113, 0.26) !important;
+  color: rgba(255, 220, 220, 0.86) !important;
+  background: rgba(248, 113, 113, 0.08) !important;
+}
+
+.cinematic-ingest .index-source-tag.is-upload {
+  border: 1px solid rgba(125, 211, 252, 0.24) !important;
+  color: rgba(215, 247, 255, 0.84) !important;
+  background: rgba(125, 211, 252, 0.075) !important;
+}
+
+.cinematic-ingest .index-source-tag.is-concept {
+  border: 1px solid rgba(52, 211, 153, 0.24) !important;
+  color: rgba(210, 255, 238, 0.84) !important;
+  background: rgba(52, 211, 153, 0.075) !important;
+}
+
+.cinematic-ingest .index-source-tag.is-source {
+  border: 1px solid rgba(214, 163, 76, 0.22) !important;
+  color: rgba(255, 238, 198, 0.84) !important;
+  background: rgba(214, 163, 76, 0.07) !important;
+}
+
+.cinematic-ingest .index-title span em.is-blue {
+  border: 1px solid rgba(147, 197, 253, 0.24) !important;
+  color: rgba(224, 238, 255, 0.86) !important;
+  background: rgba(59, 130, 246, 0.075) !important;
+}
+
+.cinematic-ingest .index-title span em.is-gold {
+  border: 1px solid rgba(251, 191, 36, 0.25) !important;
+  color: rgba(255, 239, 198, 0.88) !important;
+  background: rgba(251, 191, 36, 0.075) !important;
+}
+
+.cinematic-ingest .index-title span em.is-violet {
+  border: 1px solid rgba(167, 139, 250, 0.26) !important;
+  color: rgba(240, 232, 255, 0.88) !important;
+  background: rgba(167, 139, 250, 0.085) !important;
+}
+
+.cinematic-ingest .index-title span em.is-cyan {
+  border: 1px solid rgba(103, 232, 249, 0.24) !important;
+  color: rgba(220, 252, 255, 0.86) !important;
+  background: rgba(34, 211, 238, 0.075) !important;
+}
+
+.cinematic-ingest .index-title span em.is-neutral {
+  border: 1px solid rgba(207, 158, 255, 0.22) !important;
+  color: rgba(244, 240, 255, 0.82) !important;
+  background: rgba(207, 158, 255, 0.055) !important;
+}
+
+.cinematic-ingest .index-actions {
+  position: absolute !important;
+  left: auto !important;
+  right: min(234px, calc(100% - 76px)) !important;
+  top: 7px !important;
+  display: flex !important;
+  justify-content: flex-start !important;
+  align-items: center !important;
+  gap: 4px !important;
+  width: 22px !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin-top: 0 !important;
+  overflow: hidden !important;
+  opacity: 0 !important;
+  transform: translate(8px, 0) !important;
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease !important;
+  white-space: nowrap !important;
+}
+
+.cinematic-ingest .ingest-index-item:hover .index-actions,
+.cinematic-ingest .ingest-index-item:focus-within .index-actions {
+  margin-top: 0 !important;
+  opacity: 1 !important;
+  transform: translate(0, 0) !important;
+}
+
+.cinematic-ingest .index-actions button {
+  width: 18px !important;
+  height: 18px !important;
+  padding: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: rgba(247, 242, 255, 0.78) !important;
+  box-shadow: none !important;
+  text-shadow: 0 0 10px rgba(207, 158, 255, 0.28) !important;
+}
+
+.cinematic-ingest .index-actions button svg {
+  display: block !important;
+  filter: drop-shadow(0 0 8px rgba(207, 158, 255, 0.34)) !important;
+}
+
+.cinematic-ingest .index-actions button:hover {
+  color: rgba(255, 255, 255, 0.98) !important;
+  text-shadow: 0 0 14px rgba(207, 158, 255, 0.54) !important;
+}
+
+.cinematic-ingest .ingest-index-loading {
+  height: 22px !important;
+  display: grid !important;
+  place-items: center !important;
+  color: rgba(207, 158, 255, 0.54) !important;
+  pointer-events: none !important;
+}
+
+.cinematic-ingest .ingest-index-strip .stream-footer {
+  margin-top: 4px !important;
+  padding: 0 2px 0 8px !important;
+  color: rgba(207, 158, 255, 0.45) !important;
+  font-size: 9px !important;
+  transform: rotateX(6deg) rotateY(-8deg) !important;
+  transform-origin: right center !important;
+}
+
+.cinematic-ingest .ingest-index-strip .pager {
+  gap: 5px !important;
+}
+
+.cinematic-ingest .ingest-index-strip .pager button {
+  width: 20px !important;
+  height: 20px !important;
+  color: rgba(207, 158, 255, 0.64) !important;
+}
+
+.cinematic-ingest .ingest-index-empty {
+  min-height: 0 !important;
+  height: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  border-left: 1px solid rgba(214, 163, 76, 0.24);
+}
+
+.cinematic-ingest .ingest-index-empty b,
+.cinematic-ingest .ingest-index-empty p,
+.cinematic-ingest .ingest-index-empty button {
+  display: none !important;
+}
+
+.cinematic-ingest .ingest-laser-stage {
+  position: absolute !important;
+  left: clamp(300px, 23vw, 410px) !important;
+  right: clamp(56px, 5.8vw, 104px) !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  z-index: 8 !important;
+  min-width: 720px !important;
+  pointer-events: auto !important;
+  --media-h: clamp(126px, 15.8vh, 178px);
+  --reader-top: clamp(190px, 25vh, 252px);
+  --detail-reader-top: clamp(96px, 13vh, 144px);
+  --beam-center-x: 42%;
+  --beam-gutter: clamp(26px, 3vw, 46px);
+  --detail-reader-gutter: clamp(8px, 1.05vw, 16px);
+  --detail-reader-pull: clamp(58px, 4.8vw, 96px);
+  --stage-pad-x: clamp(22px, 2.4vw, 42px);
+  --media-w: min(1560px, 99%);
+  --media-edge-x: calc((100% - var(--media-w)) / 2);
+  --media-tab-inset: clamp(42px, 3.8vw, 66px);
+  --ingest-list-shift: clamp(28px, 3vw, 64px);
+}
+
+.cinematic-ingest .ingest-laser-stage.is-media-expanded {
+  --media-h: min(38vh, 330px);
+}
+
+.cinematic-ingest .laser-media-box {
+  position: absolute !important;
+  left: 50% !important;
+  bottom: 0 !important;
+  top: auto !important;
+  z-index: 4 !important;
+  width: var(--media-w) !important;
+  height: var(--media-h) !important;
+  transform: translateX(-50%) !important;
+  background:
+    linear-gradient(180deg, rgba(6, 0, 16, 0.98) 0 10px, rgba(6, 0, 16, 0.86) 11px, rgba(6, 0, 16, 1) 34px),
+    radial-gradient(circle at 42% 0%, rgba(207, 158, 255, 0.26), transparent 32%),
+    #060010 !important;
+}
+
+.cinematic-ingest .laser-media-box:before {
+  left: 4% !important;
+  right: 4% !important;
+  top: -2px !important;
+  height: 4px !important;
+  background: linear-gradient(90deg, transparent, rgba(255, 248, 255, 0.98) 32%, rgba(207, 158, 255, 0.96) 48%, rgba(255, 248, 255, 0.9) 62%, transparent) !important;
+  box-shadow:
+    0 0 18px rgba(255, 248, 255, 0.78),
+    0 0 62px rgba(190, 145, 255, 0.74),
+    0 -22px 72px rgba(221, 205, 255, 0.25) !important;
+}
+
+.cinematic-ingest .ingest-laser-stage.is-media-expanded .laser-media-box {
+  height: var(--media-h) !important;
+}
+
+.cinematic-ingest .laser-media-toggle {
+  position: absolute !important;
+  right: 22px !important;
+  top: 18px !important;
+  z-index: 6 !important;
+  height: 28px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+  padding: 0 10px !important;
+  border: 1px solid rgba(207, 158, 255, 0.34) !important;
+  background: rgba(10, 5, 20, 0.72) !important;
+  color: rgba(239, 232, 255, 0.9) !important;
+  cursor: pointer !important;
+  font: 11px Monaco, Consolas, "PingFang SC", monospace !important;
+  letter-spacing: 0.06em !important;
+  box-shadow:
+    inset 0 0 14px rgba(207, 158, 255, 0.08),
+    0 0 18px rgba(0, 0, 0, 0.46) !important;
+}
+
+.cinematic-ingest .laser-media-toggle svg {
+  color: rgba(207, 158, 255, 0.92) !important;
+  filter: drop-shadow(0 0 8px rgba(207, 158, 255, 0.44)) !important;
+}
+
+.cinematic-ingest .laser-media-toggle:hover {
+  border-color: rgba(239, 232, 255, 0.62) !important;
+  color: rgba(255, 255, 255, 0.98) !important;
+}
+
+.cinematic-ingest .ingest-detail-tabs {
+  position: relative !important;
+  left: auto !important;
+  right: auto !important;
+  top: auto !important;
+  z-index: 1 !important;
+  width: 100% !important;
+  display: grid !important;
+  grid-template-columns: repeat(4, minmax(112px, 1fr)) !important;
+  gap: clamp(1px, 0.14vw, 2px) !important;
+  justify-items: stretch !important;
+  flex: 0 0 auto !important;
+  margin: 8px 0 12px !important;
+  padding: 0 0 12px !important;
+  border-bottom: 1px solid rgba(167, 139, 250, 0.16) !important;
+  pointer-events: auto !important;
+}
+
+.cinematic-ingest .ingest-tab-trigger:after {
+  content: none !important;
+  display: none !important;
+}
+
+.cinematic-ingest .ingest-tab-trigger {
+  width: 100% !important;
+  height: clamp(42px, 4.8vh, 56px) !important;
+  min-height: 0 !important;
+  display: grid !important;
+  grid-template-columns: 18px minmax(0, 1fr) !important;
+  grid-template-rows: 1fr auto auto 1fr !important;
+  align-items: center !important;
+  gap: 1px 6px !important;
+  justify-content: stretch !important;
+  padding: 7px 6px 7px 8px !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: rgba(255, 239, 204, 0.76) !important;
+  cursor: pointer !important;
+  font: 13px Monaco, Consolas, "PingFang SC", monospace !important;
+  letter-spacing: 0.04em !important;
+  text-align: left !important;
+  transform: none !important;
+  opacity: 0.82 !important;
+  text-shadow: 0 0 18px rgba(214, 163, 76, 0.2), 0 2px 18px rgba(0, 0, 0, 0.96) !important;
+  writing-mode: horizontal-tb !important;
+  transition:
+    opacity 180ms ease,
+    filter 180ms ease,
+    transform 180ms ease !important;
+}
+
+.cinematic-ingest .ingest-tab-trigger:before {
+  content: none !important;
+}
+
+.cinematic-ingest .ingest-tab-trigger svg {
+  grid-column: 1 !important;
+  grid-row: 2 / span 2 !important;
+  color: rgba(214, 163, 76, 0.9) !important;
+  filter: drop-shadow(0 0 13px rgba(214, 163, 76, 0.32)) !important;
+}
+
+.cinematic-ingest .ingest-tab-trigger.is-summary svg {
+  color: rgba(207, 158, 255, 0.92) !important;
+  filter: drop-shadow(0 0 13px rgba(167, 139, 250, 0.34)) !important;
+}
+
+.cinematic-ingest .ingest-tab-trigger.is-questions svg {
+  color: rgba(125, 211, 252, 0.9) !important;
+  filter: drop-shadow(0 0 13px rgba(125, 211, 252, 0.3)) !important;
+}
+
+.cinematic-ingest .ingest-tab-trigger.is-chain svg {
+  color: rgba(251, 191, 36, 0.9) !important;
+  filter: drop-shadow(0 0 13px rgba(251, 191, 36, 0.28)) !important;
+}
+
+.cinematic-ingest .ingest-tab-trigger b {
+  grid-column: 2 !important;
+  grid-row: 2 !important;
+  display: block !important;
+  width: 100% !important;
+  overflow: hidden !important;
+  color: rgba(242, 238, 230, 0.88) !important;
+  font-size: 13px !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0.06em !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.cinematic-ingest .ingest-tab-trigger span {
+  grid-column: 2 !important;
+  grid-row: 3 !important;
+  display: block !important;
+  width: 100% !important;
+  overflow: hidden !important;
+  color: rgba(242, 238, 230, 0.42) !important;
+  font-size: 8px !important;
+  line-height: 1.35 !important;
+  letter-spacing: 0.08em !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.cinematic-ingest .ingest-tab-trigger:hover,
+.cinematic-ingest .ingest-tab-trigger.is-active {
+  opacity: 1 !important;
+  filter: brightness(1.18) drop-shadow(0 0 12px rgba(207, 158, 255, 0.18)) !important;
+  background: transparent !important;
+}
+
+.cinematic-ingest .ingest-tab-trigger:hover {
+  transform: translateY(-2px) !important;
+}
+
+.cinematic-ingest .ingest-tab-trigger.is-active b {
+  color: rgba(255, 248, 255, 0.96) !important;
+  text-shadow: 0 0 15px rgba(207, 158, 255, 0.38) !important;
+}
+
+.cinematic-ingest .ingest-tab-trigger.is-active:before {
+  content: none !important;
+}
+
+.cinematic-ingest .ingest-detail-reader {
+  position: absolute !important;
+  left: calc(var(--beam-center-x) + var(--detail-reader-gutter) - var(--detail-reader-pull)) !important;
+  right: max(var(--stage-pad-x), var(--media-edge-x)) !important;
+  top: 60px !important;
+  bottom: calc(var(--media-h) + clamp(28px, 4vh, 52px)) !important;
+  z-index: 17 !important;
+  width: auto !important;
+  min-width: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  pointer-events: auto !important;
+  overflow: hidden !important;
+  opacity: 1 !important;
+  filter: drop-shadow(0 0 18px rgba(207, 158, 255, 0.08)) !important;
+}
+
+.cinematic-ingest .ingest-detail-reader header span,
+.cinematic-ingest .ingest-detail-reader header small {
+  color: rgba(207, 158, 255, 0.82) !important;
+  text-shadow: 0 0 14px rgba(207, 158, 255, 0.2) !important;
+}
+
+.cinematic-ingest .ingest-detail-reader h2 {
+  color: rgba(255, 252, 242, 0.98) !important;
+  text-shadow:
+    0 0 18px rgba(255, 248, 226, 0.16),
+    0 0 30px rgba(207, 158, 255, 0.14),
+    0 2px 18px rgba(0, 0, 0, 0.96) !important;
+}
+
+.cinematic-ingest .detail-markdown {
+  color: rgba(242, 238, 248, 0.9) !important;
+  line-height: 1.76 !important;
+  letter-spacing: 0.025em !important;
+  text-shadow: 0 0 10px rgba(207, 158, 255, 0.07) !important;
+}
+
+.cinematic-ingest .detail-summary {
+  gap: 18px !important;
+}
+
+.cinematic-ingest .detail-summary section,
+.cinematic-ingest .detail-questions section,
+.cinematic-ingest .chain-hints {
+  padding-top: 12px !important;
+  border-top-color: rgba(167, 139, 250, 0.1) !important;
+}
+
+.cinematic-ingest .detail-summary h3,
+.cinematic-ingest .detail-questions h3 {
+  color: rgba(218, 190, 255, 0.95) !important;
+  font-size: 12.5px !important;
+  text-shadow: 0 0 14px rgba(207, 158, 255, 0.18) !important;
+}
+
+.cinematic-ingest .detail-markdown p {
+  margin-top: 0 !important;
+  margin-bottom: 0.64em !important;
+}
+
+.cinematic-ingest .detail-markdown ul,
+.cinematic-ingest .detail-markdown ol {
+  margin-top: 0.3em !important;
+  margin-bottom: 0.78em !important;
+}
+
+.cinematic-ingest .ingest-topic-orbit {
+  position: absolute !important;
+  left: auto !important;
+  top: calc(var(--index-search-h) + ((100% - var(--index-search-h)) / 2)) !important;
+  right: clamp(20px, 1.6vw, 34px) !important;
+  bottom: auto !important;
+  z-index: 18 !important;
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 8px !important;
+  pointer-events: auto !important;
+  transform: translateY(-50%) !important;
+}
+
+.cinematic-ingest .ingest-topic-orbit button {
+  position: relative !important;
+  width: 50px !important;
+  min-height: 62px !important;
+  height: auto !important;
+  display: inline-flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 5px !important;
+  padding: 7px 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: rgba(244, 236, 218, 0.52) !important;
+  font: 10.5px Monaco, Consolas, "PingFang SC", monospace !important;
+  line-height: 1 !important;
+  text-align: center !important;
+  transform-origin: center center !important;
+  transition:
+    color 180ms ease,
+    filter 180ms ease,
+    opacity 180ms ease,
+    transform 180ms ease !important;
+}
+
+.cinematic-ingest .ingest-topic-orbit button span {
+  display: block !important;
+  writing-mode: vertical-rl !important;
+  text-orientation: mixed !important;
+  letter-spacing: 0.12em !important;
+}
+
+.cinematic-ingest .ingest-topic-orbit button svg {
+  flex: 0 0 auto !important;
+  filter: drop-shadow(0 0 8px currentColor) !important;
+}
+
+.cinematic-ingest .ingest-topic-orbit button em {
+  display: none !important;
+}
+
+.cinematic-ingest .ingest-topic-orbit button.is-blue {
+  color: rgba(147, 197, 253, 0.74) !important;
+  --topic-glow: rgba(147, 197, 253, 0.78);
+  --topic-glow-soft: rgba(147, 197, 253, 0.18);
+}
+
+.cinematic-ingest .ingest-topic-orbit button.is-gold {
+  color: rgba(251, 191, 36, 0.78) !important;
+  --topic-glow: rgba(251, 191, 36, 0.82);
+  --topic-glow-soft: rgba(251, 191, 36, 0.16);
+}
+
+.cinematic-ingest .ingest-topic-orbit button.is-violet {
+  color: rgba(190, 172, 255, 0.78) !important;
+  --topic-glow: rgba(190, 172, 255, 0.86);
+  --topic-glow-soft: rgba(190, 172, 255, 0.2);
+}
+
+.cinematic-ingest .ingest-topic-orbit button.is-cyan {
+  color: rgba(103, 232, 249, 0.76) !important;
+  --topic-glow: rgba(103, 232, 249, 0.82);
+  --topic-glow-soft: rgba(103, 232, 249, 0.17);
+}
+
+.cinematic-ingest .ingest-topic-orbit button.is-rose {
+  color: rgba(251, 113, 133, 0.74) !important;
+  --topic-glow: rgba(251, 113, 133, 0.82);
+  --topic-glow-soft: rgba(251, 113, 133, 0.18);
+}
+
+.cinematic-ingest .ingest-topic-orbit button:hover {
+  color: rgba(255, 255, 255, 0.82) !important;
+  background: transparent !important;
+  filter: brightness(1.12) !important;
+  text-shadow: 0 0 10px currentColor !important;
+}
+
+.cinematic-ingest .ingest-topic-orbit button.is-active {
+  color: rgba(255, 255, 255, 0.96) !important;
+  background: transparent !important;
+  filter: brightness(1.2) saturate(1.1) !important;
+  text-shadow:
+    0 0 10px rgba(255, 255, 255, 0.54),
+    0 0 18px var(--topic-glow-soft) !important;
+  transform: translateX(2px) scale(1.045) !important;
+}
+
+.cinematic-ingest .ingest-topic-orbit button.is-active:before {
+  content: "" !important;
+  position: absolute !important;
+  inset: -8px -12px !important;
+  z-index: -1 !important;
+  pointer-events: none !important;
+  background:
+    radial-gradient(ellipse at 52% 50%, var(--topic-glow-soft), transparent 58%),
+    radial-gradient(circle at 50% 18%, rgba(255, 255, 255, 0.1), transparent 34%) !important;
+  filter: blur(2px) !important;
+  opacity: 0.92 !important;
+}
+
+.cinematic-ingest .ingest-topic-orbit button.is-active:after {
+  content: "" !important;
+  position: absolute !important;
+  right: 3px !important;
+  top: 50% !important;
+  width: 4px !important;
+  height: 4px !important;
+  border-radius: 999px !important;
+  pointer-events: none !important;
+  background: var(--topic-glow) !important;
+  box-shadow:
+    0 0 10px var(--topic-glow),
+    0 0 22px var(--topic-glow-soft) !important;
+  transform: translateY(-50%) !important;
+}
+
+.cinematic-ingest .ingest-topic-orbit button.is-active svg {
+  color: var(--topic-glow) !important;
+  filter:
+    drop-shadow(0 0 10px var(--topic-glow))
+    drop-shadow(0 0 18px var(--topic-glow-soft)) !important;
+}
+
+.cinematic-ingest .ingest-topic-orbit button.is-active span {
+  color: rgba(255, 255, 255, 0.96) !important;
+}
+
+/* Match the Dashboard upper-right metric language for ingest command entries. */
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher {
+  left: clamp(28px, 3.2vw, 58px) !important;
+  right: auto !important;
+  top: 50% !important;
+  width: min(178px, 13.5vw) !important;
+  height: clamp(194px, 22vh, 260px) !important;
+  min-height: 0 !important;
+  pointer-events: none !important;
+  opacity: 0;
+  transform: translateY(-50%) scale(var(--cinematic-ui-scale, 1)) !important;
+  transform-origin: left center !important;
+  animation: ingestCommandLauncherFromLeftCenter 0.92s cubic-bezier(0.16, 1, 0.3, 1) 0.78s forwards !important;
+}
+
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .launcher-actions {
+  position: absolute !important;
+  inset: 0 !important;
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  pointer-events: none !important;
+}
+
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric,
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric.is-douyin,
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric.is-file,
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric.is-concept,
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric.is-scan {
+  position: absolute !important;
+  inset: auto !important;
+  width: auto !important;
+  min-width: clamp(94px, 7.3vw, 118px) !important;
+  height: auto !important;
+  min-height: 0 !important;
+  display: block !important;
+  padding: 4px 0 5px 16px !important;
+  overflow: visible !important;
+  border: 0 !important;
+  border-left: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  color: rgba(245, 238, 220, 0.74) !important;
+  cursor: pointer !important;
+  pointer-events: auto !important;
+  text-align: left !important;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.98) !important;
+  filter: none !important;
+  transform: none !important;
+  transition: transform 220ms ease, color 220ms ease, text-shadow 220ms ease, border-color 220ms ease, filter 220ms ease !important;
+}
+
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric:before {
+  content: none !important;
+}
+
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric:after {
+  content: none !important;
+}
+
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric:hover,
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric:focus-visible {
+  border-color: rgba(255, 219, 154, 0.58) !important;
+  filter: brightness(1.2) !important;
+  outline: none !important;
+  transform: translateX(9px) !important;
+}
+
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric > svg {
+  position: absolute !important;
+  left: -8px !important;
+  top: 15px !important;
+  color: var(--metric-accent) !important;
+  filter: drop-shadow(0 0 12px var(--metric-accent-soft)) drop-shadow(0 0 28px rgba(167, 139, 250, 0.18)) !important;
+  animation: cinematicMetricNodePulse 3.1s ease-in-out infinite !important;
+}
+
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric b,
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric span,
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric small {
+  display: block !important;
+  min-width: 0 !important;
+}
+
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric b {
+  color: rgba(255, 236, 190, 0.98) !important;
+  font-family: Monaco, Consolas, "PingFang SC", monospace !important;
+  font-size: clamp(12px, 0.84vw, 15px) !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+  letter-spacing: 0.04em !important;
+  animation: cinematicNumberWake 6.2s ease-in-out infinite !important;
+}
+
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric span {
+  margin-top: 4px !important;
+  color: rgba(245, 238, 220, 0.78) !important;
+  font-size: 8px !important;
+  line-height: 1.25 !important;
+  letter-spacing: 0.1em !important;
+}
+
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric small {
+  margin-top: 2px !important;
+  color: var(--metric-accent) !important;
+  font-size: 7px !important;
+  line-height: 1.15 !important;
+  letter-spacing: 0.12em !important;
+}
+
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric.is-douyin {
+  --metric-accent: rgba(255, 214, 128, 0.86);
+  --metric-accent-soft: rgba(214, 163, 76, 0.24);
+  left: clamp(16px, 1.5vw, 28px) !important;
+  top: 0 !important;
+}
+
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric.is-file {
+  --metric-accent: rgba(126, 190, 255, 0.88);
+  --metric-accent-soft: rgba(126, 190, 255, 0.24);
+  right: 0 !important;
+  top: clamp(48px, 5.3vh, 66px) !important;
+}
+
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric.is-concept {
+  --metric-accent: rgba(224, 216, 255, 0.9);
+  --metric-accent-soft: rgba(167, 139, 250, 0.3);
+  left: 0 !important;
+  top: clamp(96px, 10.6vh, 132px) !important;
+}
+
+.cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric.is-scan {
+  --metric-accent: rgba(163, 230, 216, 0.82);
+  --metric-accent-soft: rgba(93, 211, 190, 0.22);
+  right: clamp(12px, 1.4vw, 24px) !important;
+  top: clamp(144px, 16vh, 198px) !important;
+}
+
+@keyframes ingestCommandLauncherFromLeftCenter {
+  0% {
+    opacity: 0;
+    filter: blur(12px);
+    transform: translate(-18px, -50%) scale(calc(var(--cinematic-ui-scale, 1) * 0.96));
+  }
+
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: translate(0, -50%) scale(var(--cinematic-ui-scale, 1));
+  }
+}
+
+/* Unified Douyin/file access bay: mirrors the bottom media box language. */
+@property --access-ring-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.cinematic-ingest .command-screen.is-access-box {
+  width: min(590px, 54vw) !important;
+  min-height: clamp(300px, 34vh, 374px) !important;
+  padding: 20px 24px 24px !important;
+  border: 0 !important;
+  border-radius: 20px !important;
+  clip-path: none !important;
+  background:
+    linear-gradient(180deg, rgba(6, 0, 16, 0.98) 0 9px, rgba(6, 0, 16, 0.9) 10px, rgba(6, 0, 16, 1) 32px),
+    radial-gradient(circle at 42% 0%, rgba(207, 158, 255, 0.28), transparent 34%),
+    radial-gradient(circle at 88% 18%, rgba(126, 190, 255, 0.1), transparent 28%),
+    #060010 !important;
+  box-shadow:
+    0 24px 86px rgba(0, 0, 0, 0.58),
+    0 0 0 1px rgba(207, 158, 255, 0.12) inset,
+    0 0 68px rgba(190, 145, 255, 0.18),
+    0 -18px 72px rgba(221, 205, 255, 0.1) !important;
+  color: rgba(239, 232, 255, 0.92) !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box:before {
+  left: -2px !important;
+  right: -2px !important;
+  top: -2px !important;
+  bottom: -2px !important;
+  height: auto !important;
+  padding: 2px !important;
+  border-radius: 22px !important;
+  pointer-events: none !important;
+  background: conic-gradient(
+    from var(--access-ring-angle) at 50% 50%,
+    rgba(207, 158, 255, 0.08) 0deg,
+    rgba(207, 158, 255, 0.16) 36deg,
+    rgba(126, 190, 255, 0.62) 70deg,
+    rgba(255, 248, 255, 0.98) 92deg,
+    rgba(207, 158, 255, 0.7) 118deg,
+    rgba(207, 158, 255, 0.12) 158deg,
+    rgba(207, 158, 255, 0.06) 210deg,
+    rgba(255, 248, 255, 0.54) 252deg,
+    rgba(126, 190, 255, 0.26) 286deg,
+    rgba(207, 158, 255, 0.08) 360deg
+  ) !important;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  box-shadow:
+    0 0 16px rgba(255, 248, 255, 0.28),
+    0 0 44px rgba(190, 145, 255, 0.28),
+    0 -18px 54px rgba(221, 205, 255, 0.18) !important;
+  opacity: 0.92;
+  animation: accessBayRingFlow 4.8s linear infinite;
+}
+
+.cinematic-ingest .command-screen.is-access-box:after {
+  display: none !important;
+}
+
+@keyframes accessBayRingFlow {
+  0% {
+    --access-ring-angle: 0deg;
+    filter: brightness(1);
+  }
+
+  50% {
+    filter: brightness(1.18);
+  }
+
+  100% {
+    --access-ring-angle: 360deg;
+    filter: brightness(1);
+  }
+}
+
+.cinematic-ingest .command-screen.is-access-box .command-backdrop {
+  background: transparent !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .command-scanlines {
+  opacity: 0.06 !important;
+  background: repeating-linear-gradient(180deg, rgba(207, 158, 255, 0.09) 0 1px, transparent 1px 8px) !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .command-scanlines:before {
+  inset: 18px !important;
+  border-color: rgba(207, 158, 255, 0.08) !important;
+  box-shadow: inset 0 0 42px rgba(207, 158, 255, 0.055) !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .command-glare {
+  opacity: 0.28 !important;
+  background: radial-gradient(circle at var(--screen-glare-x, 50%) var(--screen-glare-y, 0%), rgba(255, 255, 255, 0.22), rgba(207, 158, 255, 0.12) 18%, transparent 50%) !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .command-screen-header {
+  margin-bottom: 12px !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .command-screen-header span {
+  color: rgba(207, 158, 255, 0.78) !important;
+  font-family: Monaco, Consolas, "PingFang SC", monospace !important;
+  letter-spacing: 0.2em !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .command-screen-header h2 {
+  color: rgba(249, 245, 255, 0.98) !important;
+  font-size: clamp(22px, 1.55vw, 26px) !important;
+  letter-spacing: 0.14em !important;
+  text-shadow: 0 0 26px rgba(207, 158, 255, 0.28) !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .command-screen-header button {
+  color: rgba(239, 232, 255, 0.72) !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .command-screen-header button:hover {
+  color: rgba(255, 255, 255, 0.96) !important;
+  filter: drop-shadow(0 0 10px rgba(207, 158, 255, 0.48)) !important;
+}
+
+.access-bay-panel {
+  position: relative;
+  z-index: 1;
+  transform: translateZ(42px);
+}
+
+.access-bay-tabs {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(112px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.access-bay-tabs button {
+  position: relative;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: rgba(239, 232, 255, 0.62);
+  cursor: pointer;
+  font: 12px Monaco, Consolas, "PingFang SC", monospace;
+  letter-spacing: 0.06em;
+  transform-origin: center center;
+  transition:
+    color 180ms ease,
+    filter 180ms ease,
+    transform 180ms ease;
+}
+
+.access-bay-tabs button:first-child {
+  --access-tab-glow: rgba(255, 214, 128, 0.86);
+  --access-tab-glow-soft: rgba(255, 214, 128, 0.18);
+}
+
+.access-bay-tabs button:nth-child(2) {
+  --access-tab-glow: rgba(126, 190, 255, 0.88);
+  --access-tab-glow-soft: rgba(126, 190, 255, 0.18);
+}
+
+.access-bay-tabs button svg {
+  color: rgba(207, 158, 255, 0.68);
+  filter: drop-shadow(0 0 8px rgba(207, 158, 255, 0.28));
+}
+
+.access-bay-tabs button:hover {
+  color: rgba(255, 255, 255, 0.84);
+  filter: brightness(1.08);
+  text-shadow: 0 0 10px currentColor;
+}
+
+.access-bay-tabs button.is-active {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.96);
+  filter: brightness(1.18) saturate(1.08);
+  text-shadow:
+    0 0 10px rgba(255, 255, 255, 0.52),
+    0 0 18px var(--access-tab-glow-soft);
+  transform: translateY(-1px) scale(1.035);
+}
+
+.access-bay-tabs button.is-active:before {
+  content: "";
+  position: absolute;
+  inset: -8px -14px;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 50% 50%, var(--access-tab-glow-soft), transparent 58%),
+    radial-gradient(circle at 50% 20%, rgba(255, 255, 255, 0.1), transparent 34%);
+  filter: blur(2px);
+  opacity: 0.92;
+}
+
+.access-bay-tabs button.is-active svg {
+  color: var(--access-tab-glow);
+  filter:
+    drop-shadow(0 0 10px var(--access-tab-glow))
+    drop-shadow(0 0 18px var(--access-tab-glow-soft));
+}
+
+.cinematic-ingest .command-screen.is-access-box .access-bay-form {
+  min-height: 194px !important;
+  padding: 0 !important;
+  transform: none !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .ingest-form textarea,
+.cinematic-ingest .command-screen.is-access-box .ingest-form input,
+.cinematic-ingest .command-screen.is-access-box .ingest-drop-zone {
+  border: 1px solid rgba(207, 158, 255, 0.08) !important;
+  border-radius: 16px !important;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(207, 158, 255, 0.08), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 36%),
+    rgba(6, 0, 16, 0.46) !important;
+  color: rgba(248, 244, 255, 0.92) !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.018),
+    inset 0 0 34px rgba(207, 158, 255, 0.028),
+    0 0 18px rgba(207, 158, 255, 0.025) !important;
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease,
+    filter 180ms ease !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .ingest-form textarea {
+  min-height: 138px !important;
+  line-height: 1.7 !important;
+  resize: vertical !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .ingest-form textarea::placeholder,
+.cinematic-ingest .command-screen.is-access-box .ingest-form input::placeholder {
+  color: rgba(239, 232, 255, 0.34) !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .ingest-form textarea:focus,
+.cinematic-ingest .command-screen.is-access-box .ingest-form input:focus,
+.cinematic-ingest .command-screen.is-access-box .ingest-drop-zone.is-dragging {
+  border-color: rgba(207, 158, 255, 0.28) !important;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 248, 255, 0.1), transparent 34%),
+    radial-gradient(circle at 78% 80%, rgba(126, 190, 255, 0.055), transparent 36%),
+    rgba(6, 0, 16, 0.54) !important;
+  outline: none !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.035),
+    inset 0 0 44px rgba(207, 158, 255, 0.06),
+    0 0 28px rgba(207, 158, 255, 0.12),
+    0 0 64px rgba(126, 190, 255, 0.04) !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .ingest-drop-zone {
+  position: relative !important;
+  min-height: 138px !important;
+  display: grid !important;
+  place-items: center !important;
+  align-content: center !important;
+  gap: 10px !important;
+  overflow: hidden !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .ingest-drop-zone:before {
+  content: "" !important;
+  position: absolute !important;
+  inset: 12px !important;
+  border-radius: 14px !important;
+  pointer-events: none !important;
+  background:
+    linear-gradient(90deg, transparent, rgba(207, 158, 255, 0.12), transparent) 0 0 / 220% 1px no-repeat,
+    linear-gradient(90deg, transparent, rgba(126, 190, 255, 0.08), transparent) 100% 100% / 220% 1px no-repeat !important;
+  opacity: 0.58 !important;
+  animation: accessBayFieldSweep 5.4s ease-in-out infinite;
+}
+
+.cinematic-ingest .command-screen.is-access-box .ingest-drop-zone.is-dragging:before {
+  opacity: 0.95 !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .ingest-drop-zone svg {
+  color: rgba(207, 158, 255, 0.92) !important;
+  filter: drop-shadow(0 0 16px rgba(207, 158, 255, 0.5)) !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .ingest-drop-zone strong {
+  color: rgba(255, 255, 255, 0.96) !important;
+  font-size: 15px !important;
+  letter-spacing: 0.04em !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .ingest-drop-zone span {
+  color: rgba(239, 232, 255, 0.54) !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .ingest-form-row {
+  grid-template-columns: 1fr minmax(174px, 0.42fr) !important;
+  gap: 12px !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .ingest-form-row:has(input + input + button) {
+  grid-template-columns: 1fr minmax(140px, 0.42fr) minmax(174px, 0.34fr) !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .ingest-form button {
+  position: relative !important;
+  overflow: hidden !important;
+  min-width: 174px !important;
+  min-height: 42px !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: rgba(255, 255, 255, 0.99) !important;
+  font-weight: 650 !important;
+  letter-spacing: 0.04em !important;
+  box-shadow: none !important;
+  text-shadow:
+    0 0 4px rgba(255, 255, 255, 0.5),
+    0 0 14px rgba(255, 255, 255, 0.36),
+    0 0 24px rgba(207, 158, 255, 0.55) !important;
+  transition:
+    color 180ms ease,
+    filter 180ms ease,
+    transform 180ms ease !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .ingest-form button:before {
+  content: "" !important;
+  position: absolute !important;
+  left: 13% !important;
+  right: 13% !important;
+  bottom: 4px !important;
+  height: 2px !important;
+  pointer-events: none !important;
+  background: linear-gradient(90deg, transparent, rgba(126, 190, 255, 0.72), rgba(255, 255, 255, 0.94), rgba(207, 158, 255, 0.96), transparent) !important;
+  box-shadow:
+    0 0 8px rgba(255, 255, 255, 0.36),
+    0 0 18px rgba(207, 158, 255, 0.78),
+    0 0 34px rgba(126, 190, 255, 0.26) !important;
+  opacity: 1 !important;
+  transform: scaleX(1) !important;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .ingest-form button:after {
+  content: "" !important;
+  position: absolute !important;
+  left: 50% !important;
+  bottom: -9px !important;
+  width: 78% !important;
+  height: 18px !important;
+  pointer-events: none !important;
+  background: radial-gradient(ellipse at 50% 50%, rgba(207, 158, 255, 0.3), rgba(126, 190, 255, 0.12) 42%, transparent 70%) !important;
+  filter: blur(5px) !important;
+  opacity: 0.72 !important;
+  transform: translateX(-50%) !important;
+  animation: accessBayButtonPulse 2.8s ease-in-out infinite !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .ingest-form button svg {
+  color: rgba(255, 255, 255, 0.99) !important;
+  stroke-width: 2.2 !important;
+  filter:
+    drop-shadow(0 0 5px rgba(255, 255, 255, 0.5))
+    drop-shadow(0 0 12px rgba(207, 158, 255, 0.72))
+    drop-shadow(0 0 20px rgba(126, 190, 255, 0.22)) !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .ingest-form button:hover:not(:disabled) {
+  color: #fff !important;
+  filter: brightness(1.2) saturate(1.12) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: none !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .ingest-form button:hover:not(:disabled):before {
+  opacity: 1 !important;
+  transform: scaleX(1.08) !important;
+}
+
+.cinematic-ingest .command-screen.is-access-box .ingest-form button:disabled {
+  opacity: 0.96 !important;
+  cursor: not-allowed !important;
+  filter: none !important;
+}
+
+@keyframes accessBayButtonPulse {
+  0%,
+  100% {
+    opacity: 0.48 !important;
+    transform: translateX(-50%) scaleX(0.82) !important;
+  }
+
+  50% {
+    opacity: 0.86 !important;
+    transform: translateX(-50%) scaleX(1) !important;
+  }
+}
+
+@keyframes accessBayFieldSweep {
+  0%,
+  100% {
+    background-position:
+      0% 0,
+      100% 100%;
+  }
+
+  50% {
+    background-position:
+      100% 0,
+      0% 100%;
+  }
+}
+
+.cinematic-ingest .command-screen.is-access-box .ingest-error {
+  margin-top: 12px !important;
+  color: rgba(255, 196, 196, 0.88) !important;
+  transform: translateZ(42px) !important;
+}
+
+@media (max-width: 980px) {
+  .cinematic-ingest .command-screen.is-access-box {
+    width: min(92vw, 590px) !important;
+    min-height: min(430px, 74vh) !important;
+    padding: 20px !important;
+  }
+
+  .cinematic-ingest .command-screen.is-access-box .ingest-form-row,
+  .cinematic-ingest .command-screen.is-access-box .ingest-form-row:has(input + input + button) {
+    grid-template-columns: 1fr !important;
+  }
+
+  .access-bay-tabs {
+    width: 100%;
+  }
+}
+
+.ingest-delete-confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  pointer-events: auto;
+}
+
+.delete-confirm-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background:
+    radial-gradient(circle at 50% 54%, rgba(207, 158, 255, 0.16), transparent 34%),
+    rgba(2, 4, 12, 0.5);
+  backdrop-filter: blur(6px);
+  cursor: default;
+}
+
+.delete-confirm-screen {
+  position: relative;
+  z-index: 1;
+  width: min(420px, calc(100vw - 44px));
+  padding: 24px 24px 22px;
+  color: rgba(244, 247, 255, 0.96);
+  background:
+    linear-gradient(180deg, rgba(12, 16, 30, 0.94), rgba(4, 6, 14, 0.98)),
+    #050713;
+  border: 1px solid rgba(207, 158, 255, 0.28);
+  border-radius: 20px;
+  box-shadow:
+    0 22px 80px rgba(0, 0, 0, 0.58),
+    0 0 42px rgba(207, 158, 255, 0.16),
+    inset 0 0 42px rgba(207, 158, 255, 0.07);
+  overflow: hidden;
+}
+
+.delete-confirm-screen:before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(from 140deg, transparent, rgba(207, 158, 255, 0.72), transparent 30%, rgba(103, 232, 249, 0.45), transparent 62%, rgba(251, 113, 133, 0.5), transparent);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0.72;
+}
+
+.delete-confirm-mark {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 16px;
+  color: rgba(251, 113, 133, 0.96);
+  border-radius: 50%;
+  background: rgba(251, 113, 133, 0.1);
+  box-shadow: 0 0 22px rgba(251, 113, 133, 0.26);
+}
+
+.delete-confirm-copy span {
+  display: block;
+  margin-bottom: 7px;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: rgba(207, 158, 255, 0.72);
+}
+
+.delete-confirm-copy h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.delete-confirm-copy p {
+  margin: 12px 0 0;
+  color: rgba(226, 232, 255, 0.72);
+  font-size: 13px;
+  line-height: 1.7;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.delete-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 18px;
+  margin-top: 26px;
+}
+
+.delete-confirm-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  padding: 7px 0;
+  color: rgba(226, 232, 255, 0.7);
+  background: transparent;
+  border-bottom: 1px solid rgba(226, 232, 255, 0.22);
+  font-size: 13px;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+
+.delete-confirm-actions button:hover {
+  color: rgba(255, 255, 255, 0.96);
+  border-bottom-color: rgba(207, 158, 255, 0.72);
+}
+
+.delete-confirm-actions button.is-danger {
+  color: rgba(255, 174, 190, 0.98);
+  border-bottom-color: rgba(251, 113, 133, 0.68);
+  text-shadow: 0 0 14px rgba(251, 113, 133, 0.32);
+}
+
+.delete-confirm-actions button.is-danger svg {
+  color: rgba(251, 113, 133, 0.98);
+  filter: drop-shadow(0 0 8px rgba(251, 113, 133, 0.38));
+}

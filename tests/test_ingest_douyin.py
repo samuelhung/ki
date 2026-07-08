@@ -10,8 +10,9 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app" / "backend"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from ingest.douyin import parse_share_text, download_video, extract_first_url
+from zhiji_backend.ingest.douyin import parse_share_text, download_video, extract_first_url
 
 
 class TestExtractFirstUrl:
@@ -63,22 +64,40 @@ class TestParseShareText:
         mock.raise_for_status = lambda: None
         return {"get.return_value": mock}
 
-    @patch("ingest.douyin.requests")
-    def test_parses_valid_share_text(self, mock_requests):
-        """Parse a valid douyin share text and return video info."""
+    @staticmethod
+    def _response(*, url="", text="", json_data=None, status_code=200, headers=None):
+        resp = MagicMock()
+        resp.url = url
+        resp.text = text
+        resp.status_code = status_code
+        resp.headers = headers or {}
+        resp.raise_for_status = lambda: None
+        if json_data is None:
+            resp.json.side_effect = ValueError("empty response")
+        else:
+            resp.json.return_value = json_data
+        return resp
+
+    @patch("zhiji_backend.ingest.douyin.requests.Session")
+    def test_parses_valid_share_text_from_detail_api(self, mock_session_cls):
+        """Parse a valid douyin share text from the detail API."""
         # First GET: follow short link redirect
-        redirect_resp = MagicMock()
-        redirect_resp.url = "https://www.douyin.com/video/v1234567890"
-        redirect_resp.raise_for_status = lambda: None
+        redirect_resp = self._response(url="https://www.douyin.com/video/v1234567890")
 
-        # Second GET: iesdouyin page with _ROUTER_DATA
-        page_resp = MagicMock()
-        router_json = json.dumps(self.FAKE_ROUTER_DATA, ensure_ascii=False)
-        page_resp.text = f'<html><script>window._ROUTER_DATA = {router_json};</script></html>'
-        page_resp.raise_for_status = lambda: None
+        detail_resp = self._response(json_data={
+            "aweme_detail": {
+                "desc": "测试视频标题",
+                "video": {
+                    "play_addr": {
+                        "url_list": ["https://aweme.snssdk.com/playwm/video_123"]
+                    }
+                },
+            }
+        }, text='{"aweme_detail":{}}', headers={"content-type": "application/json"})
 
-        mock_requests.Session = MagicMock  # not used
-        mock_requests.get.side_effect = [redirect_resp, page_resp]
+        session = MagicMock()
+        session.get.side_effect = [redirect_resp, detail_resp]
+        mock_session_cls.return_value = session
 
         share = "看看这个 https://v.douyin.com/abc123/ 有意思"
         info = parse_share_text(share)
@@ -89,31 +108,67 @@ class TestParseShareText:
         # download_url should have playwm replaced with play
         assert "playwm" not in info["download_url"]
 
-    @patch("ingest.douyin.requests")
+    @patch("zhiji_backend.ingest.douyin.requests.Session")
+    def test_falls_back_to_landing_page_when_detail_api_is_empty(self, mock_session_cls):
+        """Use embedded landing-page metadata when the detail API returns an empty JSON body."""
+        page_json = json.dumps({
+            "extra": {"logid": "fake"},
+            "item_list": [{
+                "aweme_id": "7656011545876516147",
+                "desc": "真翻盘了吗？看懂 Intel 翻身",
+                "video": {
+                    "play_addr": {
+                        "url_list": [
+                            "https://aweme.snssdk.com/aweme/v1/playwm/?video_id=v0200"
+                        ]
+                    }
+                },
+            }],
+        }, ensure_ascii=False)
+        landing_html = f'<html><script>window.__DATA__={{"videoInfoRes":{page_json}}};</script></html>'
+        redirect_resp = self._response(
+            url="https://www.iesdouyin.com/share/video/7656011545876516147/",
+            text=landing_html,
+        )
+        detail_resp = self._response(
+            text="",
+            headers={"content-type": "application/json"},
+        )
+
+        session = MagicMock()
+        session.get.side_effect = [redirect_resp, detail_resp]
+        mock_session_cls.return_value = session
+
+        info = parse_share_text("https://v.douyin.com/Rv8VNZLU-88/")
+
+        assert info["video_id"] == "7656011545876516147"
+        assert info["platform_title"] == "真翻盘了吗？看懂 Intel 翻身"
+        assert info["download_url"] == "https://aweme.snssdk.com/aweme/v1/play/?video_id=v0200"
+
+    @patch("zhiji_backend.ingest.douyin.requests")
     def test_raises_when_no_video_url_found(self, mock_requests):
         """Share text without a douyin URL should raise ValueError."""
         with pytest.raises(ValueError, match="未找到抖音分享链接"):
             parse_share_text("just chatting, no link here")
 
-    @patch("ingest.douyin.requests")
-    def test_raises_when_page_has_no_router_data(self, mock_requests):
-        """Page without _ROUTER_DATA should raise RuntimeError."""
-        redirect_resp = MagicMock()
-        redirect_resp.url = "https://www.douyin.com/video/v1234567890"
-        redirect_resp.raise_for_status = lambda: None
+    @patch("zhiji_backend.ingest.douyin.requests.Session")
+    def test_raises_when_no_detail_or_page_metadata(self, mock_session_cls):
+        """Raise a clear error when neither API nor landing page has metadata."""
+        redirect_resp = self._response(
+            url="https://www.douyin.com/video/v1234567890",
+            text="<html>no data here</html>",
+        )
+        detail_resp = self._response(text="", headers={"content-type": "application/json"})
+        session = MagicMock()
+        session.get.side_effect = [redirect_resp, detail_resp]
+        mock_session_cls.return_value = session
 
-        page_resp = MagicMock()
-        page_resp.text = "<html>no data here</html>"
-        page_resp.raise_for_status = lambda: None
-
-        mock_requests.get.side_effect = [redirect_resp, page_resp]
-
-        with pytest.raises(RuntimeError, match="_ROUTER_DATA"):
+        with pytest.raises(RuntimeError, match="videoInfoRes"):
             parse_share_text("https://v.douyin.com/abc123/")
 
 
 class TestDownloadVideo:
-    @patch("ingest.douyin.requests")
+    @patch("zhiji_backend.ingest.douyin.requests")
     def test_downloads_video_to_path(self, mock_requests, tmp_path: Path):
         """Video download writes content to the destination file."""
         resp = MagicMock()
