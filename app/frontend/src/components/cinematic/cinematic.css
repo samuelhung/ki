@@ -18,7 +18,7 @@
   display: block;
   background: #020203;
   filter: brightness(0.035) saturate(0.45);
-  animation: cinematicWebglBloom 2.46s cubic-bezier(0.16, 1, 0.3, 1) 0.16s forwards;
+  animation: cinematicWebglBloom 2.42s cubic-bezier(0.16, 1, 0.3, 1) 0.18s forwards;
 }
 
 .cinematic-film {
@@ -37,7 +37,7 @@
   z-index: 30;
   overflow: hidden;
   pointer-events: none;
-  animation: cinematicIntroGone 0.01s linear 2.28s forwards;
+  animation: cinematicIntroGone 0.01s linear 2.36s forwards;
 }
 
 .cinematic-intro-wipe .curtain {
@@ -52,12 +52,12 @@
 
 .cinematic-intro-wipe .curtain-left {
   left: 0;
-  animation: cinematicCurtainLeftOpen 1.26s cubic-bezier(0.78, 0, 0.18, 1) 0.78s forwards;
+  animation: cinematicCurtainLeftOpen 1.22s cubic-bezier(0.78, 0, 0.18, 1) 0.72s forwards;
 }
 
 .cinematic-intro-wipe .curtain-right {
   right: 0;
-  animation: cinematicCurtainRightOpen 1.26s cubic-bezier(0.78, 0, 0.18, 1) 0.78s forwards;
+  animation: cinematicCurtainRightOpen 1.22s cubic-bezier(0.78, 0, 0.18, 1) 0.72s forwards;
 }
 
 .cinematic-intro-wipe .curtain-left:after,
@@ -67,10 +67,10 @@
   top: 0;
   bottom: 0;
   width: 1px;
-  background: linear-gradient(180deg, transparent, rgba(255, 235, 182, 0.62), rgba(255, 255, 255, 0.8), rgba(214, 163, 76, 0.54), transparent);
+  background: linear-gradient(180deg, transparent, rgba(255, 235, 182, 0.34), rgba(255, 255, 255, 0.48), rgba(214, 163, 76, 0.32), transparent);
   opacity: 0;
-  filter: blur(0.2px);
-  animation: cinematicEdgeGlint 1.18s ease 0.5s forwards;
+  filter: blur(0.35px);
+  animation: cinematicEdgeGlint 0.92s ease 0.7s forwards;
 }
 
 .cinematic-intro-wipe .curtain-left:after { right: -1px; }
@@ -88,9 +88,9 @@
   box-shadow: 0 0 18px rgba(255, 246, 220, 0.96), 0 0 58px rgba(255, 196, 80, 0.68), 0 0 122px rgba(214, 163, 76, 0.38);
   transform: translate(-50%, -50%) scaleY(0);
   animation:
-    cinematicTearSeed 0.28s ease 0.03s forwards,
-    cinematicTearWake 1.05s cubic-bezier(0.16, 1, 0.3, 1) 0.22s forwards,
-    cinematicTearAbsorb 0.78s cubic-bezier(0.22, 1, 0.36, 1) 1.34s forwards;
+    cinematicTearSeed 0.24s ease 0.12s forwards,
+    cinematicTearWake 0.82s cubic-bezier(0.16, 1, 0.3, 1) 0.24s forwards,
+    cinematicTearAbsorb 0.62s cubic-bezier(0.22, 1, 0.36, 1) 1.28s forwards;
 }
 
 .cinematic-intro-wipe .intro-line:before {
@@ -98,12 +98,13 @@
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 7px;
+  width: 5px;
   height: 1060px;
   transform: translate(-50%, -50%) rotate(5deg);
-  background: linear-gradient(180deg, transparent, rgba(255, 245, 214, 0.92), rgba(214, 163, 76, 0.56), transparent);
-  filter: blur(1.8px);
-  opacity: 0.74;
+  background: linear-gradient(180deg, transparent, rgba(255, 245, 214, 0.72), rgba(214, 163, 76, 0.36), transparent);
+  filter: blur(2.2px);
+  opacity: 0;
+  animation: cinematicTearGhost 0.96s cubic-bezier(0.16, 1, 0.3, 1) 0.28s forwards;
 }
 
 .cinematic-intro-wipe .intro-line:after {
@@ -111,13 +112,13 @@
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 1600px;
+  width: 1440px;
   height: 2px;
   transform: translate(-50%, -50%) scaleX(0);
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.9), rgba(255, 218, 142, 0.98), rgba(167, 139, 250, 0.34), transparent);
-  box-shadow: 0 0 24px rgba(255, 220, 150, 0.82), 0 0 86px rgba(214, 163, 76, 0.42);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.92), rgba(255, 218, 142, 0.98), rgba(167, 139, 250, 0.28), transparent);
+  box-shadow: 0 0 22px rgba(255, 220, 150, 0.76), 0 0 72px rgba(214, 163, 76, 0.34);
   opacity: 0;
-  animation: cinematicCrossSweep 0.74s cubic-bezier(0.16, 1, 0.3, 1) 0.84s forwards;
+  animation: cinematicCrossSweep 0.56s cubic-bezier(0.16, 1, 0.3, 1) 0.88s forwards;
 }
 
 .cinematic-intro-wipe .intro-spark {
@@ -131,7 +132,7 @@
   background: #fff4cf;
   box-shadow: 0 0 22px rgba(255, 255, 255, 0.95), 0 0 74px rgba(255, 199, 78, 0.84), 0 0 150px rgba(214, 163, 76, 0.42);
   transform: translate(-50%, -50%) scale(0);
-  animation: cinematicSparkWake 1.22s cubic-bezier(0.16, 1, 0.3, 1) 0.02s forwards;
+  animation: cinematicSparkWake 0.92s cubic-bezier(0.16, 1, 0.3, 1) 0.06s forwards;
 }
 
 .cinematic-dashboard-shell {
@@ -203,7 +204,7 @@
   pointer-events: none;
   opacity: 0;
   filter: none;
-  animation: cinematicHeroResolve 1.05s cubic-bezier(0.16, 1, 0.3, 1) 1.78s forwards;
+  animation: cinematicHeroResolve 1.02s cubic-bezier(0.16, 1, 0.3, 1) 1.9s forwards;
 }
 
 .cinematic-hero:before {
@@ -239,7 +240,7 @@
     0 0 34px rgba(255, 214, 128, 0.18),
     0 0 92px rgba(120, 185, 255, 0.08);
   transform: skewX(-5deg) scale(0.985);
-  animation: cinematicTitleStitchFinal 0.85s cubic-bezier(0.16, 1, 0.3, 1) 0.93s forwards;
+  animation: cinematicTitleStitchFinal 0.86s cubic-bezier(0.16, 1, 0.3, 1) 1.08s forwards;
 }
 
 .cinematic-hero h1 span {
@@ -259,7 +260,7 @@
   filter: blur(8px);
   opacity: 0;
   mix-blend-mode: screen;
-  animation: cinematicCenterTearOpen 1.85s cubic-bezier(0.16, 1, 0.3, 1) 1.42s forwards;
+  animation: cinematicCenterTearOpen 1.65s cubic-bezier(0.16, 1, 0.3, 1) 1.58s forwards;
 }
 
 .cinematic-hero h1:after {
@@ -274,7 +275,7 @@
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.98), rgba(255, 198, 80, 0.98), transparent);
   opacity: 0;
   filter: blur(0.2px);
-  animation: cinematicCenterSlash 1.85s cubic-bezier(0.16, 1, 0.3, 1) 1.42s forwards, cinematicScanSlash 5.2s cubic-bezier(0.22, 1, 0.36, 1) 3.65s infinite;
+  animation: cinematicCenterSlash 1.65s cubic-bezier(0.16, 1, 0.3, 1) 1.58s forwards, cinematicScanSlash 5.2s cubic-bezier(0.22, 1, 0.36, 1) 3.75s infinite;
 }
 
 .cinematic-hero h1 .brand-title {
@@ -292,7 +293,7 @@
   filter: blur(0.6px);
   opacity: 0;
   mix-blend-mode: screen;
-  animation: cinematicStitchSeam 1.45s cubic-bezier(0.16, 1, 0.3, 1) 2.05s forwards;
+  animation: cinematicStitchSeam 1.35s cubic-bezier(0.16, 1, 0.3, 1) 2.16s forwards;
 }
 
 .cinematic-hero h1 .brand-title:after {
@@ -308,7 +309,7 @@
   mix-blend-mode: screen;
   transform: scaleX(0);
   transform-origin: left;
-  animation: cinematicLineGlow 5.2s cubic-bezier(0.22, 1, 0.36, 1) 3.65s infinite;
+  animation: cinematicLineGlow 5.2s cubic-bezier(0.22, 1, 0.36, 1) 3.75s infinite;
 }
 
 .cinematic-hero .line3 {
@@ -1174,19 +1175,19 @@
 
 @keyframes cinematicSparkWake {
   0% { opacity: 0; transform: translate(-50%, -50%) scale(0); }
-  15% { opacity: 1; transform: translate(-50%, -50%) scale(1.35); }
-  46% { opacity: 0.95; transform: translate(-50%, -50%) scale(0.72); }
-  100% { opacity: 0; transform: translate(-50%, -50%) scale(4.8); }
+  18% { opacity: 1; transform: translate(-50%, -50%) scale(1.2); }
+  48% { opacity: 0.88; transform: translate(-50%, -50%) scale(0.68); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(3.8); }
 }
 
 @keyframes cinematicTearSeed {
   0% { opacity: 0; transform: translate(-50%, -50%) scaleY(0); }
-  100% { opacity: 1; transform: translate(-50%, -50%) scaleY(0.72); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scaleY(0.68); }
 }
 
 @keyframes cinematicTearWake {
-  0% { transform: translate(-50%, -50%) scaleY(0.72); filter: blur(0); }
-  46% { transform: translate(-50%, -50%) scaleY(1.08); filter: blur(0.4px); }
+  0% { transform: translate(-50%, -50%) scaleY(0.68); filter: blur(0); }
+  52% { transform: translate(-50%, -50%) scaleY(1.05); filter: blur(0.35px); }
   100% { transform: translate(-50%, -50%) scaleY(1); filter: blur(0); }
 }
 
@@ -1195,16 +1196,23 @@
   100% { opacity: 0; transform: translate(-50%, -50%) scaleY(0.24); }
 }
 
+@keyframes cinematicTearGhost {
+  0% { opacity: 0; transform: translate(-50%, -50%) rotate(5deg) scaleY(0.58); }
+  34% { opacity: 0.46; transform: translate(-50%, -50%) rotate(5deg) scaleY(1.02); }
+  72% { opacity: 0.34; transform: translate(-50%, -50%) rotate(5deg) scaleY(0.96); }
+  100% { opacity: 0; transform: translate(-50%, -50%) rotate(5deg) scaleY(0.42); }
+}
+
 @keyframes cinematicCrossSweep {
   0% { opacity: 0; transform: translate(-50%, -50%) scaleX(0); }
-  38% { opacity: 0.95; transform: translate(-50%, -50%) scaleX(0.78); }
-  72% { opacity: 0.58; transform: translate(-50%, -50%) scaleX(1); }
-  100% { opacity: 0; transform: translate(-50%, -50%) scaleX(1.05); }
+  34% { opacity: 0.96; transform: translate(-50%, -50%) scaleX(0.72); }
+  68% { opacity: 0.46; transform: translate(-50%, -50%) scaleX(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scaleX(1.08); }
 }
 
 @keyframes cinematicEdgeGlint {
-  0%, 22% { opacity: 0; }
-  45% { opacity: 0.92; }
+  0%, 24% { opacity: 0; }
+  48% { opacity: 0.48; }
   100% { opacity: 0; }
 }
 
@@ -1226,10 +1234,10 @@
 
 @keyframes cinematicWebglBloom {
   0% { filter: brightness(0.035) saturate(0.45); }
-  20% { filter: brightness(0.11) saturate(0.62); }
-  48% { filter: brightness(0.34) saturate(0.82); }
-  70% { filter: brightness(0.92) saturate(1.08); }
-  100% { filter: brightness(1.18) saturate(1.15) contrast(1.04); }
+  22% { filter: brightness(0.09) saturate(0.58); }
+  50% { filter: brightness(0.26) saturate(0.76); }
+  72% { filter: brightness(0.86) saturate(1.04); }
+  100% { filter: brightness(1.16) saturate(1.14) contrast(1.04); }
 }
 
 @keyframes cinematicHudPlainFromTop {
