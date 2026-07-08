@@ -35,8 +35,29 @@ function PageLoading() {
 }
 
 function CurtainOverlay() {
+  const location = useLocation();
   const { curtainPhase, onAnimationComplete } = useCurtain();
-  const active = curtainPhase !== 'idle';
+  const [pageEntering, setPageEntering] = useState(() => location.pathname !== '/');
+  const active = curtainPhase !== 'idle' || pageEntering;
+  const leftTarget = curtainPhase === 'covering' ? 0 : '-104%';
+  const rightTarget = curtainPhase === 'covering' ? 0 : '104%';
+  const enterTransition = { duration: 0.68, ease: [0.16, 1, 0.3, 1] as const };
+  const curtainTransition = {
+    duration: curtainPhase === 'covering' ? 0.42 : 0.58,
+    ease: [0.16, 1, 0.3, 1] as const
+  };
+
+  useEffect(() => {
+    if (location.pathname === '/') setPageEntering(false);
+  }, [location.pathname]);
+
+  function handleRightAnimationComplete() {
+    if (pageEntering) {
+      setPageEntering(false);
+      return;
+    }
+    onAnimationComplete();
+  }
 
   return (
     <div className="fixed inset-0 z-50 pointer-events-none overflow-hidden">
@@ -46,14 +67,9 @@ function CurtainOverlay() {
           background: 'linear-gradient(90deg, rgba(3, 4, 8, 0.98), rgba(12, 10, 18, 0.94) 78%, rgba(214, 163, 76, 0.16))',
           boxShadow: active ? '18px 0 70px rgba(214, 163, 76, 0.18)' : 'none',
         }}
-        initial={{ x: '-104%' }}
-        animate={{
-          x: curtainPhase === 'covering' ? 0 : '-104%'
-        }}
-        transition={{
-          duration: curtainPhase === 'covering' ? 0.42 : 0.58,
-          ease: [0.16, 1, 0.3, 1]
-        }}
+        initial={pageEntering ? { x: 0 } : { x: '-104%' }}
+        animate={{ x: pageEntering ? '-104%' : leftTarget }}
+        transition={pageEntering ? enterTransition : curtainTransition}
       />
       <motion.div
         className="absolute inset-y-0 right-0 w-1/2"
@@ -61,15 +77,10 @@ function CurtainOverlay() {
           background: 'linear-gradient(270deg, rgba(3, 4, 8, 0.98), rgba(12, 10, 18, 0.94) 78%, rgba(167, 139, 250, 0.14))',
           boxShadow: active ? '-18px 0 70px rgba(167, 139, 250, 0.16)' : 'none',
         }}
-        initial={{ x: '104%' }}
-        animate={{
-          x: curtainPhase === 'covering' ? 0 : '104%'
-        }}
-        transition={{
-          duration: curtainPhase === 'covering' ? 0.42 : 0.58,
-          ease: [0.16, 1, 0.3, 1]
-        }}
-        onAnimationComplete={onAnimationComplete}
+        initial={pageEntering ? { x: 0 } : { x: '104%' }}
+        animate={{ x: pageEntering ? '104%' : rightTarget }}
+        transition={pageEntering ? enterTransition : curtainTransition}
+        onAnimationComplete={handleRightAnimationComplete}
       />
       <motion.div
         className="absolute left-1/2 top-0 h-full w-px"
@@ -80,9 +91,9 @@ function CurtainOverlay() {
         initial={{ opacity: 0, scaleY: 0.2 }}
         animate={{
           opacity: active ? 1 : 0,
-          scaleY: curtainPhase === 'covering' ? 1 : 0.2,
+          scaleY: curtainPhase === 'covering' || pageEntering ? 1 : 0.2,
         }}
-        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+        transition={{ duration: pageEntering ? 0.44 : 0.3, ease: [0.16, 1, 0.3, 1] }}
       />
     </div>
   );
