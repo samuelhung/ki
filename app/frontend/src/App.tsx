@@ -20,6 +20,7 @@ const Series = lazy(() => import('./pages/Series'));
 const SeriesDetail = lazy(() => import('./pages/SeriesDetail'));
 const EventDetailPage = lazy(() => import('./pages/EventDetailPage'));
 const BrainstormDetailPage = lazy(() => import('./pages/BrainstormDetailPage'));
+const CinematicSystemCenter = lazy(() => import('./pages/CinematicSystemCenter'));
 const SystemDoc = lazy(() => import('./pages/SystemDoc'));
 const SystemSettings = lazy(() => import('./pages/SystemSettings'));
 const KnowledgeGraph = lazy(() => import('./pages/KnowledgeGraph'));
@@ -102,7 +103,7 @@ function CurtainOverlay() {
 function Layout() {
   const location = useLocation();
   const isDashboardHome = location.pathname === '/';
-  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest';
+  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest' || location.pathname === '/system' || location.pathname === '/settings';
 
   // ---- Offline detection ----
   const [isOnline, setIsOnline] = useState(true);
@@ -307,8 +308,10 @@ export default function App() {
           <Route path="brainstorm" element={<Brainstorm />} />
           <Route path="brainstorm/:id" element={<BrainstormDetailPage />} />
           <Route path="events/:id" element={<EventDetailPage />} />
-          <Route path="system" element={<SystemDoc />} />
-          <Route path="settings" element={<SystemSettings />} />
+          <Route path="system" element={<CinematicSystemCenter />} />
+          <Route path="settings" element={<CinematicSystemCenter />} />
+          <Route path="system-old" element={<SystemDoc />} />
+          <Route path="settings-old" element={<SystemSettings />} />
           <Route path="knowledge-graph" element={<KnowledgeGraph />} />
           <Route path="tasks" element={<Tasks />} />
           <Route path="series" element={<Series />} />
