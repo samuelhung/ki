@@ -79,9 +79,17 @@ export function TaskRow({ name, cnName, config, suggestion, onChange }: {
   );
 }
 
-export function PromptSection({ moduleKey, taskNames }: { moduleKey: string; taskNames: Record<string, string> }) {
+export function PromptSection({
+  moduleKey,
+  taskNames,
+  defaultExpanded = false,
+}: {
+  moduleKey: string;
+  taskNames: Record<string, string>;
+  defaultExpanded?: boolean;
+}) {
   const [prompts, setPrompts] = useState<Record<string, Record<string, string>>>({});
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {

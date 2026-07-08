@@ -105,13 +105,13 @@ export const navSections: NavSection[] = [
 
 export const bottomItems: NavItem[] = [
   { to: '/tools', icon: Wrench, label: '工具箱', color: 'text-orange-400' },
-  { to: '/system', icon: Database, label: '系统总览', color: 'text-teal-400' },
+  { to: '/system', icon: Database, label: '系统中枢', color: 'text-teal-400' },
 ];
 
 export const settingsItem: NavItem = {
   to: '/settings',
   icon: Settings,
-  label: '系统设置',
+  label: '系统配置',
   color: 'text-gray-400',
 };
 

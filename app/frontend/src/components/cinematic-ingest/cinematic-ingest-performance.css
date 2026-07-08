@@ -1,0 +1,13 @@
+@media (prefers-reduced-motion: reduce) {
+  .cinematic-ingest .ingest-shader-grid,
+  .cinematic-ingest .ingest-orbit-core i,
+  .cinematic-ingest .ingest-command-overlay,
+  .cinematic-ingest .command-screen,
+  .cinematic-ingest .launcher-action,
+  .cinematic-ingest .observation-stage-track span,
+  .cinematic-ingest .laser-media-box {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

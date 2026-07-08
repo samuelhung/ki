@@ -11,7 +11,7 @@ import { CurtainProvider, useCurtain } from './CurtainContext';
 import { getBackendUrl } from './api';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
-const Ingest = lazy(() => import('./pages/Ingest'));
+const CinematicIngest = lazy(() => import('./pages/CinematicIngest'));
 const Events = lazy(() => import('./pages/Events'));
 const Sources = lazy(() => import('./pages/Sources'));
 const Brainstorm = lazy(() => import('./pages/Brainstorm'));
@@ -20,6 +20,7 @@ const Series = lazy(() => import('./pages/Series'));
 const SeriesDetail = lazy(() => import('./pages/SeriesDetail'));
 const EventDetailPage = lazy(() => import('./pages/EventDetailPage'));
 const BrainstormDetailPage = lazy(() => import('./pages/BrainstormDetailPage'));
+const CinematicSystemCenter = lazy(() => import('./pages/CinematicSystemCenter'));
 const SystemDoc = lazy(() => import('./pages/SystemDoc'));
 const SystemSettings = lazy(() => import('./pages/SystemSettings'));
 const KnowledgeGraph = lazy(() => import('./pages/KnowledgeGraph'));
@@ -35,32 +36,74 @@ function PageLoading() {
 }
 
 function CurtainOverlay() {
+  const location = useLocation();
   const { curtainPhase, onAnimationComplete } = useCurtain();
+  const [pageEntering, setPageEntering] = useState(() => location.pathname !== '/');
+  const active = curtainPhase !== 'idle' || pageEntering;
+  const leftTarget = curtainPhase === 'covering' ? 0 : '-104%';
+  const rightTarget = curtainPhase === 'covering' ? 0 : '104%';
+  const enterTransition = { duration: 0.68, ease: [0.16, 1, 0.3, 1] as const };
+  const curtainTransition = {
+    duration: curtainPhase === 'covering' ? 0.42 : 0.58,
+    ease: [0.16, 1, 0.3, 1] as const
+  };
+
+  useEffect(() => {
+    if (location.pathname === '/') setPageEntering(false);
+  }, [location.pathname]);
+
+  function handleRightAnimationComplete() {
+    if (pageEntering) {
+      setPageEntering(false);
+      return;
+    }
+    onAnimationComplete();
+  }
 
   return (
-    <motion.div
-      className="fixed inset-0 z-50 pointer-events-none"
-      style={{ background: '#0B0C10' }}
-      initial={{ x: '100%' }}
-      animate={{
-        x: curtainPhase === 'idle'
-          ? '100%'
-          : curtainPhase === 'covering'
-          ? 0
-          : '-100%'
-      }}
-      transition={{
-        duration: 0.35,
-        ease: [0.4, 0, 0.2, 1]
-      }}
-      onAnimationComplete={onAnimationComplete}
-    />
+    <div className="fixed inset-0 z-50 pointer-events-none overflow-hidden">
+      <motion.div
+        className="absolute inset-y-0 left-0 w-1/2"
+        style={{
+          background: 'linear-gradient(90deg, rgba(3, 4, 8, 0.98), rgba(12, 10, 18, 0.94) 78%, rgba(214, 163, 76, 0.16))',
+          boxShadow: active ? '18px 0 70px rgba(214, 163, 76, 0.18)' : 'none',
+        }}
+        initial={pageEntering ? { x: 0 } : { x: '-104%' }}
+        animate={{ x: pageEntering ? '-104%' : leftTarget }}
+        transition={pageEntering ? enterTransition : curtainTransition}
+      />
+      <motion.div
+        className="absolute inset-y-0 right-0 w-1/2"
+        style={{
+          background: 'linear-gradient(270deg, rgba(3, 4, 8, 0.98), rgba(12, 10, 18, 0.94) 78%, rgba(167, 139, 250, 0.14))',
+          boxShadow: active ? '-18px 0 70px rgba(167, 139, 250, 0.16)' : 'none',
+        }}
+        initial={pageEntering ? { x: 0 } : { x: '104%' }}
+        animate={{ x: pageEntering ? '104%' : rightTarget }}
+        transition={pageEntering ? enterTransition : curtainTransition}
+        onAnimationComplete={handleRightAnimationComplete}
+      />
+      <motion.div
+        className="absolute left-1/2 top-0 h-full w-px"
+        style={{
+          background: 'linear-gradient(to bottom, transparent, rgba(255, 232, 184, 0.72), transparent)',
+          boxShadow: '0 0 34px rgba(214, 163, 76, 0.58)',
+        }}
+        initial={{ opacity: 0, scaleY: 0.2 }}
+        animate={{
+          opacity: active ? 1 : 0,
+          scaleY: curtainPhase === 'covering' || pageEntering ? 1 : 0.2,
+        }}
+        transition={{ duration: pageEntering ? 0.44 : 0.3, ease: [0.16, 1, 0.3, 1] }}
+      />
+    </div>
   );
 }
 
 function Layout() {
   const location = useLocation();
   const isDashboardHome = location.pathname === '/';
+  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest' || location.pathname === '/system' || location.pathname === '/settings';
 
   // ---- Offline detection ----
   const [isOnline, setIsOnline] = useState(true);
@@ -166,12 +209,12 @@ function Layout() {
       >
         {/* Offline banner */}
         {!isOnline && (
-          <div className="absolute top-0 left-0 right-0 z-50 bg-amber-600/90 text-white text-xs px-4 py-1.5 flex items-center justify-center gap-2">
+          <div className="absolute top-0 left-0 right-0 z-50 bg-black/45 border-b border-amber-300/20 text-amber-100/80 text-xs px-4 py-1.5 flex items-center justify-center gap-2 backdrop-blur-sm shadow-[0_0_24px_rgba(214,163,76,0.12)]">
             <WifiOff size={12} />
             <span>后端未连接 — 部分功能不可用</span>
             <button
               onClick={() => window.location.reload()}
-              className="underline hover:text-amber-200"
+              className="underline hover:text-amber-100"
             >
               重试
             </button>
@@ -203,32 +246,48 @@ function Layout() {
           </div>
         )}
 
-        {/* Desktop layout */}
-        <div className={isDashboardHome ? 'flex h-full' : 'hidden md:flex h-full'}>
-          {!isDashboardHome && <Sidebar />}
-          <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
-            <div className="flex-1 overflow-auto custom-scrollbar">
-              <ErrorBoundary>
-                <Suspense fallback={<PageLoading />}>
-                  <Outlet />
-                </Suspense>
-              </ErrorBoundary>
+        {isCinematicFullScreen ? (
+          <div className="flex h-full">
+            <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+              <div className="flex-1 overflow-auto custom-scrollbar">
+                <ErrorBoundary>
+                  <Suspense fallback={<PageLoading />}>
+                    <Outlet />
+                  </Suspense>
+                </ErrorBoundary>
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          <>
+            {/* Desktop layout */}
+            <div className="hidden md:flex h-full">
+              <Sidebar />
+              <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+                <div className="flex-1 overflow-auto custom-scrollbar">
+                  <ErrorBoundary>
+                    <Suspense fallback={<PageLoading />}>
+                      <Outlet />
+                    </Suspense>
+                  </ErrorBoundary>
+                </div>
+              </div>
+            </div>
 
-        {/* Mobile layout */}
-        <div className={isDashboardHome ? 'hidden' : 'md:hidden flex flex-col h-full'}>
-          <MobileHeader />
-          <div className="flex-1 overflow-auto custom-scrollbar">
-            <ErrorBoundary>
-              <Suspense fallback={<PageLoading />}>
-                <Outlet />
-              </Suspense>
-            </ErrorBoundary>
-          </div>
-          <BottomTabBar />
-        </div>
+            {/* Mobile layout */}
+            <div className="md:hidden flex flex-col h-full">
+              <MobileHeader />
+              <div className="flex-1 overflow-auto custom-scrollbar">
+                <ErrorBoundary>
+                  <Suspense fallback={<PageLoading />}>
+                    <Outlet />
+                  </Suspense>
+                </ErrorBoundary>
+              </div>
+              <BottomTabBar />
+            </div>
+          </>
+        )}
 
         {/* Curtain overlay for Wipe transition */}
         <CurtainOverlay />
@@ -243,14 +302,16 @@ export default function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<Dashboard />} />
-          <Route path="ingest" element={<Ingest />} />
+          <Route path="ingest" element={<CinematicIngest />} />
           <Route path="events" element={<Events />} />
           <Route path="sources" element={<Sources />} />
           <Route path="brainstorm" element={<Brainstorm />} />
           <Route path="brainstorm/:id" element={<BrainstormDetailPage />} />
           <Route path="events/:id" element={<EventDetailPage />} />
-          <Route path="system" element={<SystemDoc />} />
-          <Route path="settings" element={<SystemSettings />} />
+          <Route path="system" element={<CinematicSystemCenter />} />
+          <Route path="settings" element={<CinematicSystemCenter />} />
+          <Route path="system-old" element={<SystemDoc />} />
+          <Route path="settings-old" element={<SystemSettings />} />
           <Route path="knowledge-graph" element={<KnowledgeGraph />} />
           <Route path="tasks" element={<Tasks />} />
           <Route path="series" element={<Series />} />

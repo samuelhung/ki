@@ -1,0 +1,1967 @@
+.cinematic-system {
+  --system-gold: rgba(214, 163, 76, 0.92);
+  --system-purple: rgba(207, 158, 255, 0.94);
+  --system-cyan: rgba(125, 211, 252, 0.86);
+  --system-text: rgba(246, 244, 255, 0.94);
+  --system-muted: rgba(205, 198, 224, 0.62);
+}
+
+.cinematic-system .system-status-bay {
+  min-height: 238px;
+  width: clamp(360px, 28vw, 560px);
+  padding-bottom: 18px;
+}
+
+.cinematic-system .system-status-bay > span,
+.cinematic-system .system-status-bay p {
+  display: block;
+  margin: 7px 0 10px;
+  color: rgba(241, 236, 255, 0.76);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.cinematic-system .system-status-bay .panel-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin-top: 10px;
+}
+
+.cinematic-system .system-status-summary {
+  display: grid;
+  gap: 4px;
+  margin: 7px 0 10px;
+  padding: 0 0 10px;
+  border-bottom: 1px solid rgba(207, 158, 255, 0.085);
+}
+
+.cinematic-system .system-status-summary p {
+  margin: 0;
+  color: rgba(239, 234, 250, 0.84);
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.cinematic-system .system-status-bay .panel-detail-grid span {
+  display: block;
+  min-width: 0;
+  color: rgba(205, 198, 224, 0.56);
+  font-size: 10px;
+  line-height: 1.3;
+  letter-spacing: 0.08em;
+}
+
+.cinematic-system .system-status-bay .panel-detail-grid b {
+  display: block;
+  overflow: hidden;
+  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.96);
+  font-size: 15px;
+  line-height: 1.12;
+  font-weight: 560;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 0 16px rgba(207, 158, 255, 0.2);
+}
+
+.cinematic-system .system-status-bay .panel-detail-grid b.is-good {
+  color: rgba(125, 255, 207, 0.94);
+  text-shadow: 0 0 16px rgba(125, 255, 207, 0.26);
+}
+
+.cinematic-system .system-status-bay .panel-detail-grid b.is-bad {
+  color: rgba(255, 122, 144, 0.94);
+  text-shadow: 0 0 16px rgba(255, 122, 144, 0.24);
+}
+
+.cinematic-system .system-status-bay .panel-detail-grid b.is-warn {
+  color: rgba(255, 210, 128, 0.94);
+  text-shadow: 0 0 16px rgba(255, 210, 128, 0.22);
+}
+
+.cinematic-system .system-status-bay .panel-detail-grid b.is-cyan {
+  color: rgba(125, 211, 252, 0.94);
+  text-shadow: 0 0 16px rgba(125, 211, 252, 0.22);
+}
+
+.cinematic-system .system-status-bay .panel-detail-grid b.is-gold {
+  color: rgba(238, 196, 122, 0.96);
+  text-shadow: 0 0 16px rgba(214, 163, 76, 0.24);
+}
+
+.cinematic-system .system-status-bay .panel-detail-grid b.is-violet {
+  color: rgba(213, 195, 255, 0.96);
+  text-shadow: 0 0 16px rgba(207, 158, 255, 0.24);
+}
+
+.cinematic-system .system-status-bay p.is-ok {
+  color: rgba(125, 255, 207, 0.86);
+}
+
+.cinematic-system .system-status-bay p.is-error,
+.cinematic-system .signal-dot.is-error {
+  color: rgba(255, 122, 144, 0.86);
+}
+
+.cinematic-system .system-index-strip {
+  left: calc(clamp(300px, 23vw, 410px) + var(--ingest-list-shift, clamp(28px, 3vw, 64px))) !important;
+  top: clamp(138px, 18vh, 196px) !important;
+  width: clamp(430px, 24vw, 520px) !important;
+  height: clamp(543px, 52vh, 665px) !important;
+  padding-left: 0 !important;
+  padding-right: clamp(92px, 5.4vw, 116px) !important;
+  pointer-events: auto !important;
+  perspective: 920px !important;
+  perspective-origin: 100% 48% !important;
+  transform-style: preserve-3d !important;
+  --index-search-h: 0px;
+}
+
+.cinematic-ingest.cinematic-system .system-function-list {
+  height: 100% !important;
+  align-content: center !important;
+  gap: 11px !important;
+  padding: 4px 0 8px 8px !important;
+  overflow: visible !important;
+  mask-image: none !important;
+  pointer-events: none !important;
+  transform: rotateX(6deg) rotateY(-8deg) translateX(0) translateY(18px) translateZ(0) !important;
+}
+
+.cinematic-system .system-section-orbit {
+  left: auto !important;
+  right: clamp(20px, 1.6vw, 34px) !important;
+  top: calc(var(--index-search-h) + ((100% - var(--index-search-h)) / 2)) !important;
+  gap: 12px !important;
+  transform: translateY(-50%) !important;
+}
+
+.cinematic-ingest.cinematic-system .system-section-orbit button {
+  width: 50px !important;
+  min-height: 62px !important;
+  padding: 7px 0 !important;
+  font-size: 10.5px !important;
+}
+
+.cinematic-ingest.cinematic-system .system-function-item {
+  width: min(100%, 334px) !important;
+  min-height: 46px !important;
+  padding: 7px 0 7px 8px !important;
+  cursor: pointer !important;
+  pointer-events: auto !important;
+  z-index: 2 !important;
+}
+
+.cinematic-ingest.cinematic-system .system-function-item .index-title {
+  width: min(304px, calc(100% - 18px)) !important;
+}
+
+.cinematic-ingest.cinematic-system .system-function-item .index-title b {
+  color: rgba(255, 255, 255, 0.94) !important;
+  font-size: 16px !important;
+  line-height: 1.24 !important;
+  font-weight: 430 !important;
+}
+
+.cinematic-ingest.cinematic-system .system-function-item .index-title span {
+  gap: 0 !important;
+  color: rgba(221, 210, 255, 0.66) !important;
+  font-size: 10px !important;
+}
+
+.cinematic-ingest.cinematic-system .system-function-item .index-title svg {
+  color: rgba(207, 158, 255, 0.64) !important;
+  filter: drop-shadow(0 0 8px rgba(207, 158, 255, 0.28)) !important;
+}
+
+.cinematic-ingest.cinematic-system .system-function-item:hover .index-title b,
+.cinematic-ingest.cinematic-system .system-function-item.is-active .index-title b {
+  color: rgba(255, 255, 255, 1) !important;
+  text-shadow:
+    0 0 12px rgba(255, 255, 255, 0.18),
+    0 0 24px rgba(207, 158, 255, 0.18) !important;
+}
+
+.cinematic-ingest.cinematic-system .system-function-item.is-active {
+  filter: brightness(1.12) saturate(1.06) !important;
+}
+
+.cinematic-system .system-core-box {
+  display: grid !important;
+  grid-template-columns: minmax(124px, 0.28fr) minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: clamp(16px, 1.8vw, 34px) !important;
+  padding: 13px clamp(24px, 2.6vw, 42px) !important;
+}
+
+.cinematic-system .system-core-title {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+}
+
+.cinematic-system .system-core-title > span,
+.cinematic-system .system-core-title > small,
+.cinematic-system .system-core-database strong,
+.cinematic-system .system-storage-assets strong,
+.cinematic-system .system-core-database small,
+.cinematic-system .system-core-database em,
+.cinematic-system .system-storage-assets small,
+.cinematic-system .system-storage-assets em {
+  display: block;
+  color: rgba(205, 198, 224, 0.6);
+  font: 10px/1.3 Monaco, Consolas, "PingFang SC", monospace;
+  letter-spacing: 0.14em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cinematic-system .system-core-title > b {
+  display: block;
+  margin: 4px 0 6px;
+  color: rgba(255, 252, 242, 0.98);
+  font-size: clamp(18px, 1.35vw, 24px);
+  line-height: 1;
+  font-weight: 540;
+  text-shadow: 0 0 22px rgba(207, 158, 255, 0.24);
+}
+
+.cinematic-system .system-core-assets {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+}
+
+.cinematic-system .system-core-database,
+.cinematic-system .system-storage-assets {
+  display: grid;
+  grid-template-columns: 66px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.cinematic-system .system-core-database strong,
+.cinematic-system .system-storage-assets strong {
+  color: rgba(207, 158, 255, 0.72);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-shadow: 0 0 12px rgba(207, 158, 255, 0.18);
+}
+
+.cinematic-system .system-core-database > div {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+
+.cinematic-system .system-core-database span,
+.cinematic-system .system-storage-assets > div > span {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  grid-template-areas:
+    "icon label count"
+    "icon name count";
+  align-items: center;
+  column-gap: 6px;
+  min-height: 36px;
+  padding: 0 0 7px;
+  border-bottom: 1px solid rgba(207, 158, 255, 0.11);
+}
+
+.cinematic-system .system-core-database svg,
+.cinematic-system .system-storage-assets svg {
+  grid-area: icon;
+  color: rgba(207, 158, 255, 0.82);
+  filter: drop-shadow(0 0 8px rgba(207, 158, 255, 0.28));
+}
+
+.cinematic-system .system-core-database small,
+.cinematic-system .system-storage-assets small {
+  grid-area: label;
+  color: rgba(240, 236, 255, 0.78);
+  letter-spacing: 0.04em;
+}
+
+.cinematic-system .system-core-database b,
+.cinematic-system .system-storage-assets b {
+  grid-area: count;
+  align-self: center;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.96);
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 560;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cinematic-system .system-core-database em,
+.cinematic-system .system-storage-assets em {
+  grid-area: name;
+  color: rgba(205, 198, 224, 0.42);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+.cinematic-system .system-storage-assets > div {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px 12px;
+}
+
+.cinematic-system .system-detail-scroll-shell {
+  min-height: 0;
+}
+
+.cinematic-system .system-detail-body {
+  padding-right: 0 !important;
+  scrollbar-width: none;
+}
+
+.cinematic-system .system-detail-body::-webkit-scrollbar {
+  display: none;
+}
+
+.system-section-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.system-overview-surface {
+  display: grid;
+  gap: 18px;
+}
+
+.system-card-grid,
+.system-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.system-info-tile,
+.system-section-block {
+  position: relative;
+  overflow: hidden;
+  border-radius: 6px;
+  border: 1px solid rgba(207, 158, 255, 0.11);
+  background: linear-gradient(135deg, rgba(10, 8, 18, 0.5), rgba(5, 5, 11, 0.18));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.system-info-tile {
+  min-height: 72px;
+  padding: 11px 13px;
+}
+
+.system-section-block {
+  padding: 14px;
+}
+
+.system-section-block h2 {
+  margin: 0 0 10px;
+  color: rgba(255, 252, 242, 0.96);
+  font-size: 14px;
+  line-height: 1.2;
+  font-weight: 560;
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 18px rgba(207, 158, 255, 0.16);
+}
+
+.system-section-block p,
+.system-section-block small,
+.system-info-tile span,
+.system-info-tile small {
+  color: rgba(224, 218, 238, 0.72);
+  font-size: 12px;
+  line-height: 1.72;
+}
+
+.system-info-tile b {
+  display: block;
+  margin: 7px 0 4px;
+  color: rgba(255, 255, 255, 0.96);
+  font-size: 17px;
+  line-height: 1;
+  font-weight: 540;
+}
+
+.system-section-block pre {
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: rgba(230, 224, 244, 0.82);
+  font: 11px/1.72 Monaco, Consolas, monospace;
+}
+
+.system-chip-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.system-chip-grid span {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(207, 158, 255, 0.1);
+  background: rgba(207, 158, 255, 0.035);
+  color: rgba(226, 220, 238, 0.72);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.system-chip-grid b {
+  display: block;
+  margin-bottom: 3px;
+  color: rgba(255, 252, 242, 0.94);
+  font-size: 12px;
+  font-weight: 560;
+}
+
+.system-module-constellation {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px 14px;
+}
+
+.system-module-constellation article {
+  min-height: 58px;
+  padding: 9px 0 8px 12px;
+  border-left: 1px solid rgba(207, 158, 255, 0.16);
+  background: linear-gradient(90deg, rgba(207, 158, 255, 0.045), transparent 86%);
+}
+
+.system-module-constellation article b {
+  display: block;
+  color: rgba(255, 252, 242, 0.94);
+  font-size: 12px;
+}
+
+.system-module-constellation article p {
+  margin: 4px 0 0;
+  color: rgba(224, 218, 238, 0.62);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.system-table-flow {
+  display: grid;
+  gap: 8px;
+}
+
+.system-table-flow > div {
+  position: relative;
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr) 78px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  color: rgba(242, 238, 248, 0.84);
+  font-size: 11px;
+}
+
+.system-table-flow i {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(207, 158, 255, 0.72), transparent);
+  box-shadow: 0 0 12px rgba(207, 158, 255, 0.3);
+}
+
+.system-log-controls {
+  display: grid;
+  grid-template-columns: auto minmax(160px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.system-log-controls div,
+.system-radio-row,
+.system-command-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.system-log-controls button,
+.system-radio-row button,
+.system-command-row button,
+.system-line-command,
+.system-field input,
+.system-field select,
+.system-log-controls input {
+  border: 1px solid rgba(207, 158, 255, 0.16);
+  background: rgba(6, 0, 16, 0.42);
+  color: rgba(245, 241, 255, 0.88);
+  font: 11px Monaco, Consolas, "PingFang SC", monospace;
+}
+
+.system-log-controls button,
+.system-radio-row button,
+.system-command-row button,
+.system-line-command {
+  min-height: 30px;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.system-log-controls button.is-active,
+.system-radio-row button.is-active {
+  color: rgba(255, 252, 242, 0.98);
+  border-color: rgba(207, 158, 255, 0.38);
+  box-shadow: 0 0 16px rgba(207, 158, 255, 0.12);
+}
+
+.system-log-controls label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.system-log-controls input,
+.system-field input,
+.system-field select {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 10px;
+  outline: none;
+}
+
+.system-log-stream {
+  display: grid;
+  gap: 8px;
+}
+
+.system-log-stream article {
+  display: grid;
+  grid-template-columns: 58px 156px minmax(90px, 0.34fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid rgba(207, 158, 255, 0.08);
+  color: rgba(226, 220, 238, 0.72);
+  font-size: 11px;
+}
+
+.system-log-stream article b,
+.system-log-stream article time,
+.system-log-stream article span,
+.system-log-stream article p {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.system-log-stream article b {
+  display: inline-grid;
+  width: fit-content;
+  min-width: 48px;
+  max-width: 58px;
+  height: 18px;
+  place-items: center;
+  border-radius: 999px;
+  padding: 0 7px;
+  font-size: 9.5px;
+  line-height: 1;
+  font-weight: 560;
+  letter-spacing: 0.04em;
+}
+
+.system-log-stream .is-muted b {
+  color: rgba(191, 184, 210, 0.72);
+  background: rgba(148, 139, 170, 0.1);
+}
+
+.system-log-stream .is-info b {
+  color: rgba(125, 211, 252, 0.92);
+  background: rgba(14, 165, 233, 0.11);
+}
+
+.system-log-stream .is-warning b {
+  color: rgba(255, 214, 128, 0.9);
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.system-log-stream .is-error b {
+  color: rgba(255, 122, 144, 0.9);
+  background: rgba(239, 68, 68, 0.14);
+}
+
+.system-field {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.system-field span,
+.system-readonly-line,
+.system-empty,
+.system-loading {
+  color: rgba(224, 218, 238, 0.68);
+  font-size: 12px;
+}
+
+.system-task-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.system-task-grid > div,
+.system-section-block .bg-\[\#0B0C10\],
+.system-section-block .bg-\[\#141518\] {
+  border: 1px solid rgba(207, 158, 255, 0.1) !important;
+  background: rgba(6, 0, 16, 0.34) !important;
+  border-radius: 6px !important;
+}
+
+@media (max-width: 1180px) {
+  .cinematic-system .system-core-box {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  .cinematic-system .system-core-database,
+  .cinematic-system .system-storage-assets {
+    grid-template-columns: 52px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .cinematic-system .system-core-database > div,
+  .cinematic-system .system-storage-assets > div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .system-card-grid,
+  .system-form-grid,
+  .system-chip-grid,
+  .system-module-constellation {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* De-card pass: keep the system detail content projected and line-based. */
+.cinematic-system .system-detail-reader {
+  --system-line: rgba(207, 158, 255, 0.16);
+  --system-line-soft: rgba(207, 158, 255, 0.075);
+  --system-glow: rgba(207, 158, 255, 0.24);
+  left: calc(var(--beam-center-x) + clamp(22px, 2.2vw, 42px)) !important;
+  right: clamp(118px, 8.5vw, 190px) !important;
+}
+
+.cinematic-system .system-detail-reader header {
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(207, 158, 255, 0.14);
+  box-shadow: 0 12px 28px -30px rgba(207, 158, 255, 0.8);
+}
+
+.cinematic-system .system-section-stack,
+.cinematic-system .system-overview-surface {
+  gap: 18px;
+}
+
+.cinematic-system .system-section-block,
+.cinematic-system .system-info-tile {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.cinematic-system .system-section-block {
+  padding: 0 0 16px;
+  border-bottom: 1px solid var(--system-line-soft);
+}
+
+.cinematic-system .system-section-block h2 {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 12px;
+  color: rgba(255, 255, 255, 0.98);
+  font-size: 15px;
+  font-weight: 440;
+  letter-spacing: 0.06em;
+  text-shadow:
+    0 0 10px rgba(255, 255, 255, 0.1),
+    0 0 20px rgba(207, 158, 255, 0.2);
+}
+
+.cinematic-system .system-section-block h2::before {
+  content: "";
+  width: 2px;
+  height: 14px;
+  flex: 0 0 2px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(207, 158, 255, 0.44), rgba(207, 158, 255, 0));
+  box-shadow:
+    0 0 8px rgba(255, 255, 255, 0.16),
+    0 0 16px rgba(207, 158, 255, 0.24);
+}
+
+.cinematic-system .system-section-title::before {
+  display: none;
+}
+
+.cinematic-system .system-section-title svg {
+  flex: 0 0 auto;
+  color: rgba(207, 158, 255, 0.74);
+  filter: drop-shadow(0 0 9px rgba(207, 158, 255, 0.24));
+}
+
+.cinematic-system .system-section-title em {
+  margin-left: auto;
+  color: rgba(205, 198, 224, 0.42);
+  font: 9px/1 Monaco, Consolas, "PingFang SC", monospace;
+  letter-spacing: 0.16em;
+}
+
+.cinematic-system .system-section-block p {
+  margin: 7px 0 0;
+  color: rgba(239, 235, 248, 0.82);
+  font-size: 12.5px;
+}
+
+.cinematic-system .system-section-block p b,
+.cinematic-system .system-chip-grid b,
+.cinematic-system .system-table-flow span {
+  color: rgba(255, 255, 255, 0.98);
+  font-weight: 440;
+  text-shadow: 0 0 14px rgba(207, 158, 255, 0.18);
+}
+
+.cinematic-system .system-card-grid,
+.cinematic-system .system-form-grid {
+  gap: 10px 22px;
+}
+
+.cinematic-system .system-info-tile {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  min-height: 66px;
+  padding: 10px 0;
+}
+
+.cinematic-system .system-info-tile i {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  margin-top: 2px;
+  border-radius: 999px;
+  color: rgba(207, 158, 255, 0.82);
+  background: radial-gradient(circle, rgba(207, 158, 255, 0.16), rgba(207, 158, 255, 0.03) 62%, transparent 72%);
+  box-shadow:
+    inset 0 0 0 1px rgba(207, 158, 255, 0.12),
+    0 0 14px rgba(207, 158, 255, 0.16);
+}
+
+.cinematic-system .system-info-tile div {
+  min-width: 0;
+}
+
+.cinematic-system .system-info-tile span,
+.cinematic-system .system-info-tile small {
+  display: block;
+  color: rgba(222, 214, 244, 0.62);
+  font: 10.5px/1.35 Monaco, Consolas, "PingFang SC", monospace;
+  letter-spacing: 0.08em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cinematic-system .system-info-tile b {
+  margin: 6px 0 3px;
+  color: rgba(255, 255, 255, 0.98);
+  font-size: 20px;
+  font-weight: 430;
+  text-shadow:
+    0 0 10px rgba(255, 255, 255, 0.12),
+    0 0 24px rgba(207, 158, 255, 0.22);
+}
+
+.cinematic-system .system-module-constellation {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 34px;
+}
+
+.cinematic-system .system-module-constellation article {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  min-height: 74px;
+  padding: 10px 0 12px;
+  border: 0;
+  border-bottom: 1px solid rgba(207, 158, 255, 0.07);
+  background: transparent;
+}
+
+.cinematic-system .system-module-constellation article::after {
+  display: none;
+}
+
+.cinematic-system .system-module-constellation article i {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  margin-top: 1px;
+  border-radius: 999px;
+  color: rgba(207, 158, 255, 0.8);
+  background:
+    radial-gradient(circle, rgba(207, 158, 255, 0.15), rgba(207, 158, 255, 0.03) 62%, transparent 72%);
+  box-shadow:
+    inset 0 0 0 1px rgba(207, 158, 255, 0.11),
+    0 0 14px rgba(207, 158, 255, 0.16);
+}
+
+.cinematic-system .system-module-constellation article.is-gold i {
+  color: rgba(214, 163, 76, 0.84);
+  background: radial-gradient(circle, rgba(214, 163, 76, 0.16), rgba(214, 163, 76, 0.03) 62%, transparent 72%);
+}
+
+.cinematic-system .system-module-constellation article.is-blue i,
+.cinematic-system .system-module-constellation article.is-cyan i {
+  color: rgba(125, 211, 252, 0.82);
+  background: radial-gradient(circle, rgba(125, 211, 252, 0.14), rgba(125, 211, 252, 0.025) 62%, transparent 72%);
+}
+
+.cinematic-system .system-module-constellation article header {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.cinematic-system .system-module-constellation article b {
+  color: rgba(255, 255, 255, 0.96);
+  font-weight: 430;
+}
+
+.cinematic-system .system-module-constellation article em {
+  color: rgba(205, 198, 224, 0.42);
+  font: 9px/1 Monaco, Consolas, "PingFang SC", monospace;
+  letter-spacing: 0.12em;
+}
+
+.cinematic-system .system-module-constellation article small {
+  display: block;
+  margin-top: 5px;
+  overflow: hidden;
+  color: rgba(207, 158, 255, 0.62);
+  font: 9px/1.3 Monaco, Consolas, "PingFang SC", monospace;
+  letter-spacing: 0.08em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cinematic-system .system-module-constellation article p {
+  margin-top: 7px;
+  color: rgba(226, 218, 244, 0.68);
+  line-height: 1.55;
+}
+
+.cinematic-system .system-runtime-layers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 32px;
+  margin-bottom: 24px;
+}
+
+.cinematic-system .system-runtime-layers article,
+.cinematic-system .system-flow-line article,
+.cinematic-system .system-data-landing span,
+.cinematic-system .system-boundary-group header,
+.cinematic-system .system-guardrail-list span {
+  position: relative;
+  min-width: 0;
+  border-bottom: 1px solid rgba(207, 158, 255, 0.065);
+}
+
+.cinematic-system .system-runtime-layers article {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  padding: 4px 0 14px;
+}
+
+.cinematic-system .system-runtime-layers svg,
+.cinematic-system .system-flow-line svg,
+.cinematic-system .system-data-landing svg,
+.cinematic-system .system-boundary-group header svg {
+  color: rgba(207, 158, 255, 0.78);
+  filter: drop-shadow(0 0 9px rgba(207, 158, 255, 0.24));
+}
+
+.cinematic-system .system-runtime-layers header,
+.cinematic-system .system-boundary-group header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.cinematic-system .system-runtime-layers b,
+.cinematic-system .system-flow-line b,
+.cinematic-system .system-data-landing b,
+.cinematic-system .system-boundary-group header b {
+  color: rgba(255, 255, 255, 0.96);
+  font-weight: 430;
+  text-shadow: 0 0 14px rgba(207, 158, 255, 0.14);
+}
+
+.cinematic-system .system-runtime-layers em,
+.cinematic-system .system-boundary-group header em {
+  margin-left: auto;
+  color: rgba(205, 198, 224, 0.42);
+  font: 8.5px/1 Monaco, Consolas, "PingFang SC", monospace;
+  letter-spacing: 0.14em;
+}
+
+.cinematic-system .system-runtime-layers p,
+.cinematic-system .system-flow-line p,
+.cinematic-system .system-param-notes p {
+  margin: 5px 0 0;
+  color: rgba(226, 218, 244, 0.68);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.cinematic-system .system-flow-line {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px 28px;
+  margin-bottom: 4px;
+  padding-top: 4px;
+}
+
+.cinematic-system .system-flow-line article {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
+  gap: 4px 8px;
+  padding: 0 0 14px;
+  border-bottom-color: rgba(207, 158, 255, 0.045);
+}
+
+.cinematic-system .system-flow-line article::after {
+  display: none;
+}
+
+.cinematic-system .system-flow-line article:last-child::after {
+  display: none;
+}
+
+.cinematic-system .system-flow-line article:nth-child(3)::after {
+  display: none;
+}
+
+.cinematic-system .system-flow-line article:nth-child(n + 4)::before {
+  display: none;
+}
+
+.cinematic-system .system-flow-line svg {
+  grid-row: 1 / span 2;
+}
+
+.cinematic-system .system-flow-line span {
+  color: rgba(205, 198, 224, 0.4);
+  font: 8.5px/1 Monaco, Consolas, "PingFang SC", monospace;
+  letter-spacing: 0.14em;
+}
+
+.cinematic-system .system-flow-line p {
+  grid-column: 1 / -1;
+}
+
+.cinematic-system .system-data-landing {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px 18px;
+}
+
+.cinematic-system .system-data-landing span {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 4px 8px;
+  padding: 0 0 10px;
+}
+
+.cinematic-system .system-data-landing svg {
+  grid-row: 1 / span 2;
+}
+
+.cinematic-system .system-data-landing em {
+  overflow: hidden;
+  color: rgba(205, 198, 224, 0.48);
+  font: 9px/1.25 Monaco, Consolas, "PingFang SC", monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cinematic-system .system-runtime-surface {
+  display: grid;
+  gap: 18px;
+}
+
+.cinematic-system .system-runtime-map {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 18px 28px;
+}
+
+.cinematic-system .system-runtime-map article {
+  position: relative;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  min-width: 0;
+  gap: 10px;
+  padding: 0 0 15px;
+  border-bottom: 1px solid rgba(207, 158, 255, 0.08);
+}
+
+.cinematic-system .system-runtime-map article::after {
+  content: "";
+  position: absolute;
+  right: -20px;
+  top: 12px;
+  width: 14px;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(207, 158, 255, 0.32), transparent);
+}
+
+.cinematic-system .system-runtime-map article:last-child::after {
+  display: none;
+}
+
+.cinematic-system .system-runtime-map i,
+.cinematic-system .system-runtime-pipeline i,
+.cinematic-system .system-runtime-landing svg,
+.cinematic-system .system-boundary-specs svg,
+.cinematic-system .system-feature-ribbon i {
+  color: rgba(207, 158, 255, 0.82);
+  filter: drop-shadow(0 0 10px rgba(207, 158, 255, 0.26));
+}
+
+.cinematic-system .system-runtime-map article.is-core i,
+.cinematic-system .system-runtime-pipeline article:nth-child(4n) i,
+.cinematic-system .system-runtime-landing .is-gold svg,
+.cinematic-system .system-boundary-specs .is-gold svg {
+  color: rgba(214, 163, 76, 0.9);
+  filter: drop-shadow(0 0 10px rgba(214, 163, 76, 0.26));
+}
+
+.cinematic-system .system-runtime-map article.is-shell i,
+.cinematic-system .system-runtime-pipeline article:nth-child(1) i,
+.cinematic-system .system-runtime-landing .is-cyan svg,
+.cinematic-system .system-boundary-specs .is-cyan svg,
+.cinematic-system .system-boundary-specs .is-blue svg {
+  color: rgba(125, 211, 252, 0.88);
+  filter: drop-shadow(0 0 10px rgba(125, 211, 252, 0.24));
+}
+
+.cinematic-system .system-runtime-map header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.cinematic-system .system-runtime-map b,
+.cinematic-system .system-runtime-pipeline b,
+.cinematic-system .system-runtime-landing b,
+.cinematic-system .system-boundary-specs b {
+  color: rgba(255, 255, 255, 0.96);
+  font-weight: 430;
+  text-shadow: 0 0 14px rgba(207, 158, 255, 0.16);
+}
+
+.cinematic-system .system-runtime-map em,
+.cinematic-system .system-runtime-pipeline span,
+.cinematic-system .system-runtime-landing em,
+.cinematic-system .system-boundary-specs em {
+  color: rgba(205, 198, 224, 0.48);
+  font: 9px/1.25 Monaco, Consolas, "PingFang SC", monospace;
+  letter-spacing: 0.1em;
+}
+
+.cinematic-system .system-runtime-map p {
+  margin: 6px 0 0;
+  color: rgba(226, 218, 244, 0.68);
+  font-size: 11.5px;
+  line-height: 1.56;
+}
+
+.cinematic-system .system-runtime-pipeline {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0;
+  padding: 18px 0 8px;
+}
+
+.cinematic-system .system-runtime-pipeline::before {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: 28px;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(125, 211, 252, 0.08), rgba(207, 158, 255, 0.34), rgba(214, 163, 76, 0.22), transparent);
+  box-shadow: 0 0 18px rgba(207, 158, 255, 0.16);
+}
+
+.cinematic-system .system-runtime-pipeline article {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 5px 9px;
+  padding: 0 16px 8px 0;
+}
+
+.cinematic-system .system-runtime-pipeline i {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  background: rgba(6, 0, 16, 0.9);
+}
+
+.cinematic-system .system-runtime-pipeline span {
+  align-self: center;
+  color: rgba(207, 158, 255, 0.5);
+}
+
+.cinematic-system .system-runtime-pipeline b {
+  grid-column: 1 / -1;
+  margin-top: 5px;
+  font-size: 14px;
+  line-height: 1.12;
+  white-space: nowrap;
+}
+
+.cinematic-system .system-runtime-pipeline p {
+  grid-column: 1 / -1;
+  margin: 5px 0 0;
+  color: rgba(226, 218, 244, 0.64);
+  font-size: 11px;
+  line-height: 1.52;
+}
+
+.cinematic-system .system-runtime-landing {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px 28px;
+  padding-top: 4px;
+}
+
+.cinematic-system .system-runtime-landing span {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  grid-template-areas:
+    "icon label"
+    "icon value";
+  align-items: center;
+  min-width: 0;
+  gap: 3px 9px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid rgba(207, 158, 255, 0.06);
+}
+
+.cinematic-system .system-runtime-landing svg {
+  grid-area: icon;
+}
+
+.cinematic-system .system-runtime-landing b {
+  grid-area: label;
+}
+
+.cinematic-system .system-runtime-landing em {
+  grid-area: value;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cinematic-system .system-boundary-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: start;
+  gap: 14px;
+}
+
+.cinematic-system .system-boundary-group {
+  min-width: 0;
+}
+
+.cinematic-system .system-boundary-group header {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  padding-bottom: 10px;
+  margin-bottom: 2px;
+}
+
+.cinematic-system .system-guardrail-list {
+  display: grid;
+  gap: 0;
+  margin-bottom: 14px;
+}
+
+.cinematic-system .system-guardrail-list span {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 8px 0;
+}
+
+.cinematic-system .system-guardrail-list span b {
+  color: rgba(214, 163, 76, 0.76);
+  font: 10px/1.4 Monaco, Consolas, "PingFang SC", monospace;
+  text-shadow: 0 0 10px rgba(214, 163, 76, 0.18);
+}
+
+.cinematic-system .system-guardrail-list span em {
+  color: rgba(232, 224, 244, 0.72);
+  font-size: 11.5px;
+  font-style: normal;
+  line-height: 1.55;
+}
+
+.cinematic-system .system-param-notes {
+  padding-top: 10px;
+}
+
+.cinematic-system .system-boundary-copy {
+  margin: 16px 0 0;
+  max-width: none;
+  padding: 0 0 13px;
+  border-bottom: 1px solid rgba(207, 158, 255, 0.06);
+  color: rgba(226, 218, 244, 0.68);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.cinematic-system .system-boundary-specs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 22px;
+}
+
+.cinematic-system .system-boundary-specs span {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 0.45fr) minmax(0, 1fr);
+  align-items: center;
+  min-width: 0;
+  min-height: 38px;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(207, 158, 255, 0.06);
+}
+
+.cinematic-system .system-boundary-specs b,
+.cinematic-system .system-boundary-specs em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cinematic-system .system-boundary-specs b {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 12px;
+}
+
+.cinematic-system .system-boundary-specs em {
+  color: rgba(226, 218, 244, 0.58);
+  letter-spacing: 0.04em;
+}
+
+.cinematic-system .system-boundary-guards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 24px;
+  margin-top: 8px;
+}
+
+.cinematic-system .system-boundary-guards span {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 7px 0 9px;
+  border-bottom: 1px solid rgba(214, 163, 76, 0.075);
+}
+
+.cinematic-system .system-boundary-guards b {
+  color: rgba(214, 163, 76, 0.82);
+  font: 10px/1.5 Monaco, Consolas, "PingFang SC", monospace;
+  text-shadow: 0 0 10px rgba(214, 163, 76, 0.2);
+}
+
+.cinematic-system .system-boundary-guards em {
+  color: rgba(232, 224, 244, 0.72);
+  font-size: 11.5px;
+  font-style: normal;
+  line-height: 1.5;
+}
+
+.cinematic-system .system-param-notes p b {
+  color: rgba(255, 255, 255, 0.94);
+  font-weight: 430;
+}
+
+.cinematic-system .system-chip-grid {
+  gap: 0 18px;
+}
+
+.cinematic-system .system-chip-grid span {
+  position: relative;
+  padding: 10px 0;
+  border: 0;
+  border-bottom: 1px solid var(--system-line-soft);
+  background: transparent;
+  color: rgba(230, 224, 244, 0.76);
+}
+
+.cinematic-system .system-chip-grid span::before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin: 0 8px 1px 0;
+  border-radius: 999px;
+  background: rgba(207, 158, 255, 0.72);
+  box-shadow: 0 0 10px rgba(207, 158, 255, 0.28);
+}
+
+.cinematic-system .system-chip-grid .system-file-chip {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  column-gap: 8px;
+}
+
+.cinematic-system .system-chip-grid .system-file-chip::before {
+  display: none;
+}
+
+.cinematic-system .system-chip-grid .system-file-chip > i {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  color: rgba(209, 194, 255, 0.92);
+}
+
+.cinematic-system .system-chip-grid .system-file-chip > i svg {
+  filter: drop-shadow(0 0 8px rgba(207, 158, 255, 0.34));
+}
+
+.cinematic-system .system-chip-grid .system-file-chip > span {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cinematic-system .system-chip-grid .system-file-chip > span::before {
+  display: none;
+}
+
+.cinematic-system .system-table-flow {
+  gap: 0;
+}
+
+.cinematic-system .system-table-flow > div {
+  display: grid;
+  grid-template-columns: minmax(118px, 0.68fr) minmax(180px, 1.55fr) minmax(62px, 0.32fr);
+  align-items: center;
+  min-height: 38px;
+  gap: 14px;
+  padding: 9px 0 10px;
+  border-bottom: 1px solid rgba(207, 158, 255, 0.055);
+}
+
+.cinematic-system .system-table-flow > div span,
+.cinematic-system .system-table-flow > div small,
+.cinematic-system .system-table-flow > div b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cinematic-system .system-table-flow small {
+  color: rgba(218, 210, 238, 0.58);
+}
+
+.cinematic-system .system-table-flow b {
+  color: rgba(255, 255, 255, 0.92);
+  font-weight: 430;
+  text-align: right;
+}
+
+.cinematic-system .system-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 24px;
+}
+
+.cinematic-system .system-feature-ribbon {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 28px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(207, 158, 255, 0.07);
+}
+
+.cinematic-system .system-feature-ribbon article {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 9px;
+  min-width: 0;
+}
+
+.cinematic-system .system-feature-ribbon i {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  color: rgba(207, 158, 255, 0.82);
+  filter: drop-shadow(0 0 9px rgba(207, 158, 255, 0.24));
+}
+
+.cinematic-system .system-feature-ribbon article.is-gold i {
+  color: rgba(214, 163, 76, 0.84);
+}
+
+.cinematic-system .system-feature-ribbon article.is-cyan i,
+.cinematic-system .system-feature-ribbon article.is-blue i {
+  color: rgba(125, 211, 252, 0.82);
+}
+
+.cinematic-system .system-feature-ribbon b {
+  display: block;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 12px;
+  font-weight: 430;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cinematic-system .system-feature-ribbon p {
+  display: -webkit-box;
+  margin: 6px 0 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: rgba(226, 218, 244, 0.6);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.cinematic-system .system-feature-grid article {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  min-width: 0;
+  padding: 4px 0 10px;
+  border-bottom: 1px solid rgba(207, 158, 255, 0.055);
+}
+
+.cinematic-system .system-feature-grid i {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  margin-top: 1px;
+  border-radius: 999px;
+  color: rgba(207, 158, 255, 0.82);
+  background: radial-gradient(circle, rgba(207, 158, 255, 0.14), rgba(207, 158, 255, 0.025) 64%, transparent 74%);
+  box-shadow: 0 0 13px rgba(207, 158, 255, 0.14);
+}
+
+.cinematic-system .system-feature-grid article.is-gold i {
+  color: rgba(214, 163, 76, 0.86);
+  background: radial-gradient(circle, rgba(214, 163, 76, 0.14), rgba(214, 163, 76, 0.025) 64%, transparent 74%);
+}
+
+.cinematic-system .system-feature-grid article.is-blue i,
+.cinematic-system .system-feature-grid article.is-cyan i {
+  color: rgba(125, 211, 252, 0.84);
+  background: radial-gradient(circle, rgba(125, 211, 252, 0.13), rgba(125, 211, 252, 0.025) 64%, transparent 74%);
+}
+
+.cinematic-system .system-feature-grid header {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.cinematic-system .system-feature-grid b {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.97);
+  font-size: 12.5px;
+  font-weight: 430;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 0 14px rgba(207, 158, 255, 0.16);
+}
+
+.cinematic-system .system-feature-grid em {
+  flex: 0 0 auto;
+  color: rgba(205, 198, 224, 0.38);
+  font: 8.5px/1 Monaco, Consolas, "PingFang SC", monospace;
+  letter-spacing: 0.12em;
+}
+
+.cinematic-system .system-feature-grid p {
+  display: -webkit-box;
+  margin: 5px 0 0;
+  overflow: hidden;
+  color: rgba(226, 218, 244, 0.68);
+  font-size: 11.5px;
+  line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.cinematic-system .system-section-block pre {
+  max-height: 310px;
+  padding: 10px 0 0;
+  color: rgba(235, 231, 246, 0.82);
+  scrollbar-width: none;
+}
+
+.cinematic-system .system-section-block pre::-webkit-scrollbar {
+  display: none;
+}
+
+.cinematic-system .system-log-controls {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--system-line-soft);
+}
+
+.cinematic-system .system-log-controls button,
+.cinematic-system .system-radio-row button,
+.cinematic-system .system-command-row button,
+.cinematic-system .system-line-command {
+  border: 0;
+  border-bottom: 1px solid rgba(207, 158, 255, 0.24);
+  background: transparent;
+  color: rgba(245, 241, 255, 0.82);
+  box-shadow: none;
+}
+
+.cinematic-system .system-log-controls button.is-active,
+.cinematic-system .system-radio-row button.is-active {
+  color: rgba(255, 255, 255, 0.98);
+  border-color: rgba(207, 158, 255, 0.76);
+  text-shadow: 0 0 18px rgba(207, 158, 255, 0.36);
+  box-shadow: 0 7px 18px -16px rgba(207, 158, 255, 0.9);
+}
+
+.cinematic-system .system-log-controls label,
+.cinematic-system .system-field input,
+.cinematic-system .system-field select,
+.cinematic-system .system-log-controls input {
+  border: 0;
+  border-bottom: 1px solid rgba(207, 158, 255, 0.18);
+  background: transparent;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.cinematic-system .system-log-controls label {
+  padding-left: 2px;
+}
+
+.cinematic-system .system-log-stream {
+  gap: 0;
+}
+
+.cinematic-system .system-log-stream article {
+  grid-template-columns: 62px 154px minmax(92px, 0.36fr) minmax(0, 1fr);
+  gap: 9px;
+  padding: 9px 0;
+  border-top: 0;
+  border-bottom: 1px solid rgba(207, 158, 255, 0.055);
+  color: rgba(231, 224, 245, 0.72);
+}
+
+.cinematic-system .system-log-stream article b {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.055),
+    0 0 12px rgba(207, 158, 255, 0.06);
+  font-weight: 560;
+  text-shadow: none;
+}
+
+.cinematic-system .system-log-stream .is-muted b {
+  color: rgba(199, 191, 222, 0.72);
+  background: rgba(199, 191, 222, 0.09);
+}
+
+.cinematic-system .system-log-stream .is-info b {
+  color: rgba(125, 211, 252, 0.94);
+  background: rgba(14, 165, 233, 0.12);
+  box-shadow:
+    inset 0 0 0 1px rgba(125, 211, 252, 0.12),
+    0 0 13px rgba(125, 211, 252, 0.08);
+}
+
+.cinematic-system .system-log-stream .is-warning b {
+  color: rgba(255, 214, 128, 0.95);
+  background: rgba(245, 158, 11, 0.13);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 214, 128, 0.13),
+    0 0 13px rgba(245, 158, 11, 0.08);
+}
+
+.cinematic-system .system-log-stream .is-error b {
+  color: rgba(255, 122, 144, 0.94);
+  background: rgba(239, 68, 68, 0.14);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 122, 144, 0.13),
+    0 0 13px rgba(239, 68, 68, 0.09);
+}
+
+.cinematic-system .system-field {
+  grid-template-columns: minmax(110px, 0.44fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  margin-top: 0;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(207, 158, 255, 0.065);
+}
+
+.cinematic-system .system-field span,
+.cinematic-system .system-readonly-line,
+.cinematic-system .system-empty,
+.cinematic-system .system-loading {
+  color: rgba(226, 218, 244, 0.7);
+}
+
+.cinematic-system .system-command-row {
+  padding-top: 12px;
+}
+
+.cinematic-system .system-task-grid {
+  gap: 0;
+}
+
+.cinematic-system .system-task-grid > div,
+.cinematic-system .system-section-block .bg-\[\#0B0C10\],
+.cinematic-system .system-section-block .bg-\[\#141518\],
+.cinematic-system .system-detail-body > .bg-\[\#141518\] {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.cinematic-system .system-task-grid > div {
+  padding: 12px 0 !important;
+  border-bottom: 1px solid rgba(207, 158, 255, 0.07) !important;
+}
+
+.cinematic-system .system-task-grid .text-gray-300,
+.cinematic-system .system-detail-body .text-white {
+  color: rgba(255, 255, 255, 0.96) !important;
+  font-weight: 430 !important;
+  text-shadow: 0 0 16px rgba(207, 158, 255, 0.18);
+}
+
+.cinematic-system .system-task-grid .text-gray-400,
+.cinematic-system .system-task-grid .text-gray-500,
+.cinematic-system .system-task-grid .text-gray-600,
+.cinematic-system .system-detail-body .text-gray-400,
+.cinematic-system .system-detail-body .text-gray-500,
+.cinematic-system .system-detail-body .text-gray-600 {
+  color: rgba(220, 211, 240, 0.62) !important;
+}
+
+.cinematic-system .system-task-grid input,
+.cinematic-system .system-detail-body input,
+.cinematic-system .system-detail-body select {
+  border: 0 !important;
+  border-bottom: 1px solid rgba(207, 158, 255, 0.22) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: rgba(255, 255, 255, 0.94) !important;
+  box-shadow: none !important;
+}
+
+.cinematic-system .system-task-grid button[class*="rounded-full"] {
+  background: rgba(207, 158, 255, 0.2) !important;
+  box-shadow: inset 0 0 0 1px rgba(207, 158, 255, 0.24), 0 0 18px rgba(207, 158, 255, 0.12);
+}
+
+.cinematic-system .system-detail-body .rounded-xl,
+.cinematic-system .system-detail-body .rounded-lg {
+  border-radius: 0 !important;
+}
+
+.cinematic-system .system-module-switcher {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px 14px;
+  padding: 0 0 14px;
+  border-bottom: 1px solid rgba(207, 158, 255, 0.085);
+}
+
+.cinematic-system .system-doc-pane-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(3px, 0.35vw, 6px);
+  padding: 0 0 13px;
+  border-bottom: 1px solid rgba(167, 139, 250, 0.16);
+}
+
+.cinematic-system .system-doc-pane-tabs button {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 1px 8px;
+  min-height: 44px;
+  padding: 4px 0 9px;
+  border: 0;
+  border-bottom: 1px solid rgba(207, 158, 255, 0.12);
+  background: transparent;
+  color: rgba(230, 222, 244, 0.7);
+  font: 12px/1.1 Monaco, Consolas, "PingFang SC", monospace;
+  text-align: left;
+  cursor: pointer;
+  opacity: 0.84;
+  transition: color 160ms ease, border-color 160ms ease, filter 160ms ease, opacity 160ms ease, transform 160ms ease;
+}
+
+.cinematic-system .system-doc-pane-tabs button svg {
+  grid-row: 1 / span 2;
+  color: rgba(207, 158, 255, 0.7);
+  filter: drop-shadow(0 0 9px rgba(207, 158, 255, 0.2));
+}
+
+.cinematic-system .system-doc-pane-tabs button.is-gold svg {
+  color: rgba(214, 163, 76, 0.86);
+  filter: drop-shadow(0 0 10px rgba(214, 163, 76, 0.26));
+}
+
+.cinematic-system .system-doc-pane-tabs button.is-cyan svg {
+  color: rgba(125, 211, 252, 0.86);
+  filter: drop-shadow(0 0 10px rgba(125, 211, 252, 0.24));
+}
+
+.cinematic-system .system-doc-pane-tabs button b {
+  overflow: hidden;
+  color: rgba(242, 238, 230, 0.78);
+  font-size: 13px;
+  font-weight: 430;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cinematic-system .system-doc-pane-tabs button span {
+  overflow: hidden;
+  color: rgba(220, 211, 240, 0.42);
+  font-size: 8.5px;
+  letter-spacing: 0.12em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cinematic-system .system-doc-pane-tabs button:hover,
+.cinematic-system .system-doc-pane-tabs button.is-active {
+  border-color: rgba(207, 158, 255, 0.68);
+  color: rgba(255, 255, 255, 0.98);
+  opacity: 1;
+  filter: brightness(1.12) drop-shadow(0 0 12px rgba(207, 158, 255, 0.12));
+  transform: translateY(-1px);
+}
+
+.cinematic-system .system-doc-pane-tabs button.is-active b {
+  color: rgba(255, 255, 255, 0.98);
+  text-shadow: 0 0 16px rgba(207, 158, 255, 0.3);
+}
+
+.cinematic-system .system-module-switcher button {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 0 7px;
+  border: 0;
+  border-bottom: 1px solid rgba(207, 158, 255, 0.14);
+  background: transparent;
+  color: rgba(230, 222, 244, 0.68);
+  font: 12px/1.1 Monaco, Consolas, "PingFang SC", monospace;
+  text-align: left;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, text-shadow 160ms ease, transform 160ms ease;
+}
+
+.cinematic-system .system-module-switcher button svg {
+  color: rgba(207, 158, 255, 0.6);
+  filter: drop-shadow(0 0 8px rgba(207, 158, 255, 0.18));
+}
+
+.cinematic-system .system-module-switcher button:hover,
+.cinematic-system .system-module-switcher button.is-active {
+  color: rgba(255, 255, 255, 0.98);
+  border-color: rgba(207, 158, 255, 0.68);
+  text-shadow: 0 0 18px rgba(207, 158, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.cinematic-system .system-module-switcher button.is-gold svg {
+  color: rgba(214, 163, 76, 0.82);
+}
+
+.cinematic-system .system-module-switcher button.is-blue svg,
+.cinematic-system .system-module-switcher button.is-cyan svg {
+  color: rgba(125, 211, 252, 0.8);
+}
+
+.cinematic-system .system-module-switcher button.is-rose svg {
+  color: rgba(255, 122, 144, 0.78);
+}
+
+.cinematic-system .system-ai-pane-switcher {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(2px, 0.2vw, 4px);
+  padding: 0 0 12px;
+  border-bottom: 1px solid rgba(207, 158, 255, 0.085);
+}
+
+.cinematic-system .system-ai-pane-switcher button {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 1px 8px;
+  min-height: 42px;
+  padding: 4px 0 8px;
+  border: 0;
+  border-bottom: 1px solid rgba(207, 158, 255, 0.14);
+  background: transparent;
+  color: rgba(230, 222, 244, 0.7);
+  font: 12px/1.1 Monaco, Consolas, "PingFang SC", monospace;
+  text-align: left;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, filter 160ms ease, transform 160ms ease;
+}
+
+.cinematic-system .system-ai-pane-switcher button svg {
+  grid-row: 1 / span 2;
+  color: rgba(207, 158, 255, 0.68);
+  filter: drop-shadow(0 0 9px rgba(207, 158, 255, 0.2));
+}
+
+.cinematic-system .system-ai-pane-switcher button b {
+  overflow: hidden;
+  color: rgba(242, 238, 230, 0.78);
+  font-size: 13px;
+  font-weight: 430;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cinematic-system .system-ai-pane-switcher button span {
+  overflow: hidden;
+  color: rgba(220, 211, 240, 0.42);
+  font-size: 8.5px;
+  letter-spacing: 0.12em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cinematic-system .system-ai-pane-switcher button:hover,
+.cinematic-system .system-ai-pane-switcher button.is-active {
+  border-color: rgba(207, 158, 255, 0.68);
+  color: rgba(255, 255, 255, 0.98);
+  filter: brightness(1.12) drop-shadow(0 0 12px rgba(207, 158, 255, 0.12));
+  transform: translateY(-1px);
+}
+
+.cinematic-system .system-ai-pane-switcher button.is-active b {
+  color: rgba(255, 255, 255, 0.98);
+  text-shadow: 0 0 16px rgba(207, 158, 255, 0.3);
+}
+
+.cinematic-system .system-detail-body > .bg-\[\#141518\],
+.cinematic-system .system-composite-view > .bg-\[\#141518\] {
+  margin-top: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.cinematic-system .system-detail-body > .bg-\[\#141518\] > button,
+.cinematic-system .system-composite-view > .bg-\[\#141518\] > button {
+  padding: 0 0 12px !important;
+  border-bottom: 1px solid rgba(207, 158, 255, 0.085) !important;
+  background: transparent !important;
+}
+
+.cinematic-system .system-detail-body details summary {
+  color: rgba(226, 218, 244, 0.72) !important;
+}
+
+.cinematic-system .system-detail-body details pre {
+  border: 0 !important;
+  border-left: 1px solid rgba(207, 158, 255, 0.16) !important;
+  border-radius: 0 !important;
+  background: rgba(6, 0, 16, 0.18) !important;
+}
+
+@media (max-width: 1180px) {
+  .cinematic-system .system-runtime-layers,
+  .cinematic-system .system-flow-line,
+  .cinematic-system .system-data-landing,
+  .cinematic-system .system-boundary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cinematic-system .system-flow-line article::after {
+    left: 8px;
+    top: 22px;
+    bottom: -12px;
+    width: 1px;
+    height: auto;
+    background: linear-gradient(180deg, rgba(207, 158, 255, 0.22), transparent);
+  }
+
+  .cinematic-system .system-module-switcher {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
