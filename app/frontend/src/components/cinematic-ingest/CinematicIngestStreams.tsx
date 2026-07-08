@@ -9,6 +9,7 @@ import {
   topicToneClass,
   visibleIndexDepthRange,
 } from './ingestUtils';
+import { ingestCopy } from './ingestCopy';
 
 export const EventStream = memo(function EventStream({
   events,
@@ -103,15 +104,15 @@ export const EventStream = memo(function EventStream({
   }, [events, loadingMore, onLoadNewer, onLoadOlder]);
 
   if (loading) {
-    return <div className="stream-loading"><Loader2 size={18} className="animate-spin" /> 正在同步内容流</div>;
+    return <div className="stream-loading"><Loader2 size={18} className="animate-spin" /> {ingestCopy.stream.loading}</div>;
   }
   if (error || events.length === 0) {
     return (
       <div className={`ingest-index-empty${error ? ' is-error' : ''}`}>
-        <span>{error ? 'LINK INTERRUPTED' : 'AWAITING SIGNAL'}</span>
-        <b>{error || '等待外部信号进入采集轨道'}</b>
-        <p>{error ? '后端未连接，采集舱保持待命。' : '接入短视频、文件、概念或信息源扫描后，这里会出现标题索引。'}</p>
-        {error && <button type="button" onClick={onRetry}>重新连接</button>}
+        <span>{error ? ingestCopy.stream.interrupted : ingestCopy.stream.awaitingSignal}</span>
+        <b>{error || ingestCopy.stream.emptyTitle}</b>
+        <p>{error ? ingestCopy.stream.backendDisconnected : ingestCopy.stream.emptyDetail}</p>
+        {error && <button type="button" onClick={onRetry}>{ingestCopy.stream.retry}</button>}
       </div>
     );
   }
@@ -157,8 +158,8 @@ export function BriefingStream({
   onRetry: () => void;
 }) {
   if (error) return <div className="stream-error">{error}<button onClick={onRetry}>重试</button></div>;
-  if (loading) return <div className="stream-loading"><Loader2 size={22} className="animate-spin" /> 正在生成快报</div>;
-  if (topics.length === 0) return <div className="stream-empty">暂无新闻简报，先扫描信息源。</div>;
+  if (loading) return <div className="stream-loading"><Loader2 size={22} className="animate-spin" /> {ingestCopy.briefing.loading}</div>;
+  if (topics.length === 0) return <div className="stream-empty">{ingestCopy.briefing.empty}</div>;
   return (
     <div className="briefing-stream">
       {topics.map((topic) => (

@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import type { DragEvent, FormEvent } from 'react';
 import { apiFetch } from '../../api';
 import type { IngestCommandMode } from './ingestTypes';
+import { ingestCopy } from './ingestCopy';
 
 type ToastMessage = { text: string; type: 'success' | 'info' };
 
@@ -49,16 +50,16 @@ export function useIngestCommands({
       });
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data.detail || '提交失败');
+        throw new Error(data.detail || ingestCopy.commands.douyinSubmitFallback);
       }
       const data = await response.json();
       setDouyinText('');
       setDouyinTopic('');
-      setToast({ text: '信号已进入处理轨道', type: 'success' });
+      setToast({ text: ingestCopy.commands.douyinQueued, type: 'success' });
       loadQueue();
       pollIngestStatus(data.event_id);
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : '提交失败');
+      setSubmitError(error instanceof Error ? error.message : ingestCopy.commands.douyinSubmitFallback);
     } finally {
       setSubmitting(false);
     }
@@ -77,17 +78,17 @@ export function useIngestCommands({
       const response = await apiFetch('/api/ingest/file', { method: 'POST', body: formData });
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data.detail || '上传失败');
+        throw new Error(data.detail || ingestCopy.commands.fileSubmitFallback);
       }
       const data = await response.json();
       setSelectedFile(null);
       setFileTitle('');
       setFileTopic('');
-      setToast({ text: '文件已进入处理轨道', type: 'success' });
+      setToast({ text: ingestCopy.commands.fileQueued, type: 'success' });
       loadQueue();
       pollIngestStatus(data.event_id);
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : '上传失败');
+      setSubmitError(error instanceof Error ? error.message : ingestCopy.commands.fileSubmitFallback);
     } finally {
       setFileSubmitting(false);
     }
@@ -96,7 +97,7 @@ export function useIngestCommands({
   const submitConcept = useCallback(async (event: FormEvent) => {
     event.preventDefault();
     if (!conceptTitle.trim()) {
-      setSubmitError('请输入概念名称');
+      setSubmitError(ingestCopy.commands.conceptTitleRequired);
       return;
     }
     setConceptSubmitting(true);
@@ -113,15 +114,15 @@ export function useIngestCommands({
       });
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data.detail || '创建失败');
+        throw new Error(data.detail || ingestCopy.commands.conceptSubmitFallback);
       }
       setConceptTitle('');
       setConceptTopic('');
       setConceptDesc('');
-      setToast({ text: '概念节点已沉淀', type: 'success' });
+      setToast({ text: ingestCopy.commands.conceptQueued, type: 'success' });
       await Promise.all([loadEvents(), loadTopicCounts()]);
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : '创建失败');
+      setSubmitError(error instanceof Error ? error.message : ingestCopy.commands.conceptSubmitFallback);
     } finally {
       setConceptSubmitting(false);
     }
@@ -137,10 +138,10 @@ export function useIngestCommands({
         body: JSON.stringify({}),
       });
       const data = await response.json();
-      setToast({ text: `扫描完成：新增 ${data.new_events || 0} 条`, type: 'success' });
+      setToast({ text: ingestCopy.commands.sourceCollectDone(data.new_events || 0), type: 'success' });
       await Promise.all([loadEvents(), loadTopicCounts(), loadQueue()]);
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : '采集失败');
+      setSubmitError(error instanceof Error ? error.message : ingestCopy.commands.sourceCollectFallback);
     } finally {
       setCollecting(false);
     }

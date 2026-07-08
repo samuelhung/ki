@@ -35,6 +35,7 @@ import { useIngestDetailActions } from '../components/cinematic-ingest/useIngest
 import { useIngestCommands } from '../components/cinematic-ingest/useIngestCommands';
 import { useDebouncedValue } from '../components/cinematic-ingest/useDebouncedValue';
 import { useToastMessage } from '../components/cinematic-ingest/useToastMessage';
+import { ingestCopy } from '../components/cinematic-ingest/ingestCopy';
 import { stageLabel, taskTitle, visibleProgressStages } from '../components/cinematic-ingest/ingestUtils';
 import '../components/cinematic/cinematic.css';
 import '../components/cinematic-ingest/cinematic-ingest.css';
@@ -250,11 +251,11 @@ export default function CinematicIngest() {
     setBriefingError('');
     try {
       const response = await apiFetch('/api/briefing/latest?briefing_type=quick');
-      if (!response.ok) throw new Error('加载简报失败');
+      if (!response.ok) throw new Error(ingestCopy.briefing.loadError);
       const data = await response.json();
       setBriefingTopics(data.topics || []);
     } catch (error) {
-      setBriefingError(error instanceof Error ? error.message : '加载简报失败');
+      setBriefingError(error instanceof Error ? error.message : ingestCopy.briefing.loadError);
     } finally {
       setBriefingLoading(false);
     }
@@ -312,7 +313,7 @@ export default function CinematicIngest() {
             <span>处理轨道</span>
           </div>
           {(running || queueVisible) && (
-            <span>{running ? taskTitle(running) : `${pending.length + errors.length} 项等待处理`}</span>
+            <span>{running ? taskTitle(running) : ingestCopy.queue.pendingSummary(pending.length + errors.length)}</span>
           )}
           {running ? (
             <div className="observation-stage-track">
@@ -324,7 +325,7 @@ export default function CinematicIngest() {
                 </span>
               ))}
               {(running.progress_stages || []).length === 0 && (
-                <em>等待处理阶段回传...</em>
+                <em>{ingestCopy.queue.stageWaiting}</em>
               )}
             </div>
           ) : null}
@@ -347,7 +348,7 @@ export default function CinematicIngest() {
                 )}
               </div>
             )) : (
-              <div className="observation-queue-empty">暂无处理队列</div>
+              <div className="observation-queue-empty">{ingestCopy.queue.empty}</div>
             )}
           </div>
           <div className="observation-recent-list" aria-label="最近处理">
@@ -359,7 +360,7 @@ export default function CinematicIngest() {
                 <small>{statusLabel(item.status)}</small>
               </div>
             )) : (
-              <div className="observation-queue-empty">暂无完成记录</div>
+              <div className="observation-queue-empty">{ingestCopy.queue.recentEmpty}</div>
             )}
           </div>
         </section>
@@ -503,8 +504,8 @@ export default function CinematicIngest() {
               ) : (
                 <div className="laser-media-empty">
                   <span>MEDIA BAY</span>
-                  <b>{activeDetail?.title_cn || activeDetail?.title || '等待内容信号'}</b>
-                  <small>{activeVideoUrl ? '该内容含视频，可展开播放' : activeDetail ? '该内容暂无视频，右侧可阅读文本详情' : '从左侧选择一条采集内容'}</small>
+                  <b>{activeDetail?.title_cn || activeDetail?.title || ingestCopy.media.waitingTitle}</b>
+                  <small>{activeVideoUrl ? ingestCopy.media.hasVideo : activeDetail ? ingestCopy.media.noVideo : ingestCopy.media.pickContent}</small>
                 </div>
               )}
               {activeVideoUrl && (

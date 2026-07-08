@@ -44,6 +44,17 @@ cd app/frontend && npm run dev
 # 前端构建
 cd app/frontend && npm run build
 
+# 内容采集页专项测试
+cd app/frontend && npm run test:cinematic-ingest
+
+# 内容采集页 2560×1440 视觉 QA
+cd app/frontend
+npm run qa:cinematic-ingest -- http://10.8.0.105:9120/#/ingest tmp/visual-qa-remote
+
+# 内容采集页性能基线 QA
+cd app/frontend
+npm run qa:cinematic-ingest:perf -- http://10.8.0.105:9120/#/ingest tmp/perf-qa-remote
+
 # 桌面端构建
 export PATH="/Users/mrh/flutter/bin:$PATH"
 cd desktop && flutter build macos --release
@@ -59,6 +70,50 @@ python3 scripts/release-check.py X.Y.Z
 # CI/无本机 DMG 环境可跳过 release artifact 检查
 ZHIJI_SKIP_RELEASE_CHECK=1 ./scripts/check.sh
 ```
+
+## 本机开发与远端部署
+
+当前 KI 正式服务部署在远端 MacBook Pro：
+
+- 本机开发机：MacBook Air M4，`10.8.0.21`
+- 远端部署机：MacBook Pro Intel，`10.8.0.105`
+- 远端访问地址：`http://10.8.0.105:9120`
+- launchd 服务：`com.zhiji.backend`
+- 远端运行目录：`/Users/mrh/Documents/KI`
+- 远端数据目录：`/Users/mrh/Documents/KI/data`
+- 远端 packages 目录：`/Users/mrh/Documents/KI/packages`
+- 远端 venv：`/Users/mrh/Documents/KI/runtime/venv`
+- SSH alias：`zhiji-prod`
+
+标准部署流程：
+
+```bash
+# 1. 本机构建前端并打进 backend wheel
+cd /Users/yuk/Documents/zhiji/ki
+python3 scripts/build_backend_wheel.py --python /Users/yuk/Documents/zhiji/ki/.venv-build/bin/python
+
+# 2. 上传 wheel 到远端 packages
+scp /Users/yuk/Documents/zhiji/ki/dist/zhiji_backend-1.3.14-py3-none-any.whl \
+  zhiji-prod:/Users/mrh/Documents/KI/packages/zhiji_backend-1.3.14-py3-none-any.whl
+
+# 3. 远端正式安装并重启服务
+ssh zhiji-prod "/Users/mrh/Documents/KI/runtime/venv/bin/python -m pip install --force-reinstall --no-deps /Users/mrh/Documents/KI/packages/zhiji_backend-1.3.14-py3-none-any.whl && launchctl kickstart -k gui/\$(id -u)/com.zhiji.backend"
+
+# 4. 健康检查
+ssh zhiji-prod "sleep 2; curl -fsS http://127.0.0.1:9120/api/health"
+curl -fsS http://10.8.0.105:9120/api/health
+```
+
+内容采集页的标准 QA 视口是 `2560×1440`。视觉 QA 输出在 `app/frontend/tmp/`，性能基线输出在 `app/frontend/tmp/perf-*` 或调用时指定的临时目录；这些目录不进入 git。
+
+性能基线脚本会记录：
+
+- `/api/health` 状态和耗时
+- Chrome 截图耗时
+- DOM dump 耗时
+- 是否还停留在 `加载中...`
+- 关键 DOM 标记是否存在：内容采集 shell、处理轨道、列表、详情、详情 tab、媒体盒
+- Chrome stderr 中的 error 摘要
 
 ## 发布原则
 

@@ -6,7 +6,18 @@ import test from 'node:test';
 import ts from 'typescript';
 
 async function importTypescriptModule(sourcePath) {
-  const source = readFileSync(sourcePath, 'utf8');
+  const dir = mkdtempSync(join(tmpdir(), 'ki-ingest-utils-'));
+  const copySource = readFileSync(new URL('./ingestCopy.ts', import.meta.url), 'utf8');
+  const compiledCopy = ts.transpileModule(copySource, {
+    compilerOptions: {
+      module: ts.ModuleKind.ES2022,
+      target: ts.ScriptTarget.ES2022,
+      verbatimModuleSyntax: true,
+    },
+  }).outputText;
+  writeFileSync(join(dir, 'ingestCopy.mjs'), compiledCopy);
+
+  const source = readFileSync(sourcePath, 'utf8').replace("from './ingestCopy';", "from './ingestCopy.mjs';");
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
       module: ts.ModuleKind.ES2022,
@@ -14,7 +25,6 @@ async function importTypescriptModule(sourcePath) {
       verbatimModuleSyntax: true,
     },
   }).outputText;
-  const dir = mkdtempSync(join(tmpdir(), 'ki-ingest-utils-'));
   const modulePath = join(dir, 'ingestUtils.mjs');
   writeFileSync(modulePath, compiled);
   return import(modulePath);

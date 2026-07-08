@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch } from '../../api';
 import type { EventItem, TopicKey } from './ingestTypes';
 import { EVENT_BATCH_SIZE, EVENT_WINDOW_LIMIT } from './ingestUtils';
+import { ingestCopy } from './ingestCopy';
 
 const API_BASE = '/api/events';
 
@@ -87,7 +88,7 @@ export function useIngestEvents({ historyTab, debouncedSearch, setToast }: UseIn
         });
       }
     } catch (error) {
-      setEventsError(error instanceof Error ? error.message : '加载事件列表失败');
+      setEventsError(error instanceof Error ? error.message : ingestCopy.stream.loadError);
     } finally {
       if (mode === 'reset') setLoading(false);
       setEventListLoading('idle');
@@ -128,7 +129,7 @@ export function useIngestEvents({ historyTab, debouncedSearch, setToast }: UseIn
       setTotal((prev) => Math.max(0, prev - 1));
       loadEvents('append', eventWindowOffset + Math.max(0, events.length - 1));
     } catch (_) {
-      setToast({ text: '删除失败', type: 'info' });
+      setToast({ text: ingestCopy.stream.deleteFailed, type: 'info' });
     }
   }, [activeEventId, eventWindowOffset, events, loadEvents, setToast, setTotal]);
 

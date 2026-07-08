@@ -3,6 +3,7 @@ import { Link2, Loader2 } from 'lucide-react';
 import { renderMarkdown } from '../MarkdownRenderer';
 import { formatTimeBeijing, sourceLabel, statusLabel } from '../../utils';
 import type { ChainHint, ContemplateSuggestion, DetailTab, EventItem, LinkedQuestion } from './ingestTypes';
+import { ingestCopy } from './ingestCopy';
 
 export function ContentDetailPanel({
   detail,
@@ -66,19 +67,19 @@ export function ContentDetailPanel({
     return bodyText ? (
       <div className="detail-markdown whitespace-pre-wrap">{bodyText}</div>
     ) : (
-      <div className="detail-empty">暂无转写内容</div>
+      <div className="detail-empty">{ingestCopy.detail.bodyEmpty}</div>
     );
   }
 
   function renderSummary() {
-    if (summarizing) return <div className="detail-loading"><Loader2 size={20} className="animate-spin" /> AI 总结生成中</div>;
+    if (summarizing) return <div className="detail-loading"><Loader2 size={20} className="animate-spin" /> {ingestCopy.detail.summaryLoading}</div>;
     const hasOverview = Boolean(detail?.overview);
     const hasAiSummary = Boolean(detail?.ai_summary);
     if (!hasOverview && !hasAiSummary) {
       return (
         <div className="detail-empty">
-          <span>该内容尚未生成 AI 总结</span>
-          {detail && <button onClick={onSummarize}>生成 AI 总结</button>}
+          <span>{ingestCopy.detail.summaryEmpty}</span>
+          {detail && <button onClick={onSummarize}>{ingestCopy.detail.summaryAction}</button>}
         </div>
       );
     }
@@ -118,7 +119,7 @@ export function ContentDetailPanel({
           </div>
         </div>
         {contemplateError && <div className="detail-error">{contemplateError}</div>}
-        {linkedQuestionsLoading && <div className="detail-loading"><Loader2 size={16} className="animate-spin" /> 加载已关联问题</div>}
+        {linkedQuestionsLoading && <div className="detail-loading"><Loader2 size={16} className="animate-spin" /> {ingestCopy.detail.questionsLoading}</div>}
         {linkedQuestions.length > 0 && (
           <section>
             <h3>已关联问题 · {linkedQuestions.length} 条</h3>
@@ -145,20 +146,20 @@ export function ContentDetailPanel({
             ))}
           </section>
         ) : (
-          !contemplating && <div className="detail-empty">暂无推荐关联</div>
+          !contemplating && <div className="detail-empty">{ingestCopy.detail.questionsEmpty}</div>
         )}
       </div>
     );
   }
 
   function renderChain() {
-    if (chainLoading) return <div className="detail-loading"><Loader2 size={20} className="animate-spin" /> 产业影响分析中</div>;
+    if (chainLoading) return <div className="detail-loading"><Loader2 size={20} className="animate-spin" /> {ingestCopy.detail.chainLoading}</div>;
     if (chainError) return <div className="detail-error">{chainError}</div>;
     if (!chainAnalysis) {
       return (
         <div className="detail-empty">
-          <span>基于知识库分析该内容对产业链的影响</span>
-          {detail && <button onClick={onChainAnalyze}>开始分析</button>}
+          <span>{ingestCopy.detail.chainEmpty}</span>
+          {detail && <button onClick={onChainAnalyze}>{ingestCopy.detail.chainAction}</button>}
         </div>
       );
     }
@@ -186,10 +187,10 @@ export function ContentDetailPanel({
   }
 
   let content: React.ReactNode;
-  if (loading) content = <div className="detail-loading"><Loader2 size={20} className="animate-spin" /> 加载内容详情</div>;
+  if (loading) content = <div className="detail-loading"><Loader2 size={20} className="animate-spin" /> {ingestCopy.detail.loading}</div>;
   else if (error) content = <div className="detail-error">{error}</div>;
-  else if (!item) content = <div className="detail-empty">从左侧选择一条采集内容</div>;
-  else if (!detail) content = <div className="detail-empty">正在准备详情舱</div>;
+  else if (!item) content = <div className="detail-empty">{ingestCopy.detail.empty}</div>;
+  else if (!detail) content = <div className="detail-empty">{ingestCopy.detail.preparing}</div>;
   else if (tab === 'body') content = renderBody();
   else if (tab === 'summary') content = renderSummary();
   else if (tab === 'questions') content = renderQuestions();
@@ -199,7 +200,7 @@ export function ContentDetailPanel({
     <section className="ingest-detail-reader" aria-label="内容详情">
       <header>
         <span>{item ? `${sourceLabel(item.source_id)} · ${statusLabel(item.status)}` : 'CONTENT DETAIL'}</span>
-        <h2>{item?.title_cn || item?.title || '等待内容信号'}</h2>
+        <h2>{item?.title_cn || item?.title || ingestCopy.detail.titleFallback}</h2>
         {item && <small>{formatTimeBeijing(item.created_at)} · {item.topic || 'uncategorized'}</small>}
       </header>
       {detailTabs}

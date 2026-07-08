@@ -8,6 +8,7 @@ import type {
   LinkedQuestion,
   TopicKey,
 } from './ingestTypes';
+import { ingestCopy } from './ingestCopy';
 
 const API_BASE = '/api/events';
 
@@ -60,7 +61,7 @@ export function useIngestDetailActions({
     setSyncResult('');
     try {
       const response = await apiFetch(`${API_BASE}/${eventId}`);
-      if (!response.ok) throw new Error('加载内容详情失败');
+      if (!response.ok) throw new Error(ingestCopy.detail.loadError);
       const data: EventItem = await response.json();
       if (requestSeq !== detailRequestSeqRef.current) return;
       setDetail(data);
@@ -76,7 +77,7 @@ export function useIngestDetailActions({
       setContemplateResults(linked);
     } catch (error) {
       if (requestSeq !== detailRequestSeqRef.current) return;
-      setDetailError(error instanceof Error ? error.message : '加载内容详情失败');
+      setDetailError(error instanceof Error ? error.message : ingestCopy.detail.loadError);
       setDetail(null);
     } finally {
       if (requestSeq === detailRequestSeqRef.current) {
@@ -110,7 +111,7 @@ export function useIngestDetailActions({
     setSummarizingId(eventId);
     try {
       const response = await apiFetch(`${API_BASE}/${eventId}/summarize?force=true`, { method: 'POST' });
-      if (!response.ok) throw new Error('总结失败');
+      if (!response.ok) throw new Error(ingestCopy.detail.summarizeFailed);
       for (let i = 0; i < 30; i += 1) {
         await new Promise((resolve) => window.setTimeout(resolve, 2000));
         if (requestSeq !== summarizeRequestSeqRef.current || activeEventId !== eventId) return;
@@ -125,7 +126,7 @@ export function useIngestDetailActions({
       }
     } catch (_) {
       if (requestSeq !== summarizeRequestSeqRef.current || activeEventId !== eventId) return;
-      setToast({ text: 'AI 总结生成失败', type: 'info' });
+      setToast({ text: ingestCopy.detail.summarizeFailed, type: 'info' });
     } finally {
       if (requestSeq === summarizeRequestSeqRef.current) {
         setSummarizingId(null);
@@ -147,7 +148,7 @@ export function useIngestDetailActions({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ direction: 'event_to_questions', entity_id: eventId }),
       });
-      if (!response.ok) throw new Error('请求失败');
+      if (!response.ok) throw new Error(ingestCopy.detail.contemplateRequestFailed);
       const data = await response.json();
       if (requestSeq !== contemplateRequestSeqRef.current || activeEventId !== eventId) return;
       if (data.error) {
@@ -157,7 +158,7 @@ export function useIngestDetailActions({
       setContemplateResults(data.suggestions || []);
     } catch (error) {
       if (requestSeq !== contemplateRequestSeqRef.current || activeEventId !== eventId) return;
-      setContemplateError(error instanceof Error ? error.message : '凝神静思失败');
+      setContemplateError(error instanceof Error ? error.message : ingestCopy.detail.contemplateFailed);
     } finally {
       if (requestSeq === contemplateRequestSeqRef.current) {
         setContemplating(false);
@@ -187,7 +188,7 @@ export function useIngestDetailActions({
       setToast({ text: '关联问题已写入', type: 'success' });
     } catch (_) {
       if (requestSeq !== contemplateRequestSeqRef.current || activeEventId !== eventId) return;
-      setContemplateError('关联失败');
+      setContemplateError(ingestCopy.detail.linkFailed);
     } finally {
       if (requestSeq === contemplateRequestSeqRef.current) {
         setContemplateLinking(false);
@@ -221,7 +222,7 @@ export function useIngestDetailActions({
       setChainHints(data.extracted_hints || []);
     } catch (error) {
       if (requestSeq !== chainAnalyzeRequestSeqRef.current || activeEventId !== eventId) return;
-      setChainError(error instanceof Error ? error.message : '分析失败');
+      setChainError(error instanceof Error ? error.message : ingestCopy.detail.chainFailed);
     } finally {
       if (requestSeq === chainAnalyzeRequestSeqRef.current) {
         setChainLoading(false);
@@ -250,7 +251,7 @@ export function useIngestDetailActions({
       }
     } catch (error) {
       if (requestSeq !== syncHintsRequestSeqRef.current || activeEventId !== eventId) return;
-      setSyncResult(`同步失败：${error instanceof Error ? error.message : '未知错误'}`);
+      setSyncResult(`${ingestCopy.detail.syncFailed}：${error instanceof Error ? error.message : ingestCopy.detail.unknownError}`);
     } finally {
       if (requestSeq === syncHintsRequestSeqRef.current) {
         setSyncingHints(false);

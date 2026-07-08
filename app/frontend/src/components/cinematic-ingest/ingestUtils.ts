@@ -1,4 +1,5 @@
 import type { ProgressStage, QueueItem, QueueStatusCounts } from './ingestTypes';
+import { ingestCopy } from './ingestCopy';
 
 export const EVENT_BATCH_SIZE = 20;
 export const EVENT_WINDOW_LIMIT = 50;
@@ -59,7 +60,7 @@ export function stageLabel(status: ProgressStage['status']) {
   if (status === 'done') return '完成';
   if (status === 'active') return '运行';
   if (status === 'error') return '异常';
-  return '等待';
+  return ingestCopy.queue.waiting;
 }
 
 export function visibleProgressStages(stages: ProgressStage[]): Array<ProgressStage & { isCurrent: boolean }> {

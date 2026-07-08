@@ -8,6 +8,7 @@ import {
   queueCountsSignature,
   queueSignature,
 } from './ingestUtils';
+import { ingestCopy } from './ingestCopy';
 
 type ToastMessage = { text: string; type: 'success' | 'info' };
 
@@ -101,7 +102,7 @@ export function useIngestQueue({ setToast }: UseIngestQueueOptions) {
       await apiFetch(`/api/ingest/queue/${taskId}/retry`, { method: 'POST' });
       loadQueue();
     } catch (_) {
-      setToast({ text: '重试失败', type: 'info' });
+      setToast({ text: ingestCopy.queue.retryFailed, type: 'info' });
     }
   }, [loadQueue, setToast]);
 
@@ -126,12 +127,12 @@ export function useIngestQueue({ setToast }: UseIngestQueueOptions) {
       const response = await apiFetch(`/api/ingest/queue/${taskId}`, { method: 'DELETE' });
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        throw new Error(data.detail || '删除队列任务失败');
+        throw new Error(data.detail || ingestCopy.queue.taskDeleteFailed);
       }
     } catch (_) {
       deletedQueueTaskIdsRef.current.delete(taskId);
       loadQueue();
-      setToast({ text: '删除队列任务失败', type: 'info' });
+      setToast({ text: ingestCopy.queue.deleteFailed, type: 'info' });
     }
   }, [loadQueue, setToast]);
 
