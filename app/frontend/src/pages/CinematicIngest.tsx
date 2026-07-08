@@ -20,6 +20,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { useCurtain } from '../CurtainContext';
+import CinematicScene from '../components/cinematic/CinematicScene';
 import LaserFlow from '../components/react-bits/LaserFlow';
 import { apiFetch } from '../api';
 import { backendUrl } from '../api';
@@ -285,6 +286,7 @@ export default function CinematicIngest() {
 
   return (
     <div className="cinematic-ingest cinematic-dashboard" data-topic={activeTopic.accent}>
+      <CinematicScene focus={0} variant="ingest" />
       <div className="ingest-galaxy-layer" aria-hidden="true">
       </div>
       <div className="ingest-threads-layer" aria-hidden="true">

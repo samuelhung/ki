@@ -22,6 +22,7 @@ import {
 import { useCurtain } from '../CurtainContext';
 import { apiFetch, getApiToken, getBackendUrl, setApiToken, setBackendUrl } from '../api';
 import { APP_VERSION } from '../constants';
+import CinematicScene from '../components/cinematic/CinematicScene';
 import LaserFlow from '../components/react-bits/LaserFlow';
 import { cinematicNavHubs } from '../navigation';
 import {
@@ -524,6 +525,7 @@ export default function CinematicSystemCenter() {
 
   return (
     <div className="cinematic-ingest cinematic-system cinematic-dashboard" data-topic="system">
+      <CinematicScene focus={0} variant="system" />
       <div className="ingest-galaxy-layer" aria-hidden="true" />
       <div className="ingest-threads-layer" aria-hidden="true" />
       <div className="cinematic-film" />

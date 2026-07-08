@@ -21,6 +21,36 @@
   animation: cinematicWebglBloom 2.42s cubic-bezier(0.16, 1, 0.3, 1) 0.18s forwards;
 }
 
+.cinematic-scene-canvas.is-ingest-backdrop,
+.cinematic-scene-canvas.is-system-backdrop {
+  z-index: 1;
+  opacity: 1;
+  --cinematic-shared-backdrop-filter: brightness(0.72) saturate(1.06) contrast(1.04);
+  animation: cinematicSharedBackdropBloom 1.8s cubic-bezier(0.16, 1, 0.3, 1) 0.12s forwards;
+}
+
+.cinematic-scene-canvas.is-ingest-backdrop {
+  --cinematic-shared-backdrop-filter: brightness(0.82) saturate(1.1) contrast(1.04);
+  filter: var(--cinematic-shared-backdrop-filter);
+}
+
+.cinematic-scene-canvas.is-system-backdrop {
+  --cinematic-shared-backdrop-filter: brightness(0.72) saturate(0.98) contrast(1.04) hue-rotate(6deg);
+  filter: var(--cinematic-shared-backdrop-filter);
+}
+
+.cinematic-ingest .cinematic-film {
+  background:
+    radial-gradient(circle at 52% 48%, transparent 0 30%, rgba(0, 0, 0, 0.06) 54%, rgba(0, 0, 0, 0.58) 100%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.016), rgba(0, 0, 0, 0.032) 30%, rgba(0, 0, 0, 0.18));
+}
+
+.cinematic-system .cinematic-film {
+  background:
+    radial-gradient(circle at 54% 48%, transparent 0 28%, rgba(0, 0, 0, 0.08) 54%, rgba(0, 0, 0, 0.62) 100%),
+    linear-gradient(180deg, rgba(125, 211, 252, 0.014), rgba(0, 0, 0, 0.038) 30%, rgba(0, 0, 0, 0.2));
+}
+
 .cinematic-film {
   position: absolute;
   inset: 0;
@@ -1238,6 +1268,12 @@
   50% { filter: brightness(0.26) saturate(0.76); }
   72% { filter: brightness(0.86) saturate(1.04); }
   100% { filter: brightness(1.16) saturate(1.14) contrast(1.04); }
+}
+
+@keyframes cinematicSharedBackdropBloom {
+  0% { opacity: 0; filter: brightness(0.035) saturate(0.45); }
+  42% { opacity: 0.82; filter: brightness(0.42) saturate(0.78); }
+  100% { opacity: 1; filter: var(--cinematic-shared-backdrop-filter); }
 }
 
 @keyframes cinematicHudPlainFromTop {
