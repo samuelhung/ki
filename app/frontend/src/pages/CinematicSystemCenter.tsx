@@ -15,22 +15,24 @@ import {
   Search,
   Server,
   Settings,
-  Table,
+  type LucideIcon,
   Wrench,
   Zap,
 } from 'lucide-react';
+import { useCurtain } from '../CurtainContext';
 import { apiFetch, getApiToken, getBackendUrl, setApiToken, setBackendUrl } from '../api';
 import { APP_VERSION } from '../constants';
+import LaserFlow from '../components/react-bits/LaserFlow';
+import { cinematicNavHubs } from '../navigation';
 import {
   ARCHITECTURE_FEATURES,
   CHANGELOG_ENTRIES,
-  CORE_MODULES,
-  DATA_DIRECTORY_TREE,
   RELEASE_GUARDRAILS,
-  RUNTIME_ARCHITECTURE,
   TECH_STACK,
 } from '../systemDocData';
 import { NumberInput, PromptSection, TaskRow, Toggle, type TaskConfig } from '../components/SystemSettingsControls';
+import { useLaserRenderProfile } from '../components/cinematic-ingest/useLaserRenderProfile';
+import '../components/cinematic/cinematic.css';
 import '../components/cinematic-ingest/cinematic-ingest.css';
 import '../components/cinematic-ingest/cinematic-ingest-performance.css';
 import '../components/cinematic-system/cinematic-system.css';
@@ -103,27 +105,16 @@ const SECTION_GROUPS = [
   {
     label: '观测',
     items: [
-      { key: 'overview', label: '运行总览', icon: Activity },
-      { key: 'arch', label: '数据架构', icon: Layers },
-      { key: 'flow', label: '数据流', icon: Radio },
-      { key: 'database', label: '数据库', icon: Database },
-      { key: 'logs', label: '系统日志', icon: FileText },
-      { key: 'changelog', label: '版本更新', icon: BookOpen },
+      { key: 'docs', label: '系统说明', icon: Layers, accent: 'blue' },
+      { key: 'logs', label: '运行记录', icon: FileText, accent: 'rose' },
+      { key: 'changelog', label: '版本记录', icon: BookOpen, accent: 'violet' },
     ],
   },
   {
     label: '控制',
     items: [
-      { key: 'params_info', label: '参数说明', icon: Wrench },
-      { key: 'general', label: '通用配置', icon: Settings },
-      { key: 'ingest_pipeline', label: '内容采集', icon: Zap },
-      { key: 'series', label: '专题引擎', icon: Layers },
-      { key: 'brainstorm', label: '头脑风暴', icon: Radio },
-      { key: 'digest_briefing', label: '摘要快报', icon: FileText },
-      { key: 'tasks', label: '待办事务', icon: CheckCircle },
-      { key: 'concept', label: '概念沉淀', icon: BookOpen },
-      { key: 'knowledge_graph', label: '知识图谱', icon: Database },
-      { key: 'connection', label: '连接设置', icon: Globe },
+      { key: 'base_config', label: '基础配置', icon: Settings, accent: 'violet' },
+      { key: 'ai_modules', label: 'AI 模块', icon: Wrench, accent: 'cyan' },
     ],
   },
 ] as const;
@@ -131,6 +122,130 @@ const SECTION_GROUPS = [
 const TAB_LABELS: Record<string, string> = Object.fromEntries(
   SECTION_GROUPS.flatMap((group) => group.items.map((item) => [item.key, item.label]))
 );
+
+const MODULE_CONFIG_KEYS = [
+  'ingest_pipeline',
+  'series',
+  'brainstorm',
+  'digest_briefing',
+  'tasks',
+  'concept',
+  'knowledge_graph',
+] as const;
+
+const MODULE_CONFIG_ITEMS = [
+  { key: 'ingest_pipeline', label: '内容采集', icon: Zap, accent: 'gold' },
+  { key: 'series', label: '专题引擎', icon: Layers, accent: 'blue' },
+  { key: 'brainstorm', label: '头脑风暴', icon: Radio, accent: 'cyan' },
+  { key: 'digest_briefing', label: '摘要快报', icon: FileText, accent: 'rose' },
+  { key: 'tasks', label: '待办事务', icon: CheckCircle, accent: 'gold' },
+  { key: 'concept', label: '概念沉淀', icon: BookOpen, accent: 'violet' },
+  { key: 'knowledge_graph', label: '知识图谱', icon: Database, accent: 'blue' },
+] as const;
+
+const AI_MODULE_PANES = [
+  { key: 'params', label: '运行参数', icon: Wrench, code: 'PARAMS' },
+  { key: 'prompts', label: 'Prompt', icon: BookOpen, code: 'PROMPT' },
+] as const;
+
+const DOC_DETAIL_TABS = [
+  { key: 'portrait', label: '系统画像', icon: Server, code: 'PORTRAIT', accent: 'gold' },
+  { key: 'flow', label: '运行链路', icon: Radio, code: 'FLOW', accent: 'violet' },
+  { key: 'boundary', label: '工程边界', icon: Wrench, code: 'BOUNDARY', accent: 'cyan' },
+] as const;
+
+MODULE_CONFIG_ITEMS.forEach((item) => {
+  TAB_LABELS[item.key] = item.label;
+});
+
+const CORE_MODULE_VISUALS: Array<{ icon: LucideIcon; code: string; accent: string }> = [
+  { icon: Activity, code: 'TODAY', accent: 'gold' },
+  { icon: Database, code: 'DATA', accent: 'violet' },
+  { icon: Layers, code: 'RESEARCH', accent: 'blue' },
+  { icon: Radio, code: 'THINK', accent: 'cyan' },
+  { icon: CheckCircle, code: 'ACTION', accent: 'gold' },
+  { icon: BookOpen, code: 'STUDY', accent: 'violet' },
+  { icon: Server, code: 'SYSTEM', accent: 'blue' },
+];
+
+const FEATURE_VISUALS: Array<{ icon: LucideIcon; code: string; accent: string }> = [
+  { icon: Radio, code: 'LOCAL', accent: 'cyan' },
+  { icon: Database, code: 'SQLITE', accent: 'violet' },
+  { icon: Zap, code: 'QUEUE', accent: 'gold' },
+  { icon: Layers, code: 'MODULE', accent: 'blue' },
+  { icon: CheckCircle, code: 'GUARD', accent: 'gold' },
+  { icon: Server, code: 'SERVICE', accent: 'cyan' },
+];
+
+const RUNTIME_LAYERS = [
+  {
+    title: '桌面壳',
+    code: 'SHELL',
+    icon: Server,
+    desc: 'macOS 知几.app 负责窗口、托盘、连接设置、WebView、更新检查和 Sparkle 更新。',
+  },
+  {
+    title: '前端舱',
+    code: 'SURFACE',
+    icon: Layers,
+    desc: 'React + Vite 承载业务页面、移动端适配、过场动画、路由拆包和统一安全渲染。',
+  },
+  {
+    title: '后端核',
+    code: 'CORE',
+    icon: Database,
+    desc: 'FastAPI 由 launchd 托管，统一提供 API、SQLite + 文件系统双写、任务队列和访问令牌保护。',
+  },
+];
+
+const INGEST_FLOW_STEPS = [
+  {
+    title: '输入来源',
+    code: 'INPUT',
+    icon: Radio,
+    desc: '抖音分享、文件上传、RSS 信息源和手工概念进入统一采集层。',
+  },
+  {
+    title: '解析处理',
+    code: 'PARSE',
+    icon: FileText,
+    desc: '链接解析、视频下载、音频提取、文档解析和语音转写在队列中推进。',
+  },
+  {
+    title: 'AI 加工',
+    code: 'AI',
+    icon: Zap,
+    desc: 'AI 总结、认知分类、实体标注、翻译、概念补全和专题匹配形成结构化理解。',
+  },
+  {
+    title: '存储沉淀',
+    code: 'STORE',
+    icon: HardDrive,
+    desc: 'SQLite 主库与 Markdown / 媒体文件双写，支持全文检索、回放和离线保全。',
+  },
+  {
+    title: '页面呈现',
+    code: 'VIEW',
+    icon: Globe,
+    desc: '今日知几、内容采集、专题、图谱、产业链、脑暴和系统页共用同一数据面。',
+  },
+];
+
+const DATA_LANDING_POINTS = [
+  { label: '主库', value: 'intelligence.sqlite', icon: Database },
+  { label: '采集产物', value: 'transcripts / summaries / media', icon: FileText },
+  { label: '研究沉淀', value: 'brainstorm / concepts / digests', icon: BookOpen },
+  { label: '采集水位', value: 'events / rss state', icon: Activity },
+];
+
+const STORAGE_FILE_VISUALS: LucideIcon[] = [
+  FileText,
+  Database,
+  HardDrive,
+  FileText,
+  Layers,
+  BookOpen,
+];
 
 const TASK_NAMES: Record<string, Record<string, string>> = {
   ingest_pipeline: { summarize: '内容总结', classify: '认知分类', tag: '实体标注', translate: '英文翻译' },
@@ -192,9 +307,23 @@ function statText(value: string | number | undefined | null) {
   return value;
 }
 
+function SectionTitle({ icon: Icon, title, code }: { icon: LucideIcon; title: string; code?: string }) {
+  return (
+    <h2 className="system-section-title">
+      <Icon size={14} />
+      <span>{title}</span>
+      {code && <em>{code}</em>}
+    </h2>
+  );
+}
+
 export default function CinematicSystemCenter() {
   const location = useLocation();
-  const [activeSection, setActiveSection] = useState(() => (location.pathname === '/settings' ? 'general' : 'overview'));
+  const { navigateWithCurtain } = useCurtain();
+  const [activeSection, setActiveSection] = useState(() => (location.pathname === '/settings' ? 'base_config' : 'docs'));
+  const [activeDocPane, setActiveDocPane] = useState<(typeof DOC_DETAIL_TABS)[number]['key']>('portrait');
+  const [activeModule, setActiveModule] = useState<(typeof MODULE_CONFIG_KEYS)[number]>('ingest_pipeline');
+  const [activeAiPane, setActiveAiPane] = useState<(typeof AI_MODULE_PANES)[number]['key']>('params');
   const [health, setHealth] = useState<{ data: HealthData | null; latency_ms: number; error: string | null }>({ data: null, latency_ms: 0, error: null });
   const [config, setConfig] = useState<SystemConfig | null>(null);
   const [saving, setSaving] = useState(false);
@@ -214,10 +343,12 @@ export default function CinematicSystemCenter() {
   const [apiTokenInput, setApiTokenInput] = useState(getApiToken());
   const [testing, setTesting] = useState(false);
   const [connSaved, setConnSaved] = useState(false);
+  const [activeHub, setActiveHub] = useState<string | null>(null);
+  const { viewportHeight, laserRenderProfile } = useLaserRenderProfile();
 
   useEffect(() => {
-    if (location.pathname === '/settings') setActiveSection('general');
-    if (location.pathname === '/system') setActiveSection('overview');
+    if (location.pathname === '/settings') setActiveSection('base_config');
+    if (location.pathname === '/system') setActiveSection('docs');
   }, [location.pathname]);
 
   const checkHealth = useCallback(async () => {
@@ -268,14 +399,18 @@ export default function CinematicSystemCenter() {
   }, []);
 
   useEffect(() => {
-    if (activeSection === 'database') loadDbInfo();
     if (activeSection === 'logs') loadLogs();
   }, [activeSection, loadDbInfo, loadLogs]);
 
+  useEffect(() => {
+    loadDbInfo();
+  }, [loadDbInfo]);
+
   const currentTitle = TAB_LABELS[activeSection] || '系统中枢';
-  const isConfigSection = Boolean(config && activeSection in config && activeSection !== 'general');
-  const dbTables = useMemo(() => Object.entries(dbInfo?.database.tables || {}).sort(([, a], [, b]) => b.count - a.count), [dbInfo]);
-  const dbMaxCount = Math.max(1, ...dbTables.map(([, info]) => info.count));
+  const activeSystemGroup =
+    SECTION_GROUPS.find((group) => group.items.some((item) => item.key === activeSection)) ||
+    SECTION_GROUPS[0];
+  const activeSystemItems = activeSystemGroup.items.map((item) => ({ ...item, group: activeSystemGroup.label }));
 
   const updateGeneral = (key: string, value: any) => {
     if (!config) return;
@@ -354,12 +489,38 @@ export default function CinematicSystemCenter() {
     setTimeout(() => setConnSaved(false), 3000);
   };
 
+  const currentPath = window.location.hash.replace(/^#/, '') || location.pathname || '/system';
+  const currentHub =
+    cinematicNavHubs.find((hub) => hub.to === currentPath || hub.children.some((item) => item.to === currentPath)) ||
+    cinematicNavHubs[0];
+  const activeHubKey = activeHub || currentHub.to;
+  const activeHubIndex = Math.max(0, cinematicNavHubs.findIndex((hub) => hub.to === activeHubKey));
+  const activeHubChildren = activeHub ? (cinematicNavHubs.find((hub) => hub.to === activeHub)?.children || []) : [];
+  const hubRowHeight = 40;
+  const hubBottomPadding = 24;
+  const hubHeight = 330;
+  const childMenuHeight = Math.max(134, activeHubChildren.length * hubRowHeight + 18);
+  const activeHubCenter = hubBottomPadding + ((cinematicNavHubs.length - 1 - activeHubIndex) * hubRowHeight) + 15;
+  const childMenuBottom = Math.max(
+    hubBottomPadding,
+    Math.min(hubHeight - childMenuHeight - 20, activeHubCenter - (childMenuHeight / 2)),
+  );
+
   const commandItems = [
-    { key: 'refresh', label: '刷新状态', meta: health.error ? 'RETRY' : `${health.latency_ms || '--'}ms`, icon: RefreshCw, onClick: checkHealth },
-    { key: 'database', label: '刷新数据库', meta: dbInfo?.database.size_display || 'DATABASE', icon: Database, onClick: loadDbInfo },
-    { key: 'update', label: '检查更新', meta: canCheckUpdates() ? 'SPARKLE' : 'DESKTOP', icon: CheckCircle, onClick: handleCheckUpdate },
-    { key: 'save', label: saving ? '保存中' : '保存配置', meta: message || 'CONFIG', icon: Save, onClick: save },
+    { key: 'douyin', label: '刷新状态', meta: health.error ? 'RETRY' : `${health.latency_ms || '--'}ms`, code: 'STATUS PING', icon: RefreshCw, onClick: checkHealth },
+    { key: 'file', label: '刷新数据库', meta: dbInfo?.database.size_display || 'DATABASE', code: 'DB SCAN', icon: Database, onClick: loadDbInfo },
+    { key: 'concept', label: '检查更新', meta: canCheckUpdates() ? 'SPARKLE' : 'DESKTOP', code: 'UPDATE', icon: CheckCircle, onClick: handleCheckUpdate },
+    { key: 'scan', label: saving ? '保存中' : '保存配置', meta: message || 'CONFIG', code: 'SAVE', icon: Save, onClick: save },
   ];
+  const coreDbMetrics = [
+    { label: '主库', value: dbInfo?.database.file || 'intelligence.sqlite', key: 'sqlite', icon: Database },
+    { label: '体量', value: dbInfo?.database.size_display || statText(health.data?.database?.size_mb ? `${health.data.database.size_mb} MB` : null), key: 'size', icon: HardDrive },
+    { label: 'WAL', value: dbInfo ? `${dbInfo.database.page_count.toLocaleString()}p` : '--', key: 'journal', icon: Activity },
+    { label: '页', value: dbInfo ? `${Math.round(dbInfo.database.page_size / 1024)}KB` : '--', key: 'page', icon: FileText },
+  ];
+  const storageAssets = Object.entries(dbInfo?.files || {});
+  const coreBoxHeight = Math.min(Math.max(viewportHeight * 0.158, 126), 178);
+  const beamVerticalOffset = (coreBoxHeight - 6) / Math.max(viewportHeight, 1) - 0.5;
 
   return (
     <div className="cinematic-ingest cinematic-system cinematic-dashboard" data-topic="system">
@@ -369,227 +530,544 @@ export default function CinematicSystemCenter() {
       <div className="ingest-signal-grid" aria-hidden="true" />
       <div className="ingest-orbit-core" aria-hidden="true"><i /><i /><i /></div>
 
-      <main className="cinematic-system-shell">
+      <main className="cinematic-ingest-shell">
         <section className="ingest-observation cinematic-observation system-status-bay" aria-label="系统状态舱">
           <div className="panel-status">
             <i className={`signal-dot${health.error ? ' is-error' : ''}`} />
             <span>系统中枢</span>
           </div>
           <span>{health.error ? health.error : '运行态观测与控制联动'}</span>
+          <div className="system-status-summary" aria-label="运行摘要">
+            <p>服务 {health.data?.ok ? '在线' : '离线'}，当前接口由 {health.data?.service || 'knowledge-intelligence'} 承载。</p>
+            <p>主库状态 {health.data?.database?.ok ? '正常' : '异常'}，事件总量 {statText(health.data?.database?.event_count)}。</p>
+            <p>当前模型 {config?.general.model || '--'}，配置面板可从左侧控制索引进入。</p>
+          </div>
           <div className="panel-detail-grid">
-            <span>后端<b>{health.data?.ok ? '在线' : '离线'}</b></span>
-            <span>延迟<b>{statText(health.latency_ms ? `${health.latency_ms}ms` : null)}</b></span>
-            <span>版本<b>{health.data?.version || APP_VERSION}</b></span>
-            <span>运行<b>{health.data ? formatUptime(health.data.uptime_sec) : '--'}</b></span>
-            <span>事件<b>{statText(health.data?.database?.event_count)}</b></span>
-            <span>模型<b>{config?.general.model || '--'}</b></span>
+            <span>连接<b className={health.error ? 'is-bad' : health.data ? 'is-good' : 'is-warn'}>{health.error ? '未连接' : health.data ? '已连接' : '检测中'}</b></span>
+            <span>后端<b className={health.data?.ok ? 'is-good' : 'is-bad'}>{health.data?.ok ? '在线' : '离线'}</b></span>
+            <span>延迟<b className={health.error ? 'is-bad' : 'is-cyan'}>{statText(health.latency_ms ? `${health.latency_ms}ms` : null)}</b></span>
+            <span>版本<b className="is-violet">{health.data?.version || APP_VERSION}</b></span>
+            <span>运行<b className="is-gold">{health.data ? formatUptime(health.data.uptime_sec) : '--'}</b></span>
+            <span>事件<b className="is-gold">{statText(health.data?.database?.event_count)}</b></span>
+            <span>模型<b className="is-violet">{config?.general.model || '--'}</b></span>
           </div>
           {message && <p className={message.includes('成功') ? 'is-ok' : 'is-error'}>{message}</p>}
           {updateMessage && <p>{updateMessage}</p>}
         </section>
 
-        <section className="ingest-command-launcher system-command-launcher" aria-label="系统命令入口">
+        <section className="ingest-command-launcher" aria-label="系统命令入口">
           <div className="launcher-actions">
             {commandItems.map((item) => {
               const Icon = item.icon;
               return (
                 <button key={item.key} type="button" className={`launcher-action ingest-command-metric is-${item.key}`} onClick={item.onClick}>
-                  <Icon size={18} />
+                  <Icon size={15} />
                   <b>{item.label}</b>
                   <span>{item.meta}</span>
+                  <small>{item.code}</small>
                 </button>
               );
             })}
           </div>
         </section>
 
-        <section className="system-control-console" aria-label="系统控制中心">
-          <aside className="system-index-strip" aria-label="系统索引">
-            {SECTION_GROUPS.map((group) => (
-              <div key={group.label} className="system-index-group">
-                <label>{group.label}</label>
-                {group.items.map((item) => {
-                  const Icon = item.icon;
-                  const active = activeSection === item.key;
-                  return (
-                    <button key={item.key} type="button" className={active ? 'is-active' : ''} onClick={() => setActiveSection(item.key)}>
-                      <Icon size={15} />
-                      <span>{item.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
+        <section className="ingest-laser-console system-control-console" aria-label="系统控制中心">
+          <aside className="ingest-index-strip system-index-strip" aria-label="系统索引">
+            <div className="ingest-topic-orbit system-section-orbit" aria-label="系统索引分类">
+              {SECTION_GROUPS.map((group, index) => {
+                const Icon = index === 0 ? Activity : Settings;
+                const active = activeSystemGroup.label === group.label;
+                return (
+                  <button
+                    key={group.label}
+                    type="button"
+                    className={`${active ? 'is-active ' : ''}${index === 0 ? 'is-gold' : 'is-violet'}`}
+                    onClick={() => setActiveSection(group.items[0].key)}
+                  >
+                    <Icon size={14} />
+                    <span>{group.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="ingest-index-list system-function-list" aria-label="系统功能切换">
+              {activeSystemItems.map((item, index) => {
+                const active = activeSection === item.key;
+                const center = (activeSystemItems.length - 1) / 2;
+                const distance = Math.abs(index - center);
+                const depth = center > 0 ? distance / center : 0;
+                const depthScale = 1 - Math.min(depth, 1) * 0.16;
+                const depthZ = -Math.round(distance * 3.5);
+                const depthOpacity = 0.74 + (1 - Math.min(depth, 1)) * 0.22;
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    className={`ingest-index-item system-function-item${active ? ' is-active' : ''}`}
+                    title={`${item.group} · ${item.label}`}
+                    style={{
+                      '--index-depth-scale': active ? Math.max(depthScale, 0.98) : depthScale,
+                      '--index-depth-z': `${active ? 0 : depthZ}px`,
+                      '--index-depth-opacity': active ? 1 : depthOpacity,
+                    } as React.CSSProperties}
+                    onClick={() => setActiveSection(item.key)}
+                  >
+                    <div className="index-title">
+                      <b>{item.label}</b>
+                      <span>
+                        <em className={`is-${item.accent}`}>{item.group}</em>
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </aside>
 
-          <section className="system-core-stage" aria-label="系统核心舱">
-            <div className="system-light-column" aria-hidden="true" />
-            <div className="system-core-box">
-              <span>SYSTEM CORE</span>
-              <b>{currentTitle}</b>
-              <small>{health.data?.database?.ok ? `数据库 ${health.data.database.size_mb} MB` : backendUrl}</small>
+          <section className="ingest-laser-stage system-core-stage" aria-label="系统核心舱">
+            <LaserFlow
+              color="#CF9EFF"
+              horizontalBeamOffset={-0.21}
+              verticalBeamOffset={beamVerticalOffset}
+              horizontalSizing={0.5}
+              verticalSizing={1.72}
+              wispDensity={0.58}
+              wispIntensity={2.8}
+              wispSpeed={8}
+              fogIntensity={0.28}
+              fogScale={0.24}
+              flowSpeed={0.35}
+              flowStrength={0.18}
+              decay={1.1}
+              falloffStart={1.2}
+              fogFallSpeed={0.38}
+              mouseSmoothTime={0.2}
+              mouseTiltStrength={0.035}
+              dpr={laserRenderProfile.dpr}
+              maxFps={laserRenderProfile.maxFps}
+            />
+            <section className="ingest-detail-reader system-detail-reader" aria-label="系统详情">
+              <header>
+                <span>CONTROL SURFACE</span>
+                <h2>{currentTitle}</h2>
+                <small>旧版对比：/#/system-old · /#/settings-old</small>
+              </header>
+              <div className="detail-scroll-shell system-detail-scroll-shell">
+                <div className="detail-scroll system-detail-body">
+                  {activeSection === 'docs' && renderDocs(activeDocPane, setActiveDocPane)}
+                  {activeSection === 'logs' && renderLogs(logs, logTotal, logLoading, logLevel, setLogLevel, logSearch, setLogSearch, loadLogs)}
+                  {activeSection === 'changelog' && renderChangelog()}
+                  {activeSection === 'base_config' && renderBaseConfig(config, updateGeneral, {
+                    health,
+                    backendUrl,
+                    urlMode,
+                    urlInput,
+                    apiTokenInput,
+                    testing,
+                    connSaved,
+                    setUrlMode,
+                    setUrlInput,
+                    setApiTokenInput,
+                    testConnection,
+                    saveConnection,
+                  })}
+                  {activeSection === 'ai_modules' && renderAiModuleWorkspace(
+                    activeModule,
+                    setActiveModule,
+                    activeAiPane,
+                    setActiveAiPane,
+                    config,
+                    updateModule
+                  )}
+                </div>
+              </div>
+            </section>
+            <div className="laser-media-box system-core-box">
+              <div className="system-core-title">
+                <span>SYSTEM CORE</span>
+                <b>系统资产</b>
+                <small>DATABASE / FILES</small>
+              </div>
+              <div className="system-core-assets">
+                <div className="system-core-database" aria-label="数据库资产">
+                  <strong>DATABASE</strong>
+                  <div>
+                    {coreDbMetrics.map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <span key={item.label}>
+                          <Icon size={12} />
+                          <small>{item.label}</small>
+                          <b>{item.value}</b>
+                          <em>{item.key}</em>
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="system-storage-assets" aria-label="文件资产">
+                  <strong>FILES</strong>
+                  <div>
+                    {storageAssets.map(([name, info], index) => {
+                      const Icon = STORAGE_FILE_VISUALS[index % STORAGE_FILE_VISUALS.length];
+                      return (
+                        <span key={name}>
+                          <Icon size={12} />
+                          <small>{info.label}</small>
+                          <b>{info.count.toLocaleString()}</b>
+                          <em>{name}</em>
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             </div>
-          </section>
-
-          <section className="system-detail-reader" aria-label="系统详情">
-            <header>
-              <span>CONTROL SURFACE</span>
-              <h1>{currentTitle}</h1>
-              <small>旧版对比：/#/system-old · /#/settings-old</small>
-            </header>
-            <nav className="system-detail-tabs" aria-label="系统快捷维度">
-              {['overview', 'database', 'logs', 'general', 'connection'].map((key) => (
-                <button key={key} type="button" className={activeSection === key ? 'is-active' : ''} onClick={() => setActiveSection(key)}>
-                  {TAB_LABELS[key]}
-                </button>
-              ))}
-            </nav>
-            <div className="system-detail-body custom-scrollbar">
-              {activeSection === 'overview' && renderOverview(health.data, config)}
-              {activeSection === 'arch' && renderArchitecture()}
-              {activeSection === 'flow' && renderFlow()}
-              {activeSection === 'database' && renderDatabase(dbInfo, dbLoading, dbTables, dbMaxCount, loadDbInfo)}
-              {activeSection === 'logs' && renderLogs(logs, logTotal, logLoading, logLevel, setLogLevel, logSearch, setLogSearch, loadLogs)}
-              {activeSection === 'changelog' && renderChangelog()}
-              {activeSection === 'params_info' && renderParamsInfo()}
-              {activeSection === 'general' && renderGeneral(config, updateGeneral)}
-              {activeSection === 'connection' && renderConnection({
-                health,
-                backendUrl,
-                urlMode,
-                urlInput,
-                apiTokenInput,
-                testing,
-                connSaved,
-                setUrlMode,
-                setUrlInput,
-                setApiTokenInput,
-                testConnection,
-                saveConnection,
-              })}
-              {isConfigSection && renderModuleConfig(activeSection, config, updateModule)}
-            </div>
-            {isConfigSection && <PromptSection moduleKey={activeSection} taskNames={TASK_NAMES[activeSection] || {}} />}
           </section>
         </section>
       </main>
+
+      <nav
+        className="cinematic-work-index"
+        aria-label="知几功能索引"
+        onMouseLeave={() => setActiveHub(null)}
+      >
+        <div className="cinematic-hub-primary">
+          {cinematicNavHubs.map((hub) => {
+            const Icon = hub.icon;
+            const active = activeHubKey === hub.to;
+            return (
+              <button
+                key={hub.to}
+                className={`${active ? 'is-active' : ''}${hub.children.length > 0 ? ' has-children' : ''}`}
+                onMouseEnter={() => setActiveHub(hub.children.length > 0 ? hub.to : null)}
+                onClick={() => {
+                  if (hub.children.length > 0) {
+                    setActiveHub(hub.to);
+                    return;
+                  }
+                  navigateWithCurtain(hub.to);
+                }}
+              >
+                <Icon size={14} />
+                <b>{hub.label}</b>
+              </button>
+            );
+          })}
+        </div>
+        {activeHubChildren.length > 0 && (
+          <div
+            className="cinematic-hub-children"
+            style={{
+              '--hub-child-height': `${childMenuHeight}px`,
+              bottom: `${childMenuBottom}px`,
+            } as React.CSSProperties}
+          >
+            {activeHubChildren.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.to}
+                  onClick={() => {
+                    if (item.to === '/docs') window.open('/docs', '_blank', 'noopener,noreferrer');
+                    else navigateWithCurtain(item.to);
+                  }}
+                >
+                  <Icon size={13} />
+                  <b>{item.label}</b>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </nav>
     </div>
   );
 }
 
-function renderOverview(health: HealthData | null, config: SystemConfig | null) {
-  const cards = [
-    ['后端状态', health?.ok ? '在线' : '离线', health?.service || 'knowledge-intelligence'],
-    ['数据库', health?.database?.ok ? '正常' : '异常', health?.database?.error || `${health?.database?.size_mb || '--'} MB`],
-    ['事件数量', statText(health?.database?.event_count), 'SQLite 主库事件'],
-    ['当前模型', config?.general.model || '--', config?.general.base_url || 'OpenAI compatible'],
+function renderCoreModules() {
+  const moduleGroups = [
+    {
+      title: '入口',
+      code: 'OBSERVE',
+      icon: Activity,
+      names: ['今日知几', '万象资料'],
+      desc: '每日总览与资料输入合并成系统的观测面，承担信号进入、内容回看和状态扫描。',
+    },
+    {
+      title: '研究',
+      code: 'RESEARCH',
+      icon: Layers,
+      names: ['深度研究', '静观思辨'],
+      desc: '专题、图谱、产业链、脑暴和概念沉淀把资料组织成可追问的结构。',
+    },
+    {
+      title: '行动',
+      code: 'ACTION',
+      icon: CheckCircle,
+      names: ['见微行动', '启蒙辅导'],
+      desc: '事务判断、待办流转和辅导场景把理解落到下一步动作与复盘。',
+    },
+    {
+      title: '控制',
+      code: 'CONTROL',
+      icon: Server,
+      names: ['系统总览'],
+      desc: '系统说明、版本、日志、配置和 AI 模块统一收束到控制面。',
+    },
   ];
   return (
-    <div className="system-card-grid">
-      {cards.map(([label, value, meta]) => (
-        <div key={label} className="system-info-tile">
-          <span>{label}</span>
-          <b>{value}</b>
-          <small>{meta}</small>
-        </div>
-      ))}
-      <div className="system-section-block is-wide">
-        <h2>核心模块</h2>
-        <div className="system-module-grid">
-          {CORE_MODULES.map((module) => (
-            <article key={module.name}>
-              <b>{module.name}</b>
+    <section className="system-section-block system-module-surface">
+      <div className="system-module-constellation">
+        {moduleGroups.map((module, index) => (
+          <article
+            key={module.title}
+            className={`is-${CORE_MODULE_VISUALS[index]?.accent || 'violet'}`}
+            style={{ '--module-index': index } as React.CSSProperties}
+          >
+            <i>
+              {React.createElement(module.icon, { size: 15 })}
+            </i>
+            <div>
+              <header>
+                <b>{module.title}</b>
+                <em>{module.code}</em>
+              </header>
+              <small>{module.names.join(' / ')}</small>
               <p>{module.desc}</p>
-            </article>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function renderArchitecture() {
-  return (
-    <div className="system-section-stack">
-      <section className="system-section-block">
-        <h2>运行架构</h2>
-        <pre>{RUNTIME_ARCHITECTURE}</pre>
-      </section>
-      <section className="system-section-block">
-        <h2>数据目录结构</h2>
-        <pre>{DATA_DIRECTORY_TREE}</pre>
-      </section>
-      <section className="system-section-block">
-        <h2>发布门禁</h2>
-        {RELEASE_GUARDRAILS.map((item) => <p key={item}>{item}</p>)}
-      </section>
-    </div>
-  );
-}
-
-function renderFlow() {
-  return (
-    <div className="system-section-stack">
-      <section className="system-section-block">
-        <h2>摄入管线</h2>
-        <pre>{`抖音分享 -> 解析链接 -> 下载视频 -> 提取音频 -> 语音转写 -> AI 总结 -> 入库
-上传视频 -> 提取音频 -> 语音转写 -> AI 总结 -> 入库
-上传文档 -> 文档解析 -> 入库
-全部类型 -> 认知分类 -> 持久化任务队列 -> SQLite + MD 双写`}</pre>
-      </section>
-      <section className="system-section-block">
-        <h2>技术栈</h2>
-        <div className="system-chip-grid">
-          {TECH_STACK.map((item) => <span key={item.label}><b>{item.label}</b>{item.value}</span>)}
-        </div>
-      </section>
-      <section className="system-section-block">
-        <h2>架构特征</h2>
-        {ARCHITECTURE_FEATURES.map((item) => <p key={item.name}><b>{item.name}</b> - {item.desc}</p>)}
-      </section>
-    </div>
-  );
-}
-
-function renderDatabase(dbInfo: DbInfo | null, loading: boolean, tables: [string, { count: number; desc: string }][], maxCount: number, onRetry: () => void) {
-  if (loading && !dbInfo) return <div className="system-loading">数据库扫描中...</div>;
-  if (!dbInfo) return <button className="system-line-command" onClick={onRetry}>重新加载数据库信息</button>;
-  return (
-    <div className="system-section-stack">
-      <div className="system-card-grid">
-        {[
-          ['文件', dbInfo.database.file, dbInfo.database.path],
-          ['大小', dbInfo.database.size_display, `${dbInfo.database.total_mb} MB logical`],
-          ['WAL', dbInfo.database.journal_mode, `${dbInfo.database.page_count.toLocaleString()} pages`],
-          ['页大小', `${dbInfo.database.page_size.toLocaleString()} B`, 'SQLite page size'],
-        ].map(([label, value, meta]) => (
-          <div key={label} className="system-info-tile">
-            <span>{label}</span>
-            <b>{value}</b>
-            <small>{meta}</small>
-          </div>
+            </div>
+          </article>
         ))}
       </div>
-      <section className="system-section-block">
-        <h2>表统计</h2>
-        <div className="system-table-flow">
-          {tables.map(([name, info]) => (
-            <div key={name}>
-              <span>{name}</span>
-              <small>{info.desc}</small>
-              <b>{info.count.toLocaleString()}</b>
-              <i style={{ width: `${Math.min((info.count / maxCount) * 100, 100)}%` }} />
-            </div>
-          ))}
-        </div>
-      </section>
-      <section className="system-section-block">
-        <h2>存储产物</h2>
-        <div className="system-chip-grid">
-          {Object.entries(dbInfo.files).map(([name, info]) => <span key={name}><b>{name}</b>{info.label} · {info.count.toLocaleString()}</span>)}
-        </div>
-      </section>
+    </section>
+  );
+}
+
+function renderDocPaneSwitcher(
+  activePane: (typeof DOC_DETAIL_TABS)[number]['key'],
+  setActivePane: (pane: (typeof DOC_DETAIL_TABS)[number]['key']) => void
+) {
+  return (
+    <nav className="system-doc-pane-tabs" aria-label="系统说明详情切换">
+      {DOC_DETAIL_TABS.map((tab) => {
+        const Icon = tab.icon;
+        return (
+          <button
+            key={tab.key}
+            type="button"
+            className={`${activePane === tab.key ? 'is-active ' : ''}is-${tab.accent}`}
+            onClick={() => setActivePane(tab.key)}
+          >
+            <Icon size={14} />
+            <b>{tab.label}</b>
+            <span>{tab.code}</span>
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+function renderDocs(
+  activePane: (typeof DOC_DETAIL_TABS)[number]['key'],
+  setActivePane: (pane: (typeof DOC_DETAIL_TABS)[number]['key']) => void
+) {
+  return (
+    <div className="system-section-stack system-composite-view system-docs-surface">
+      {renderDocPaneSwitcher(activePane, setActivePane)}
+      {activePane === 'portrait' && renderCoreModules()}
+      {activePane === 'flow' && renderRuntimeFlow()}
+      {activePane === 'boundary' && renderEngineeringBoundaries()}
     </div>
+  );
+}
+
+function renderBaseConfig(
+  config: SystemConfig | null,
+  updateGeneral: (key: string, value: any) => void,
+  connectionProps: ConnectionRenderProps
+) {
+  return (
+    <div className="system-section-stack system-composite-view">
+      {renderGeneral(config, updateGeneral)}
+      {renderConnection(connectionProps)}
+    </div>
+  );
+}
+
+function renderModulePicker(
+  activeModule: (typeof MODULE_CONFIG_KEYS)[number],
+  setActiveModule: (module: (typeof MODULE_CONFIG_KEYS)[number]) => void
+) {
+  return (
+    <nav className="system-module-switcher" aria-label="模块参数切换">
+      {MODULE_CONFIG_ITEMS.map((item) => {
+        const Icon = item.icon;
+        return (
+          <button
+            key={item.key}
+            type="button"
+            className={`${activeModule === item.key ? 'is-active ' : ''}is-${item.accent}`}
+            onClick={() => setActiveModule(item.key)}
+          >
+            <Icon size={14} />
+            <span>{item.label}</span>
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+function renderAiPaneSwitcher(
+  activePane: (typeof AI_MODULE_PANES)[number]['key'],
+  setActivePane: (pane: (typeof AI_MODULE_PANES)[number]['key']) => void
+) {
+  return (
+    <nav className="system-ai-pane-switcher" aria-label="AI 模块详情切换">
+      {AI_MODULE_PANES.map((item) => {
+        const Icon = item.icon;
+        return (
+          <button
+            key={item.key}
+            type="button"
+            className={activePane === item.key ? 'is-active' : ''}
+            onClick={() => setActivePane(item.key)}
+          >
+            <Icon size={14} />
+            <b>{item.label}</b>
+            <span>{item.code}</span>
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+function renderAiModuleWorkspace(
+  activeModule: (typeof MODULE_CONFIG_KEYS)[number],
+  setActiveModule: (module: (typeof MODULE_CONFIG_KEYS)[number]) => void,
+  activePane: (typeof AI_MODULE_PANES)[number]['key'],
+  setActivePane: (pane: (typeof AI_MODULE_PANES)[number]['key']) => void,
+  config: SystemConfig | null,
+  updateModule: (module: string, task: string, value: TaskConfig) => void
+) {
+  return (
+    <div className="system-section-stack system-composite-view">
+      {renderModulePicker(activeModule, setActiveModule)}
+      {renderAiPaneSwitcher(activePane, setActivePane)}
+      {activePane === 'params'
+        ? renderModuleConfig(activeModule, config, updateModule)
+        : <PromptSection moduleKey={activeModule} taskNames={TASK_NAMES[activeModule] || {}} defaultExpanded />}
+    </div>
+  );
+}
+
+function renderRuntimeFlow() {
+  return (
+    <section className="system-section-block system-runtime-surface">
+      <div className="system-runtime-map" aria-label="运行层级">
+        {RUNTIME_LAYERS.map((layer) => {
+          const Icon = layer.icon;
+          return (
+            <article key={layer.title} className={`is-${layer.code.toLowerCase()}`}>
+              <i><Icon size={15} /></i>
+              <div>
+                <header>
+                  <b>{layer.title}</b>
+                  <em>{layer.code}</em>
+                </header>
+                <p>{layer.desc}</p>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+      <div className="system-runtime-pipeline" aria-label="系统数据流">
+        {INGEST_FLOW_STEPS.map((step, index) => {
+          const Icon = step.icon;
+          return (
+            <article key={step.title} style={{ '--flow-index': index } as React.CSSProperties}>
+              <i><Icon size={15} /></i>
+              <span>{step.code}</span>
+              <b>{step.title}</b>
+              <p>{step.desc}</p>
+            </article>
+          );
+        })}
+      </div>
+      <div className="system-runtime-landing" aria-label="运行落点">
+        {[
+          { label: '主库沉淀', value: 'SQLite 事件 / 表结构 / FTS5', icon: Database, accent: 'violet' },
+          { label: '文件归档', value: 'Markdown / 视频 / 音频 / 文档', icon: HardDrive, accent: 'gold' },
+          { label: '安全边界', value: '同源会话 / KI_API_TOKEN / launchd', icon: CheckCircle, accent: 'cyan' },
+        ].map((item) => (
+          <span key={item.label} className={`is-${item.accent}`}>
+            {React.createElement(item.icon, { size: 14 })}
+            <b>{item.label}</b>
+            <em>{item.value}</em>
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function renderEngineeringBoundaries() {
+  const stackHighlights = TECH_STACK.filter((item) =>
+    ['后端', '前端', '路由', 'AI', '语音', '搜索', '桌面壳', '更新'].includes(item.label)
+  );
+  const featureHighlights = ARCHITECTURE_FEATURES.slice(0, 6);
+  return (
+    <section className="system-section-block system-boundary-surface">
+      <div className="system-boundary-grid">
+        <div className="system-boundary-specs" aria-label="能力规格">
+          {stackHighlights.map((item, index) => {
+            const visual = FEATURE_VISUALS[index % FEATURE_VISUALS.length];
+            return (
+              <span key={item.label} className={`is-${visual.accent}`}>
+                {React.createElement(visual.icon, { size: 14 })}
+                <b>{item.label}</b>
+                <em>{item.value}</em>
+              </span>
+            );
+          })}
+          <span className="is-violet">
+            <Zap size={14} />
+            <b>上下文</b>
+            <em>1M token</em>
+          </span>
+          <span className="is-gold">
+            <FileText size={14} />
+            <b>最大输出</b>
+            <em>384K token</em>
+          </span>
+        </div>
+        <aside className="system-boundary-guards" aria-label="发布护栏">
+          {RELEASE_GUARDRAILS.map((item, index) => (
+            <span key={item}>
+              <b>{String(index + 1).padStart(2, '0')}</b>
+              <em>{item}</em>
+            </span>
+          ))}
+        </aside>
+      </div>
+      <p className="system-boundary-copy">模型参数、Prompt 模板和任务级开关统一放到 AI 模块页调整；系统说明只展示工程边界、发布护栏和不可破坏的运行约束。</p>
+      <div className="system-feature-ribbon" aria-label="架构特征">
+        {featureHighlights.map((item, index) => {
+          const visual = FEATURE_VISUALS[index % FEATURE_VISUALS.length];
+          return (
+            <article key={item.name} className={`is-${visual.accent}`}>
+              <i>{React.createElement(visual.icon, { size: 14 })}</i>
+              <div>
+                <b>{item.name}</b>
+                <p>{item.desc}</p>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -636,35 +1114,11 @@ function renderChangelog() {
     <div className="system-section-stack">
       {CHANGELOG_ENTRIES.map((entry) => (
         <section key={entry.version} className="system-section-block">
-          <h2>v{entry.version} · {entry.title}</h2>
+          <SectionTitle icon={BookOpen} title={`v${entry.version} · ${entry.title}`} code="CHANGE" />
           <small>{entry.date}</small>
           {entry.items.map((item) => <p key={item}>{item}</p>)}
         </section>
       ))}
-    </div>
-  );
-}
-
-function renderParamsInfo() {
-  return (
-    <div className="system-section-stack">
-      <section className="system-section-block">
-        <h2>OpenAI 兼容模型规格</h2>
-        <p>当前通过内网 OpenAI-compatible 网关调用，模型能力以网关 /models 返回为准。</p>
-        <div className="system-chip-grid">
-          <span><b>上下文</b>1M token</span>
-          <span><b>最大输出</b>384K token</span>
-          <span><b>思考模式</b>支持</span>
-          <span><b>JSON Output</b>支持</span>
-        </div>
-      </section>
-      <section className="system-section-block">
-        <h2>参数解释</h2>
-        <p><b>temperature</b> 控制输出随机性，分类和标注建议 0.1，摘要和翻译建议 0.1-0.3。</p>
-        <p><b>max_tokens</b> 控制单次最大输出，过小会截断，过大容易浪费。</p>
-        <p><b>reasoning_effort</b> 仅在思考模式下生效，复杂推理可选 max。</p>
-        <p><b>上下文硬盘缓存</b> 对重复 prompt 的摘要、快报、定时任务更省钱。</p>
-      </section>
     </div>
   );
 }
@@ -674,7 +1128,7 @@ function renderGeneral(config: SystemConfig | null, updateGeneral: (key: string,
   return (
     <div className="system-form-grid">
       <section className="system-section-block">
-        <h2>模型与连接</h2>
+        <SectionTitle icon={Globe} title="模型与连接" code="MODEL LINK" />
         <label className="system-field"><span>选用模型</span><select value={config.general.model} onChange={(event) => updateGeneral('model', event.target.value)}>
           <option value="deepseek-v4-pro-max">deepseek-v4-pro-max</option>
           <option value="deepseek-v4-flash-max">deepseek-v4-flash-max</option>
@@ -687,7 +1141,7 @@ function renderGeneral(config: SystemConfig | null, updateGeneral: (key: string,
         <label className="system-field"><span>API 密钥</span><input type="password" value={config.general.api_key} onChange={(event) => updateGeneral('api_key', event.target.value)} placeholder="已设置或未设置" /></label>
       </section>
       <section className="system-section-block">
-        <h2>缓存与默认值</h2>
+        <SectionTitle icon={Settings} title="缓存与默认值" code="DEFAULTS" />
         <Toggle label="上下文硬盘缓存" checked={config.general.disk_cache} onChange={(value) => updateGeneral('disk_cache', value)} hint="建议开启" />
         <label className="system-field"><span>推理强度</span><select value={config.general.reasoning_effort} onChange={(event) => updateGeneral('reasoning_effort', event.target.value)}>
           <option value="high">high 标准推理</option>
@@ -700,7 +1154,7 @@ function renderGeneral(config: SystemConfig | null, updateGeneral: (key: string,
   );
 }
 
-function renderConnection(props: {
+interface ConnectionRenderProps {
   health: { data: HealthData | null; latency_ms: number; error: string | null };
   backendUrl: string;
   urlMode: 'auto' | 'manual';
@@ -713,20 +1167,13 @@ function renderConnection(props: {
   setApiTokenInput: (value: string) => void;
   testConnection: () => void;
   saveConnection: () => void;
-}) {
+}
+
+function renderConnection(props: ConnectionRenderProps) {
   return (
     <div className="system-section-stack">
       <section className="system-section-block">
-        <h2>连接状态</h2>
-        <div className="system-chip-grid">
-          <span><b>状态</b>{props.health.error ? '未连接' : props.health.data ? '已连接' : '检测中'}</span>
-          <span><b>延迟</b>{props.health.latency_ms || '--'}ms</span>
-          <span><b>后端版本</b>{props.health.data?.version || '--'}</span>
-          <span><b>目标</b>{props.backendUrl}</span>
-        </div>
-      </section>
-      <section className="system-section-block">
-        <h2>后端地址</h2>
+        <SectionTitle icon={Globe} title="后端地址" code="BACKEND" />
         <div className="system-radio-row">
           <button className={props.urlMode === 'auto' ? 'is-active' : ''} onClick={() => props.setUrlMode('auto')}>自动检测</button>
           <button className={props.urlMode === 'manual' ? 'is-active' : ''} onClick={() => props.setUrlMode('manual')}>手动指定</button>
@@ -754,7 +1201,7 @@ function renderModuleConfig(activeSection: string, config: SystemConfig | null, 
   const moduleConfig = config[activeSection as keyof SystemConfig] as ModuleConfig;
   return (
     <section className="system-section-block">
-      <h2>{TAB_LABELS[activeSection]} - 任务参数</h2>
+      <SectionTitle icon={Wrench} title={`${TAB_LABELS[activeSection]} - 任务参数`} code="TASKS" />
       <div className="system-task-grid">
         {Object.entries(moduleConfig).map(([task, taskConfig]) => (
           <TaskRow
