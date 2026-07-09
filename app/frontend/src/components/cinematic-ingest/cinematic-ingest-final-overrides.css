@@ -495,17 +495,17 @@
 
 .cinematic-ingest .ingest-index-strip {
   position: absolute !important;
-  left: calc(clamp(300px, 23vw, 410px) + var(--ingest-list-shift, clamp(28px, 3vw, 64px))) !important;
-  top: clamp(138px, 18vh, 196px) !important;
+  left: var(--template-stage-list-left, calc(clamp(300px, 23vw, 410px) + var(--ingest-list-shift, clamp(28px, 3vw, 64px)))) !important;
+  top: var(--template-stage-list-top, clamp(138px, 18vh, 196px)) !important;
   bottom: auto !important;
   z-index: 18 !important;
-  width: clamp(430px, 24vw, 520px) !important;
-  height: clamp(543px, 52vh, 665px) !important;
+  width: var(--template-stage-list-w, clamp(430px, 24vw, 520px)) !important;
+  height: var(--template-stage-list-h, clamp(543px, 52vh, 665px)) !important;
   min-height: 0 !important;
   pointer-events: auto !important;
   opacity: 0.96 !important;
   padding-left: 0 !important;
-  padding-right: clamp(92px, 5.4vw, 116px) !important;
+  padding-right: var(--template-stage-list-pad-right, clamp(92px, 5.4vw, 116px)) !important;
   perspective: 920px !important;
   perspective-origin: 100% 48% !important;
   transform-style: preserve-3d !important;
@@ -542,10 +542,10 @@
 
 .cinematic-ingest .ingest-search-dock {
   position: absolute !important;
-  left: 61px !important;
-  bottom: clamp(460px, 36.5vh, 540px) !important;
+  left: var(--template-search-x, 61px) !important;
+  bottom: var(--template-search-bottom, clamp(460px, 36.5vh, 540px)) !important;
   z-index: 19 !important;
-  width: clamp(165px, 9vw, 215px) !important;
+  width: var(--template-search-w, clamp(165px, 9vw, 215px)) !important;
   pointer-events: auto !important;
   opacity: 0.96 !important;
 }
@@ -865,29 +865,29 @@
 
 .cinematic-ingest .ingest-laser-stage {
   position: absolute !important;
-  left: clamp(300px, 23vw, 410px) !important;
-  right: clamp(56px, 5.8vw, 104px) !important;
+  left: var(--template-stage-left, clamp(300px, 23vw, 410px)) !important;
+  right: var(--template-stage-right, clamp(56px, 5.8vw, 104px)) !important;
   top: 0 !important;
   bottom: 0 !important;
   z-index: 8 !important;
   min-width: 720px !important;
   pointer-events: auto !important;
-  --media-h: clamp(126px, 15.8vh, 178px);
+  --media-h: var(--template-media-h, clamp(126px, 15.8vh, 178px));
   --reader-top: clamp(190px, 25vh, 252px);
   --detail-reader-top: clamp(96px, 13vh, 144px);
-  --beam-center-x: 42%;
+  --beam-center-x: var(--template-beam-x, 42%);
   --beam-gutter: clamp(26px, 3vw, 46px);
   --detail-reader-gutter: clamp(8px, 1.05vw, 16px);
   --detail-reader-pull: clamp(58px, 4.8vw, 96px);
   --stage-pad-x: clamp(22px, 2.4vw, 42px);
-  --media-w: min(1560px, 99%);
+  --media-w: var(--template-media-w, min(1560px, 99%));
   --media-edge-x: calc((100% - var(--media-w)) / 2);
   --media-tab-inset: clamp(42px, 3.8vw, 66px);
   --ingest-list-shift: clamp(28px, 3vw, 64px);
 }
 
 .cinematic-ingest .ingest-laser-stage.is-media-expanded {
-  --media-h: min(38vh, 330px);
+  --media-h: var(--template-media-h-expanded, min(38vh, 330px));
 }
 
 .cinematic-ingest .laser-media-box {
@@ -1081,8 +1081,8 @@
 .cinematic-ingest .ingest-detail-reader {
   position: absolute !important;
   left: calc(var(--beam-center-x) + var(--detail-reader-gutter) - var(--detail-reader-pull)) !important;
-  right: max(var(--stage-pad-x), var(--media-edge-x)) !important;
-  top: 60px !important;
+  right: var(--template-detail-right, max(var(--stage-pad-x), var(--media-edge-x))) !important;
+  top: var(--template-detail-top, 60px) !important;
   bottom: calc(var(--media-h) + clamp(28px, 4vh, 52px)) !important;
   z-index: 17 !important;
   width: auto !important;
@@ -1289,15 +1289,15 @@
 
 /* Match the Dashboard upper-right metric language for ingest command entries. */
 .cinematic-ingest > .cinematic-ingest-shell > .ingest-command-launcher {
-  left: clamp(28px, 3.2vw, 58px) !important;
+  left: var(--template-left-actions-x, clamp(28px, 3.2vw, 58px)) !important;
   right: auto !important;
-  top: 50% !important;
-  width: min(178px, 13.5vw) !important;
-  height: clamp(194px, 22vh, 260px) !important;
+  top: var(--template-left-actions-y, 50%) !important;
+  width: var(--template-left-actions-w, min(178px, 13.5vw)) !important;
+  height: var(--template-left-actions-h, clamp(194px, 22vh, 260px)) !important;
   min-height: 0 !important;
   pointer-events: none !important;
   opacity: 0;
-  transform: translateY(-50%) scale(var(--cinematic-ui-scale, 1)) !important;
+  transform: translateY(-50%) scale(var(--template-left-actions-scale, var(--cinematic-ui-scale, 1))) !important;
   transform-origin: left center !important;
   animation: ingestCommandLauncherFromLeftCenter 0.92s cubic-bezier(0.16, 1, 0.3, 1) 0.78s forwards !important;
 }
@@ -1442,15 +1442,15 @@
 
 /* Audit tuning: keep the laser console readable when list, detail, beam and media box are all present. */
 .cinematic-ingest .ingest-laser-stage {
-  --beam-center-x: 43.5% !important;
-  --detail-reader-gutter: clamp(16px, 1.55vw, 28px) !important;
-  --detail-reader-pull: clamp(42px, 3.35vw, 72px) !important;
-  --ingest-list-shift: clamp(12px, 1.4vw, 30px) !important;
+  --beam-center-x: var(--template-beam-x, 43.5%) !important;
+  --detail-reader-gutter: var(--template-detail-gutter, clamp(16px, 1.55vw, 28px)) !important;
+  --detail-reader-pull: var(--template-detail-pull, clamp(42px, 3.35vw, 72px)) !important;
+  --ingest-list-shift: var(--template-stage-list-shift, clamp(12px, 1.4vw, 30px)) !important;
 }
 
 .cinematic-ingest .ingest-index-strip {
-  width: clamp(388px, 21.5vw, 470px) !important;
-  padding-right: clamp(76px, 4.6vw, 96px) !important;
+  width: var(--template-stage-list-w, clamp(388px, 21.5vw, 470px)) !important;
+  padding-right: var(--template-stage-list-pad-right, clamp(76px, 4.6vw, 96px)) !important;
 }
 
 .cinematic-ingest .ingest-index-list {
@@ -1494,7 +1494,7 @@
 
 @media (max-width: 1500px) {
   .cinematic-ingest {
-    --compact-module-scale: max(var(--cinematic-ui-scale, 1), 0.72);
+    --compact-module-scale: var(--template-compact-module-scale, max(var(--cinematic-ui-scale, 1), 0.72));
   }
 
   .cinematic-ingest .ingest-observation.is-processing-track,
@@ -1508,7 +1508,7 @@
     height: clamp(174px, 20vh, 222px) !important;
     opacity: 1 !important;
     animation: none !important;
-    transform: translateY(-50%) scale(calc(var(--cinematic-ui-scale, 1) * 0.9)) !important;
+    transform: translateY(-50%) scale(var(--template-left-actions-compact-scale, calc(var(--cinematic-ui-scale, 1) * 0.9))) !important;
   }
 
   .cinematic-ingest:not(.cinematic-system) > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric,
@@ -1532,22 +1532,22 @@
   }
 
   .cinematic-ingest:not(.cinematic-system) .ingest-laser-stage {
-    --beam-center-x: 44.2% !important;
-    --detail-reader-pull: clamp(160px, 11.1vw, 190px) !important;
+    --beam-center-x: var(--template-beam-x-compact, 44.2%) !important;
+    --detail-reader-pull: var(--template-detail-pull-compact, clamp(160px, 11.1vw, 190px)) !important;
   }
 
   .cinematic-ingest:not(.cinematic-system) .ingest-index-strip {
-    left: calc(clamp(230px, 18vw, 330px) + var(--ingest-list-shift, clamp(10px, 1.2vw, 24px))) !important;
-    width: clamp(350px, 20vw, 405px) !important;
-    padding-right: clamp(64px, 4vw, 82px) !important;
+    left: var(--template-compact-list-left, calc(clamp(230px, 18vw, 330px) + var(--ingest-list-shift, clamp(10px, 1.2vw, 24px)))) !important;
+    width: var(--template-compact-list-w, clamp(350px, 20vw, 405px)) !important;
+    padding-right: var(--template-compact-list-pad-right, clamp(64px, 4vw, 82px)) !important;
     transform: scale(var(--compact-module-scale)) !important;
     transform-origin: right center !important;
   }
 
   .cinematic-ingest:not(.cinematic-system) .ingest-search-dock {
-    left: clamp(40px, 3.4vw, 58px) !important;
-    bottom: clamp(388px, 43vh, 444px) !important;
-    width: clamp(150px, 10vw, 190px) !important;
+    left: var(--template-search-x, clamp(40px, 3.4vw, 58px)) !important;
+    bottom: var(--template-search-bottom, clamp(388px, 43vh, 444px)) !important;
+    width: var(--template-search-w, clamp(150px, 10vw, 190px)) !important;
     transform: scale(var(--compact-module-scale)) !important;
     transform-origin: left bottom !important;
   }

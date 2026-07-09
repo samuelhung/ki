@@ -1,4 +1,5 @@
 @import './cinematic-ingest-core.css';
 @import './cinematic-ingest-modal-streams.css';
 @import './cinematic-ingest-react-bits-layout.css';
+@import '../cinematic/cinematic-template-layout.css';
 @import './cinematic-ingest-final-overrides.css';

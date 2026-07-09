@@ -125,12 +125,12 @@
 }
 
 .cinematic-system .system-index-strip {
-  left: calc(clamp(300px, 23vw, 410px) + var(--ingest-list-shift, clamp(28px, 3vw, 64px))) !important;
-  top: clamp(138px, 18vh, 196px) !important;
-  width: clamp(430px, 24vw, 520px) !important;
-  height: clamp(543px, 52vh, 665px) !important;
+  left: var(--template-stage-list-left, calc(clamp(300px, 23vw, 410px) + var(--ingest-list-shift, clamp(28px, 3vw, 64px)))) !important;
+  top: var(--template-stage-list-top, clamp(138px, 18vh, 196px)) !important;
+  width: var(--template-stage-list-w, clamp(430px, 24vw, 520px)) !important;
+  height: var(--template-stage-list-h, clamp(543px, 52vh, 665px)) !important;
   padding-left: 0 !important;
-  padding-right: clamp(92px, 5.4vw, 116px) !important;
+  padding-right: var(--template-stage-list-pad-right, clamp(92px, 5.4vw, 116px)) !important;
   pointer-events: auto !important;
   perspective: 920px !important;
   perspective-origin: 100% 48% !important;
@@ -700,10 +700,10 @@
   --system-line: rgba(207, 158, 255, 0.16);
   --system-line-soft: rgba(207, 158, 255, 0.075);
   --system-glow: rgba(207, 158, 255, 0.24);
-  --detail-reader-gutter: clamp(16px, 1.55vw, 28px);
-  --detail-reader-pull: clamp(42px, 3.35vw, 72px);
+  --detail-reader-gutter: var(--template-detail-gutter, clamp(16px, 1.55vw, 28px));
+  --detail-reader-pull: var(--template-detail-pull, clamp(42px, 3.35vw, 72px));
   left: calc(var(--beam-center-x) + var(--detail-reader-gutter) - var(--detail-reader-pull)) !important;
-  right: clamp(104px, 7.6vw, 170px) !important;
+  right: var(--template-detail-right, clamp(104px, 7.6vw, 170px)) !important;
 }
 
 .cinematic-system .system-detail-reader header {
@@ -1890,16 +1890,16 @@
 
 @media (max-width: 1500px) {
   .cinematic-system .system-detail-reader {
-    --detail-reader-pull: clamp(154px, 10.7vw, 184px);
-    right: 5px !important;
+    --detail-reader-pull: var(--template-detail-pull-compact, clamp(159px, 11.05vw, 189px));
+    right: var(--template-detail-right-compact, 5px) !important;
     transform: scale(var(--compact-module-scale, var(--cinematic-ui-scale, 1))) !important;
     transform-origin: right top !important;
   }
 
   .cinematic-system .system-index-strip {
-    left: clamp(172px, 15.5vw, 244px) !important;
-    width: clamp(360px, 23vw, 430px) !important;
-    padding-right: clamp(72px, 4.6vw, 94px) !important;
+    left: var(--template-compact-list-left, clamp(172px, 15.5vw, 244px)) !important;
+    width: var(--template-compact-list-w, clamp(360px, 23vw, 430px)) !important;
+    padding-right: var(--template-compact-list-pad-right, clamp(72px, 4.6vw, 94px)) !important;
     transform: scale(var(--compact-module-scale, var(--cinematic-ui-scale, 1))) !important;
     transform-origin: right center !important;
   }

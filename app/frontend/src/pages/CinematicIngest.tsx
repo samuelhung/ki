@@ -26,7 +26,7 @@ import { apiFetch } from '../api';
 import { backendUrl } from '../api';
 import { cinematicNavHubs } from '../navigation';
 import { statusLabel } from '../utils';
-import { useCinematicUiScale } from '../components/cinematic/useCinematicUiScale';
+import { useCinematicTemplateLayout } from '../components/cinematic/useCinematicTemplateLayout';
 import { ContentDetailPanel } from '../components/cinematic-ingest/ContentDetailPanel';
 import { BriefingStream, EventStream } from '../components/cinematic-ingest/CinematicIngestStreams';
 import type { BriefingTopic, DetailTab, EventItem, QueueItem } from '../components/cinematic-ingest/ingestTypes';
@@ -97,7 +97,7 @@ function PixelCommandButton({
 
 export default function CinematicIngest() {
   const { navigateWithCurtain } = useCurtain();
-  const uiScale = useCinematicUiScale();
+  const { profile: templateProfile, style: templateLayoutStyle } = useCinematicTemplateLayout('ingest');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [historyTab, setHistoryTab] = useState<typeof TOPICS[number]['key']>('格局');
   const [search, setSearch] = useState('');
@@ -291,8 +291,9 @@ export default function CinematicIngest() {
   return (
     <div
       className="cinematic-ingest cinematic-dashboard"
+      data-template-profile={templateProfile}
       data-topic={activeTopic.accent}
-      style={{ '--cinematic-ui-scale': uiScale } as React.CSSProperties}
+      style={templateLayoutStyle}
     >
       <CinematicScene focus={0} variant="ingest" laserPrimary />
       <div className="ingest-galaxy-layer" aria-hidden="true">

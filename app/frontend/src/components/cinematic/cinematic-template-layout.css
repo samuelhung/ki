@@ -1,0 +1,96 @@
+/*
+ * Shared cinematic template geometry.
+ * Today page keeps its bespoke layout; migrated pages consume these variables.
+ */
+
+.cinematic-ingest.cinematic-dashboard {
+  --compact-module-scale: var(--template-compact-module-scale, max(var(--cinematic-ui-scale, 1), 0.72));
+}
+
+.cinematic-ingest.cinematic-dashboard .ingest-observation,
+.cinematic-ingest.cinematic-dashboard .system-status-bay {
+  left: var(--template-left-panel-x, clamp(28px, 3.2vw, 58px)) !important;
+  top: var(--template-left-panel-y, clamp(30px, 4.2vh, 56px)) !important;
+}
+
+.cinematic-ingest.cinematic-dashboard > .cinematic-ingest-shell > .ingest-command-launcher {
+  left: var(--template-left-actions-x, clamp(28px, 3.2vw, 58px)) !important;
+  top: var(--template-left-actions-y, 50%) !important;
+  width: var(--template-left-actions-w, min(178px, 13.5vw)) !important;
+  height: var(--template-left-actions-h, clamp(194px, 22vh, 260px)) !important;
+}
+
+.cinematic-ingest.cinematic-dashboard .ingest-search-dock {
+  left: var(--template-search-x, clamp(40px, 3.4vw, 58px)) !important;
+  bottom: var(--template-search-bottom, clamp(388px, 43vh, 444px)) !important;
+  width: var(--template-search-w, clamp(150px, 10vw, 190px)) !important;
+}
+
+.cinematic-ingest.cinematic-dashboard .ingest-laser-stage {
+  left: var(--template-stage-left, clamp(300px, 23vw, 410px)) !important;
+  right: var(--template-stage-right, clamp(56px, 5.8vw, 104px)) !important;
+  --media-h: var(--template-media-h, clamp(126px, 15.8vh, 178px));
+  --beam-center-x: var(--template-beam-x, 43.5%) !important;
+  --detail-reader-gutter: var(--template-detail-gutter, clamp(16px, 1.55vw, 28px)) !important;
+  --detail-reader-pull: var(--template-detail-pull, clamp(42px, 3.35vw, 72px)) !important;
+  --ingest-list-shift: var(--template-stage-list-shift, clamp(12px, 1.4vw, 30px)) !important;
+  --media-w: var(--template-media-w, min(1560px, 99%));
+}
+
+.cinematic-ingest.cinematic-dashboard .ingest-laser-stage.is-media-expanded {
+  --media-h: var(--template-media-h-expanded, min(38vh, 330px));
+}
+
+.cinematic-ingest.cinematic-dashboard .ingest-index-strip {
+  left: var(--template-stage-list-left, calc(var(--template-stage-left, clamp(300px, 23vw, 410px)) + var(--template-stage-list-shift, clamp(12px, 1.4vw, 30px)))) !important;
+  top: var(--template-stage-list-top, clamp(138px, 18vh, 196px)) !important;
+  width: var(--template-stage-list-w, clamp(388px, 21.5vw, 470px)) !important;
+  height: var(--template-stage-list-h, clamp(543px, 52vh, 665px)) !important;
+  padding-right: var(--template-stage-list-pad-right, clamp(76px, 4.6vw, 96px)) !important;
+}
+
+.cinematic-ingest.cinematic-dashboard .ingest-detail-reader {
+  left: calc(var(--beam-center-x) + var(--detail-reader-gutter) - var(--detail-reader-pull)) !important;
+  right: var(--template-detail-right, max(clamp(42px, 4.6vw, 84px), var(--media-edge-x))) !important;
+  top: var(--template-detail-top, 60px) !important;
+}
+
+@media (max-width: 1500px) {
+  .cinematic-ingest.cinematic-dashboard .ingest-observation,
+  .cinematic-ingest.cinematic-dashboard .system-status-bay {
+    transform: scale(var(--template-left-panel-scale, var(--compact-module-scale))) !important;
+    transform-origin: left top !important;
+  }
+
+  .cinematic-ingest.cinematic-dashboard:not(.cinematic-system) > .cinematic-ingest-shell > .ingest-command-launcher,
+  .cinematic-ingest.cinematic-dashboard.cinematic-system > .cinematic-ingest-shell > .ingest-command-launcher {
+    transform: translateY(-50%) scale(var(--template-left-actions-compact-scale, calc(var(--cinematic-ui-scale, 1) * 0.9))) !important;
+  }
+
+  .cinematic-ingest.cinematic-dashboard .ingest-laser-stage {
+    --beam-center-x: var(--template-beam-x-compact, 44.2%) !important;
+    --detail-reader-pull: var(--template-detail-pull-compact, clamp(160px, 11.1vw, 190px)) !important;
+  }
+
+  .cinematic-ingest.cinematic-dashboard .ingest-index-strip {
+    left: var(--template-compact-list-left, calc(clamp(230px, 18vw, 330px) + var(--template-stage-list-shift, clamp(10px, 1.2vw, 24px)))) !important;
+    width: var(--template-compact-list-w, clamp(350px, 20vw, 405px)) !important;
+    padding-right: var(--template-compact-list-pad-right, clamp(64px, 4vw, 82px)) !important;
+    transform: scale(var(--compact-module-scale)) !important;
+    transform-origin: right center !important;
+  }
+
+  .cinematic-ingest.cinematic-dashboard .ingest-search-dock,
+  .cinematic-ingest.cinematic-dashboard .ingest-detail-reader {
+    transform: scale(var(--compact-module-scale)) !important;
+  }
+
+  .cinematic-ingest.cinematic-dashboard .ingest-search-dock {
+    transform-origin: left bottom !important;
+  }
+
+  .cinematic-ingest.cinematic-dashboard .ingest-detail-reader {
+    right: var(--template-detail-right-compact, 5px) !important;
+    transform-origin: right top !important;
+  }
+}
