@@ -91,11 +91,24 @@ const LASER_PRIMARY_OVERRIDES: Partial<Record<CinematicSceneVariant, Partial<Cin
 
 export function resolveCinematicSceneProfile(
   variant: CinematicSceneVariant,
-  options: { laserPrimary?: boolean; reducedMotion?: boolean } = {},
+  options: { laserPrimary?: boolean; reducedMotion?: boolean; constrainedRuntime?: boolean } = {},
 ): CinematicSceneProfile {
   const base = CINEMATIC_SCENE_BASE_VARIANTS[variant];
   const laserOverride = options.laserPrimary ? LASER_PRIMARY_OVERRIDES[variant] || {} : {};
-  const profile = { ...base, ...laserOverride };
+  let profile = { ...base, ...laserOverride };
+
+  if (options.constrainedRuntime && !options.reducedMotion) {
+    profile = {
+      ...profile,
+      pixelRatioScale: Math.min(profile.pixelRatioScale, 0.62),
+      particleCount: Math.min(profile.particleCount, options.laserPrimary ? 440 : 720),
+      signalIntensity: profile.signalIntensity * 0.86,
+      particleIntensity: profile.particleIntensity * 0.86,
+      motion: profile.motion * 0.72,
+      pointer: profile.pointer * 0.7,
+      maxFps: Math.min(profile.maxFps, 28),
+    };
+  }
 
   if (!options.reducedMotion) return profile;
 

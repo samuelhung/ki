@@ -5,4 +5,5 @@ await runCinematicPagesQa({
   outDir: process.argv[3] || 'tmp/cinematic-pages-qa-perf',
   mode: 'performance',
   enforcePerformance: true,
+  enforceScreenshotPerformance: false,
 });

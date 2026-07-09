@@ -59,3 +59,16 @@ test('reduced motion keeps a readable static backdrop', () => {
   assert.ok(profile.particleCount <= 360);
   assert.ok(profile.bgIntensity >= 0.76);
 });
+
+test('constrained runtime lowers cinematic load without disabling motion', () => {
+  const profile = resolveCinematicSceneProfile('system', {
+    laserPrimary: true,
+    constrainedRuntime: true,
+  });
+
+  assert.equal(profile.maxFps, 28);
+  assert.ok(profile.particleCount <= 440);
+  assert.ok(profile.motion > 0);
+  assert.ok(profile.pointer > 0);
+  assert.ok(profile.bgIntensity >= 0.74);
+});

@@ -77,19 +77,32 @@ export function visibleProgressStages(stages: ProgressStage[]): Array<ProgressSt
   }));
 }
 
+export function queueErrorHint(error?: string): string {
+  const value = (error || '').toLowerCase();
+  if (!value) return '可重试或删除';
+  if (/timeout|timed out|超时/.test(value)) return '请求超时 · 建议重试';
+  if (/401|403|unauthorized|forbidden|auth|token|key|鉴权|权限/.test(value)) return '鉴权异常 · 检查配置';
+  if (/quota|rate limit|429|限流|额度/.test(value)) return '额度或限流 · 稍后重试';
+  if (/network|fetch|connection|econn|dns|网络|连接/.test(value)) return '网络异常 · 等待恢复';
+  if (/asr|transcribe|转写|audio|音频/.test(value)) return '转写失败 · 检查媒体';
+  if (/parse|json|decode|解析|格式/.test(value)) return '解析失败 · 检查来源';
+  return '处理失败 · 查看任务详情';
+}
+
 export function processingTrackHint(
   running: QueueItem | null | undefined,
   pendingCount: number,
   errorCount: number,
+  errorTask?: QueueItem | null,
 ): string {
   const stages = running?.progress_stages || [];
   const currentStage = stages.find((stage) => stage.status === 'active' || stage.status === 'error')
     || stages.find((stage) => stage.status !== 'done');
 
-  if (currentStage?.status === 'error') return `${currentStage.label}失败 · 等待重试或清理`;
+  if (currentStage?.status === 'error') return `${currentStage.label}失败 · ${queueErrorHint(running?.error)}`;
   if (running && currentStage) return `正在${currentStage.label} · ${visibleProgressStages(stages).length ? '局部流程同步推进' : '处理链路同步推进'}`;
   if (running) return '正在接入处理链路 · 节点状态回传中';
-  if (errorCount > 0) return `${errorCount} 个异常任务 · 可重试或删除`;
+  if (errorCount > 0) return `${errorCount} 个异常任务 · ${queueErrorHint(errorTask?.error)}`;
   if (pendingCount > 0) return `${pendingCount} 个任务排队 · 等待资源调度`;
   return '无活动任务 · 处理轨道待命';
 }

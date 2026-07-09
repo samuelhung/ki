@@ -17,6 +17,13 @@ function pixelRatioCap(scale = 1) {
   return Math.max(0.75, cap * scale);
 }
 
+function isConstrainedRuntime() {
+  const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
+  const hardwareConcurrency = navigator.hardwareConcurrency || 8;
+  const compactViewport = window.innerWidth < 1180 || window.innerHeight < 820;
+  return Boolean(connection?.saveData) || hardwareConcurrency <= 4 || compactViewport;
+}
+
 function getCanvasSize(canvas: HTMLCanvasElement) {
   const rect = canvas.getBoundingClientRect();
   return {
@@ -50,7 +57,11 @@ export default function CinematicScene({ focus, variant = 'today', laserPrimary 
     const canvas = canvasRef.current;
     if (!canvas) return;
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const config = resolveCinematicSceneProfile(variant, { laserPrimary, reducedMotion });
+    const config = resolveCinematicSceneProfile(variant, {
+      laserPrimary,
+      reducedMotion,
+      constrainedRuntime: isConstrainedRuntime(),
+    });
 
     const renderer = new THREE.WebGLRenderer({
       canvas,
@@ -418,6 +429,13 @@ export default function CinematicScene({ focus, variant = 'today', laserPrimary 
       camera.updateProjectionMatrix();
     }
 
+    function onVisibilityChange() {
+      if (!document.hidden) {
+        lastRender = performance.now();
+        onResize();
+      }
+    }
+
     function animate(now = performance.now()) {
       frame = requestAnimationFrame(animate);
       if (document.hidden || now - lastRender < minFrameMs) return;
@@ -493,6 +511,7 @@ export default function CinematicScene({ focus, variant = 'today', laserPrimary 
 
     if (config.pointer > 0) window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('resize', onResize);
+    document.addEventListener('visibilitychange', onVisibilityChange, { passive: true });
     const resizeObserver = new ResizeObserver(onResize);
     resizeObserver.observe(canvas);
     frame = requestAnimationFrame(animate);
@@ -501,6 +520,7 @@ export default function CinematicScene({ focus, variant = 'today', laserPrimary 
       cancelAnimationFrame(frame);
       if (config.pointer > 0) window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('resize', onResize);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       resizeObserver.disconnect();
       scene.traverse((object) => {
         const mesh = object as THREE.Mesh;

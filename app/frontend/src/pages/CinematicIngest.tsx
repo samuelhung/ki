@@ -235,7 +235,7 @@ export default function CinematicIngest() {
   const beamEdgeOverlap = mediaBoxExpanded ? 8 : 6;
   const beamVerticalOffset = (mediaBoxHeight - beamEdgeOverlap) / Math.max(viewportHeight, 1) - 0.5;
   const queueTone = errors.length > 0 ? 'error' : running ? 'running' : pending.length > 0 ? 'pending' : 'idle';
-  const queueHint = processingTrackHint(running, pending.length, errors.length);
+  const queueHint = processingTrackHint(running, pending.length, errors.length, errors[0]);
 
   useEffect(() => () => {
     ingestPollSeqRef.current += 1;

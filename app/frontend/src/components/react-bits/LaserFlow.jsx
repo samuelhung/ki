@@ -274,6 +274,11 @@ export default function LaserFlow({
   const emaDtRef = useRef(16.7); // ms
   const pausedRef = useRef(false);
   const inViewRef = useRef(true);
+  const maxFpsRef = useRef(maxFps);
+
+  useEffect(() => {
+    maxFpsRef.current = maxFps;
+  }, [maxFps]);
 
   const hexToRGB = (hex) => {
     let c = hex.trim();
@@ -367,7 +372,6 @@ export default function LaserFlow({
 
     const mouseTarget = new THREE.Vector2(0, 0);
     const mouseSmooth = new THREE.Vector2(0, 0);
-    const targetFrameMs = 1000 / Math.max(1, maxFps || 60);
     let lastRenderMs = 0;
 
     const setSizeNow = () => {
@@ -487,6 +491,7 @@ export default function LaserFlow({
       if (pausedRef.current || !inViewRef.current) return;
 
       const nowMs = performance.now();
+      const targetFrameMs = 1000 / Math.max(1, maxFpsRef.current || 60);
       if (nowMs - lastRenderMs < targetFrameMs) return;
       lastRenderMs = nowMs;
 

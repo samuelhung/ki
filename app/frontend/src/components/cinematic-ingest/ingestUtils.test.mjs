@@ -67,16 +67,32 @@ test('processingTrackHint explains running pending and error states', () => {
     '正在转写原文 · 局部流程同步推进',
   );
   assert.equal(utils.processingTrackHint(null, 3, 0), '3 个任务排队 · 等待资源调度');
-  assert.equal(utils.processingTrackHint(null, 0, 2), '2 个异常任务 · 可重试或删除');
+  assert.equal(
+    utils.processingTrackHint(null, 0, 2, {
+      id: 'task-timeout',
+      ingest_type: 'douyin_share',
+      status: 'error',
+      error: 'request timeout',
+    }),
+    '2 个异常任务 · 请求超时 · 建议重试',
+  );
   assert.equal(
     utils.processingTrackHint({
       id: 'task-error',
       ingest_type: 'douyin_share',
       status: 'running',
+      error: '401 unauthorized',
       progress_stages: [{ key: 'summary', label: 'AI 总结', status: 'error' }],
     }, 0, 0),
-    'AI 总结失败 · 等待重试或清理',
+    'AI 总结失败 · 鉴权异常 · 检查配置',
   );
+});
+
+test('queueErrorHint maps backend failures to short operator hints', () => {
+  assert.equal(utils.queueErrorHint('429 rate limit'), '额度或限流 · 稍后重试');
+  assert.equal(utils.queueErrorHint('JSON parse failed'), '解析失败 · 检查来源');
+  assert.equal(utils.queueErrorHint('ASR audio decode failed'), '转写失败 · 检查媒体');
+  assert.equal(utils.queueErrorHint('unknown failure'), '处理失败 · 查看任务详情');
 });
 
 test('applyDeletedQueueCounts subtracts tombstoned tasks that are still returned by polling', () => {
