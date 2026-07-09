@@ -70,6 +70,12 @@
   animation: cinematicIntroGone 0.01s linear 2.36s forwards;
 }
 
+.cinematic-intro-wipe.is-intro-done {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .cinematic-intro-wipe .curtain {
   position: absolute;
   top: 0;

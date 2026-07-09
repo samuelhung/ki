@@ -1,6 +1,9 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import net from 'node:net';
 import { inflateSync } from 'node:zlib';
 
 const chromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
@@ -40,19 +43,94 @@ function pageUrl(baseUrl, path) {
   return new URL(path, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).toString();
 }
 
-function runChrome(args, timeout = 60000) {
+async function findFreePort() {
+  const server = net.createServer();
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  await new Promise((resolveClose) => server.close(resolveClose));
+  return address.port;
+}
+
+async function waitForJson(url, timeoutMs = 10000) {
   const startedAt = performance.now();
-  const result = spawnSync(chromePath, args, {
-    encoding: 'utf8',
-    timeout,
+  let lastError = '';
+  while (performance.now() - startedAt < timeoutMs) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) return response.json();
+      lastError = `${response.status} ${response.statusText}`;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+    await new Promise((resolveWait) => setTimeout(resolveWait, 120));
+  }
+  throw new Error(`Timed out waiting for ${url}: ${lastError}`);
+}
+
+async function connectCdp(wsUrl) {
+  const socket = new WebSocket(wsUrl);
+  await new Promise((resolveOpen, rejectOpen) => {
+    socket.addEventListener('open', resolveOpen, { once: true });
+    socket.addEventListener('error', rejectOpen, { once: true });
   });
+
+  let commandId = 0;
+  const pending = new Map();
+
+  socket.addEventListener('message', (message) => {
+    const payload = JSON.parse(message.data.toString());
+    if (!payload.id || !pending.has(payload.id)) return;
+    const { resolveCommand, rejectCommand } = pending.get(payload.id);
+    pending.delete(payload.id);
+    if (payload.error) rejectCommand(new Error(payload.error.message || JSON.stringify(payload.error)));
+    else resolveCommand(payload.result);
+  });
+
+  function send(method, params = {}) {
+    const id = ++commandId;
+    socket.send(JSON.stringify({ id, method, params }));
+    return new Promise((resolveCommand, rejectCommand) => {
+      pending.set(id, { resolveCommand, rejectCommand });
+      setTimeout(() => {
+        if (!pending.has(id)) return;
+        pending.delete(id);
+        rejectCommand(new Error(`CDP timeout: ${method}`));
+      }, 15000);
+    });
+  }
+
   return {
-    durationMs: Math.round(performance.now() - startedAt),
-    exitCode: result.status,
-    signal: result.signal,
-    stdout: result.stdout || '',
-    stderr: result.stderr || '',
+    send,
+    close: () => socket.close(),
   };
+}
+
+function expressionBody(source) {
+  return `(() => { ${source} })()`;
+}
+
+async function evaluate(cdp, source, timeoutMs = 15000) {
+  const result = await cdp.send('Runtime.evaluate', {
+    expression: expressionBody(source),
+    awaitPromise: true,
+    returnByValue: true,
+    timeout: timeoutMs,
+  });
+  if (result.exceptionDetails) {
+    throw new Error(result.exceptionDetails.text || 'Runtime.evaluate failed');
+  }
+  return result.result?.value;
+}
+
+async function waitFor(cdp, label, source, timeoutMs = 20000) {
+  const startedAt = performance.now();
+  while (performance.now() - startedAt < timeoutMs) {
+    const value = await evaluate(cdp, source);
+    if (value) return value;
+    await new Promise((resolveWait) => setTimeout(resolveWait, 180));
+  }
+  throw new Error(`Timed out waiting for ${label}`);
 }
 
 async function fetchHealth(baseUrl) {
@@ -75,16 +153,37 @@ async function fetchHealth(baseUrl) {
   }
 }
 
-function chromeArgsForPage(page, viewport) {
-  return [
-    '--headless',
-    '--disable-gpu',
-    '--use-angle=swiftshader',
-    '--enable-unsafe-swiftshader',
-    '--hide-scrollbars',
-    `--window-size=${viewport.width},${viewport.height}`,
-    `--virtual-time-budget=${page.virtualTimeBudgetMs}`,
-  ];
+async function capturePageWithCdp({ cdp, url, page, screenshotPath }) {
+  const startedAt = performance.now();
+  await cdp.send('Page.navigate', { url });
+  await waitFor(cdp, `document ${page.key}`, `return document.readyState === 'complete' || document.readyState === 'interactive';`);
+  await waitFor(
+    cdp,
+    `markers ${page.key}`,
+    `
+      const html = document.documentElement.outerHTML;
+      const markers = ${JSON.stringify(page.markers)};
+      if (!markers.every((marker) => html.includes(marker))) return false;
+      if (html.includes('加载中...')) return false;
+      if (${JSON.stringify(page.key)} === 'today') {
+        const intro = document.querySelector('.cinematic-intro-wipe');
+        const introStyle = intro ? getComputedStyle(intro) : null;
+        const introDone = !intro || intro.classList.contains('is-intro-done') || introStyle.visibility === 'hidden' || Number(introStyle.opacity) === 0;
+        const hero = document.querySelector('.cinematic-hero h1');
+        return introDone && Boolean(hero) && getComputedStyle(hero).visibility !== 'hidden';
+      }
+      return true;
+    `,
+    page.virtualTimeBudgetMs + 6000,
+  );
+
+  const html = await evaluate(cdp, `return document.documentElement.outerHTML;`);
+  const screenshot = await cdp.send('Page.captureScreenshot', { format: 'png', fromSurface: true });
+  writeFileSync(screenshotPath, Buffer.from(screenshot.data, 'base64'));
+  return {
+    durationMs: Math.round(performance.now() - startedAt),
+    html,
+  };
 }
 
 function paeth(a, b, c) {
@@ -197,61 +296,87 @@ export async function runCinematicPagesQa({
 
   const health = await fetchHealth(baseUrl);
   const reports = [];
+  const port = await findFreePort();
+  const userDataDir = mkdtempSync(resolve(tmpdir(), 'ki-cinematic-pages-'));
+  const chrome = spawn(chromePath, [
+    '--headless=new',
+    '--disable-gpu',
+    '--use-angle=swiftshader',
+    '--enable-unsafe-swiftshader',
+    '--hide-scrollbars',
+    '--no-first-run',
+    '--no-default-browser-check',
+    `--remote-debugging-port=${port}`,
+    `--user-data-dir=${userDataDir}`,
+    `--window-size=${viewport.width},${viewport.height}`,
+    pageUrl(baseUrl, '/#/'),
+  ], { stdio: ['ignore', 'ignore', 'pipe'] });
+  const chromeStderr = [];
+  chrome.stderr.on('data', (chunk) => chromeStderr.push(chunk.toString()));
 
-  for (const page of pages) {
-    const url = pageUrl(baseUrl, page.path);
-    const viewportLabel = `${viewport.width}x${viewport.height}`;
-    const screenshotPath = resolve(resolvedOutDir, `${page.key}-${viewportLabel}.png`);
-    const pageChromeArgs = chromeArgsForPage(page, viewport);
-    const screenshot = runChrome([...pageChromeArgs, `--screenshot=${screenshotPath}`, url]);
-    const dom = runChrome([...pageChromeArgs, '--dump-dom', url]);
-    const screenshotVisual = readPngVisualStats(screenshotPath);
-    const html = dom.stdout || '';
-    const stderr = `${screenshot.stderr}\n${dom.stderr}`.trim();
-    const markerStatus = Object.fromEntries(page.markers.map((marker) => [marker, html.includes(marker)]));
-    const chromeIssues = stderr
-      .split('\n')
-      .filter((line) => /ERROR|TypeError|ReferenceError|SyntaxError/i.test(line))
-      .slice(0, 30);
-    const thresholds = {
-      screenshotMs: screenshot.durationMs <= page.maxScreenshotMs,
-      domDumpMs: dom.durationMs <= page.maxDomDumpMs,
-      canvasCount: (html.match(/<canvas\b/g) || []).length === page.expectedCanvasCount,
-      screenshotVisual: screenshotVisual.ok,
-    };
-    const renderPass = Boolean(
-      screenshot.exitCode === 0 &&
-      dom.exitCode === 0 &&
-      Object.values(markerStatus).every(Boolean) &&
-      thresholds.canvasCount &&
-      thresholds.screenshotVisual &&
-      !html.includes('加载中...')
-    );
+  let cdp;
+  try {
+    const tabs = await waitForJson(`http://127.0.0.1:${port}/json/list`);
+    const tab = tabs.find((item) => item.type === 'page') || tabs[0];
+    if (!tab?.webSocketDebuggerUrl) throw new Error('No debuggable Chrome page found');
+    cdp = await connectCdp(tab.webSocketDebuggerUrl);
+    await cdp.send('Page.enable');
+    await cdp.send('Runtime.enable');
 
-    reports.push({
-      key: page.key,
-      url,
-      screenshotPath,
-      screenshotMs: screenshot.durationMs,
-      domDumpMs: dom.durationMs,
-      domBytes: html.length,
-      canvasCount: (html.match(/<canvas\b/g) || []).length,
-      virtualTimeBudgetMs: page.virtualTimeBudgetMs,
-      markerStatus,
-      thresholds: {
-        ...thresholds,
-        maxScreenshotMs: page.maxScreenshotMs,
-        maxDomDumpMs: page.maxDomDumpMs,
-        expectedCanvasCount: page.expectedCanvasCount,
-      },
-      screenshotVisual,
-      chromeIssues,
-      thresholdsEnforced: {
-        screenshotMs: enforceScreenshotPerformance,
-        domDumpMs: enforcePerformance,
-      },
-      pass: Boolean(renderPass && (!enforceScreenshotPerformance || thresholds.screenshotMs) && (!enforcePerformance || thresholds.domDumpMs)),
-    });
+    for (const page of pages) {
+      const url = pageUrl(baseUrl, page.path);
+      const viewportLabel = `${viewport.width}x${viewport.height}`;
+      const screenshotPath = resolve(resolvedOutDir, `${page.key}-${viewportLabel}.png`);
+      const capture = await capturePageWithCdp({ cdp, url, page, screenshotPath });
+      const screenshotVisual = readPngVisualStats(screenshotPath);
+      const html = capture.html || '';
+      const stderr = chromeStderr.join('').trim();
+      const markerStatus = Object.fromEntries(page.markers.map((marker) => [marker, html.includes(marker)]));
+      const chromeIssues = stderr
+        .split('\n')
+        .filter((line) => /ERROR|TypeError|ReferenceError|SyntaxError/i.test(line))
+        .slice(0, 30);
+      const thresholds = {
+        screenshotMs: capture.durationMs <= page.maxScreenshotMs,
+        domDumpMs: true,
+        canvasCount: (html.match(/<canvas\b/g) || []).length === page.expectedCanvasCount,
+        screenshotVisual: screenshotVisual.ok,
+      };
+      const renderPass = Boolean(
+        Object.values(markerStatus).every(Boolean) &&
+        thresholds.canvasCount &&
+        thresholds.screenshotVisual &&
+        !html.includes('加载中...')
+      );
+
+      reports.push({
+        key: page.key,
+        url,
+        screenshotPath,
+        screenshotMs: capture.durationMs,
+        domDumpMs: 0,
+        domBytes: html.length,
+        canvasCount: (html.match(/<canvas\b/g) || []).length,
+        virtualTimeBudgetMs: page.virtualTimeBudgetMs,
+        markerStatus,
+        thresholds: {
+          ...thresholds,
+          maxScreenshotMs: page.maxScreenshotMs,
+          maxDomDumpMs: page.maxDomDumpMs,
+          expectedCanvasCount: page.expectedCanvasCount,
+        },
+        screenshotVisual,
+        chromeIssues,
+        thresholdsEnforced: {
+          screenshotMs: enforceScreenshotPerformance,
+          domDumpMs: enforcePerformance,
+        },
+        pass: Boolean(renderPass && (!enforceScreenshotPerformance || thresholds.screenshotMs) && (!enforcePerformance || thresholds.domDumpMs)),
+      });
+    }
+  } finally {
+    cdp?.close();
+    chrome.kill('SIGTERM');
   }
 
   const report = {

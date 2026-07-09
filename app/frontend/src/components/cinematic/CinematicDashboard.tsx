@@ -25,6 +25,7 @@ interface Props {
 export default function CinematicDashboard(props: Props) {
   const [focus, setFocus] = useState(0);
   const [uiScale, setUiScale] = useState(1);
+  const [introDone, setIntroDone] = useState(false);
   const data = useMemo(
     () => createCinematicDashboardData(props.summary, props.taskStats, props.events, props.usage, props.heatmapTrend),
     [props.summary, props.taskStats, props.events, props.usage, props.heatmapTrend]
@@ -45,6 +46,11 @@ export default function CinematicDashboard(props: Props) {
     return () => window.removeEventListener('resize', syncUiScale);
   }, []);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => setIntroDone(true), 2700);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   return (
     <div
       className="cinematic-dashboard"
@@ -52,7 +58,7 @@ export default function CinematicDashboard(props: Props) {
     >
       <CinematicScene focus={focus} />
       <div className="cinematic-film" />
-      <div className="cinematic-intro-wipe" aria-hidden="true">
+      <div className={`cinematic-intro-wipe${introDone ? ' is-intro-done' : ''}`} aria-hidden="true">
         <i className="curtain curtain-left" />
         <i className="curtain curtain-right" />
         <i className="intro-spark" />

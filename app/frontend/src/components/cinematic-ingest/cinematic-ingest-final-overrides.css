@@ -1492,6 +1492,54 @@
   line-height: 1.68 !important;
 }
 
+@media (max-width: 1500px) {
+  .cinematic-ingest:not(.cinematic-system) > .cinematic-ingest-shell > .ingest-command-launcher {
+    width: min(150px, 11.8vw) !important;
+    height: clamp(174px, 20vh, 222px) !important;
+    opacity: 1 !important;
+    animation: none !important;
+    transform: translateY(-50%) scale(calc(var(--cinematic-ui-scale, 1) * 0.9)) !important;
+  }
+
+  .cinematic-ingest:not(.cinematic-system) > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric,
+  .cinematic-ingest:not(.cinematic-system) > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric.is-douyin,
+  .cinematic-ingest:not(.cinematic-system) > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric.is-file,
+  .cinematic-ingest:not(.cinematic-system) > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric.is-concept,
+  .cinematic-ingest:not(.cinematic-system) > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric.is-scan {
+    min-width: 96px !important;
+    padding-left: 14px !important;
+  }
+
+  .cinematic-ingest:not(.cinematic-system) > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric b {
+    font-size: 12px !important;
+  }
+
+  .cinematic-ingest:not(.cinematic-system) > .cinematic-ingest-shell > .ingest-command-launcher .ingest-command-metric span {
+    max-width: 104px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  .cinematic-ingest:not(.cinematic-system) .ingest-laser-stage {
+    --beam-center-x: 44.2% !important;
+    --detail-reader-pull: clamp(36px, 2.7vw, 52px) !important;
+  }
+
+  .cinematic-ingest:not(.cinematic-system) .ingest-index-strip {
+    width: clamp(350px, 20vw, 405px) !important;
+    padding-right: clamp(64px, 4vw, 82px) !important;
+  }
+
+  .cinematic-ingest:not(.cinematic-system) .ingest-index-item {
+    width: min(100%, 286px) !important;
+  }
+
+  .cinematic-ingest:not(.cinematic-system) .index-title {
+    width: min(258px, calc(100% - 24px)) !important;
+  }
+}
+
 /* Unified Douyin/file access bay: mirrors the bottom media box language. */
 @property --access-ring-angle {
   syntax: "<angle>";
