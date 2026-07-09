@@ -59,6 +59,9 @@ export function useCinematicTemplateLayout(page: CinematicTemplatePage) {
     const tabletListPadding = page === 'system'
       ? 'clamp(56px, 5.2vw, 68px)'
       : 'clamp(54px, 5vw, 66px)';
+    const tabletDetailPull = page === 'system'
+      ? 'clamp(260px, 24vw, 292px)'
+      : 'clamp(244px, 22vw, 280px)';
 
     return {
       '--cinematic-ui-scale': uiScale,
@@ -79,13 +82,13 @@ export function useCinematicTemplateLayout(page: CinematicTemplatePage) {
       '--template-left-actions-h': 'clamp(194px, 22vh, 260px)',
       '--template-left-actions-scale': 'var(--template-scale)',
       '--template-left-actions-compact-scale': isTablet
-        ? 'clamp(0.38, calc(var(--cinematic-ui-scale) * 0.74), 0.46)'
+        ? 'clamp(0.36, calc(var(--cinematic-ui-scale) * 0.7), 0.43)'
         : 'calc(var(--cinematic-ui-scale) * 0.9)',
 
       '--template-left-nav-x': 'clamp(28px, 3.2vw, 58px)',
       '--template-search-x': 'clamp(40px, 3.4vw, 58px)',
       '--template-left-nav-scale': isTablet
-        ? 'clamp(0.42, calc(var(--cinematic-ui-scale) * 0.84), 0.5)'
+        ? 'clamp(0.4, calc(var(--cinematic-ui-scale) * 0.8), 0.48)'
         : 'max(var(--cinematic-ui-scale), 0.72)',
       '--template-search-bottom': isTablet
         ? 'clamp(194px, 25vh, 218px)'
@@ -103,11 +106,11 @@ export function useCinematicTemplateLayout(page: CinematicTemplatePage) {
       '--template-stage-list-shift': 'clamp(12px, 1.4vw, 30px)',
       '--template-stage-list-left': 'calc(var(--template-stage-left) + var(--template-stage-list-shift))',
       '--template-stage-list-top': isTablet
-        ? 'clamp(176px, 24vh, 206px)'
+        ? 'clamp(168px, 22vh, 196px)'
         : 'clamp(138px, 18vh, 196px)',
       '--template-stage-list-w': 'clamp(388px, 21.5vw, 470px)',
       '--template-stage-list-h': isTablet
-        ? 'clamp(260px, 31vh, 318px)'
+        ? 'clamp(278px, 34vh, 336px)'
         : 'clamp(543px, 52vh, 665px)',
       '--template-stage-list-pad-right': 'clamp(76px, 4.6vw, 96px)',
 
@@ -116,7 +119,7 @@ export function useCinematicTemplateLayout(page: CinematicTemplatePage) {
       '--template-detail-gutter': 'clamp(16px, 1.55vw, 28px)',
       '--template-detail-pull': 'clamp(42px, 3.35vw, 72px)',
       '--template-detail-pull-compact': isTablet
-        ? 'clamp(214px, 20vw, 248px)'
+        ? tabletDetailPull
         : compactDetailPull,
       '--template-detail-top': '60px',
       '--template-detail-right': 'max(clamp(42px, 4.6vw, 84px), var(--media-edge-x))',
@@ -124,7 +127,7 @@ export function useCinematicTemplateLayout(page: CinematicTemplatePage) {
 
       '--template-media-w': 'min(1560px, 99%)',
       '--template-media-h': isTablet
-        ? 'clamp(102px, 13vh, 124px)'
+        ? 'clamp(78px, 10.5vh, 92px)'
         : 'clamp(126px, 15.8vh, 178px)',
       '--template-media-h-expanded': isTablet
         ? 'min(30vh, 250px)'

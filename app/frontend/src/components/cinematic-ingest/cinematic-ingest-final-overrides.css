@@ -9,6 +9,12 @@
   overflow: hidden !important;
 }
 
+.cinematic-ingest.cinematic-dashboard {
+  height: 100svh !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+
 .cinematic-ingest .ingest-observation {
   position: absolute !important;
   left: clamp(28px, 3.2vw, 58px) !important;

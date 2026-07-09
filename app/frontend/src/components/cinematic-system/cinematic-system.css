@@ -678,13 +678,55 @@
 
 @media (max-width: 1180px) {
   .cinematic-system .system-core-box {
-    grid-template-columns: 1fr !important;
-    gap: 8px !important;
+    grid-template-columns: minmax(150px, 0.34fr) minmax(0, 1fr) !important;
+    align-items: center !important;
+    gap: 18px !important;
   }
 
   .cinematic-system .system-asset-groups {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px 14px;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 10px 16px !important;
+    min-width: 0 !important;
+  }
+
+  .cinematic-system .system-core-title {
+    gap: 2px !important;
+  }
+
+  .cinematic-system .system-core-title > span,
+  .cinematic-system .system-core-title > small {
+    font-size: 9px !important;
+  }
+
+  .cinematic-system .system-core-title > b {
+    font-size: 20px !important;
+  }
+
+  .cinematic-system .system-asset-group {
+    min-width: 0 !important;
+    gap: 5px !important;
+  }
+
+  .cinematic-system .system-asset-group header {
+    grid-template-columns: 16px minmax(0, 1fr) !important;
+    gap: 5px 6px !important;
+  }
+
+  .cinematic-system .system-asset-group header svg {
+    width: 13px !important;
+    height: 13px !important;
+  }
+
+  .cinematic-system .system-asset-group header span {
+    font-size: 12px !important;
+  }
+
+  .cinematic-system .system-asset-group header small {
+    font-size: 7px !important;
+  }
+
+  .cinematic-system .system-asset-group > div {
+    display: none !important;
   }
 
   .system-card-grid,
