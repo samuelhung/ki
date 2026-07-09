@@ -28,7 +28,7 @@ import { cinematicNavHubs } from '../navigation';
 import { statusLabel } from '../utils';
 import { ContentDetailPanel } from '../components/cinematic-ingest/ContentDetailPanel';
 import { BriefingStream, EventStream } from '../components/cinematic-ingest/CinematicIngestStreams';
-import type { BriefingTopic, DetailTab, EventItem } from '../components/cinematic-ingest/ingestTypes';
+import type { BriefingTopic, DetailTab, EventItem, QueueItem } from '../components/cinematic-ingest/ingestTypes';
 import { useLaserRenderProfile } from '../components/cinematic-ingest/useLaserRenderProfile';
 import { useIngestQueue } from '../components/cinematic-ingest/useIngestQueue';
 import { useIngestEvents } from '../components/cinematic-ingest/useIngestEvents';
@@ -37,7 +37,7 @@ import { useIngestCommands } from '../components/cinematic-ingest/useIngestComma
 import { useDebouncedValue } from '../components/cinematic-ingest/useDebouncedValue';
 import { useToastMessage } from '../components/cinematic-ingest/useToastMessage';
 import { ingestCopy } from '../components/cinematic-ingest/ingestCopy';
-import { processingTrackHint, stageLabel, taskTitle, visibleProgressStages } from '../components/cinematic-ingest/ingestUtils';
+import { processingTrackHint, queueErrorHint, stageLabel, taskTitle, visibleProgressStages } from '../components/cinematic-ingest/ingestUtils';
 import '../components/cinematic/cinematic.css';
 import '../components/cinematic-ingest/cinematic-ingest.css';
 import '../components/cinematic-ingest/cinematic-ingest-performance.css';
@@ -341,9 +341,10 @@ export default function CinematicIngest() {
           </div>
           <div className="observation-queue-list" aria-label="处理队列">
             {visibleQueueItems.length > 0 ? visibleQueueItems.map((item) => (
-              <div key={item.id} className={`observation-queue-row is-${item.status}`}>
+              <div key={item.id} className={`observation-queue-row is-${item.status}`} title={item.error || taskTitle(item)}>
                 {item.status === 'error' ? <AlertTriangle size={12} /> : item.status === 'pending' ? <Radio size={12} /> : item.status === 'done' ? <Zap size={12} /> : <Loader2 size={12} />}
                 <span>{taskTitle(item)}</span>
+                {item.status === 'error' && item.error && <em>{queueErrorHint(item.error)}</em>}
                 <small>{statusLabel(item.status)}</small>
                 {item.status === 'error' && (
                   <button onClick={() => retryQueueTask(item.id)} title="重试"><RotateCcw size={12} /></button>

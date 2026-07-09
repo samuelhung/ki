@@ -328,6 +328,7 @@
 }
 
 .cinematic-ingest .observation-queue-row.is-error {
+  grid-template-columns: 14px minmax(0, 1fr) minmax(76px, auto) auto auto auto !important;
   color: rgba(251, 113, 133, 0.82) !important;
 }
 
@@ -356,6 +357,19 @@
   font-size: 10.8px !important;
   line-height: 1.2 !important;
   text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.cinematic-ingest .observation-queue-row em {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  color: rgba(255, 179, 200, 0.82) !important;
+  font-size: 9px !important;
+  font-style: normal !important;
+  line-height: 1 !important;
+  letter-spacing: 0.04em !important;
+  text-overflow: ellipsis !important;
+  text-shadow: 0 0 10px rgba(251, 113, 133, 0.2) !important;
   white-space: nowrap !important;
 }
 

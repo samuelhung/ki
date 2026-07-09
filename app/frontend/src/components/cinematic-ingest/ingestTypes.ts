@@ -57,11 +57,15 @@ export interface ProgressStage {
 
 export interface QueueItem {
   id: string;
+  event_id?: string;
   ingest_type: string;
   status: 'pending' | 'running' | 'done' | 'error';
   title?: string;
   payload_json?: string;
   error?: string;
+  created_at?: string;
+  started_at?: string;
+  finished_at?: string;
   progress_stages?: ProgressStage[];
 }
 

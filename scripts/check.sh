@@ -100,6 +100,17 @@ if ! grep -q "index-${VERSION}-" app/frontend/dist/index.html; then
   exit 1
 fi
 
+echo "== Cinematic QA baseline =="
+if [[ "${ZHIJI_RUN_CINEMATIC_QA:-}" == "1" ]]; then
+  ZHIJI_QA_BASE_URL="${ZHIJI_QA_BASE_URL:-http://10.8.0.105:9120}"
+  (cd app/frontend && npm run qa:cinematic-pages "$ZHIJI_QA_BASE_URL" tmp/check-cinematic-pages)
+  (cd app/frontend && npm run qa:cinematic-pages:compact "$ZHIJI_QA_BASE_URL" tmp/check-cinematic-pages-compact)
+  (cd app/frontend && npm run qa:cinematic-pages:perf "$ZHIJI_QA_BASE_URL" tmp/check-cinematic-pages-perf)
+  (cd app/frontend && npm run qa:cinematic-pages:journey "$ZHIJI_QA_BASE_URL" tmp/check-cinematic-pages-journey)
+else
+  echo "skip cinematic QA: set ZHIJI_RUN_CINEMATIC_QA=1"
+fi
+
 echo "== Optional release artifact check =="
 if [[ "${ZHIJI_SKIP_RELEASE_CHECK:-}" == "1" ]]; then
   echo "skip release-check: ZHIJI_SKIP_RELEASE_CHECK=1"

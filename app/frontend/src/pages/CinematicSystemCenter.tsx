@@ -108,7 +108,6 @@ const SECTION_GROUPS = [
     items: [
       { key: 'docs', label: '系统说明', icon: Layers, accent: 'blue' },
       { key: 'logs', label: '运行记录', icon: FileText, accent: 'rose' },
-      { key: 'changelog', label: '版本记录', icon: BookOpen, accent: 'violet' },
     ],
   },
   {
@@ -153,6 +152,7 @@ const DOC_DETAIL_TABS = [
   { key: 'portrait', label: '系统画像', icon: Server, code: 'PORTRAIT', accent: 'gold' },
   { key: 'flow', label: '运行链路', icon: Radio, code: 'FLOW', accent: 'violet' },
   { key: 'boundary', label: '工程边界', icon: Wrench, code: 'BOUNDARY', accent: 'cyan' },
+  { key: 'changelog', label: '版本记录', icon: BookOpen, code: 'VERSION', accent: 'blue' },
 ] as const;
 
 MODULE_CONFIG_ITEMS.forEach((item) => {
@@ -689,7 +689,6 @@ export default function CinematicSystemCenter() {
                 <div className="detail-scroll system-detail-body">
                   {activeSection === 'docs' && renderDocs(activeDocPane, setActiveDocPane)}
                   {activeSection === 'logs' && renderLogs(logs, logTotal, logLoading, logLevel, setLogLevel, logSearch, setLogSearch, loadLogs)}
-                  {activeSection === 'changelog' && renderChangelog()}
                   {activeSection === 'base_config' && renderBaseConfig(config, updateGeneral, {
                     health,
                     backendUrl,
@@ -899,6 +898,7 @@ function renderDocs(
       {activePane === 'portrait' && renderCoreModules()}
       {activePane === 'flow' && renderRuntimeFlow()}
       {activePane === 'boundary' && renderEngineeringBoundaries()}
+      {activePane === 'changelog' && renderChangelog()}
     </div>
   );
 }
