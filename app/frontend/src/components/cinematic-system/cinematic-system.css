@@ -1896,6 +1896,7 @@
   }
 
   .cinematic-system .system-index-strip {
+    left: calc(clamp(230px, 18vw, 330px) + var(--ingest-list-shift, clamp(10px, 1.2vw, 24px))) !important;
     transform: scale(var(--compact-module-scale, var(--cinematic-ui-scale, 1))) !important;
     transform-origin: right center !important;
   }

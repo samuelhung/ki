@@ -1537,10 +1537,19 @@
   }
 
   .cinematic-ingest:not(.cinematic-system) .ingest-index-strip {
+    left: calc(clamp(230px, 18vw, 330px) + var(--ingest-list-shift, clamp(10px, 1.2vw, 24px))) !important;
     width: clamp(350px, 20vw, 405px) !important;
     padding-right: clamp(64px, 4vw, 82px) !important;
     transform: scale(var(--compact-module-scale)) !important;
     transform-origin: right center !important;
+  }
+
+  .cinematic-ingest:not(.cinematic-system) .ingest-search-dock {
+    left: calc(clamp(230px, 18vw, 330px) + var(--ingest-list-shift, clamp(10px, 1.2vw, 24px))) !important;
+    bottom: clamp(526px, 47vh, 620px) !important;
+    width: clamp(150px, 10vw, 190px) !important;
+    transform: scale(var(--compact-module-scale)) !important;
+    transform-origin: left center !important;
   }
 
   .cinematic-ingest:not(.cinematic-system) .ingest-index-item {
