@@ -49,64 +49,90 @@ export function useCinematicTemplateLayout(page: CinematicTemplatePage) {
       ? 'clamp(72px, 4.6vw, 94px)'
       : 'clamp(64px, 4vw, 82px)';
     const isTablet = profile === 'tablet';
+    const tabletModuleScale = 'clamp(0.56, calc(var(--cinematic-ui-scale) * 1.02), 0.64)';
+    const tabletListLeft = page === 'system'
+      ? 'clamp(148px, 14.5vw, 172px)'
+      : 'clamp(162px, 15.8vw, 186px)';
+    const tabletListWidth = page === 'system'
+      ? 'clamp(330px, 31vw, 368px)'
+      : 'clamp(338px, 31vw, 378px)';
+    const tabletListPadding = page === 'system'
+      ? 'clamp(56px, 5.2vw, 68px)'
+      : 'clamp(54px, 5vw, 66px)';
 
     return {
       '--cinematic-ui-scale': uiScale,
       '--template-scale': 'var(--cinematic-ui-scale)',
-      '--template-compact-module-scale': 'max(var(--cinematic-ui-scale), 0.72)',
+      '--template-compact-module-scale': isTablet
+        ? tabletModuleScale
+        : 'max(var(--cinematic-ui-scale), 0.72)',
 
       '--template-left-panel-x': 'clamp(28px, 3.2vw, 58px)',
       '--template-left-panel-y': 'clamp(30px, 4.2vh, 56px)',
-      '--template-left-panel-scale': 'var(--template-compact-module-scale)',
+      '--template-left-panel-scale': isTablet
+        ? 'clamp(0.62, calc(var(--cinematic-ui-scale) * 1.08), 0.72)'
+        : 'var(--template-compact-module-scale)',
 
       '--template-left-actions-x': 'clamp(28px, 3.2vw, 58px)',
-      '--template-left-actions-y': isTablet ? '40%' : '50%',
+      '--template-left-actions-y': isTablet ? '39%' : '50%',
       '--template-left-actions-w': 'min(178px, 13.5vw)',
       '--template-left-actions-h': 'clamp(194px, 22vh, 260px)',
       '--template-left-actions-scale': 'var(--template-scale)',
       '--template-left-actions-compact-scale': isTablet
-        ? 'calc(var(--cinematic-ui-scale) * 0.76)'
+        ? 'clamp(0.38, calc(var(--cinematic-ui-scale) * 0.74), 0.46)'
         : 'calc(var(--cinematic-ui-scale) * 0.9)',
 
       '--template-left-nav-x': 'clamp(28px, 3.2vw, 58px)',
       '--template-search-x': 'clamp(40px, 3.4vw, 58px)',
       '--template-left-nav-scale': isTablet
-        ? 'clamp(0.46, calc(var(--cinematic-ui-scale) * 0.95), 0.58)'
+        ? 'clamp(0.42, calc(var(--cinematic-ui-scale) * 0.84), 0.5)'
         : 'max(var(--cinematic-ui-scale), 0.72)',
       '--template-search-bottom': isTablet
-        ? 'clamp(252px, 33vh, 340px)'
+        ? 'clamp(194px, 25vh, 218px)'
         : 'clamp(388px, 43vh, 444px)',
-      '--template-search-w': 'clamp(150px, 10vw, 190px)',
+      '--template-search-w': isTablet
+        ? 'clamp(132px, 12vw, 152px)'
+        : 'clamp(150px, 10vw, 190px)',
 
-      '--template-stage-left': 'clamp(300px, 23vw, 410px)',
-      '--template-stage-right': 'clamp(56px, 5.8vw, 104px)',
+      '--template-stage-left': isTablet
+        ? 'clamp(286px, 24vw, 312px)'
+        : 'clamp(300px, 23vw, 410px)',
+      '--template-stage-right': isTablet
+        ? 'clamp(46px, 5vw, 72px)'
+        : 'clamp(56px, 5.8vw, 104px)',
       '--template-stage-list-shift': 'clamp(12px, 1.4vw, 30px)',
       '--template-stage-list-left': 'calc(var(--template-stage-left) + var(--template-stage-list-shift))',
       '--template-stage-list-top': isTablet
-        ? 'clamp(144px, 21vh, 220px)'
+        ? 'clamp(176px, 24vh, 206px)'
         : 'clamp(138px, 18vh, 196px)',
       '--template-stage-list-w': 'clamp(388px, 21.5vw, 470px)',
       '--template-stage-list-h': isTablet
-        ? 'clamp(300px, 36vh, 390px)'
+        ? 'clamp(260px, 31vh, 318px)'
         : 'clamp(543px, 52vh, 665px)',
       '--template-stage-list-pad-right': 'clamp(76px, 4.6vw, 96px)',
 
       '--template-beam-x': '43.5%',
-      '--template-beam-x-compact': '44.2%',
+      '--template-beam-x-compact': isTablet ? '43.8%' : '44.2%',
       '--template-detail-gutter': 'clamp(16px, 1.55vw, 28px)',
       '--template-detail-pull': 'clamp(42px, 3.35vw, 72px)',
-      '--template-detail-pull-compact': compactDetailPull,
+      '--template-detail-pull-compact': isTablet
+        ? 'clamp(214px, 20vw, 248px)'
+        : compactDetailPull,
       '--template-detail-top': '60px',
       '--template-detail-right': 'max(clamp(42px, 4.6vw, 84px), var(--media-edge-x))',
       '--template-detail-right-compact': '5px',
 
       '--template-media-w': 'min(1560px, 99%)',
-      '--template-media-h': 'clamp(126px, 15.8vh, 178px)',
-      '--template-media-h-expanded': 'min(38vh, 330px)',
+      '--template-media-h': isTablet
+        ? 'clamp(102px, 13vh, 124px)'
+        : 'clamp(126px, 15.8vh, 178px)',
+      '--template-media-h-expanded': isTablet
+        ? 'min(30vh, 250px)'
+        : 'min(38vh, 330px)',
 
-      '--template-compact-list-left': compactListLeft,
-      '--template-compact-list-w': compactListWidth,
-      '--template-compact-list-pad-right': compactListPadding,
+      '--template-compact-list-left': isTablet ? tabletListLeft : compactListLeft,
+      '--template-compact-list-w': isTablet ? tabletListWidth : compactListWidth,
+      '--template-compact-list-pad-right': isTablet ? tabletListPadding : compactListPadding,
       '--template-modal-scale': 'var(--template-scale)',
     };
   }, [page, profile, uiScale]);
