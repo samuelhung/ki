@@ -52,6 +52,33 @@ test('visibleProgressStages returns previous current and next two stages', () =>
   );
 });
 
+test('processingTrackHint explains running pending and error states', () => {
+  assert.equal(
+    utils.processingTrackHint({
+      id: 'task-running',
+      ingest_type: 'douyin_share',
+      status: 'running',
+      progress_stages: [
+        { key: 'fetch', label: '抓取视频', status: 'done' },
+        { key: 'asr', label: '转写原文', status: 'active' },
+        { key: 'summary', label: 'AI 总结', status: 'pending' },
+      ],
+    }, 0, 0),
+    '正在转写原文 · 局部流程同步推进',
+  );
+  assert.equal(utils.processingTrackHint(null, 3, 0), '3 个任务排队 · 等待资源调度');
+  assert.equal(utils.processingTrackHint(null, 0, 2), '2 个异常任务 · 可重试或删除');
+  assert.equal(
+    utils.processingTrackHint({
+      id: 'task-error',
+      ingest_type: 'douyin_share',
+      status: 'running',
+      progress_stages: [{ key: 'summary', label: 'AI 总结', status: 'error' }],
+    }, 0, 0),
+    'AI 总结失败 · 等待重试或清理',
+  );
+});
+
 test('applyDeletedQueueCounts subtracts tombstoned tasks that are still returned by polling', () => {
   const counts = utils.normalizeQueueStatusCounts({ pending: 2, running: 1, error: 3 });
   const deletedTasks = new Map([

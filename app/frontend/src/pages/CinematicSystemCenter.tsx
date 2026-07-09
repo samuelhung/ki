@@ -239,15 +239,6 @@ const DATA_LANDING_POINTS = [
   { label: '采集水位', value: 'events / rss state', icon: Activity },
 ];
 
-const STORAGE_FILE_VISUALS: LucideIcon[] = [
-  FileText,
-  Database,
-  HardDrive,
-  FileText,
-  Layers,
-  BookOpen,
-];
-
 const TASK_NAMES: Record<string, Record<string, string>> = {
   ingest_pipeline: { summarize: '内容总结', classify: '认知分类', tag: '实体标注', translate: '英文翻译' },
   series: { discover: '发现专题', intro: '专题导言', summary: '结构化总结', paper: '论文分析', auto_suggest: '即时匹配' },
@@ -513,13 +504,53 @@ export default function CinematicSystemCenter() {
     { key: 'concept', label: '检查更新', meta: canCheckUpdates() ? 'SPARKLE' : 'DESKTOP', code: 'UPDATE', icon: CheckCircle, onClick: handleCheckUpdate },
     { key: 'scan', label: saving ? '保存中' : '保存配置', meta: message || 'CONFIG', code: 'SAVE', icon: Save, onClick: save },
   ];
-  const coreDbMetrics = [
-    { label: '主库', value: dbInfo?.database.file || 'intelligence.sqlite', key: 'sqlite', icon: Database },
-    { label: '体量', value: dbInfo?.database.size_display || statText(health.data?.database?.size_mb ? `${health.data.database.size_mb} MB` : null), key: 'size', icon: HardDrive },
-    { label: 'WAL', value: dbInfo ? `${dbInfo.database.page_count.toLocaleString()}p` : '--', key: 'journal', icon: Activity },
-    { label: '页', value: dbInfo ? `${Math.round(dbInfo.database.page_size / 1024)}KB` : '--', key: 'page', icon: FileText },
+  const fileCount = (key: string) => dbInfo?.files?.[key]?.count ?? 0;
+  const coreAssetGroups = [
+    {
+      label: '主库',
+      meta: dbInfo?.database.file || 'intelligence.sqlite',
+      icon: Database,
+      tone: 'violet',
+      items: [
+        { label: '体量', value: dbInfo?.database.size_display || statText(health.data?.database?.size_mb ? `${health.data.database.size_mb} MB` : null) },
+        { label: 'WAL', value: dbInfo ? `${dbInfo.database.page_count.toLocaleString()}p` : '--' },
+        { label: '页', value: dbInfo ? `${Math.round(dbInfo.database.page_size / 1024)}KB` : '--' },
+      ],
+    },
+    {
+      label: '采集',
+      meta: 'INGEST',
+      icon: FileText,
+      tone: 'cyan',
+      items: [
+        { label: '转写', value: fileCount('transcripts').toLocaleString() },
+        { label: '文档', value: fileCount('documents').toLocaleString() },
+        { label: '事件', value: statText(health.data?.database?.event_count) },
+      ],
+    },
+    {
+      label: 'AI 产物',
+      meta: 'INTEL',
+      icon: Zap,
+      tone: 'gold',
+      items: [
+        { label: '总结', value: fileCount('summaries').toLocaleString() },
+        { label: '脑暴', value: fileCount('brainstorm').toLocaleString() },
+        { label: '摘要', value: fileCount('digests').toLocaleString() },
+        { label: '概念', value: fileCount('concepts').toLocaleString() },
+      ],
+    },
+    {
+      label: '媒体',
+      meta: 'MEDIA',
+      icon: HardDrive,
+      tone: 'blue',
+      items: [
+        { label: '视频', value: fileCount('videos').toLocaleString() },
+        { label: '音频', value: fileCount('audio').toLocaleString() },
+      ],
+    },
   ];
-  const storageAssets = Object.entries(dbInfo?.files || {});
   const coreBoxHeight = Math.min(Math.max(viewportHeight * 0.158, 126), 178);
   const beamVerticalOffset = (coreBoxHeight - 6) / Math.max(viewportHeight, 1) - 0.5;
 
@@ -688,41 +719,29 @@ export default function CinematicSystemCenter() {
               <div className="system-core-title">
                 <span>SYSTEM CORE</span>
                 <b>系统资产</b>
-                <small>DATABASE / FILES</small>
+                <small>DATABASE / PIPELINE</small>
               </div>
-              <div className="system-core-assets">
-                <div className="system-core-database" aria-label="数据库资产">
-                  <strong>DATABASE</strong>
-                  <div>
-                    {coreDbMetrics.map((item) => {
-                      const Icon = item.icon;
-                      return (
-                        <span key={item.label}>
-                          <Icon size={12} />
-                          <small>{item.label}</small>
-                          <b>{item.value}</b>
-                          <em>{item.key}</em>
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div className="system-storage-assets" aria-label="文件资产">
-                  <strong>FILES</strong>
-                  <div>
-                    {storageAssets.map(([name, info], index) => {
-                      const Icon = STORAGE_FILE_VISUALS[index % STORAGE_FILE_VISUALS.length];
-                      return (
-                        <span key={name}>
-                          <Icon size={12} />
-                          <small>{info.label}</small>
-                          <b>{info.count.toLocaleString()}</b>
-                          <em>{name}</em>
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
+              <div className="system-asset-groups" aria-label="系统资产">
+                {coreAssetGroups.map((group) => {
+                  const Icon = group.icon;
+                  return (
+                    <div key={group.label} className={`system-asset-group is-${group.tone}`}>
+                      <header>
+                        <Icon size={14} />
+                        <span>{group.label}</span>
+                        <small>{group.meta}</small>
+                      </header>
+                      <div>
+                        {group.items.map((item) => (
+                          <span key={item.label}>
+                            <small>{item.label}</small>
+                            <b>{item.value}</b>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </section>

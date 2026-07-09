@@ -147,6 +147,30 @@
   white-space: nowrap !important;
 }
 
+.cinematic-ingest .observation-task-hint {
+  display: block !important;
+  max-width: 398px !important;
+  overflow: hidden !important;
+  color: rgba(207, 158, 255, 0.68) !important;
+  font-size: 10.6px !important;
+  font-style: normal !important;
+  line-height: 1.25 !important;
+  letter-spacing: 0.08em !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  text-shadow: 0 0 12px rgba(207, 158, 255, 0.16) !important;
+}
+
+.cinematic-ingest .ingest-observation.is-processing-track.is-error .observation-task-hint {
+  color: rgba(251, 113, 133, 0.74) !important;
+  text-shadow: 0 0 12px rgba(251, 113, 133, 0.18) !important;
+}
+
+.cinematic-ingest .ingest-observation.is-processing-track.is-pending .observation-task-hint {
+  color: rgba(255, 232, 184, 0.68) !important;
+  text-shadow: 0 0 12px rgba(214, 163, 76, 0.14) !important;
+}
+
 .cinematic-ingest .observation-stage-track {
   display: grid !important;
   grid-template-columns: repeat(4, minmax(0, 1fr)) !important;

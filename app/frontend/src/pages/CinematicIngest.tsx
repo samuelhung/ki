@@ -37,7 +37,7 @@ import { useIngestCommands } from '../components/cinematic-ingest/useIngestComma
 import { useDebouncedValue } from '../components/cinematic-ingest/useDebouncedValue';
 import { useToastMessage } from '../components/cinematic-ingest/useToastMessage';
 import { ingestCopy } from '../components/cinematic-ingest/ingestCopy';
-import { stageLabel, taskTitle, visibleProgressStages } from '../components/cinematic-ingest/ingestUtils';
+import { processingTrackHint, stageLabel, taskTitle, visibleProgressStages } from '../components/cinematic-ingest/ingestUtils';
 import '../components/cinematic/cinematic.css';
 import '../components/cinematic-ingest/cinematic-ingest.css';
 import '../components/cinematic-ingest/cinematic-ingest-performance.css';
@@ -235,6 +235,7 @@ export default function CinematicIngest() {
   const beamEdgeOverlap = mediaBoxExpanded ? 8 : 6;
   const beamVerticalOffset = (mediaBoxHeight - beamEdgeOverlap) / Math.max(viewportHeight, 1) - 0.5;
   const queueTone = errors.length > 0 ? 'error' : running ? 'running' : pending.length > 0 ? 'pending' : 'idle';
+  const queueHint = processingTrackHint(running, pending.length, errors.length);
 
   useEffect(() => () => {
     ingestPollSeqRef.current += 1;
@@ -318,6 +319,7 @@ export default function CinematicIngest() {
           {(running || queueVisible) && (
             <span>{running ? taskTitle(running) : ingestCopy.queue.pendingSummary(pending.length + errors.length)}</span>
           )}
+          <em className="observation-task-hint">{queueHint}</em>
           {running ? (
             <div className="observation-stage-track">
               {visibleProgressStages(running.progress_stages || []).map((stage) => (

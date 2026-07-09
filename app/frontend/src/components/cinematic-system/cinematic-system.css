@@ -253,12 +253,8 @@
 
 .cinematic-system .system-core-title > span,
 .cinematic-system .system-core-title > small,
-.cinematic-system .system-core-database strong,
-.cinematic-system .system-storage-assets strong,
-.cinematic-system .system-core-database small,
-.cinematic-system .system-core-database em,
-.cinematic-system .system-storage-assets small,
-.cinematic-system .system-storage-assets em {
+.cinematic-system .system-asset-group header small,
+.cinematic-system .system-asset-group span small {
   display: block;
   color: rgba(205, 198, 224, 0.6);
   font: 10px/1.3 Monaco, Consolas, "PingFang SC", monospace;
@@ -278,88 +274,96 @@
   text-shadow: 0 0 22px rgba(207, 158, 255, 0.24);
 }
 
-.cinematic-system .system-core-assets {
-  display: grid;
-  min-width: 0;
-  gap: 10px;
-}
-
-.cinematic-system .system-core-database,
-.cinematic-system .system-storage-assets {
-  display: grid;
-  grid-template-columns: 66px minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-}
-
-.cinematic-system .system-core-database strong,
-.cinematic-system .system-storage-assets strong {
-  color: rgba(207, 158, 255, 0.72);
-  font-size: 9px;
-  letter-spacing: 0.16em;
-  text-shadow: 0 0 12px rgba(207, 158, 255, 0.18);
-}
-
-.cinematic-system .system-core-database > div {
+.cinematic-system .system-asset-groups {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px 12px;
+  min-width: 0;
+  gap: clamp(12px, 1.2vw, 20px);
 }
 
-.cinematic-system .system-core-database span,
-.cinematic-system .system-storage-assets > div > span {
+.cinematic-system .system-asset-group {
+  --asset-tone: rgba(207, 158, 255, 0.82);
   display: grid;
   min-width: 0;
-  grid-template-columns: 14px minmax(0, 1fr) auto;
-  grid-template-areas:
-    "icon label count"
-    "icon name count";
-  align-items: center;
-  column-gap: 6px;
-  min-height: 36px;
-  padding: 0 0 7px;
-  border-bottom: 1px solid rgba(207, 158, 255, 0.11);
+  align-content: center;
+  gap: 8px;
+  padding-top: 2px;
 }
 
-.cinematic-system .system-core-database svg,
-.cinematic-system .system-storage-assets svg {
-  grid-area: icon;
-  color: rgba(207, 158, 255, 0.82);
-  filter: drop-shadow(0 0 8px rgba(207, 158, 255, 0.28));
+.cinematic-system .system-asset-group.is-cyan {
+  --asset-tone: rgba(123, 238, 226, 0.82);
 }
 
-.cinematic-system .system-core-database small,
-.cinematic-system .system-storage-assets small {
-  grid-area: label;
-  color: rgba(240, 236, 255, 0.78);
-  letter-spacing: 0.04em;
+.cinematic-system .system-asset-group.is-gold {
+  --asset-tone: rgba(255, 216, 144, 0.82);
 }
 
-.cinematic-system .system-core-database b,
-.cinematic-system .system-storage-assets b {
-  grid-area: count;
+.cinematic-system .system-asset-group.is-blue {
+  --asset-tone: rgba(150, 188, 255, 0.82);
+}
+
+.cinematic-system .system-asset-group header {
+  display: grid;
+  grid-template-columns: 16px minmax(0, auto) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+.cinematic-system .system-asset-group header svg {
   align-self: center;
+  color: var(--asset-tone);
+  filter: drop-shadow(0 0 9px color-mix(in srgb, var(--asset-tone) 48%, transparent));
+}
+
+.cinematic-system .system-asset-group header span {
+  overflow: hidden;
+  color: rgba(255, 252, 242, 0.94);
+  font-size: 13px;
+  line-height: 1;
+  font-weight: 560;
+  letter-spacing: 0.08em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 0 14px color-mix(in srgb, var(--asset-tone) 24%, transparent);
+}
+
+.cinematic-system .system-asset-group header small {
+  min-width: 0;
+  color: rgba(205, 198, 224, 0.42);
+  font-size: 8.6px;
+  letter-spacing: 0.1em;
+}
+
+.cinematic-system .system-asset-group > div {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 7px 14px;
+}
+
+.cinematic-system .system-asset-group > div > span {
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+}
+
+.cinematic-system .system-asset-group span small {
+  color: rgba(240, 236, 255, 0.58);
+  font-size: 8.8px;
+  letter-spacing: 0.08em;
+}
+
+.cinematic-system .system-asset-group span b {
   overflow: hidden;
   color: rgba(255, 255, 255, 0.96);
-  font-size: 12px;
+  font-size: 12.4px;
   line-height: 1;
   font-weight: 560;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.cinematic-system .system-core-database em,
-.cinematic-system .system-storage-assets em {
-  grid-area: name;
-  color: rgba(205, 198, 224, 0.42);
-  font-size: 9px;
-  letter-spacing: 0.08em;
-}
-
-.cinematic-system .system-storage-assets > div {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px 12px;
 }
 
 .cinematic-system .system-detail-scroll-shell {
@@ -678,15 +682,9 @@
     gap: 8px !important;
   }
 
-  .cinematic-system .system-core-database,
-  .cinematic-system .system-storage-assets {
-    grid-template-columns: 52px minmax(0, 1fr);
-    gap: 8px;
-  }
-
-  .cinematic-system .system-core-database > div,
-  .cinematic-system .system-storage-assets > div {
+  .cinematic-system .system-asset-groups {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 14px;
   }
 
   .system-card-grid,

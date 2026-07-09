@@ -2,7 +2,7 @@ import { runCinematicPagesQa } from './qa-cinematic-pages-core.mjs';
 
 await runCinematicPagesQa({
   baseUrl: process.argv[2] || 'http://10.8.0.105:9120',
-  outDir: process.argv[3] || 'tmp/cinematic-pages-qa',
-  mode: 'render',
-  enforcePerformance: false,
+  outDir: process.argv[3] || 'tmp/cinematic-pages-qa-perf',
+  mode: 'performance',
+  enforcePerformance: true,
 });

@@ -77,6 +77,23 @@ export function visibleProgressStages(stages: ProgressStage[]): Array<ProgressSt
   }));
 }
 
+export function processingTrackHint(
+  running: QueueItem | null | undefined,
+  pendingCount: number,
+  errorCount: number,
+): string {
+  const stages = running?.progress_stages || [];
+  const currentStage = stages.find((stage) => stage.status === 'active' || stage.status === 'error')
+    || stages.find((stage) => stage.status !== 'done');
+
+  if (currentStage?.status === 'error') return `${currentStage.label}失败 · 等待重试或清理`;
+  if (running && currentStage) return `正在${currentStage.label} · ${visibleProgressStages(stages).length ? '局部流程同步推进' : '处理链路同步推进'}`;
+  if (running) return '正在接入处理链路 · 节点状态回传中';
+  if (errorCount > 0) return `${errorCount} 个异常任务 · 可重试或删除`;
+  if (pendingCount > 0) return `${pendingCount} 个任务排队 · 等待资源调度`;
+  return '无活动任务 · 处理轨道待命';
+}
+
 export function visibleIndexDepthRange(
   itemCount: number,
   scrollTop: number,
