@@ -40,6 +40,18 @@
   filter: saturate(1.06) brightness(1.05) !important;
 }
 
+.cinematic-ingest .ingest-observation.is-processing-track.is-error {
+  filter: saturate(1.14) brightness(1.08) drop-shadow(0 0 18px rgba(251, 113, 133, 0.14)) !important;
+}
+
+.cinematic-ingest .ingest-observation.is-processing-track.is-running {
+  filter: saturate(1.1) brightness(1.07) drop-shadow(0 0 18px rgba(207, 158, 255, 0.14)) !important;
+}
+
+.cinematic-ingest .ingest-observation.is-processing-track.is-pending {
+  filter: saturate(1.02) brightness(1.03) drop-shadow(0 0 16px rgba(214, 163, 76, 0.12)) !important;
+}
+
 .cinematic-ingest .ingest-observation.is-processing-track.is-queue-idle .panel-detail-grid {
   opacity: 0.68 !important;
 }
@@ -76,6 +88,21 @@
 
 .cinematic-ingest .ingest-observation.is-processing-track .panel-status .signal-dot {
   transform: translateY(1px) scale(1.25) !important;
+}
+
+.cinematic-ingest .ingest-observation.is-processing-track.is-error .panel-status .signal-dot {
+  background: rgba(251, 113, 133, 0.92) !important;
+  box-shadow: 0 0 14px rgba(251, 113, 133, 0.58), 0 0 34px rgba(251, 113, 133, 0.22) !important;
+}
+
+.cinematic-ingest .ingest-observation.is-processing-track.is-running .panel-status .signal-dot {
+  background: rgba(207, 158, 255, 0.92) !important;
+  box-shadow: 0 0 14px rgba(207, 158, 255, 0.58), 0 0 34px rgba(207, 158, 255, 0.22) !important;
+}
+
+.cinematic-ingest .ingest-observation.is-processing-track.is-pending .panel-status .signal-dot {
+  background: rgba(214, 163, 76, 0.9) !important;
+  box-shadow: 0 0 14px rgba(214, 163, 76, 0.52), 0 0 30px rgba(214, 163, 76, 0.18) !important;
 }
 
 .cinematic-ingest .ingest-observation b {
@@ -123,24 +150,34 @@
 .cinematic-ingest .observation-stage-track {
   display: grid !important;
   grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-  gap: 8px !important;
-  margin-top: 10px !important;
+  gap: 6px !important;
+  margin-top: 12px !important;
+  padding: 8px 0 2px !important;
+  border-top: 1px solid rgba(207, 158, 255, 0.08) !important;
+  border-bottom: 1px solid rgba(207, 158, 255, 0.055) !important;
+  background:
+    linear-gradient(90deg, rgba(207, 158, 255, 0.035), transparent 26%, rgba(214, 163, 76, 0.026) 72%, transparent),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.04) 0 1px, transparent 1px 13px) !important;
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent) !important;
 }
 
 .cinematic-ingest .observation-stage-track > span {
   position: relative !important;
   min-width: 0 !important;
-  padding-top: 12px !important;
+  padding: 14px 4px 3px !important;
   color: rgba(244, 236, 218, 0.48) !important;
+  transform: translateY(0) scale(0.96) !important;
+  transform-origin: center top !important;
+  transition: transform 180ms ease, filter 180ms ease, opacity 180ms ease !important;
 }
 
 .cinematic-ingest .observation-stage-track > span i {
   position: absolute !important;
-  left: 0 !important;
+  left: 4px !important;
   top: 0 !important;
-  width: 100% !important;
+  width: calc(100% - 8px) !important;
   height: 2px !important;
-  background: rgba(244, 236, 218, 0.14) !important;
+  background: linear-gradient(90deg, transparent, rgba(244, 236, 218, 0.18), transparent) !important;
   box-shadow: 0 0 10px rgba(244, 236, 218, 0.08) !important;
 }
 
@@ -159,15 +196,24 @@
   box-shadow: 0 0 16px rgba(251, 113, 133, 0.38) !important;
 }
 
+.cinematic-ingest .observation-stage-track > span.is-error {
+  color: rgba(251, 113, 133, 0.92) !important;
+  filter: brightness(1.08) drop-shadow(0 0 10px rgba(251, 113, 133, 0.18)) !important;
+}
+
 .cinematic-ingest .observation-stage-track > span.is-current {
   color: rgba(207, 158, 255, 0.92) !important;
+  transform: translateY(-2px) scale(1.04) !important;
+  filter: brightness(1.18) drop-shadow(0 0 13px rgba(207, 158, 255, 0.18)) !important;
 }
 
 .cinematic-ingest .observation-stage-track > span.is-current i {
-  height: 3px !important;
+  height: 4px !important;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.96), rgba(207, 158, 255, 0.92), transparent) !important;
   box-shadow:
     0 0 12px currentColor,
-    0 0 22px rgba(207, 158, 255, 0.32) !important;
+    0 0 28px rgba(207, 158, 255, 0.44),
+    0 0 54px rgba(207, 158, 255, 0.18) !important;
 }
 
 .cinematic-ingest .observation-stage-track > span.is-current b {
@@ -179,7 +225,7 @@
   margin: 0 !important;
   overflow: hidden !important;
   color: rgba(255, 248, 226, 0.78) !important;
-  font-size: 11px !important;
+  font-size: 10.5px !important;
   font-weight: 600 !important;
   line-height: 1.2 !important;
   letter-spacing: 0.05em !important;
@@ -191,7 +237,7 @@
   display: block !important;
   margin-top: 3px !important;
   color: currentColor !important;
-  font-size: 9.2px !important;
+  font-size: 8.8px !important;
   line-height: 1 !important;
   letter-spacing: 0.12em !important;
 }
@@ -244,12 +290,26 @@
   color: rgba(207, 158, 255, 0.82) !important;
 }
 
+.cinematic-ingest .observation-queue-row.is-running span {
+  color: rgba(255, 252, 240, 0.9) !important;
+  text-shadow: 0 0 12px rgba(207, 158, 255, 0.16) !important;
+}
+
 .cinematic-ingest .observation-queue-row.is-pending {
   color: rgba(255, 232, 184, 0.76) !important;
 }
 
+.cinematic-ingest .observation-queue-row.is-pending span {
+  color: rgba(255, 244, 216, 0.82) !important;
+}
+
 .cinematic-ingest .observation-queue-row.is-error {
   color: rgba(251, 113, 133, 0.82) !important;
+}
+
+.cinematic-ingest .observation-queue-row.is-error span {
+  color: rgba(255, 236, 240, 0.9) !important;
+  text-shadow: 0 0 12px rgba(251, 113, 133, 0.18) !important;
 }
 
 .cinematic-ingest .observation-queue-row.is-done {
@@ -1340,6 +1400,58 @@
     filter: blur(0);
     transform: translate(0, -50%) scale(var(--cinematic-ui-scale, 1));
   }
+}
+
+/* Audit tuning: keep the laser console readable when list, detail, beam and media box are all present. */
+.cinematic-ingest .ingest-laser-stage {
+  --beam-center-x: 43.5% !important;
+  --detail-reader-gutter: clamp(16px, 1.55vw, 28px) !important;
+  --detail-reader-pull: clamp(42px, 3.35vw, 72px) !important;
+  --ingest-list-shift: clamp(12px, 1.4vw, 30px) !important;
+}
+
+.cinematic-ingest .ingest-index-strip {
+  width: clamp(388px, 21.5vw, 470px) !important;
+  padding-right: clamp(76px, 4.6vw, 96px) !important;
+}
+
+.cinematic-ingest .ingest-index-list {
+  gap: 3px !important;
+  padding-left: 0 !important;
+}
+
+.cinematic-ingest .ingest-index-item {
+  width: min(100%, 304px) !important;
+  min-height: 31px !important;
+}
+
+.cinematic-ingest .index-title {
+  width: min(278px, calc(100% - 28px)) !important;
+}
+
+.cinematic-ingest .index-title b {
+  font-size: 14px !important;
+  line-height: 1.28 !important;
+  letter-spacing: 0.03em !important;
+}
+
+.cinematic-ingest .index-title span {
+  font-size: 10px !important;
+  gap: 4px !important;
+}
+
+.cinematic-ingest .index-actions {
+  right: min(214px, calc(100% - 68px)) !important;
+  top: 6px !important;
+}
+
+.cinematic-ingest .ingest-detail-reader {
+  left: calc(var(--beam-center-x) + var(--detail-reader-gutter) - var(--detail-reader-pull)) !important;
+  right: max(clamp(42px, 4.6vw, 84px), var(--media-edge-x)) !important;
+}
+
+.cinematic-ingest .detail-markdown {
+  line-height: 1.68 !important;
 }
 
 /* Unified Douyin/file access bay: mirrors the bottom media box language. */

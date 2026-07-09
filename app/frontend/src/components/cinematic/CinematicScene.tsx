@@ -1,55 +1,16 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
+import {
+  CINEMATIC_SCENE_BASE_VARIANTS,
+  resolveCinematicSceneProfile,
+  type CinematicSceneVariant,
+} from './cinematicSceneProfile';
 
 interface Props {
   focus: number;
-  variant?: 'today' | 'ingest' | 'system';
+  variant?: CinematicSceneVariant;
+  laserPrimary?: boolean;
 }
-
-const SCENE_VARIANTS = {
-  today: {
-    className: '',
-    pixelRatioScale: 1,
-    particleCount: 1250,
-    bgIntensity: 1,
-    globeIntensity: 1,
-    terrainIntensity: 1,
-    signalIntensity: 1,
-    particleIntensity: 1,
-    motion: 1,
-    pointer: 1,
-    earthPosition: [3.08, 0.03, -3.18],
-    earthScale: 1,
-  },
-  ingest: {
-    className: 'is-ingest-backdrop',
-    pixelRatioScale: 0.78,
-    particleCount: 1080,
-    bgIntensity: 0.9,
-    globeIntensity: 0.78,
-    terrainIntensity: 0.62,
-    signalIntensity: 0.58,
-    particleIntensity: 0.84,
-    motion: 0.74,
-    pointer: 0.58,
-    earthPosition: [3.7, -0.04, -3.62],
-    earthScale: 0.9,
-  },
-  system: {
-    className: 'is-system-backdrop',
-    pixelRatioScale: 0.74,
-    particleCount: 980,
-    bgIntensity: 0.82,
-    globeIntensity: 0.68,
-    terrainIntensity: 0.52,
-    signalIntensity: 0.48,
-    particleIntensity: 0.74,
-    motion: 0.58,
-    pointer: 0.46,
-    earthPosition: [3.82, 0.06, -3.72],
-    earthScale: 0.84,
-  },
-} as const;
 
 function pixelRatioCap(scale = 1) {
   const cap = window.innerWidth < 1440 ? 1.5 : Math.min(window.devicePixelRatio, 2);
@@ -76,10 +37,10 @@ function makeLine(points: THREE.Vector3[], color: number, opacity: number) {
   return new THREE.Line(geometry, material);
 }
 
-export default function CinematicScene({ focus, variant = 'today' }: Props) {
+export default function CinematicScene({ focus, variant = 'today', laserPrimary = false }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const focusRef = useRef(focus);
-  const variantConfig = SCENE_VARIANTS[variant];
+  const variantConfig = CINEMATIC_SCENE_BASE_VARIANTS[variant];
 
   useEffect(() => {
     focusRef.current = focus;
@@ -88,7 +49,8 @@ export default function CinematicScene({ focus, variant = 'today' }: Props) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const config = SCENE_VARIANTS[variant];
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const config = resolveCinematicSceneProfile(variant, { laserPrimary, reducedMotion });
 
     const renderer = new THREE.WebGLRenderer({
       canvas,
@@ -439,6 +401,8 @@ export default function CinematicScene({ focus, variant = 'today' }: Props) {
 
     let frame = 0;
     let focusValue = 0;
+    let lastRender = 0;
+    const minFrameMs = 1000 / Math.max(1, config.maxFps);
 
     function onPointerMove(event: PointerEvent) {
       const rect = canvas.getBoundingClientRect();
@@ -454,8 +418,12 @@ export default function CinematicScene({ focus, variant = 'today' }: Props) {
       camera.updateProjectionMatrix();
     }
 
-    function animate() {
-      const time = performance.now() / 1000;
+    function animate(now = performance.now()) {
+      frame = requestAnimationFrame(animate);
+      if (document.hidden || now - lastRender < minFrameMs) return;
+      lastRender = now;
+
+      const time = now / 1000;
       const manualFocus = focusRef.current || 0;
       const autoValue = manualFocus ? 1 : 0.46 + 0.18 * Math.sin(time * 0.72);
       focusValue += (autoValue - focusValue) * 0.065;
@@ -521,10 +489,9 @@ export default function CinematicScene({ focus, variant = 'today' }: Props) {
       camera.position.y += (-mouse.y * 0.24 * config.pointer - camera.position.y) * 0.03;
       camera.lookAt(0, 0, -1.5);
       renderer.render(scene, camera);
-      frame = requestAnimationFrame(animate);
     }
 
-    window.addEventListener('pointermove', onPointerMove);
+    if (config.pointer > 0) window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('resize', onResize);
     const resizeObserver = new ResizeObserver(onResize);
     resizeObserver.observe(canvas);
@@ -532,7 +499,7 @@ export default function CinematicScene({ focus, variant = 'today' }: Props) {
 
     return () => {
       cancelAnimationFrame(frame);
-      window.removeEventListener('pointermove', onPointerMove);
+      if (config.pointer > 0) window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('resize', onResize);
       resizeObserver.disconnect();
       scene.traverse((object) => {
@@ -544,7 +511,7 @@ export default function CinematicScene({ focus, variant = 'today' }: Props) {
       });
       renderer.dispose();
     };
-  }, [variant]);
+  }, [laserPrimary, variant]);
 
   return <canvas ref={canvasRef} className={`cinematic-scene-canvas ${variantConfig.className}`} aria-hidden="true" />;
 }

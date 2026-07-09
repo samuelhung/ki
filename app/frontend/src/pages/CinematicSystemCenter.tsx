@@ -525,7 +525,7 @@ export default function CinematicSystemCenter() {
 
   return (
     <div className="cinematic-ingest cinematic-system cinematic-dashboard" data-topic="system">
-      <CinematicScene focus={0} variant="system" />
+      <CinematicScene focus={0} variant="system" laserPrimary />
       <div className="ingest-galaxy-layer" aria-hidden="true" />
       <div className="ingest-threads-layer" aria-hidden="true" />
       <div className="cinematic-film" />
@@ -540,9 +540,9 @@ export default function CinematicSystemCenter() {
           </div>
           <span>{health.error ? health.error : '运行态观测与控制联动'}</span>
           <div className="system-status-summary" aria-label="运行摘要">
-            <p>服务 {health.data?.ok ? '在线' : '离线'}，当前接口由 {health.data?.service || 'knowledge-intelligence'} 承载。</p>
-            <p>主库状态 {health.data?.database?.ok ? '正常' : '异常'}，事件总量 {statText(health.data?.database?.event_count)}。</p>
-            <p>当前模型 {config?.general.model || '--'}，配置面板可从左侧控制索引进入。</p>
+            <span className={health.data?.ok ? 'is-good' : 'is-bad'}>服务 {health.data?.ok ? '在线' : '离线'}</span>
+            <span className={health.data?.database?.ok ? 'is-good' : 'is-bad'}>主库 {health.data?.database?.ok ? '正常' : '异常'}</span>
+            <span className="is-violet">模型 {config?.general.model || '--'}</span>
           </div>
           <div className="panel-detail-grid">
             <span>连接<b className={health.error ? 'is-bad' : health.data ? 'is-good' : 'is-warn'}>{health.error ? '未连接' : health.data ? '已连接' : '检测中'}</b></span>

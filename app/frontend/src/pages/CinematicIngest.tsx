@@ -234,6 +234,7 @@ export default function CinematicIngest() {
     : Math.min(Math.max(viewportHeight * 0.158, 126), 178);
   const beamEdgeOverlap = mediaBoxExpanded ? 8 : 6;
   const beamVerticalOffset = (mediaBoxHeight - beamEdgeOverlap) / Math.max(viewportHeight, 1) - 0.5;
+  const queueTone = errors.length > 0 ? 'error' : running ? 'running' : pending.length > 0 ? 'pending' : 'idle';
 
   useEffect(() => () => {
     ingestPollSeqRef.current += 1;
@@ -286,7 +287,7 @@ export default function CinematicIngest() {
 
   return (
     <div className="cinematic-ingest cinematic-dashboard" data-topic={activeTopic.accent}>
-      <CinematicScene focus={0} variant="ingest" />
+      <CinematicScene focus={0} variant="ingest" laserPrimary />
       <div className="ingest-galaxy-layer" aria-hidden="true">
       </div>
       <div className="ingest-threads-layer" aria-hidden="true">
@@ -307,7 +308,7 @@ export default function CinematicIngest() {
 
       <main className="cinematic-ingest-shell">
         <section
-          className={`ingest-observation cinematic-observation is-processing-track${queueVisible ? ' is-queue-active' : ' is-queue-idle'}`}
+          className={`ingest-observation cinematic-observation is-processing-track is-${queueTone}${queueVisible ? ' is-queue-active' : ' is-queue-idle'}`}
           aria-label="处理轨道"
         >
           <div className="panel-status">
@@ -339,7 +340,7 @@ export default function CinematicIngest() {
           <div className="observation-queue-list" aria-label="处理队列">
             {visibleQueueItems.length > 0 ? visibleQueueItems.map((item) => (
               <div key={item.id} className={`observation-queue-row is-${item.status}`}>
-                {item.status === 'error' ? <AlertTriangle size={12} /> : <Loader2 size={12} />}
+                {item.status === 'error' ? <AlertTriangle size={12} /> : item.status === 'pending' ? <Radio size={12} /> : item.status === 'done' ? <Zap size={12} /> : <Loader2 size={12} />}
                 <span>{taskTitle(item)}</span>
                 <small>{statusLabel(item.status)}</small>
                 {item.status === 'error' && (
