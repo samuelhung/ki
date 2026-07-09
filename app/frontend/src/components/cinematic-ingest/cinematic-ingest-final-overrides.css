@@ -1493,6 +1493,16 @@
 }
 
 @media (max-width: 1500px) {
+  .cinematic-ingest {
+    --compact-module-scale: max(var(--cinematic-ui-scale, 1), 0.72);
+  }
+
+  .cinematic-ingest .ingest-observation.is-processing-track,
+  .cinematic-system .system-status-bay {
+    transform: scale(var(--compact-module-scale)) !important;
+    transform-origin: left top !important;
+  }
+
   .cinematic-ingest:not(.cinematic-system) > .cinematic-ingest-shell > .ingest-command-launcher {
     width: min(150px, 11.8vw) !important;
     height: clamp(174px, 20vh, 222px) !important;
@@ -1529,6 +1539,8 @@
   .cinematic-ingest:not(.cinematic-system) .ingest-index-strip {
     width: clamp(350px, 20vw, 405px) !important;
     padding-right: clamp(64px, 4vw, 82px) !important;
+    transform: scale(var(--compact-module-scale)) !important;
+    transform-origin: right center !important;
   }
 
   .cinematic-ingest:not(.cinematic-system) .ingest-index-item {
@@ -1537,6 +1549,11 @@
 
   .cinematic-ingest:not(.cinematic-system) .index-title {
     width: min(258px, calc(100% - 24px)) !important;
+  }
+
+  .cinematic-ingest:not(.cinematic-system) .ingest-detail-reader {
+    transform: scale(var(--compact-module-scale)) !important;
+    transform-origin: left top !important;
   }
 }
 

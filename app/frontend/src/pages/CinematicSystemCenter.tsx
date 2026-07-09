@@ -23,6 +23,7 @@ import { useCurtain } from '../CurtainContext';
 import { apiFetch, getApiToken, getBackendUrl, setApiToken, setBackendUrl } from '../api';
 import { APP_VERSION } from '../constants';
 import CinematicScene from '../components/cinematic/CinematicScene';
+import { useCinematicUiScale } from '../components/cinematic/useCinematicUiScale';
 import LaserFlow from '../components/react-bits/LaserFlow';
 import { cinematicNavHubs } from '../navigation';
 import {
@@ -312,6 +313,7 @@ function SectionTitle({ icon: Icon, title, code }: { icon: LucideIcon; title: st
 export default function CinematicSystemCenter() {
   const location = useLocation();
   const { navigateWithCurtain } = useCurtain();
+  const uiScale = useCinematicUiScale();
   const [activeSection, setActiveSection] = useState(() => (location.pathname === '/settings' ? 'base_config' : 'docs'));
   const [activeDocPane, setActiveDocPane] = useState<(typeof DOC_DETAIL_TABS)[number]['key']>('portrait');
   const [activeModule, setActiveModule] = useState<(typeof MODULE_CONFIG_KEYS)[number]>('ingest_pipeline');
@@ -555,7 +557,11 @@ export default function CinematicSystemCenter() {
   const beamVerticalOffset = (coreBoxHeight - 6) / Math.max(viewportHeight, 1) - 0.5;
 
   return (
-    <div className="cinematic-ingest cinematic-system cinematic-dashboard" data-topic="system">
+    <div
+      className="cinematic-ingest cinematic-system cinematic-dashboard"
+      data-topic="system"
+      style={{ '--cinematic-ui-scale': uiScale } as React.CSSProperties}
+    >
       <CinematicScene focus={0} variant="system" laserPrimary />
       <div className="ingest-galaxy-layer" aria-hidden="true" />
       <div className="ingest-threads-layer" aria-hidden="true" />

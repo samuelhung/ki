@@ -1891,6 +1891,13 @@
 @media (max-width: 1500px) {
   .cinematic-system .system-detail-reader {
     right: clamp(56px, 5vw, 90px) !important;
+    transform: scale(var(--compact-module-scale, var(--cinematic-ui-scale, 1))) !important;
+    transform-origin: left top !important;
+  }
+
+  .cinematic-system .system-index-strip {
+    transform: scale(var(--compact-module-scale, var(--cinematic-ui-scale, 1))) !important;
+    transform-origin: right center !important;
   }
 
   .cinematic-system .system-doc-pane-tabs {
