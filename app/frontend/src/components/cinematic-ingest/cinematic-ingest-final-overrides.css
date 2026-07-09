@@ -1533,7 +1533,7 @@
 
   .cinematic-ingest:not(.cinematic-system) .ingest-laser-stage {
     --beam-center-x: 44.2% !important;
-    --detail-reader-pull: clamp(36px, 2.7vw, 52px) !important;
+    --detail-reader-pull: clamp(160px, 11.1vw, 190px) !important;
   }
 
   .cinematic-ingest:not(.cinematic-system) .ingest-index-strip {
@@ -1545,11 +1545,11 @@
   }
 
   .cinematic-ingest:not(.cinematic-system) .ingest-search-dock {
-    left: calc(clamp(230px, 18vw, 330px) + var(--ingest-list-shift, clamp(10px, 1.2vw, 24px))) !important;
-    bottom: clamp(526px, 47vh, 620px) !important;
+    left: clamp(40px, 3.4vw, 58px) !important;
+    bottom: clamp(388px, 43vh, 444px) !important;
     width: clamp(150px, 10vw, 190px) !important;
     transform: scale(var(--compact-module-scale)) !important;
-    transform-origin: left center !important;
+    transform-origin: left bottom !important;
   }
 
   .cinematic-ingest:not(.cinematic-system) .ingest-index-item {
@@ -1561,8 +1561,9 @@
   }
 
   .cinematic-ingest:not(.cinematic-system) .ingest-detail-reader {
+    right: 5px !important;
     transform: scale(var(--compact-module-scale)) !important;
-    transform-origin: left top !important;
+    transform-origin: right top !important;
   }
 }
 

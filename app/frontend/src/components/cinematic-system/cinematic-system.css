@@ -1890,13 +1890,16 @@
 
 @media (max-width: 1500px) {
   .cinematic-system .system-detail-reader {
-    right: clamp(56px, 5vw, 90px) !important;
+    --detail-reader-pull: clamp(154px, 10.7vw, 184px);
+    right: 5px !important;
     transform: scale(var(--compact-module-scale, var(--cinematic-ui-scale, 1))) !important;
-    transform-origin: left top !important;
+    transform-origin: right top !important;
   }
 
   .cinematic-system .system-index-strip {
-    left: calc(clamp(230px, 18vw, 330px) + var(--ingest-list-shift, clamp(10px, 1.2vw, 24px))) !important;
+    left: clamp(172px, 15.5vw, 244px) !important;
+    width: clamp(360px, 23vw, 430px) !important;
+    padding-right: clamp(72px, 4.6vw, 94px) !important;
     transform: scale(var(--compact-module-scale, var(--cinematic-ui-scale, 1))) !important;
     transform-origin: right center !important;
   }
