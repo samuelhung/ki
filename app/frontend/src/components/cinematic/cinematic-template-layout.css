@@ -26,6 +26,12 @@
   width: var(--template-search-w, clamp(150px, 10vw, 190px)) !important;
 }
 
+.cinematic-ingest.cinematic-dashboard .cinematic-work-index {
+  left: var(--template-left-nav-x, clamp(28px, 3.2vw, 58px)) !important;
+  transform: scale(var(--template-left-nav-scale, max(var(--cinematic-ui-scale, 1), 0.72))) !important;
+  transform-origin: left bottom !important;
+}
+
 .cinematic-ingest.cinematic-dashboard .ingest-laser-stage {
   left: var(--template-stage-left, clamp(300px, 23vw, 410px)) !important;
   right: var(--template-stage-right, clamp(56px, 5.8vw, 104px)) !important;
