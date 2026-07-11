@@ -1,18 +1,20 @@
 .cinematic-toolbox .toolbox-status { min-height: 150px; }
-.cinematic-toolbox .toolbox-mode-list { justify-content: center; }
+.cinematic-toolbox .toolbox-mode-list { position: absolute !important; top: 50% !important; right: var(--template-stage-list-pad-right, clamp(76px, 4.6vw, 96px)) !important; width: min(100%, 304px) !important; transform: translateY(-50%) !important; }
 .cinematic-toolbox .toolbox-mode-list .index-title b { width: max-content !important; max-width: none !important; overflow: visible !important; text-overflow: clip !important; white-space: nowrap !important; }
 .toolbox-detail-reader { --detail-title-width: 100%; }
 .toolbox-detail-body { padding-bottom: 190px; }
-.toolbox-detail-tabs { gap: 16px; }
-.toolbox-input-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 22px; margin: 22px 0; }
+.toolbox-detail-tabs { gap: 10px; border-bottom: 1px solid rgba(255,255,255,.08); padding-bottom: 12px; }
+.toolbox-input-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; gap: 16px 28px; margin: 18px 0 0; padding: 4px 0 24px; border-bottom: 1px solid rgba(255,255,255,.08); }
+.toolbox-input-grid.is-compare { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .toolbox-field { display: grid; gap: 6px; color: rgba(255,255,255,.52); font-size: 11px; }
 .toolbox-field input { width: 100%; border: 0; border-bottom: 1px solid rgba(167,139,250,.3); background: transparent; color: #fff; padding: 8px 2px; font: 500 14px ui-monospace, monospace; outline: none; }
 .toolbox-field input:focus { border-color: rgba(210,190,255,.85); box-shadow: 0 8px 20px -14px rgba(167,139,250,.9); }
 .toolbox-field small { color: rgba(255,255,255,.28); }
-.toolbox-segment { display: flex; align-items: end; gap: 18px; }
+.toolbox-segment { grid-column: 1 / -1; grid-row: 1; display: flex; align-items: end; gap: 18px; min-height: 30px; }
+.toolbox-input-grid.is-flat > .toolbox-field { grid-row: 2; }
 .toolbox-segment button, .toolbox-schedule-toggle { border: 0; border-bottom: 1px solid transparent; background: transparent; color: rgba(255,255,255,.42); padding: 8px 0; }
 .toolbox-segment button.is-active, .toolbox-schedule-toggle { color: #fff; border-color: rgba(103,232,249,.7); text-shadow: 0 0 14px rgba(103,232,249,.45); }
-.toolbox-results, .toolbox-compare { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 24px; padding-top: 18px; border-top: 1px solid rgba(255,255,255,.08); }
+.toolbox-results, .toolbox-compare { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 28px; padding: 22px 0 4px; }
 .toolbox-results > span, .toolbox-compare > span { display: grid; gap: 5px; }
 .toolbox-results small, .toolbox-compare small { color: rgba(255,255,255,.38); font-size: 10px; }
 .toolbox-results b, .toolbox-compare b { color: rgba(255,255,255,.94); font: 500 15px ui-monospace, monospace; }
