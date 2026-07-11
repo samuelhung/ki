@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Activity,
@@ -20,7 +20,6 @@ import {
   Zap,
 } from 'lucide-react';
 import { useCurtain } from '../CurtainContext';
-import { apiFetch, getApiToken, getBackendUrl, setApiToken, setBackendUrl } from '../api';
 import { APP_VERSION } from '../constants';
 import CinematicScene from '../components/cinematic/CinematicScene';
 import CinematicWorkIndex from '../components/cinematic/CinematicWorkIndex';
@@ -35,8 +34,12 @@ import {
 } from '../systemDocData';
 import { NumberInput, PromptSection, TaskRow, Toggle, type TaskConfig } from '../components/SystemSettingsControls';
 import { useLaserRenderProfile } from '../components/cinematic-ingest/useLaserRenderProfile';
-import { useDebouncedValue } from '../components/cinematic-ingest/useDebouncedValue';
-import { buildSystemLogPath } from '../components/cinematic-system/systemRequestUtils';
+import type { HealthState, LogEntry, ModuleConfig, SystemConfig } from '../components/cinematic-system/systemTypes';
+import { useSystemConfig } from '../components/cinematic-system/useSystemConfig';
+import { useSystemConnection } from '../components/cinematic-system/useSystemConnection';
+import { useSystemDatabase } from '../components/cinematic-system/useSystemDatabase';
+import { useSystemHealth } from '../components/cinematic-system/useSystemHealth';
+import { useSystemLogs } from '../components/cinematic-system/useSystemLogs';
 import '../components/cinematic/cinematic.css';
 import '../components/cinematic-ingest/cinematic-ingest.css';
 import '../components/cinematic-ingest/cinematic-ingest-performance.css';
@@ -46,62 +49,6 @@ declare global {
   interface Window {
     zhiji_checkUpdates?: { postMessage: (message: string) => void };
   }
-}
-
-interface LogEntry {
-  timestamp: string;
-  level: string;
-  module: string;
-  line_no: number;
-  message: string;
-}
-
-interface DbInfo {
-  database: {
-    path: string;
-    file: string;
-    size_bytes: number;
-    size_display: string;
-    size_mb: number;
-    journal_mode: string;
-    page_count: number;
-    page_size: number;
-    total_mb: number;
-    tables: Record<string, { count: number; desc: string }>;
-  };
-  files: Record<string, { count: number; label: string }>;
-}
-
-interface ModuleConfig {
-  [task: string]: TaskConfig;
-}
-
-interface SystemConfig {
-  general: {
-    model: string;
-    base_url: string;
-    api_key: string;
-    disk_cache: boolean;
-    default_temperature: number;
-    default_max_tokens: number;
-    default_thinking: boolean;
-    reasoning_effort: string;
-  };
-  ingest_pipeline: ModuleConfig;
-  series: ModuleConfig;
-  brainstorm: ModuleConfig;
-  digest_briefing: ModuleConfig;
-  tasks: ModuleConfig;
-  concept: ModuleConfig;
-  knowledge_graph: ModuleConfig;
-}
-
-interface HealthData {
-  ok: boolean;
-  service: string;
-  version: string;
-  uptime_sec: number;
-  database: { ok: boolean; size_mb: number; event_count: number; error: string | null };
 }
 
 const canCheckUpdates = () => typeof window !== 'undefined' && Boolean(window.zhiji_checkUpdates);
@@ -321,31 +268,35 @@ export default function CinematicSystemCenter() {
   const [activeDocPane, setActiveDocPane] = useState<(typeof DOC_DETAIL_TABS)[number]['key']>('portrait');
   const [activeModule, setActiveModule] = useState<(typeof MODULE_CONFIG_KEYS)[number]>('ingest_pipeline');
   const [activeAiPane, setActiveAiPane] = useState<(typeof AI_MODULE_PANES)[number]['key']>('params');
-  const [health, setHealth] = useState<{ data: HealthData | null; latency_ms: number; error: string | null }>({ data: null, latency_ms: 0, error: null });
-  const [config, setConfig] = useState<SystemConfig | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState('');
-  const [dbInfo, setDbInfo] = useState<DbInfo | null>(null);
-  const [dbLoading, setDbLoading] = useState(false);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [logLevel, setLogLevel] = useState('INFO');
-  const [logSearch, setLogSearch] = useState('');
-  const debouncedLogSearch = useDebouncedValue(logSearch.trim(), 280);
-  const [logTotal, setLogTotal] = useState(0);
-  const [logLoading, setLogLoading] = useState(false);
+  const { health, setHealth, checkHealth } = useSystemHealth();
+  const { config, saving, message, updateGeneral, updateModule, save } = useSystemConfig();
+  const { dbInfo, dbLoading, loadDbInfo } = useSystemDatabase();
+  const {
+    logs,
+    logLevel,
+    setLogLevel,
+    logSearch,
+    setLogSearch,
+    logTotal,
+    logLoading,
+    loadLogs,
+  } = useSystemLogs(activeSection === 'logs');
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'latest' | 'error'>('idle');
   const [updateMessage, setUpdateMessage] = useState('');
-  const [backendUrl, setBackendUrlState] = useState(getBackendUrl());
-  const [urlMode, setUrlMode] = useState<'auto' | 'manual'>(getBackendUrl() === 'http://127.0.0.1:9120' ? 'auto' : 'manual');
-  const [urlInput, setUrlInput] = useState(getBackendUrl() === 'http://127.0.0.1:9120' ? '' : getBackendUrl());
-  const [apiTokenInput, setApiTokenInput] = useState(getApiToken());
-  const [testing, setTesting] = useState(false);
-  const [connSaved, setConnSaved] = useState(false);
+  const {
+    backendUrl,
+    urlMode,
+    urlInput,
+    apiTokenInput,
+    testing,
+    connSaved,
+    setUrlMode,
+    setUrlInput,
+    setApiTokenInput,
+    testConnection,
+    saveConnection,
+  } = useSystemConnection(setHealth);
   const [activeHub, setActiveHub] = useState<string | null>(null);
-  const healthRequestSeqRef = useRef(0);
-  const healthAbortRef = useRef<AbortController | null>(null);
-  const logRequestSeqRef = useRef(0);
-  const logAbortRef = useRef<AbortController | null>(null);
   const { viewportHeight, laserRenderProfile } = useLaserRenderProfile();
 
   useEffect(() => {
@@ -353,139 +304,11 @@ export default function CinematicSystemCenter() {
     if (location.pathname === '/system') setActiveSection('docs');
   }, [location.pathname]);
 
-  const checkHealth = useCallback(async () => {
-    healthAbortRef.current?.abort();
-    const requestSeq = healthRequestSeqRef.current + 1;
-    healthRequestSeqRef.current = requestSeq;
-    const controller = new AbortController();
-    healthAbortRef.current = controller;
-    const t0 = performance.now();
-    try {
-      const response = await apiFetch('/api/health', { signal: controller.signal });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      if (requestSeq !== healthRequestSeqRef.current) return;
-      setHealth({ data, latency_ms: Math.round(performance.now() - t0), error: null });
-    } catch (error: any) {
-      if (controller.signal.aborted || requestSeq !== healthRequestSeqRef.current) return;
-      setHealth({ data: null, latency_ms: 0, error: error?.message || '连接失败' });
-    } finally {
-      if (requestSeq === healthRequestSeqRef.current) healthAbortRef.current = null;
-    }
-  }, []);
-
-  const loadDbInfo = useCallback(() => {
-    setDbLoading(true);
-    apiFetch('/api/system/database')
-      .then((response) => response.json())
-      .then(setDbInfo)
-      .catch(() => setDbInfo(null))
-      .finally(() => setDbLoading(false));
-  }, []);
-
-  const loadLogs = useCallback(() => {
-    logAbortRef.current?.abort();
-    const requestSeq = logRequestSeqRef.current + 1;
-    logRequestSeqRef.current = requestSeq;
-    const controller = new AbortController();
-    logAbortRef.current = controller;
-    setLogLoading(true);
-    apiFetch(buildSystemLogPath(logLevel, debouncedLogSearch), { signal: controller.signal })
-      .then((response) => response.json())
-      .then((data) => {
-        if (requestSeq !== logRequestSeqRef.current) return;
-        setLogs(data.entries || []);
-        setLogTotal(data.total || 0);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted && requestSeq === logRequestSeqRef.current) setLogs([]);
-      })
-      .finally(() => {
-        if (requestSeq === logRequestSeqRef.current) {
-          setLogLoading(false);
-          logAbortRef.current = null;
-        }
-      });
-  }, [debouncedLogSearch, logLevel]);
-
-  useEffect(() => {
-    let cancelled = false;
-    let timer = 0;
-
-    const schedule = async () => {
-      if (cancelled || document.hidden) return;
-      await checkHealth();
-      if (!cancelled && !document.hidden) timer = window.setTimeout(schedule, 5000);
-    };
-    const handleVisibility = () => {
-      window.clearTimeout(timer);
-      if (!document.hidden) schedule();
-    };
-
-    schedule();
-    document.addEventListener('visibilitychange', handleVisibility, { passive: true });
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-      document.removeEventListener('visibilitychange', handleVisibility);
-      healthRequestSeqRef.current += 1;
-      healthAbortRef.current?.abort();
-    };
-  }, [checkHealth]);
-
-  useEffect(() => {
-    apiFetch('/api/system-config')
-      .then((response) => response.json())
-      .then(setConfig)
-      .catch(() => setMessage('加载配置失败'));
-  }, []);
-
-  useEffect(() => {
-    if (activeSection === 'logs') loadLogs();
-  }, [activeSection, loadDbInfo, loadLogs]);
-
-  useEffect(() => {
-    loadDbInfo();
-  }, [loadDbInfo]);
-
-  useEffect(() => () => {
-    logRequestSeqRef.current += 1;
-    logAbortRef.current?.abort();
-  }, []);
-
   const currentTitle = TAB_LABELS[activeSection] || '系统中枢';
   const activeSystemGroup =
     SECTION_GROUPS.find((group) => group.items.some((item) => item.key === activeSection)) ||
     SECTION_GROUPS[0];
   const activeSystemItems = activeSystemGroup.items.map((item) => ({ ...item, group: activeSystemGroup.label }));
-
-  const updateGeneral = (key: string, value: any) => {
-    if (!config) return;
-    setConfig({ ...config, general: { ...config.general, [key]: value } });
-  };
-
-  const updateModule = (module: string, task: string, value: TaskConfig) => {
-    if (!config) return;
-    setConfig({ ...config, [module]: { ...(config as any)[module], [task]: value } });
-  };
-
-  const save = async () => {
-    if (!config) return;
-    setSaving(true);
-    setMessage('');
-    try {
-      const response = await apiFetch('/api/system-config', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
-      });
-      setMessage(response.ok ? '保存成功，下次 AI 调用生效' : '保存失败');
-    } catch {
-      setMessage('保存失败');
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const handleCheckUpdate = () => {
     if (!canCheckUpdates()) {
@@ -501,39 +324,6 @@ export default function CinematicSystemCenter() {
       setUpdateStatus('error');
       setUpdateMessage(error?.message || '检查失败');
     }
-  };
-
-  const testConnection = async () => {
-    const target = urlMode === 'auto' ? 'http://127.0.0.1:9120' : urlInput.trim().replace(/\/+$/, '');
-    const token = apiTokenInput.trim();
-    setTesting(true);
-    const t0 = performance.now();
-    try {
-      const authHeaders = token ? { Authorization: `Bearer ${token}` } : undefined;
-      const healthRes = await fetch(target + '/api/health');
-      const json = await healthRes.json();
-      if (!healthRes.ok || !json.ok) throw new Error('健康检查失败');
-      const protectedRes = await fetch(target + '/api/dashboard/summary', { headers: authHeaders });
-      if (!protectedRes.ok) {
-        if (protectedRes.status === 401) throw new Error('业务接口未授权，请填写后端 KI_API_TOKEN');
-        throw new Error(`业务接口异常：HTTP ${protectedRes.status}`);
-      }
-      setHealth({ data: json, latency_ms: Math.round(performance.now() - t0), error: null });
-      setConnSaved(false);
-    } catch (error: any) {
-      setHealth({ data: null, latency_ms: 0, error: error?.message || '无法连接' });
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  const saveConnection = () => {
-    const target = urlMode === 'auto' ? '' : urlInput.trim();
-    setBackendUrl(target);
-    setApiToken(apiTokenInput);
-    setBackendUrlState(getBackendUrl());
-    setConnSaved(true);
-    setTimeout(() => setConnSaved(false), 3000);
   };
 
   const commandItems = [
@@ -1158,7 +948,7 @@ function renderGeneral(config: SystemConfig | null, updateGeneral: (key: string,
 }
 
 interface ConnectionRenderProps {
-  health: { data: HealthData | null; latency_ms: number; error: string | null };
+  health: HealthState;
   backendUrl: string;
   urlMode: 'auto' | 'manual';
   urlInput: string;
