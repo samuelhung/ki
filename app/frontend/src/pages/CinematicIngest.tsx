@@ -20,8 +20,8 @@ import {
   Zap,
 } from 'lucide-react';
 import { useCurtain } from '../CurtainContext';
-import CinematicScene from '../components/cinematic/CinematicScene';
-import CinematicWorkIndex from '../components/cinematic/CinematicWorkIndex';
+import CinematicLaserWorkspace from '../components/cinematic/CinematicLaserWorkspace';
+import CinematicTemplatePage from '../components/cinematic/CinematicTemplatePage';
 import { CINEMATIC_LASER_PRESET } from '../components/cinematic/cinematicLaserPreset';
 import LaserFlow from '../components/react-bits/LaserFlow';
 import { apiFetch } from '../api';
@@ -273,32 +273,18 @@ export default function CinematicIngest() {
   }
 
   return (
-    <div
-      className="cinematic-ingest cinematic-dashboard"
-      data-template-profile={templateProfile}
-      data-topic={activeTopic.accent}
+    <CinematicTemplatePage
+      profile={templateProfile}
+      topic={activeTopic.accent}
       style={templateLayoutStyle}
-    >
-      <CinematicScene focus={0} variant="ingest" laserPrimary />
-      <div className="ingest-galaxy-layer" aria-hidden="true">
-      </div>
-      <div className="ingest-threads-layer" aria-hidden="true">
-      </div>
-      {queueVisible && (
+      variant="ingest"
+      environmentOverlay={queueVisible ? (
         <div className="ingest-shader-grid is-active" aria-hidden="true">
           <i />
           <i />
         </div>
-      )}
-      <div className="cinematic-film" />
-      <div className="ingest-signal-grid" aria-hidden="true" />
-      <div className="ingest-orbit-core" aria-hidden="true">
-        <i />
-        <i />
-        <i />
-      </div>
-
-      <main className="cinematic-ingest-shell">
+      ) : null}
+      status={(
         <section
           className={`ingest-observation cinematic-observation is-processing-track is-${queueTone}${queueVisible ? ' is-queue-active' : ' is-queue-idle'}`}
           aria-label="处理轨道"
@@ -361,7 +347,8 @@ export default function CinematicIngest() {
             )}
           </div>
         </section>
-
+      )}
+      commands={(
         <section className="ingest-command-launcher" aria-label="采集入口">
           <div className="launcher-actions">
             {COMMAND_MODES.map((mode) => (
@@ -377,9 +364,13 @@ export default function CinematicIngest() {
             ))}
           </div>
         </section>
-
-        <section className="ingest-laser-console" aria-label="内容采集处理舱">
-          <aside className="ingest-index-strip" aria-label="内容采集列表">
+      )}
+      workspace={(
+        <CinematicLaserWorkspace
+          ariaLabel="内容采集处理舱"
+          indexAriaLabel="内容采集列表"
+          index={(
+            <>
             <div className="ingest-topic-orbit" aria-label="内容分类切换">
               {TOPICS.map((topic) => {
                 const Icon = topic.icon;
@@ -419,9 +410,12 @@ export default function CinematicIngest() {
                 onLoadOlder={loadOlderEvents}
               />
             )}
-          </aside>
-
-          <section className={`ingest-laser-stage${mediaBoxExpanded ? ' is-media-expanded' : ''}`} aria-label="视频内容舱">
+            </>
+          )}
+          stageClassName={mediaBoxExpanded ? 'is-media-expanded' : ''}
+          stageAriaLabel="视频内容舱"
+          stage={(
+            <>
             <LaserFlow
               {...CINEMATIC_LASER_PRESET}
               verticalBeamOffset={beamVerticalOffset}
@@ -502,18 +496,21 @@ export default function CinematicIngest() {
                 </button>
               )}
             </div>
-          </section>
-        </section>
-
+            </>
+          )}
+        />
+      )}
+      shellExtras={(
         <section className="ingest-search-dock" aria-label="内容搜索">
           <div className="stream-search">
             <Search size={14} />
             <input value={search} onChange={(event) => { setSearch(event.target.value); setActiveEventId(null); }} placeholder="搜索标题..." />
           </div>
         </section>
-      </main>
-
-      {commandOpen && (
+      )}
+      overlays={(
+        <>
+          {commandOpen && (
         <div className="ingest-command-overlay" role="dialog" aria-modal="true" aria-label={accessModeOpen ? '接入舱' : activeCommand.label}>
           <button className="command-backdrop" aria-label="关闭采集浮窗" onClick={() => setCommandOpen(false)} />
           <motion.section
@@ -656,9 +653,9 @@ export default function CinematicIngest() {
             )}
           </motion.section>
         </div>
-      )}
+          )}
 
-      {deleteTarget && (
+          {deleteTarget && (
         <div className="ingest-delete-confirm" role="dialog" aria-modal="true" aria-label="删除内容确认">
           <button className="delete-confirm-backdrop" aria-label="取消删除" onClick={() => setDeleteTargetId(null)} />
           <motion.section
@@ -693,19 +690,17 @@ export default function CinematicIngest() {
             </div>
           </motion.section>
         </div>
+          )}
+        </>
       )}
-
-      <CinematicWorkIndex
-        activeHub={activeHub}
-        onActiveHubChange={setActiveHub}
-        onNavigate={(path) => {
+      activeHub={activeHub}
+      onActiveHubChange={setActiveHub}
+      onNavigate={(path) => {
           if (path === '/docs') window.open('/docs', '_blank', 'noopener,noreferrer');
           else navigateWithCurtain(path);
-        }}
-      />
-
-      {toast && <div className={`ingest-toast is-${toast.type}`}>{toast.text}</div>}
-    </div>
+      }}
+      trailing={toast ? <div className={`ingest-toast is-${toast.type}`}>{toast.text}</div> : null}
+    />
   );
 }
 

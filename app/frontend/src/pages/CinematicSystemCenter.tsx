@@ -14,8 +14,8 @@ import {
 } from 'lucide-react';
 import { useCurtain } from '../CurtainContext';
 import { APP_VERSION } from '../constants';
-import CinematicScene from '../components/cinematic/CinematicScene';
-import CinematicWorkIndex from '../components/cinematic/CinematicWorkIndex';
+import CinematicLaserWorkspace from '../components/cinematic/CinematicLaserWorkspace';
+import CinematicTemplatePage from '../components/cinematic/CinematicTemplatePage';
 import { CINEMATIC_LASER_PRESET } from '../components/cinematic/cinematicLaserPreset';
 import { useCinematicTemplateLayout } from '../components/cinematic/useCinematicTemplateLayout';
 import LaserFlow from '../components/react-bits/LaserFlow';
@@ -156,22 +156,8 @@ export default function CinematicSystemCenter() {
   const coreBoxHeight = Math.min(Math.max(viewportHeight * 0.158, 126), 178);
   const beamVerticalOffset = (coreBoxHeight - 6) / Math.max(viewportHeight, 1) - 0.5;
 
-  return (
-    <div
-      className="cinematic-ingest cinematic-system cinematic-dashboard"
-      data-template-profile={templateProfile}
-      data-topic="system"
-      style={templateLayoutStyle}
-    >
-      <CinematicScene focus={0} variant="system" laserPrimary />
-      <div className="ingest-galaxy-layer" aria-hidden="true" />
-      <div className="ingest-threads-layer" aria-hidden="true" />
-      <div className="cinematic-film" />
-      <div className="ingest-signal-grid" aria-hidden="true" />
-      <div className="ingest-orbit-core" aria-hidden="true"><i /><i /><i /></div>
-
-      <main className="cinematic-ingest-shell">
-        <section className="ingest-observation cinematic-observation system-status-bay" aria-label="系统状态舱">
+  const statusPanel = (
+    <section className="ingest-observation cinematic-observation system-status-bay" aria-label="系统状态舱">
           <div className="panel-status">
             <i className={`signal-dot${health.error ? ' is-error' : ''}`} />
             <span>系统中枢</span>
@@ -193,9 +179,10 @@ export default function CinematicSystemCenter() {
           </div>
           {message && <p className={message.includes('成功') ? 'is-ok' : 'is-error'}>{message}</p>}
           {updateMessage && <p>{updateMessage}</p>}
-        </section>
-
-        <section className="ingest-command-launcher" aria-label="系统命令入口">
+    </section>
+  );
+  const commandLauncher = (
+    <section className="ingest-command-launcher" aria-label="系统命令入口">
           <div className="launcher-actions">
             {commandItems.map((item) => {
               const Icon = item.icon;
@@ -209,10 +196,10 @@ export default function CinematicSystemCenter() {
               );
             })}
           </div>
-        </section>
-
-        <section className="ingest-laser-console system-control-console" aria-label="系统控制中心">
-          <aside className="ingest-index-strip system-index-strip" aria-label="系统索引">
+    </section>
+  );
+  const systemIndex = (
+    <>
             <div className="ingest-topic-orbit system-section-orbit" aria-label="系统索引分类">
               {SECTION_GROUPS.map((group, index) => {
                 const Icon = index === 0 ? Activity : Settings;
@@ -262,9 +249,10 @@ export default function CinematicSystemCenter() {
                 );
               })}
             </div>
-          </aside>
-
-          <section className="ingest-laser-stage system-core-stage" aria-label="系统核心舱">
+    </>
+  );
+  const systemStage = (
+    <>
             <LaserFlow
               {...CINEMATIC_LASER_PRESET}
               verticalBeamOffset={beamVerticalOffset}
@@ -297,18 +285,36 @@ export default function CinematicSystemCenter() {
               </div>
             </section>
             <SystemAssetBox dbInfo={dbInfo} health={health} />
-          </section>
-        </section>
-      </main>
+    </>
+  );
 
-      <CinematicWorkIndex
-        activeHub={activeHub}
-        onActiveHubChange={setActiveHub}
-        onNavigate={(path) => {
+  return (
+    <CinematicTemplatePage
+      className="cinematic-system"
+      profile={templateProfile}
+      topic="system"
+      style={templateLayoutStyle}
+      variant="system"
+      status={statusPanel}
+      commands={commandLauncher}
+      workspace={(
+        <CinematicLaserWorkspace
+          className="system-control-console"
+          ariaLabel="系统控制中心"
+          indexClassName="system-index-strip"
+          indexAriaLabel="系统索引"
+          index={systemIndex}
+          stageClassName="system-core-stage"
+          stageAriaLabel="系统核心舱"
+          stage={systemStage}
+        />
+      )}
+      activeHub={activeHub}
+      onActiveHubChange={setActiveHub}
+      onNavigate={(path) => {
           if (path === '/docs') window.open('/docs', '_blank', 'noopener,noreferrer');
           else navigateWithCurtain(path);
-        }}
-      />
-    </div>
+      }}
+    />
   );
 }

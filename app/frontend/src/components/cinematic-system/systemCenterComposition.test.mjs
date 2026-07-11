@@ -28,3 +28,23 @@ test('system assets are rendered by a dedicated box component', async () => {
   assert.match(page, /<SystemAssetBox/);
   assert.match(assets, /export function SystemAssetBox/);
 });
+
+test('ingest and system pages compose the shared cinematic template shell', async () => {
+  const ingestUrl = new URL('../../pages/CinematicIngest.tsx', import.meta.url);
+  const templateUrl = new URL('../cinematic/CinematicTemplatePage.tsx', import.meta.url);
+  const workspaceUrl = new URL('../cinematic/CinematicLaserWorkspace.tsx', import.meta.url);
+  const [systemPage, ingestPage, template, workspace] = await Promise.all([
+    readFile(pageUrl, 'utf8'),
+    readFile(ingestUrl, 'utf8'),
+    readFile(templateUrl, 'utf8'),
+    readFile(workspaceUrl, 'utf8'),
+  ]);
+
+  for (const page of [systemPage, ingestPage]) {
+    assert.match(page, /<CinematicTemplatePage/);
+    assert.match(page, /<CinematicLaserWorkspace/);
+    assert.doesNotMatch(page, /<main className="cinematic-ingest-shell">/);
+  }
+  assert.match(template, /export default function CinematicTemplatePage/);
+  assert.match(workspace, /export default function CinematicLaserWorkspace/);
+});
