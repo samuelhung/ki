@@ -3,6 +3,18 @@ import { ingestCopy } from './ingestCopy';
 
 export const EVENT_BATCH_SIZE = 20;
 export const EVENT_WINDOW_LIMIT = 50;
+
+export function buildEventListPath(historyTab: string, search: string, offset: number): string {
+  const params = new URLSearchParams({
+    source_id: 'douyin,user-upload,user-concept',
+    limit: String(EVENT_BATCH_SIZE),
+    offset: String(offset),
+    count: '1',
+  });
+  if (['格局', '财富', '认知', '前瞻'].includes(historyTab)) params.set('topic', historyTab);
+  if (search) params.set('search', search);
+  return `/api/events?${params}`;
+}
 export const TITLE_DISPLAY_LIMIT = 18;
 export const QUEUE_DELETE_TOMBSTONE_TTL_MS = 60_000;
 export const INDEX_ROW_PITCH = 37;

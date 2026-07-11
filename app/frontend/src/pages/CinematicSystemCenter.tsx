@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Activity,
@@ -23,9 +23,10 @@ import { useCurtain } from '../CurtainContext';
 import { apiFetch, getApiToken, getBackendUrl, setApiToken, setBackendUrl } from '../api';
 import { APP_VERSION } from '../constants';
 import CinematicScene from '../components/cinematic/CinematicScene';
+import CinematicWorkIndex from '../components/cinematic/CinematicWorkIndex';
+import { CINEMATIC_LASER_PRESET } from '../components/cinematic/cinematicLaserPreset';
 import { useCinematicTemplateLayout } from '../components/cinematic/useCinematicTemplateLayout';
 import LaserFlow from '../components/react-bits/LaserFlow';
-import { cinematicNavHubs } from '../navigation';
 import {
   ARCHITECTURE_FEATURES,
   CHANGELOG_ENTRIES,
@@ -34,6 +35,8 @@ import {
 } from '../systemDocData';
 import { NumberInput, PromptSection, TaskRow, Toggle, type TaskConfig } from '../components/SystemSettingsControls';
 import { useLaserRenderProfile } from '../components/cinematic-ingest/useLaserRenderProfile';
+import { useDebouncedValue } from '../components/cinematic-ingest/useDebouncedValue';
+import { buildSystemLogPath } from '../components/cinematic-system/systemRequestUtils';
 import '../components/cinematic/cinematic.css';
 import '../components/cinematic-ingest/cinematic-ingest.css';
 import '../components/cinematic-ingest/cinematic-ingest-performance.css';
@@ -327,6 +330,7 @@ export default function CinematicSystemCenter() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [logLevel, setLogLevel] = useState('INFO');
   const [logSearch, setLogSearch] = useState('');
+  const debouncedLogSearch = useDebouncedValue(logSearch.trim(), 280);
   const [logTotal, setLogTotal] = useState(0);
   const [logLoading, setLogLoading] = useState(false);
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'latest' | 'error'>('idle');
@@ -338,6 +342,10 @@ export default function CinematicSystemCenter() {
   const [testing, setTesting] = useState(false);
   const [connSaved, setConnSaved] = useState(false);
   const [activeHub, setActiveHub] = useState<string | null>(null);
+  const healthRequestSeqRef = useRef(0);
+  const healthAbortRef = useRef<AbortController | null>(null);
+  const logRequestSeqRef = useRef(0);
+  const logAbortRef = useRef<AbortController | null>(null);
   const { viewportHeight, laserRenderProfile } = useLaserRenderProfile();
 
   useEffect(() => {
@@ -346,13 +354,23 @@ export default function CinematicSystemCenter() {
   }, [location.pathname]);
 
   const checkHealth = useCallback(async () => {
+    healthAbortRef.current?.abort();
+    const requestSeq = healthRequestSeqRef.current + 1;
+    healthRequestSeqRef.current = requestSeq;
+    const controller = new AbortController();
+    healthAbortRef.current = controller;
     const t0 = performance.now();
     try {
-      const response = await apiFetch('/api/health');
+      const response = await apiFetch('/api/health', { signal: controller.signal });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
+      if (requestSeq !== healthRequestSeqRef.current) return;
       setHealth({ data, latency_ms: Math.round(performance.now() - t0), error: null });
     } catch (error: any) {
+      if (controller.signal.aborted || requestSeq !== healthRequestSeqRef.current) return;
       setHealth({ data: null, latency_ms: 0, error: error?.message || '连接失败' });
+    } finally {
+      if (requestSeq === healthRequestSeqRef.current) healthAbortRef.current = null;
     }
   }, []);
 
@@ -366,23 +384,53 @@ export default function CinematicSystemCenter() {
   }, []);
 
   const loadLogs = useCallback(() => {
+    logAbortRef.current?.abort();
+    const requestSeq = logRequestSeqRef.current + 1;
+    logRequestSeqRef.current = requestSeq;
+    const controller = new AbortController();
+    logAbortRef.current = controller;
     setLogLoading(true);
-    const params = new URLSearchParams({ level: logLevel, limit: '500' });
-    if (logSearch) params.set('search', logSearch);
-    apiFetch(`/api/logs?${params}`)
+    apiFetch(buildSystemLogPath(logLevel, debouncedLogSearch), { signal: controller.signal })
       .then((response) => response.json())
       .then((data) => {
+        if (requestSeq !== logRequestSeqRef.current) return;
         setLogs(data.entries || []);
         setLogTotal(data.total || 0);
       })
-      .catch(() => setLogs([]))
-      .finally(() => setLogLoading(false));
-  }, [logLevel, logSearch]);
+      .catch(() => {
+        if (!controller.signal.aborted && requestSeq === logRequestSeqRef.current) setLogs([]);
+      })
+      .finally(() => {
+        if (requestSeq === logRequestSeqRef.current) {
+          setLogLoading(false);
+          logAbortRef.current = null;
+        }
+      });
+  }, [debouncedLogSearch, logLevel]);
 
   useEffect(() => {
-    checkHealth();
-    const interval = setInterval(checkHealth, 5000);
-    return () => clearInterval(interval);
+    let cancelled = false;
+    let timer = 0;
+
+    const schedule = async () => {
+      if (cancelled || document.hidden) return;
+      await checkHealth();
+      if (!cancelled && !document.hidden) timer = window.setTimeout(schedule, 5000);
+    };
+    const handleVisibility = () => {
+      window.clearTimeout(timer);
+      if (!document.hidden) schedule();
+    };
+
+    schedule();
+    document.addEventListener('visibilitychange', handleVisibility, { passive: true });
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      healthRequestSeqRef.current += 1;
+      healthAbortRef.current?.abort();
+    };
   }, [checkHealth]);
 
   useEffect(() => {
@@ -399,6 +447,11 @@ export default function CinematicSystemCenter() {
   useEffect(() => {
     loadDbInfo();
   }, [loadDbInfo]);
+
+  useEffect(() => () => {
+    logRequestSeqRef.current += 1;
+    logAbortRef.current?.abort();
+  }, []);
 
   const currentTitle = TAB_LABELS[activeSection] || '系统中枢';
   const activeSystemGroup =
@@ -482,23 +535,6 @@ export default function CinematicSystemCenter() {
     setConnSaved(true);
     setTimeout(() => setConnSaved(false), 3000);
   };
-
-  const currentPath = window.location.hash.replace(/^#/, '') || location.pathname || '/system';
-  const currentHub =
-    cinematicNavHubs.find((hub) => hub.to === currentPath || hub.children.some((item) => item.to === currentPath)) ||
-    cinematicNavHubs[0];
-  const activeHubKey = activeHub || currentHub.to;
-  const activeHubIndex = Math.max(0, cinematicNavHubs.findIndex((hub) => hub.to === activeHubKey));
-  const activeHubChildren = activeHub ? (cinematicNavHubs.find((hub) => hub.to === activeHub)?.children || []) : [];
-  const hubRowHeight = 40;
-  const hubBottomPadding = 24;
-  const hubHeight = 330;
-  const childMenuHeight = Math.max(134, activeHubChildren.length * hubRowHeight + 18);
-  const activeHubCenter = hubBottomPadding + ((cinematicNavHubs.length - 1 - activeHubIndex) * hubRowHeight) + 15;
-  const childMenuBottom = Math.max(
-    hubBottomPadding,
-    Math.min(hubHeight - childMenuHeight - 20, activeHubCenter - (childMenuHeight / 2)),
-  );
 
   const commandItems = [
     { key: 'douyin', label: '刷新状态', meta: health.error ? 'RETRY' : `${health.latency_ms || '--'}ms`, code: 'STATUS PING', icon: RefreshCw, onClick: checkHealth },
@@ -666,23 +702,8 @@ export default function CinematicSystemCenter() {
 
           <section className="ingest-laser-stage system-core-stage" aria-label="系统核心舱">
             <LaserFlow
-              color="#CF9EFF"
-              horizontalBeamOffset={-0.21}
+              {...CINEMATIC_LASER_PRESET}
               verticalBeamOffset={beamVerticalOffset}
-              horizontalSizing={0.5}
-              verticalSizing={1.72}
-              wispDensity={0.58}
-              wispIntensity={2.8}
-              wispSpeed={8}
-              fogIntensity={0.28}
-              fogScale={0.24}
-              flowSpeed={0.35}
-              flowStrength={0.18}
-              decay={1.1}
-              falloffStart={1.2}
-              fogFallSpeed={0.38}
-              mouseSmoothTime={0.2}
-              mouseTiltStrength={0.035}
               dpr={laserRenderProfile.dpr}
               maxFps={laserRenderProfile.maxFps}
             />
@@ -754,60 +775,14 @@ export default function CinematicSystemCenter() {
         </section>
       </main>
 
-      <nav
-        className="cinematic-work-index"
-        aria-label="知几功能索引"
-        onMouseLeave={() => setActiveHub(null)}
-      >
-        <div className="cinematic-hub-primary">
-          {cinematicNavHubs.map((hub) => {
-            const Icon = hub.icon;
-            const active = activeHubKey === hub.to;
-            return (
-              <button
-                key={hub.to}
-                className={`${active ? 'is-active' : ''}${hub.children.length > 0 ? ' has-children' : ''}`}
-                onMouseEnter={() => setActiveHub(hub.children.length > 0 ? hub.to : null)}
-                onClick={() => {
-                  if (hub.children.length > 0) {
-                    setActiveHub(hub.to);
-                    return;
-                  }
-                  navigateWithCurtain(hub.to);
-                }}
-              >
-                <Icon size={14} />
-                <b>{hub.label}</b>
-              </button>
-            );
-          })}
-        </div>
-        {activeHubChildren.length > 0 && (
-          <div
-            className="cinematic-hub-children"
-            style={{
-              '--hub-child-height': `${childMenuHeight}px`,
-              bottom: `${childMenuBottom}px`,
-            } as React.CSSProperties}
-          >
-            {activeHubChildren.map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.to}
-                  onClick={() => {
-                    if (item.to === '/docs') window.open('/docs', '_blank', 'noopener,noreferrer');
-                    else navigateWithCurtain(item.to);
-                  }}
-                >
-                  <Icon size={13} />
-                  <b>{item.label}</b>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </nav>
+      <CinematicWorkIndex
+        activeHub={activeHub}
+        onActiveHubChange={setActiveHub}
+        onNavigate={(path) => {
+          if (path === '/docs') window.open('/docs', '_blank', 'noopener,noreferrer');
+          else navigateWithCurtain(path);
+        }}
+      />
     </div>
   );
 }

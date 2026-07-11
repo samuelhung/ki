@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch } from '../../api';
 import type { EventItem, TopicKey } from './ingestTypes';
-import { EVENT_BATCH_SIZE, EVENT_WINDOW_LIMIT } from './ingestUtils';
+import { buildEventListPath, EVENT_BATCH_SIZE, EVENT_WINDOW_LIMIT } from './ingestUtils';
 import { ingestCopy } from './ingestCopy';
 
 const API_BASE = '/api/events';
@@ -17,6 +17,8 @@ interface UseIngestEventsOptions {
 
 export function useIngestEvents({ historyTab, debouncedSearch, setToast }: UseIngestEventsOptions) {
   const eventLoadingRef = useRef(false);
+  const eventRequestSeqRef = useRef(0);
+  const eventAbortRef = useRef<AbortController | null>(null);
   const totalRef = useRef(0);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [eventWindowOffset, setEventWindowOffset] = useState(0);
@@ -50,16 +52,25 @@ export function useIngestEvents({ historyTab, debouncedSearch, setToast }: UseIn
   }, []);
 
   const loadEvents = useCallback(async (mode: 'reset' | 'append' | 'prepend' = 'reset', offset = 0) => {
-    if (eventLoadingRef.current) return;
+    if (mode !== 'reset' && eventLoadingRef.current) return;
+    if (mode === 'reset') eventAbortRef.current?.abort();
+
+    const requestSeq = eventRequestSeqRef.current + 1;
+    eventRequestSeqRef.current = requestSeq;
+    const controller = new AbortController();
+    eventAbortRef.current = controller;
     eventLoadingRef.current = true;
     if (mode === 'reset') setLoading(true);
     else setEventListLoading(mode);
     setEventsError('');
-    const topicFilter = ['格局', '财富', '认知', '前瞻'].includes(historyTab) ? `&topic=${historyTab}` : '';
-    const searchParam = debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : '';
     try {
-      const response = await apiFetch(`${API_BASE}?source_id=douyin,user-upload,user-concept${topicFilter}${searchParam}&limit=${EVENT_BATCH_SIZE}&offset=${offset}&count=1`);
+      const response = await apiFetch(
+        buildEventListPath(historyTab, debouncedSearch, offset),
+        { signal: controller.signal },
+      );
+      if (!response.ok) throw new Error(ingestCopy.stream.loadError);
       const data = await response.json();
+      if (requestSeq !== eventRequestSeqRef.current) return;
       const incoming: EventItem[] = data && typeof data === 'object' && 'items' in data
         ? (data.items || [])
         : (Array.isArray(data) ? data : []);
@@ -88,11 +99,15 @@ export function useIngestEvents({ historyTab, debouncedSearch, setToast }: UseIn
         });
       }
     } catch (error) {
+      if (controller.signal.aborted || requestSeq !== eventRequestSeqRef.current) return;
       setEventsError(error instanceof Error ? error.message : ingestCopy.stream.loadError);
     } finally {
-      if (mode === 'reset') setLoading(false);
-      setEventListLoading('idle');
-      eventLoadingRef.current = false;
+      if (requestSeq === eventRequestSeqRef.current) {
+        if (mode === 'reset') setLoading(false);
+        setEventListLoading('idle');
+        eventLoadingRef.current = false;
+        eventAbortRef.current = null;
+      }
     }
   }, [debouncedSearch, historyTab, setTotal]);
 
@@ -148,6 +163,11 @@ export function useIngestEvents({ historyTab, debouncedSearch, setToast }: UseIn
     if (historyTab === 'briefing') return;
     if (!activeEventId && events.length > 0) setActiveEventId(events[0].id);
   }, [events, historyTab, activeEventId]);
+
+  useEffect(() => () => {
+    eventRequestSeqRef.current += 1;
+    eventAbortRef.current?.abort();
+  }, []);
 
   return {
     events,

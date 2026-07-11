@@ -260,12 +260,36 @@ export default function Galaxy({
 
     const mesh = new Mesh(gl, { geometry, program });
     let animateId;
+    let activeTime = 0;
+    let lastFrameMs = 0;
+
+    function resetAnimationClock() {
+      lastFrameMs = 0;
+    }
+
+    function getActiveTime(t) {
+      if (lastFrameMs === 0) {
+        lastFrameMs = t;
+      }
+      const delta = Math.max(0, Math.min(0.05, (t - lastFrameMs) / 1000));
+      lastFrameMs = t;
+      activeTime += delta;
+      return activeTime;
+    }
 
     function update(t) {
       animateId = requestAnimationFrame(update);
+      if (document.hidden) {
+        resetAnimationClock();
+        return;
+      }
+
       if (!disableAnimation) {
-        program.uniforms.uTime.value = t * 0.001;
-        program.uniforms.uStarSpeed.value = (t * 0.001 * starSpeed) / 10.0;
+        const time = getActiveTime(t);
+        program.uniforms.uTime.value = time;
+        program.uniforms.uStarSpeed.value = (time * starSpeed) / 10.0;
+      } else {
+        resetAnimationClock();
       }
 
       const lerpFactor = 0.05;
@@ -283,6 +307,11 @@ export default function Galaxy({
     animateId = requestAnimationFrame(update);
     ctn.appendChild(gl.canvas);
 
+    function handleVisibilityChange() {
+      resetAnimationClock();
+      if (!document.hidden) resize();
+    }
+
     function handleMouseMove(e) {
       const rect = ctn.getBoundingClientRect();
       const x = (e.clientX - rect.left) / rect.width;
@@ -299,10 +328,16 @@ export default function Galaxy({
       ctn.addEventListener('mousemove', handleMouseMove);
       ctn.addEventListener('mouseleave', handleMouseLeave);
     }
+    document.addEventListener('visibilitychange', handleVisibilityChange, { passive: true });
+    window.addEventListener('focus', handleVisibilityChange, { passive: true });
+    window.addEventListener('pageshow', handleVisibilityChange, { passive: true });
 
     return () => {
       cancelAnimationFrame(animateId);
       window.removeEventListener('resize', resize);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleVisibilityChange);
+      window.removeEventListener('pageshow', handleVisibilityChange);
       if (mouseInteraction) {
         ctn.removeEventListener('mousemove', handleMouseMove);
         ctn.removeEventListener('mouseleave', handleMouseLeave);

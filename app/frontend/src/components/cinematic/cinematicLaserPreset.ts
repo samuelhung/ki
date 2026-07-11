@@ -1,0 +1,18 @@
+export const CINEMATIC_LASER_PRESET = {
+  color: '#CF9EFF',
+  horizontalBeamOffset: -0.21,
+  horizontalSizing: 0.5,
+  verticalSizing: 1.72,
+  wispDensity: 0.58,
+  wispIntensity: 2.8,
+  wispSpeed: 8,
+  fogIntensity: 0.28,
+  fogScale: 0.24,
+  flowSpeed: 0.35,
+  flowStrength: 0.18,
+  decay: 1.1,
+  falloffStart: 1.2,
+  fogFallSpeed: 0.38,
+  mouseSmoothTime: 0.2,
+  mouseTiltStrength: 0.035,
+} as const;

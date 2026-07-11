@@ -413,6 +413,8 @@ export default function CinematicScene({ focus, variant = 'today', laserPrimary 
     let frame = 0;
     let focusValue = 0;
     let lastRender = 0;
+    let sceneTime = 0;
+    let lastSceneFrame = 0;
     const minFrameMs = 1000 / Math.max(1, config.maxFps);
 
     function onPointerMove(event: PointerEvent) {
@@ -431,17 +433,38 @@ export default function CinematicScene({ focus, variant = 'today', laserPrimary 
 
     function onVisibilityChange() {
       if (!document.hidden) {
-        lastRender = performance.now();
+        const now = performance.now();
+        lastRender = now;
+        lastSceneFrame = now;
         onResize();
+      } else {
+        lastSceneFrame = 0;
       }
+    }
+
+    function onPageResume() {
+      const now = performance.now();
+      lastRender = now;
+      lastSceneFrame = now;
+      onResize();
     }
 
     function animate(now = performance.now()) {
       frame = requestAnimationFrame(animate);
-      if (document.hidden || now - lastRender < minFrameMs) return;
+      if (document.hidden) {
+        lastSceneFrame = 0;
+        return;
+      }
+      if (now - lastRender < minFrameMs) return;
       lastRender = now;
 
-      const time = now / 1000;
+      if (lastSceneFrame === 0) {
+        lastSceneFrame = now;
+      }
+      const deltaSeconds = Math.max(0, Math.min(0.05, (now - lastSceneFrame) / 1000));
+      lastSceneFrame = now;
+      sceneTime += deltaSeconds;
+      const time = sceneTime;
       const manualFocus = focusRef.current || 0;
       const autoValue = manualFocus ? 1 : 0.46 + 0.18 * Math.sin(time * 0.72);
       focusValue += (autoValue - focusValue) * 0.065;
@@ -512,6 +535,8 @@ export default function CinematicScene({ focus, variant = 'today', laserPrimary 
     if (config.pointer > 0) window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('resize', onResize);
     document.addEventListener('visibilitychange', onVisibilityChange, { passive: true });
+    window.addEventListener('focus', onPageResume, { passive: true });
+    window.addEventListener('pageshow', onPageResume, { passive: true });
     const resizeObserver = new ResizeObserver(onResize);
     resizeObserver.observe(canvas);
     frame = requestAnimationFrame(animate);
@@ -521,6 +546,8 @@ export default function CinematicScene({ focus, variant = 'today', laserPrimary 
       if (config.pointer > 0) window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('resize', onResize);
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('focus', onPageResume);
+      window.removeEventListener('pageshow', onPageResume);
       resizeObserver.disconnect();
       scene.traverse((object) => {
         const mesh = object as THREE.Mesh;

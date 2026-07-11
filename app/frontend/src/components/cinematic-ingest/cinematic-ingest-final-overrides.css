@@ -1089,7 +1089,7 @@
   left: calc(var(--beam-center-x) + var(--detail-reader-gutter) - var(--detail-reader-pull)) !important;
   right: var(--template-detail-right, max(var(--stage-pad-x), var(--media-edge-x))) !important;
   top: var(--template-detail-top, 60px) !important;
-  bottom: calc(var(--media-h) + clamp(28px, 4vh, 52px)) !important;
+  bottom: calc(var(--media-h) + var(--template-detail-bottom-gap, clamp(28px, 4vh, 52px))) !important;
   z-index: 17 !important;
   width: auto !important;
   min-width: 0 !important;
@@ -1564,6 +1564,10 @@
 
   .cinematic-ingest:not(.cinematic-system) .index-title {
     width: min(258px, calc(100% - 24px)) !important;
+  }
+
+  .cinematic-ingest .ingest-detail-reader {
+    bottom: var(--template-detail-bottom-compact, calc(var(--media-h) + var(--template-detail-bottom-gap-compact, clamp(14px, 2vh, 26px)))) !important;
   }
 
   .cinematic-ingest:not(.cinematic-system) .ingest-detail-reader {
@@ -2164,6 +2168,8 @@
     bottom: clamp(14px, 2.4vh, 24px) !important;
     width: 760px !important;
     min-height: 330px !important;
+    opacity: 1 !important;
+    animation: none !important;
     transform: scale(var(--template-left-nav-scale, 0.52)) !important;
     transform-origin: left bottom !important;
   }

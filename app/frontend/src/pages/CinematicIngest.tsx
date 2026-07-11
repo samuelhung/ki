@@ -21,10 +21,11 @@ import {
 } from 'lucide-react';
 import { useCurtain } from '../CurtainContext';
 import CinematicScene from '../components/cinematic/CinematicScene';
+import CinematicWorkIndex from '../components/cinematic/CinematicWorkIndex';
+import { CINEMATIC_LASER_PRESET } from '../components/cinematic/cinematicLaserPreset';
 import LaserFlow from '../components/react-bits/LaserFlow';
 import { apiFetch } from '../api';
 import { backendUrl } from '../api';
-import { cinematicNavHubs } from '../navigation';
 import { statusLabel } from '../utils';
 import { useCinematicTemplateLayout } from '../components/cinematic/useCinematicTemplateLayout';
 import { ContentDetailPanel } from '../components/cinematic-ingest/ContentDetailPanel';
@@ -207,23 +208,6 @@ export default function CinematicIngest() {
     pollIngestStatus,
     setToast,
   });
-  const currentPath = window.location.hash.replace(/^#/, '') || window.location.pathname || '/';
-  const currentHub =
-    cinematicNavHubs.find((hub) => hub.to === currentPath || hub.children.some((item) => item.to === currentPath)) ||
-    cinematicNavHubs[0];
-  const activeHubKey = activeHub || currentHub.to;
-  const activeHubIndex = Math.max(0, cinematicNavHubs.findIndex((hub) => hub.to === activeHubKey));
-  const activeHubChildren = activeHub ? (cinematicNavHubs.find((hub) => hub.to === activeHub)?.children || []) : [];
-  const hubRowHeight = 40;
-  const hubBottomPadding = 24;
-  const hubHeight = 330;
-  const childMenuHeight = Math.max(134, activeHubChildren.length * hubRowHeight + 18);
-  const activeHubCenter = hubBottomPadding + ((cinematicNavHubs.length - 1 - activeHubIndex) * hubRowHeight) + 15;
-  const childMenuBottom = Math.max(
-    hubBottomPadding,
-    Math.min(hubHeight - childMenuHeight - 20, activeHubCenter - (childMenuHeight / 2)),
-  );
-
   const activeTopic = TOPICS.find((item) => item.key === historyTab) || TOPICS[0];
   const activeCommand = COMMAND_MODES.find((mode) => mode.key === activeMode) || COMMAND_MODES[0];
   const accessModeOpen = activeMode === 'douyin' || activeMode === 'file';
@@ -439,23 +423,8 @@ export default function CinematicIngest() {
 
           <section className={`ingest-laser-stage${mediaBoxExpanded ? ' is-media-expanded' : ''}`} aria-label="视频内容舱">
             <LaserFlow
-              color="#CF9EFF"
-              horizontalBeamOffset={-0.21}
+              {...CINEMATIC_LASER_PRESET}
               verticalBeamOffset={beamVerticalOffset}
-              horizontalSizing={0.5}
-              verticalSizing={1.72}
-              wispDensity={0.58}
-              wispIntensity={2.8}
-              wispSpeed={8}
-              fogIntensity={0.28}
-              fogScale={0.24}
-              flowSpeed={0.35}
-              flowStrength={0.18}
-              decay={1.1}
-              falloffStart={1.2}
-              fogFallSpeed={0.38}
-              mouseSmoothTime={0.2}
-              mouseTiltStrength={0.035}
               dpr={laserRenderProfile.dpr}
               maxFps={laserRenderProfile.maxFps}
             />
@@ -726,60 +695,14 @@ export default function CinematicIngest() {
         </div>
       )}
 
-      <nav
-        className="cinematic-work-index"
-        aria-label="知几功能索引"
-        onMouseLeave={() => setActiveHub(null)}
-      >
-        <div className="cinematic-hub-primary">
-          {cinematicNavHubs.map((hub) => {
-            const Icon = hub.icon;
-            const active = activeHubKey === hub.to;
-            return (
-              <button
-                key={hub.to}
-                className={`${active ? 'is-active' : ''}${hub.children.length > 0 ? ' has-children' : ''}`}
-                onMouseEnter={() => setActiveHub(hub.children.length > 0 ? hub.to : null)}
-                onClick={() => {
-                  if (hub.children.length > 0) {
-                    setActiveHub(hub.to);
-                    return;
-                  }
-                  navigateWithCurtain(hub.to);
-                }}
-              >
-                <Icon size={14} />
-                <b>{hub.label}</b>
-              </button>
-            );
-          })}
-        </div>
-        {activeHubChildren.length > 0 && (
-          <div
-            className="cinematic-hub-children"
-            style={{
-              '--hub-child-height': `${childMenuHeight}px`,
-              bottom: `${childMenuBottom}px`,
-            } as React.CSSProperties}
-          >
-            {activeHubChildren.map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.to}
-                  onClick={() => {
-                    if (item.to === '/docs') window.open('/docs', '_blank', 'noopener,noreferrer');
-                    else navigateWithCurtain(item.to);
-                  }}
-                >
-                  <Icon size={13} />
-                  <b>{item.label}</b>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </nav>
+      <CinematicWorkIndex
+        activeHub={activeHub}
+        onActiveHubChange={setActiveHub}
+        onNavigate={(path) => {
+          if (path === '/docs') window.open('/docs', '_blank', 'noopener,noreferrer');
+          else navigateWithCurtain(path);
+        }}
+      />
 
       {toast && <div className={`ingest-toast is-${toast.type}`}>{toast.text}</div>}
     </div>

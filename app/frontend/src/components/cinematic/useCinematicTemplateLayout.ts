@@ -36,12 +36,15 @@ export function useCinematicTemplateLayout(page: CinematicTemplatePage) {
   }, []);
 
   const style = useMemo<CinematicTemplateStyle>(() => {
-    const compactDetailPull = page === 'system'
-      ? 'clamp(159px, 11.05vw, 189px)'
-      : 'clamp(160px, 11.1vw, 190px)';
+    const standardDetailPull = page === 'system'
+      ? 'clamp(78px, 4.8vw, 116px)'
+      : 'clamp(76px, 4.7vw, 112px)';
+    const compactDetailPullTight = page === 'system'
+      ? 'clamp(198px, 14.25vw, 232px)'
+      : 'clamp(198px, 14.25vw, 232px)';
     const compactListLeft = page === 'system'
-      ? 'clamp(172px, 15.5vw, 244px)'
-      : 'calc(clamp(230px, 18vw, 330px) + var(--template-stage-list-shift))';
+      ? 'clamp(210px, 18.5vw, 278px)'
+      : 'calc(clamp(248px, 18.9vw, 330px) + var(--template-stage-list-shift))';
     const compactListWidth = page === 'system'
       ? 'clamp(360px, 23vw, 430px)'
       : 'clamp(350px, 20vw, 405px)';
@@ -88,11 +91,13 @@ export function useCinematicTemplateLayout(page: CinematicTemplatePage) {
       '--template-left-nav-x': 'clamp(28px, 3.2vw, 58px)',
       '--template-search-x': 'clamp(40px, 3.4vw, 58px)',
       '--template-left-nav-scale': isTablet
-        ? 'clamp(0.4, calc(var(--cinematic-ui-scale) * 0.8), 0.48)'
+        ? 'clamp(0.5, calc(var(--cinematic-ui-scale) * 0.9), 0.56)'
         : 'max(var(--cinematic-ui-scale), 0.72)',
       '--template-search-bottom': isTablet
         ? 'clamp(194px, 25vh, 218px)'
-        : 'clamp(388px, 43vh, 444px)',
+        : profile === 'wide'
+          ? 'clamp(500px, 35.5vh, 528px)'
+          : 'clamp(388px, 43vh, 444px)',
       '--template-search-w': isTablet
         ? 'clamp(132px, 12vw, 152px)'
         : 'clamp(150px, 10vw, 190px)',
@@ -117,10 +122,19 @@ export function useCinematicTemplateLayout(page: CinematicTemplatePage) {
       '--template-beam-x': '43.5%',
       '--template-beam-x-compact': isTablet ? '43.8%' : '44.2%',
       '--template-detail-gutter': 'clamp(16px, 1.55vw, 28px)',
-      '--template-detail-pull': 'clamp(42px, 3.35vw, 72px)',
+      '--template-detail-pull': standardDetailPull,
       '--template-detail-pull-compact': isTablet
         ? tabletDetailPull
-        : compactDetailPull,
+        : compactDetailPullTight,
+      '--template-detail-bottom-gap': isTablet
+        ? 'clamp(16px, 2.6vh, 24px)'
+        : 'clamp(28px, 4vh, 52px)',
+      '--template-detail-bottom-gap-compact': isTablet
+        ? 'clamp(16px, 2.6vh, 24px)'
+        : 'clamp(14px, 2vh, 26px)',
+      '--template-detail-bottom-compact': isTablet
+        ? 'calc(var(--media-h) + clamp(16px, 2.6vh, 24px))'
+        : 'clamp(72px, 9vh, 104px)',
       '--template-detail-top': '60px',
       '--template-detail-right': 'max(clamp(42px, 4.6vw, 84px), var(--media-edge-x))',
       '--template-detail-right-compact': '5px',

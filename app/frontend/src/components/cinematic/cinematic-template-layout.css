@@ -97,6 +97,7 @@
 
   .cinematic-ingest.cinematic-dashboard .ingest-detail-reader {
     right: var(--template-detail-right-compact, 5px) !important;
+    bottom: var(--template-detail-bottom-compact, calc(var(--media-h) + var(--template-detail-bottom-gap-compact, clamp(14px, 2vh, 26px)))) !important;
     transform-origin: right top !important;
   }
 }

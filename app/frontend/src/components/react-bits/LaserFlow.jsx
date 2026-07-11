@@ -294,6 +294,7 @@ export default function LaserFlow({
 
   useEffect(() => {
     const mount = mountRef.current;
+    const initialColor = hexToRGB(color || '#FFFFFF');
     const renderer = new THREE.WebGLRenderer({
       antialias: false,
       alpha: false,
@@ -347,7 +348,7 @@ export default function LaserFlow({
       uDecay: { value: decay },
       uFalloffStart: { value: falloffStart },
       uFogFallSpeed: { value: fogFallSpeed },
-      uColor: { value: new THREE.Vector3(1, 1, 1) },
+      uColor: { value: new THREE.Vector3(initialColor.r, initialColor.g, initialColor.b) },
       uFade: { value: hasFadedRef.current ? 1 : 0 }
     };
     uniformsRef.current = uniforms;
@@ -415,10 +416,35 @@ export default function LaserFlow({
     );
     io.observe(mount);
 
+    const resetFrameState = () => {
+      clock.stop();
+      clock.start();
+      prevTime = 0;
+      lastRenderMs = performance.now();
+      emaDtRef.current = 16.7;
+      fpsSamplesRef.current = [];
+      lastFpsCheckRef.current = performance.now();
+      const { r, g, b } = hexToRGB(color || '#FFFFFF');
+      uniforms.uColor.value.set(r, g, b);
+    };
+
     const onVis = () => {
       pausedRef.current = document.hidden;
+      if (!document.hidden) {
+        resetFrameState();
+        scheduleResize();
+      }
     };
     document.addEventListener('visibilitychange', onVis, { passive: true });
+    const onFocus = () => {
+      pausedRef.current = document.hidden;
+      if (!document.hidden) {
+        resetFrameState();
+        scheduleResize();
+      }
+    };
+    window.addEventListener('focus', onFocus, { passive: true });
+    window.addEventListener('pageshow', onFocus, { passive: true });
 
     const updateMouse = (clientX, clientY) => {
       const rect = rectRef.current;
@@ -442,6 +468,7 @@ export default function LaserFlow({
     };
     const onCtxRestored = () => {
       pausedRef.current = false;
+      resetFrameState();
       scheduleResize();
     };
     canvas.addEventListener('webglcontextlost', onCtxLost, false);
@@ -534,6 +561,8 @@ export default function LaserFlow({
       ro.disconnect();
       io.disconnect();
       document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('pageshow', onFocus);
       canvas.removeEventListener('pointermove', onMove);
       canvas.removeEventListener('pointerdown', onMove);
       canvas.removeEventListener('pointerenter', onMove);

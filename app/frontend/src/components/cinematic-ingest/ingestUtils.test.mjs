@@ -37,6 +37,18 @@ test('compactIndexTitle limits titles to 18 visible characters', () => {
   assert.equal(utils.compactIndexTitle('短标题'), '短标题');
 });
 
+test('buildEventListPath encodes the active topic and search without stale parameters', () => {
+  const path = utils.buildEventListPath('格局', '人工 智能', 20);
+  const url = new URL(path, 'http://localhost');
+
+  assert.equal(url.pathname, '/api/events');
+  assert.equal(url.searchParams.get('topic'), '格局');
+  assert.equal(url.searchParams.get('search'), '人工 智能');
+  assert.equal(url.searchParams.get('offset'), '20');
+  assert.equal(url.searchParams.get('limit'), String(utils.EVENT_BATCH_SIZE));
+  assert.equal(utils.buildEventListPath('briefing', '', 0).includes('topic='), false);
+});
+
 test('visibleProgressStages returns previous current and next two stages', () => {
   const stages = [
     { key: 'a', label: 'A', status: 'done' },

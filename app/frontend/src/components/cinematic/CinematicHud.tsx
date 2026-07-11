@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useCurtain } from '../../CurtainContext';
 import { cinematicNavHubs } from '../../navigation';
+import { getCinematicNavigationGeometry } from './CinematicWorkIndex';
 import type { CinematicDashboardData, UsageModuleStat } from './types';
 
 interface FocusDetailRow {
@@ -259,17 +260,7 @@ export default function CinematicHud({
       { label: '统计窗口', value: '84 天' },
     ],
   };
-  const activeHubIndex = Math.max(0, cinematicNavHubs.findIndex((hub) => hub.to === activeHub));
-  const activeHubChildren = cinematicNavHubs.find((hub) => hub.to === activeHub)?.children || [];
-  const hubRowHeight = 40;
-  const hubBottomPadding = 24;
-  const hubHeight = 330;
-  const childMenuHeight = Math.max(134, activeHubChildren.length * hubRowHeight + 18);
-  const activeHubCenter = hubBottomPadding + ((cinematicNavHubs.length - 1 - activeHubIndex) * hubRowHeight) + 15;
-  const childMenuBottom = Math.max(
-    hubBottomPadding,
-    Math.min(hubHeight - childMenuHeight - 20, activeHubCenter - (childMenuHeight / 2)),
-  );
+  const { activeHubChildren, childMenuHeight, childMenuBottom } = getCinematicNavigationGeometry(activeHub);
 
   return (
     <div className="cinematic-dashboard-shell">

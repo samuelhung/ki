@@ -174,6 +174,16 @@ export default function DomeGallery({
     }
   }, []);
 
+  const resetInteractionState = useCallback(() => {
+    stopInertia();
+    draggingRef.current = false;
+    movedRef.current = false;
+    pressedTileRef.current = null;
+    startPosRef.current = null;
+    lastPointRef.current = null;
+    applyTransform(rotationRef.current.x, rotationRef.current.y);
+  }, [applyTransform, stopInertia]);
+
   const startInertia = useCallback(
     (vx, vy) => {
       const maxVelocity = 1.4;
@@ -476,6 +486,32 @@ export default function DomeGallery({
       main.removeEventListener('pointercancel', onPointerUp);
     };
   }, [applyTransform, clickMoveTolerance, dragSensitivity, maxVerticalRotationDeg, openItemFromElement, startInertia, stopInertia]);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        resetInteractionState();
+        return;
+      }
+      applyTransform(rotationRef.current.x, rotationRef.current.y);
+    };
+    const onPageSuspend = () => resetInteractionState();
+    const onPageResume = () => applyTransform(rotationRef.current.x, rotationRef.current.y);
+
+    document.addEventListener('visibilitychange', onVisibilityChange, { passive: true });
+    window.addEventListener('blur', onPageSuspend, { passive: true });
+    window.addEventListener('pagehide', onPageSuspend, { passive: true });
+    window.addEventListener('focus', onPageResume, { passive: true });
+    window.addEventListener('pageshow', onPageResume, { passive: true });
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('blur', onPageSuspend);
+      window.removeEventListener('pagehide', onPageSuspend);
+      window.removeEventListener('focus', onPageResume);
+      window.removeEventListener('pageshow', onPageResume);
+    };
+  }, [applyTransform, resetInteractionState]);
 
   const onTileClick = useCallback(
     (event) => {
