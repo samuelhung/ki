@@ -28,6 +28,7 @@ const Study = lazy(() => import('./pages/Study'));
 const StudyDetail = lazy(() => import('./pages/StudyDetail'));
 const StudyMistakes = lazy(() => import('./pages/StudyMistakes'));
 const Toolbox = lazy(() => import('./pages/Toolbox'));
+const CinematicToolbox = lazy(() => import('./pages/CinematicToolbox'));
 const IndustryChains = lazy(() => import('./pages/IndustryChains'));
 const IndustryFlow = lazy(() => import('./pages/IndustryFlow'));
 
@@ -103,7 +104,7 @@ function CurtainOverlay() {
 function Layout() {
   const location = useLocation();
   const isDashboardHome = location.pathname === '/';
-  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest' || location.pathname === '/system' || location.pathname === '/settings';
+  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools';
 
   // ---- Offline detection ----
   const [isOnline, setIsOnline] = useState(true);
@@ -319,11 +320,12 @@ export default function App() {
           <Route path="study" element={<Study />} />
           <Route path="study/:id" element={<StudyDetail />} />
           <Route path="study-mistakes" element={<StudyMistakes />} />
-          <Route path="toolbox" element={<Toolbox />} />
+          <Route path="toolbox" element={<CinematicToolbox />} />
+          <Route path="toolbox-old" element={<Toolbox />} />
           <Route path="industry-chains" element={<IndustryChains />} />
           <Route path="industry-flow" element={<IndustryFlow />} />
           <Route path="chains" element={<IndustryChains />} />
-          <Route path="tools" element={<Toolbox />} />
+          <Route path="tools" element={<CinematicToolbox />} />
         </Route>
       </Routes>
     </EventCacheProvider>

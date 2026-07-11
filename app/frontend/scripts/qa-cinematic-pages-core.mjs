@@ -37,6 +37,15 @@ const pages = [
     expectedCanvasCount: 2,
     virtualTimeBudgetMs: 14000,
   },
+  {
+    key: 'toolbox',
+    path: '/#/toolbox',
+    markers: ['cinematic-ingest-shell', '贷款利率换算器', 'toolbox-detail-reader', 'toolbox-result-box'],
+    maxScreenshotMs: 8000,
+    maxDomDumpMs: 5500,
+    expectedCanvasCount: 2,
+    virtualTimeBudgetMs: 14000,
+  },
 ];
 
 function pageUrl(baseUrl, path) {
