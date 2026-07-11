@@ -1086,10 +1086,6 @@
 
 .cinematic-ingest .ingest-detail-reader {
   position: absolute !important;
-  left: calc(var(--beam-center-x) + var(--detail-reader-gutter) - var(--detail-reader-pull)) !important;
-  right: var(--template-detail-right, max(var(--stage-pad-x), var(--media-edge-x))) !important;
-  top: var(--template-detail-top, 60px) !important;
-  bottom: calc(var(--media-h) + var(--template-detail-bottom-gap, clamp(28px, 4vh, 52px))) !important;
   z-index: 17 !important;
   width: auto !important;
   min-width: 0 !important;
@@ -1537,27 +1533,6 @@
     white-space: nowrap !important;
   }
 
-  .cinematic-ingest:not(.cinematic-system) .ingest-laser-stage {
-    --beam-center-x: var(--template-beam-x-compact, 44.2%) !important;
-    --detail-reader-pull: var(--template-detail-pull-compact, clamp(160px, 11.1vw, 190px)) !important;
-  }
-
-  .cinematic-ingest:not(.cinematic-system) .ingest-index-strip {
-    left: var(--template-compact-list-left, calc(clamp(230px, 18vw, 330px) + var(--ingest-list-shift, clamp(10px, 1.2vw, 24px)))) !important;
-    width: var(--template-compact-list-w, clamp(350px, 20vw, 405px)) !important;
-    padding-right: var(--template-compact-list-pad-right, clamp(64px, 4vw, 82px)) !important;
-    transform: scale(var(--compact-module-scale)) !important;
-    transform-origin: right center !important;
-  }
-
-  .cinematic-ingest:not(.cinematic-system) .ingest-search-dock {
-    left: var(--template-search-x, clamp(40px, 3.4vw, 58px)) !important;
-    bottom: var(--template-search-bottom, clamp(388px, 43vh, 444px)) !important;
-    width: var(--template-search-w, clamp(150px, 10vw, 190px)) !important;
-    transform: scale(var(--compact-module-scale)) !important;
-    transform-origin: left bottom !important;
-  }
-
   .cinematic-ingest:not(.cinematic-system) .ingest-index-item {
     width: min(100%, 286px) !important;
   }
@@ -1566,15 +1541,6 @@
     width: min(258px, calc(100% - 24px)) !important;
   }
 
-  .cinematic-ingest .ingest-detail-reader {
-    bottom: var(--template-detail-bottom-compact, calc(var(--media-h) + var(--template-detail-bottom-gap-compact, clamp(14px, 2vh, 26px)))) !important;
-  }
-
-  .cinematic-ingest:not(.cinematic-system) .ingest-detail-reader {
-    right: 5px !important;
-    transform: scale(var(--compact-module-scale)) !important;
-    transform-origin: right top !important;
-  }
 }
 
 /* Unified Douyin/file access bay: mirrors the bottom media box language. */
@@ -2160,26 +2126,4 @@
 .delete-confirm-actions button.is-danger svg {
   color: rgba(251, 113, 133, 0.98);
   filter: drop-shadow(0 0 8px rgba(251, 113, 133, 0.38));
-}
-
-@media (max-width: 1366px) and (max-height: 1100px) {
-  .cinematic-ingest.cinematic-dashboard .cinematic-work-index {
-    left: var(--template-left-nav-x, clamp(24px, 3vw, 44px)) !important;
-    bottom: clamp(14px, 2.4vh, 24px) !important;
-    width: 760px !important;
-    min-height: 330px !important;
-    opacity: 1 !important;
-    animation: none !important;
-    transform: scale(var(--template-left-nav-scale, 0.52)) !important;
-    transform-origin: left bottom !important;
-  }
-
-  .cinematic-ingest.cinematic-dashboard .ingest-index-strip {
-    top: var(--template-stage-list-top, clamp(144px, 21vh, 220px)) !important;
-    height: var(--template-stage-list-h, clamp(300px, 36vh, 390px)) !important;
-  }
-
-  .cinematic-ingest.cinematic-dashboard .ingest-search-dock {
-    bottom: var(--template-search-bottom, clamp(252px, 33vh, 340px)) !important;
-  }
 }

@@ -125,12 +125,7 @@
 }
 
 .cinematic-system .system-index-strip {
-  left: var(--template-stage-list-left, calc(clamp(300px, 23vw, 410px) + var(--ingest-list-shift, clamp(28px, 3vw, 64px)))) !important;
-  top: var(--template-stage-list-top, clamp(138px, 18vh, 196px)) !important;
-  width: var(--template-stage-list-w, clamp(430px, 24vw, 520px)) !important;
-  height: var(--template-stage-list-h, clamp(543px, 52vh, 665px)) !important;
   padding-left: 0 !important;
-  padding-right: var(--template-stage-list-pad-right, clamp(92px, 5.4vw, 116px)) !important;
   pointer-events: auto !important;
   perspective: 920px !important;
   perspective-origin: 100% 48% !important;
