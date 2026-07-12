@@ -213,6 +213,7 @@ export default function StudyDetail({ embedded = false, materialId, onMaterialCh
   const [deleting, setDeleting] = useState(false);
   const [expandedLessons, setExpandedLessons] = useState<Set<number>>(new Set());
   const [expandedUnits, setExpandedUnits] = useState<Set<number>>(new Set());
+  const [previewUrl, setPreviewUrl] = useState('');
 
   const loadMaterial = async () => {
     if (!id) return;
@@ -270,6 +271,29 @@ export default function StudyDetail({ embedded = false, materialId, onMaterialCh
     return paths[key] ? `/api/study/${id}/file/${format}` : '';
   };
 
+  useEffect(() => {
+    if (!id || !format || !['html', 'pdf', 'original'].includes(format)) {
+      setPreviewUrl('');
+      return;
+    }
+    const path = getFormatUrl();
+    if (!path) { setPreviewUrl(''); return; }
+    let active = true;
+    let objectUrl = '';
+    apiFetch(path)
+      .then((response) => {
+        if (!response.ok) throw new Error('预览加载失败');
+        return response.blob();
+      })
+      .then((blob) => {
+        if (!active) return;
+        objectUrl = URL.createObjectURL(blob);
+        setPreviewUrl(objectUrl);
+      })
+      .catch(() => { if (active) setPreviewUrl(''); });
+    return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [id, format, material]);
+
   const isReady = material?.status === 'ready' || material?.status === 'reviewed';
   const isTextbook = material?.study_type === '教材/课本';
   const hasOriginal = isTextbook && material?.source_type === 'pdf';
@@ -298,7 +322,7 @@ export default function StudyDetail({ embedded = false, materialId, onMaterialCh
   );
 
   return (
-    <div className={`${embedded ? 'study-detail-legacy-embedded' : 'flex-1 bg-[#0B0C10]'} text-white flex flex-col h-full overflow-hidden`}>
+    <div className={`${embedded ? 'study-detail-legacy-embedded is-ready' : 'flex-1 bg-[#0B0C10]'} text-white flex flex-col h-full overflow-hidden`}>
       <div className="shrink-0 sticky top-0 z-10 bg-[#0B0C10] px-4 md:px-8 pt-4 md:pt-8">
         <div className="max-w-[1080px] mx-auto">
           <button onClick={() => navigate(embedded ? '/study' : '/study-old')} className="study-detail-back flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 mb-3 transition-colors">
@@ -482,7 +506,7 @@ export default function StudyDetail({ embedded = false, materialId, onMaterialCh
               )}
               {(format === 'html' || format === 'pdf' || format === 'original') && (
                 <div className="bg-[#141518] border border-[#2A2B30] rounded-xl overflow-hidden" style={{ height: 'calc(100vh - 220px)' }}>
-                  <iframe src={getFormatUrl()} className="w-full h-full border-0" title={`${format} Preview`} sandbox="allow-same-origin" />
+                  {previewUrl ? <iframe src={previewUrl} className="w-full h-full border-0" title={`${format} Preview`} sandbox="allow-same-origin" /> : <div className="grid h-full place-items-center text-xs text-gray-500"><Loader2 size={18} className="animate-spin" /></div>}
                 </div>
               )}
             </>

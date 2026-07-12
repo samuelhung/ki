@@ -58,7 +58,7 @@ const pages = [
   {
     key: 'study',
     path: '/#/study',
-    markers: ['cinematic-ingest-shell', '学习中枢', 'study-detail-legacy-embedded', 'study-core-box'],
+    markers: ['cinematic-ingest-shell', '学习中枢', 'study-detail-legacy-embedded is-ready', 'study-core-box'],
     maxScreenshotMs: 8000,
     maxDomDumpMs: 5500,
     expectedCanvasCount: 2,
