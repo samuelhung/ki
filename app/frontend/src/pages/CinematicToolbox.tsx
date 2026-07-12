@@ -8,13 +8,13 @@ import { useCinematicTemplateLayout } from '../components/cinematic/useCinematic
 import { useLaserRenderProfile } from '../components/cinematic-ingest/useLaserRenderProfile';
 import {
   calcAnnuity,
+  calcComparison,
   calcFlatForward,
   calcFlatReverse,
   flatSummary,
   formatLi,
   formatMoney,
   formatPercent,
-  irrAnnual,
   pickScheduleRows,
   type FlatMode,
   type LoanType,
@@ -69,16 +69,7 @@ export default function CinematicToolbox() {
     const flat = Number.parseFloat(compareFlatRate);
     const annual = Number.parseFloat(compareAnnualRate);
     if (!(flat > 0) || !(annual > 0)) return null;
-    const flatMonthly = principalValue / periods + principalValue * flat / 100;
-    const annuity = calcAnnuity(principalValue, periods, annual);
-    return {
-      flatMonthly,
-      annuityMonthly: annuity.result.monthlyPayment,
-      flatInterest: principalValue * flat / 100 * periods,
-      annuityInterest: annuity.result.totalInterest,
-      flatIrr: irrAnnual(principalValue, flatMonthly, periods),
-      annual,
-    };
+    return calcComparison(principalValue, periods, flat, annual);
   }, [compareAnnualRate, compareFlatRate, loanType, periods, principalValue]);
 
   const reset = () => {
@@ -89,7 +80,7 @@ export default function CinematicToolbox() {
   const coreBoxHeight = Math.min(Math.max(viewportHeight * 0.158, 126), 178);
   const beamVerticalOffset = (coreBoxHeight - 6) / Math.max(viewportHeight, 1) - 0.5;
   const primaryResult = flatResult?.monthlyPayment || annuityData?.result.monthlyPayment || compareData?.flatMonthly || 0;
-  const totalInterest = flatResult?.totalInterest || annuityData?.result.totalInterest || compareData?.flatInterest || 0;
+  const totalInterest = flatResult?.totalInterest || annuityData?.result.totalInterest || compareData?.flatTotalInterest || 0;
 
   const status = (
     <section className="ingest-observation cinematic-observation toolbox-status" aria-label="工具状态">
@@ -148,8 +139,8 @@ function ToolDetail(props: any) {
           {props.loanType === 'compare' && <><Field label="等本等息月分期率（%）" value={props.compareFlatRate} onChange={props.setCompareFlatRate} /><Field label="等额本息年化率（%）" value={props.compareAnnualRate} onChange={props.setCompareAnnualRate} /></>}
         </div>
         {props.flatResult && <div className="toolbox-results"><Result label="月供" value={`${formatMoney(props.flatResult.monthlyPayment)} 元`} /><Result label="总利息" value={`${formatMoney(props.flatResult.totalInterest)} 元`} /><Result label="名义年化" value={formatPercent(props.flatResult.nominalAnnualRate)} /><Result label="真实年化" value={formatPercent(props.flatResult.realAnnualRate)} tone="danger" /><Result label="名义月息" value={formatLi(props.flatResult.nominalMonthlyLi)} /><Result label="真实月息" value={formatLi(props.flatResult.realMonthlyLi)} tone="danger" /><p>{flatSummary(props.flatResult)}</p></div>}
-        {props.annuityData && <><div className="toolbox-results"><Result label="月供" value={`${formatMoney(props.annuityData.result.monthlyPayment)} 元`} /><Result label="还款总额" value={`${formatMoney(props.annuityData.result.totalPayment)} 元`} /><Result label="总利息" value={`${formatMoney(props.annuityData.result.totalInterest)} 元`} /><Result label="利息占比" value={formatPercent(props.annuityData.result.interestRatio)} /></div><button className="toolbox-schedule-toggle" onClick={() => props.setShowSchedule(!props.showSchedule)}><Table size={14} />还款计划明细</button>{props.showSchedule && <div className="toolbox-schedule">{pickScheduleRows(props.annuityData.schedule).map((row: any) => <span key={row.period}><b>{row.period}</b><em>{formatMoney(row.payment)}</em><small>{formatMoney(row.balance)}</small></span>)}</div>}</>}
-        {props.compareData && <div className="toolbox-compare"><Result label="等本等息月供" value={`${formatMoney(props.compareData.flatMonthly)} 元`} tone="danger" /><Result label="等额本息月供" value={`${formatMoney(props.compareData.annuityMonthly)} 元`} /><Result label="等本等息总利息" value={`${formatMoney(props.compareData.flatInterest)} 元`} tone="danger" /><Result label="等额本息总利息" value={`${formatMoney(props.compareData.annuityInterest)} 元`} /><Result label="等本等息真实年化" value={formatPercent(props.compareData.flatIrr)} tone="danger" /><Result label="等额本息年化" value={formatPercent(props.compareData.annual)} /></div>}
+        {props.annuityData && <><div className="toolbox-results"><Result label="月供" value={`${formatMoney(props.annuityData.result.monthlyPayment)} 元`} /><Result label="还款总额" value={`${formatMoney(props.annuityData.result.totalPayment)} 元`} /><Result label="总利息" value={`${formatMoney(props.annuityData.result.totalInterest)} 元`} /><Result label="利息占比" value={formatPercent(props.annuityData.result.interestRatio)} /></div><button className="toolbox-schedule-toggle" onClick={() => props.setShowSchedule(!props.showSchedule)}><Table size={14} />还款计划明细</button>{props.showSchedule && <div className="toolbox-schedule-wrap"><div className="toolbox-schedule-head"><span>期数</span><span>当期月供</span><span>剩余本金</span></div><div className="toolbox-schedule">{pickScheduleRows(props.annuityData.schedule).map((row: any) => <span key={row.period}><b>第 {row.period} 期</b><em>{formatMoney(row.payment)}</em><small>{formatMoney(row.balance)}</small></span>)}</div></div>}</>}
+        {props.compareData && <><div className="toolbox-compare"><Result label="等本等息月供" value={`${formatMoney(props.compareData.flatMonthly)} 元`} tone="danger" /><Result label="等额本息月供" value={`${formatMoney(props.compareData.annuityMonthly)} 元`} /><Result label="等本等息总利息" value={`${formatMoney(props.compareData.flatTotalInterest)} 元`} tone="danger" /><Result label="等额本息总利息" value={`${formatMoney(props.compareData.annuityTotalInterest)} 元`} /><Result label="等本等息真实年化" value={formatPercent(props.compareData.flatIrr)} tone="danger" /><Result label="等额本息年化" value={formatPercent(props.compareData.annualRate)} /></div><section className="toolbox-comparison-path"><header><span>持有节点</span><span>等本等息总成本</span><span>等额本息总成本</span><span>成本差</span></header>{props.compareData.rows.map((row: any) => <div key={row.month} className={row.winner === 'annuity' ? 'is-annuity' : row.winner === 'flat' ? 'is-flat' : ''}><b>{row.month} 期</b><span>{formatMoney(row.flatTotal)}</span><span>{formatMoney(row.annuityTotal)}</span><em>{row.diff > 0 ? '+' : ''}{formatMoney(row.diff)}</em></div>)}</section><p className="toolbox-recommendation"><ArrowRightLeft size={14} /><span>{props.compareData.recommendation}{props.compareData.tipping ? ` 成本拐点约在第 ${props.compareData.tipping.month} 期。` : ''}</span></p></>}
       </div></div>
     </section>
   );

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   calcAnnuity,
+  calcComparison,
   calcFlatForward,
   calcFlatReverse,
   pickScheduleRows,
@@ -13,6 +14,21 @@ test('flat forward calculation preserves principal interest and effective rate',
   assert.equal(result.monthlyInterest.toFixed(2), '200.00');
   assert.equal(result.totalInterest.toFixed(2), '12000.00');
   assert.ok(result.realAnnualRate > result.nominalAnnualRate);
+});
+
+test('comparison calculates checkpoint ownership cost and tipping point', () => {
+  const data = calcComparison(100000, 60, 0.18, 3);
+  assert.equal(data.rows.map((row) => row.month).join(','), '12,24,36,48,60');
+  assert.ok(data.rows.every((row) => Number.isFinite(row.diff)));
+  assert.equal(data.tipping?.month, data.rows.find((row) => row.diff >= 0)?.month);
+  assert.equal(data.recommendation.includes('总利息'), true);
+});
+
+test('zero-rate annuity returns principal-only payments', () => {
+  const data = calcAnnuity(120000, 60, 0);
+  assert.equal(data.result.monthlyPayment, 2000);
+  assert.equal(data.result.totalInterest, 0);
+  assert.equal(data.schedule.at(-1).balance, 0);
 });
 
 test('flat reverse calculation derives the original monthly rate', () => {

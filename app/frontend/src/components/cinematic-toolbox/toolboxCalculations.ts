@@ -29,6 +29,14 @@ export interface RepaymentRow {
   balance: number;
 }
 
+export interface ComparisonRow {
+  month: number;
+  flatTotal: number;
+  annuityTotal: number;
+  diff: number;
+  winner: 'flat' | 'annuity' | 'tie';
+}
+
 export function calcFlatForward(principal: number, periods: number, flatMonthlyRate: number): FlatResult {
   const monthlyPrincipal = principal / periods;
   const monthlyInterest = principal * (flatMonthlyRate / 100);
@@ -95,6 +103,19 @@ export function irrAnnual(principal: number, monthlyPayment: number, periods: nu
 
 export function calcAnnuity(principal: number, periods: number, annualRate: number): { result: AnnuityResult; schedule: RepaymentRow[] } {
   const monthlyRate = annualRate / 100 / 12;
+  if (monthlyRate === 0) {
+    const monthlyPayment = principal / periods;
+    return {
+      result: { monthlyPayment, totalPayment: principal, totalInterest: 0, interestRatio: 0 },
+      schedule: Array.from({ length: periods }, (_, index) => ({
+        period: index + 1,
+        payment: monthlyPayment,
+        principal: monthlyPayment,
+        interest: 0,
+        balance: Math.max(principal - monthlyPayment * (index + 1), 0),
+      })),
+    };
+  }
   const monthlyPayment = principal * monthlyRate * Math.pow(1 + monthlyRate, periods) / (Math.pow(1 + monthlyRate, periods) - 1);
   const totalPayment = monthlyPayment * periods;
   const totalInterest = totalPayment - principal;
@@ -109,6 +130,42 @@ export function calcAnnuity(principal: number, periods: number, annualRate: numb
   return {
     result: { monthlyPayment, totalPayment, totalInterest, interestRatio: (totalInterest / totalPayment) * 100 },
     schedule,
+  };
+}
+
+export function calcComparison(principal: number, periods: number, flatMonthlyRate: number, annualRate: number) {
+  const flatMonthly = principal / periods + principal * flatMonthlyRate / 100;
+  const flatPrincipal = principal / periods;
+  const flatInterest = principal * flatMonthlyRate / 100;
+  const flatTotalInterest = flatInterest * periods;
+  const flatIrr = irrAnnual(principal, flatMonthly, periods);
+  const annuity = calcAnnuity(principal, periods, annualRate);
+  const checkpoints = [12, 24, 36, 48, 60].filter((month) => month <= periods);
+  if (!checkpoints.includes(periods)) checkpoints.push(periods);
+  const rows: ComparisonRow[] = [...new Set(checkpoints)].map((month) => {
+    const flatTotal = month * flatMonthly + Math.max(principal - month * flatPrincipal, 0);
+    const annuityRow = annuity.schedule[month - 1];
+    const annuityTotal = month * annuity.result.monthlyPayment + (annuityRow?.balance || 0);
+    const diff = flatTotal - annuityTotal;
+    return { month, flatTotal, annuityTotal, diff, winner: diff < 0 ? 'flat' : diff > 0 ? 'annuity' : 'tie' };
+  });
+  const tipping = rows.find((row) => row.diff >= 0);
+  const saving = Math.abs(flatTotalInterest - annuity.result.totalInterest);
+  const recommendation = flatTotalInterest > annuity.result.totalInterest
+    ? `等额本息总利息少 ${formatMoney(saving)} 元，长期持有成本更低。`
+    : `等本等息总利息少 ${formatMoney(saving)} 元，需同时核对真实年化。`;
+  return {
+    flatMonthly,
+    flatPrincipal,
+    flatInterest,
+    flatTotalInterest,
+    flatIrr,
+    annuityMonthly: annuity.result.monthlyPayment,
+    annuityTotalInterest: annuity.result.totalInterest,
+    annualRate,
+    rows,
+    tipping,
+    recommendation,
   };
 }
 
