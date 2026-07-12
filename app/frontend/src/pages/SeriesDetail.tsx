@@ -130,8 +130,9 @@ function summaryToHtml(md: string, mode?: 'summary' | 'paper'): string {
   return sanitizeHtml(html);
 }
 
-export default function SeriesDetail({ embedded = false }: { embedded?: boolean }) {
-  const { id } = useParams<{ id: string }>();
+export default function SeriesDetail({ embedded = false, seriesId }: { embedded?: boolean; seriesId?: string }) {
+  const { id: routeId } = useParams<{ id: string }>();
+  const id = seriesId || routeId;
   const navigate = useNavigate();
   const [series, setSeries] = useState<SeriesDetailData | null>(null);
   const [loading, setLoading] = useState(true);
