@@ -49,7 +49,7 @@ const pages = [
   {
     key: 'series',
     path: '/#/series',
-    markers: ['cinematic-ingest-shell', '专题工作台', 'series-detail-reader', 'series-core-box'],
+    markers: ['cinematic-ingest-shell', '专题工作台', 'series-detail-legacy-content', 'series-core-box'],
     maxScreenshotMs: 8000,
     maxDomDumpMs: 5500,
     expectedCanvasCount: 2,
