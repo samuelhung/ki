@@ -24,3 +24,54 @@ export function removeStudyItem(items, removedId) {
   const nextIndex = Math.min(Math.max(index, 0), nextItems.length - 1);
   return { items: nextItems, selectedId: nextItems[nextIndex]?.id || '' };
 }
+
+export function buildStudyCreatePayload(form = {}) {
+  return {
+    subject: form.subject || '语文',
+    study_type: form.category === '单项训练' ? (form.type || '') : (form.category || ''),
+    title: (form.title || '').trim() || '未命名',
+    raw_content: (form.raw_content || '').trim(),
+    grade: form.grade || '',
+    textbook: form.textbook || '',
+  };
+}
+
+export function buildStudyUploadFields(form = {}) {
+  return {
+    category: form.category || '单项训练',
+    subject: form.subject || '语文',
+    study_type: form.type || '',
+    grade: form.grade || '',
+    title: (form.title || '').trim(),
+  };
+}
+
+export function mergeStudyReview(material, result = {}) {
+  return {
+    ...material,
+    ...result,
+    status: 'reviewed',
+    is_correct: result.is_correct ?? material?.is_correct ?? 0,
+    mistake_tags: Array.isArray(result.mistake_tags) ? result.mistake_tags : (material?.mistake_tags || []),
+  };
+}
+
+export function createStudyDetailCache(limit = 12) {
+  const entries = new Map();
+  return {
+    get(id) {
+      const value = entries.get(id);
+      if (value === undefined) return undefined;
+      entries.delete(id);
+      entries.set(id, value);
+      return value;
+    },
+    set(id, value) {
+      entries.delete(id);
+      entries.set(id, value);
+      while (entries.size > limit) entries.delete(entries.keys().next().value);
+    },
+    delete(id) { entries.delete(id); },
+    clear() { entries.clear(); },
+  };
+}

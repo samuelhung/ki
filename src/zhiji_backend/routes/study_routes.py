@@ -48,6 +48,15 @@ class MistakeReviewRequest(BaseModel):
     child_answer: str
 
 
+def _normalize_review_result(result) -> dict:
+    data = dict(result) if isinstance(result, dict) else {"review_content": str(result or "")}
+    data["status"] = "reviewed"
+    data["is_correct"] = int(data.get("is_correct", 0))
+    if not isinstance(data.get("mistake_tags"), list):
+        data["mistake_tags"] = []
+    return data
+
+
 # ── 列表 ──
 
 @router.get("/list")
@@ -321,12 +330,20 @@ def review_mistake(material_id: str, req: MistakeReviewRequest):
 
     try:
         from ..study.pipeline import generate_mistake_review
-        result = generate_mistake_review(
+        result = _normalize_review_result(generate_mistake_review(
             material_id=material_id,
             raw_content=row["raw_content"],
             correct_answer=req.correct_answer,
             child_answer=req.child_answer,
-        )
+        ))
+        with connect() as conn:
+            conn.execute(
+                """UPDATE study_materials
+                   SET status = 'reviewed', is_correct = ?, score = COALESCE(?, score),
+                       mistake_tags = ?, updated_at = datetime('now')
+                   WHERE id = ?""",
+                (result["is_correct"], result.get("score"), json.dumps(result["mistake_tags"], ensure_ascii=False), material_id),
+            )
         return result
     except Exception as e:
         logger.exception("错题复盘失败: %s", material_id)

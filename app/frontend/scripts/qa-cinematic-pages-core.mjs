@@ -66,6 +66,14 @@ const pages = [
   },
 ];
 
+export function selectCinematicPages(pageKeys) {
+  if (!pageKeys?.length) return pages;
+  const requested = new Set(pageKeys);
+  const unknown = [...requested].filter((key) => !pages.some((page) => page.key === key));
+  if (unknown.length) throw new Error(`Unknown cinematic page key: ${unknown.join(', ')}`);
+  return pages.filter((page) => requested.has(page.key));
+}
+
 function pageUrl(baseUrl, path) {
   return new URL(path, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).toString();
 }
@@ -317,6 +325,7 @@ export async function runCinematicPagesQa({
   enforcePerformance = false,
   enforceScreenshotPerformance = enforcePerformance,
   viewport = defaultViewport,
+  pageKeys,
 } = {}) {
   const resolvedOutDir = resolve(outDir);
   mkdirSync(resolvedOutDir, { recursive: true });
@@ -350,7 +359,7 @@ export async function runCinematicPagesQa({
     await cdp.send('Page.enable');
     await cdp.send('Runtime.enable');
 
-    for (const page of pages) {
+    for (const page of selectCinematicPages(pageKeys)) {
       const url = pageUrl(baseUrl, page.path);
       const viewportLabel = `${viewport.width}x${viewport.height}`;
       const screenshotPath = resolve(resolvedOutDir, `${page.key}-${viewportLabel}.png`);

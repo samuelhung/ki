@@ -6,4 +6,5 @@ await runCinematicPagesQa({
   mode: 'compact-render',
   enforcePerformance: false,
   viewport: { width: 1440, height: 900 },
+  pageKeys: process.argv[4]?.split(',').filter(Boolean),
 });

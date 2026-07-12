@@ -6,4 +6,5 @@ await runCinematicPagesQa({
   mode: 'performance',
   enforcePerformance: true,
   enforceScreenshotPerformance: false,
+  pageKeys: process.argv[4]?.split(',').filter(Boolean),
 });

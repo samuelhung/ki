@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, BookOpen, ChevronDown, ChevronRight, FileCode2, FileType2, Globe, Layers, Loader2, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
+import { ArrowLeft, BookOpen, CheckCircle2, ChevronDown, ChevronRight, FileCode2, FileType2, Globe, Layers, Loader2, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
 import { formatTimeBeijing } from '../utils';
 import { escapeHtml, sanitizeHtml } from '../safeHtml';
 import { apiFetch } from '../api';
@@ -73,6 +73,7 @@ export interface StudyMaterial {
   formats_json: Record<string, string>; lessons_json: TextbookLesson[];
   status: string; score: number | null; is_correct: number | null;
   mistake_tags: string[]; created_at: string; updated_at: string;
+  review_content?: string;
 }
 
 /* ── constants ── */
@@ -198,14 +199,15 @@ interface StudyDetailProps {
   materialId?: string;
   onMaterialChange?: (material: StudyMaterial) => void;
   onDeleted?: (materialId: string) => void;
+  initialMaterial?: StudyMaterial;
 }
 
-export default function StudyDetail({ embedded = false, materialId, onMaterialChange, onDeleted }: StudyDetailProps) {
+export default function StudyDetail({ embedded = false, materialId, onMaterialChange, onDeleted, initialMaterial }: StudyDetailProps) {
   const { id: routeId } = useParams<{ id: string }>();
   const id = materialId || routeId;
   const navigate = useNavigate();
-  const [material, setMaterial] = useState<StudyMaterial | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [material, setMaterial] = useState<StudyMaterial | null>(initialMaterial || null);
+  const [loading, setLoading] = useState(!initialMaterial);
   const [error, setError] = useState('');
   const [version, setVersion] = useState<VersionTab>('parent');
   const [format, setFormat] = useState<FormatTab | null>(null);
@@ -214,9 +216,17 @@ export default function StudyDetail({ embedded = false, materialId, onMaterialCh
   const [expandedLessons, setExpandedLessons] = useState<Set<number>>(new Set());
   const [expandedUnits, setExpandedUnits] = useState<Set<number>>(new Set());
   const [previewUrl, setPreviewUrl] = useState('');
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewForm, setReviewForm] = useState({ child_answer: '', correct_answer: '' });
 
   const loadMaterial = async () => {
     if (!id) return;
+    if (initialMaterial?.id === id) {
+      setMaterial(initialMaterial);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const r = await apiFetch(`/api/study/${id}`);
@@ -259,6 +269,21 @@ export default function StudyDetail({ embedded = false, materialId, onMaterialCh
       if (embedded) onDeleted?.(id);
       else navigate('/study-old');
     } catch (e: any) { setError(e.message || '删除失败'); setDeleting(false); }
+  };
+
+  const handleReview = async () => {
+    if (!id || !reviewForm.child_answer.trim() || !reviewForm.correct_answer.trim()) return;
+    setReviewing(true); setError('');
+    try {
+      const response = await apiFetch(`/api/study/${id}/review`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(reviewForm),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || '复盘生成失败');
+      const next = { ...material, ...result, status: 'reviewed', is_correct: result.is_correct ?? 0 } as StudyMaterial;
+      setMaterial(next); onMaterialChange?.(next); setReviewOpen(false);
+    } catch (reason: any) { setError(reason.message || '复盘生成失败'); }
+    finally { setReviewing(false); }
   };
 
   const toggleLesson = (n: number) => setExpandedLessons(p => { const s = new Set(p); s.has(n) ? s.delete(n) : s.add(n); return s; });
@@ -377,6 +402,16 @@ export default function StudyDetail({ embedded = false, materialId, onMaterialCh
                 ))}
               </div>
             </div>
+          )}
+
+          {!isTextbook && (
+            <section className="study-review-strip">
+              <button onClick={() => setReviewOpen((value) => !value)} className="study-review-trigger">
+                <CheckCircle2 size={14} /><span>{material.status === 'reviewed' ? '更新错题复盘' : '错题复盘'}</span>
+                {material.mistake_tags?.slice(0, 3).map((tag) => <em key={tag}>{tag}</em>)}
+              </button>
+              {reviewOpen && <div className="study-review-form"><label><span>孩子答案</span><textarea value={reviewForm.child_answer} onChange={(event) => setReviewForm({ ...reviewForm, child_answer: event.target.value })} /></label><label><span>正确答案</span><textarea value={reviewForm.correct_answer} onChange={(event) => setReviewForm({ ...reviewForm, correct_answer: event.target.value })} /></label><button onClick={handleReview} disabled={reviewing || !reviewForm.child_answer.trim() || !reviewForm.correct_answer.trim()}>{reviewing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}生成复盘</button></div>}
+            </section>
           )}
 
           {/* Format tabs */}

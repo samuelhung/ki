@@ -5,4 +5,5 @@ await runCinematicPagesQa({
   outDir: process.argv[3] || 'tmp/cinematic-pages-qa',
   mode: 'render',
   enforcePerformance: false,
+  pageKeys: process.argv[4]?.split(',').filter(Boolean),
 });
