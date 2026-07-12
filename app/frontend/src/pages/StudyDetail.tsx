@@ -505,8 +505,8 @@ export default function StudyDetail({ embedded = false, materialId, onMaterialCh
                 <div className="bg-[#141518] border border-[#2A2B30] rounded-xl p-6" dangerouslySetInnerHTML={{ __html: mdToHtml(mdSource || '加载中...') }} />
               )}
               {(format === 'html' || format === 'pdf' || format === 'original') && (
-                <div className="bg-[#141518] border border-[#2A2B30] rounded-xl overflow-hidden" style={{ height: 'calc(100vh - 220px)' }}>
-                  {previewUrl ? <iframe src={previewUrl} className="w-full h-full border-0" title={`${format} Preview`} sandbox="allow-same-origin" /> : <div className="grid h-full place-items-center text-xs text-gray-500"><Loader2 size={18} className="animate-spin" /></div>}
+                <div className="study-preview-frame bg-[#141518] border border-[#2A2B30] rounded-xl overflow-hidden" style={{ height: 'calc(100vh - 220px)' }}>
+                  {previewUrl ? <iframe src={previewUrl} className="w-full h-full border-0" title={`${format} Preview`} sandbox={format === 'html' ? 'allow-same-origin' : undefined} /> : <div className="grid h-full place-items-center text-xs text-gray-500"><Loader2 size={18} className="animate-spin" /></div>}
                 </div>
               )}
             </>

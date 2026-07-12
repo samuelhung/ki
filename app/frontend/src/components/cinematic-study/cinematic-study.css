@@ -20,6 +20,7 @@
 .study-detail-legacy-embedded .border.border-\[\#2A2B30\] { border-width: 0 0 1px !important; border-color: rgba(255,255,255,.07) !important; }
 .study-detail-legacy-embedded button[class*="rounded-lg"] { border-width: 0 0 1px; border-radius: 0; background: transparent; padding-inline: 4px; }
 .study-detail-legacy-embedded [dangerouslysetinnerhtml] { max-width: 860px; }
+.study-detail-legacy-embedded .study-preview-frame { height: clamp(280px,calc(100vh - var(--media-h) - 300px),620px) !important; max-width: 900px; }
 .study-core-box { display: grid; grid-template-columns: 180px minmax(260px,1fr) minmax(320px,.8fr); align-items: center; padding: 20px 34px; }
 .study-core-box > span { color: rgba(255,255,255,.34); font: 10px ui-monospace,monospace; }
 .study-core-box > b { overflow: hidden; color: #fff; font-size: 20px; text-overflow: ellipsis; white-space: nowrap; }
