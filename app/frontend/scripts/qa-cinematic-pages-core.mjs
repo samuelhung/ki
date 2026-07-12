@@ -91,6 +91,15 @@ const pages = [
     expectedCanvasCount: 2,
     virtualTimeBudgetMs: 16000,
   },
+  {
+    key: 'library',
+    path: '/#/events',
+    markers: ['cinematic-ingest-shell', '万象资料', 'ingest-detail-reader', 'library-core-box'],
+    maxScreenshotMs: 9000,
+    maxDomDumpMs: 6500,
+    expectedCanvasCount: 2,
+    virtualTimeBudgetMs: 16000,
+  },
 ];
 
 export function selectCinematicPages(pageKeys) {

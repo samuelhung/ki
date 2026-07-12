@@ -14,6 +14,7 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 const CinematicIngest = lazy(() => import('./pages/CinematicIngest'));
 const Events = lazy(() => import('./pages/Events'));
 const Sources = lazy(() => import('./pages/Sources'));
+const CinematicLibrary = lazy(() => import('./pages/CinematicLibrary'));
 const Brainstorm = lazy(() => import('./pages/Brainstorm'));
 const CinematicBrainstorm = lazy(() => import('./pages/CinematicBrainstorm'));
 const Tasks = lazy(() => import('./pages/Tasks'));
@@ -110,7 +111,7 @@ function CurtainOverlay() {
 function Layout() {
   const location = useLocation();
   const isDashboardHome = location.pathname === '/';
-  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series' || location.pathname.startsWith('/series/') || location.pathname === '/study' || location.pathname.startsWith('/study/') || location.pathname === '/study-mistakes' || location.pathname === '/industry-chains' || location.pathname === '/chains' || location.pathname === '/brainstorm' || location.pathname.startsWith('/brainstorm/') || location.pathname === '/tasks';
+  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest' || location.pathname === '/events' || location.pathname === '/sources' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series' || location.pathname.startsWith('/series/') || location.pathname === '/study' || location.pathname.startsWith('/study/') || location.pathname === '/study-mistakes' || location.pathname === '/industry-chains' || location.pathname === '/chains' || location.pathname === '/brainstorm' || location.pathname.startsWith('/brainstorm/') || location.pathname === '/tasks';
 
   // ---- Offline detection ----
   const [isOnline, setIsOnline] = useState(true);
@@ -310,8 +311,10 @@ export default function App() {
         <Route element={<Layout />}>
           <Route index element={<Dashboard />} />
           <Route path="ingest" element={<CinematicIngest />} />
-          <Route path="events" element={<Events />} />
-          <Route path="sources" element={<Sources />} />
+          <Route path="events" element={<CinematicLibrary />} />
+          <Route path="sources" element={<CinematicLibrary />} />
+          <Route path="events-old" element={<Events />} />
+          <Route path="sources-old" element={<Sources />} />
           <Route path="brainstorm" element={<CinematicBrainstorm />} />
           <Route path="brainstorm/:id" element={<CinematicBrainstorm />} />
           <Route path="brainstorm-old" element={<Brainstorm />} />
