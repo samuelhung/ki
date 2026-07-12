@@ -19,6 +19,7 @@ const Tasks = lazy(() => import('./pages/Tasks'));
 const Series = lazy(() => import('./pages/Series'));
 const CinematicSeries = lazy(() => import('./pages/CinematicSeries'));
 const SeriesDetail = lazy(() => import('./pages/SeriesDetail'));
+const CinematicSeriesDetail = lazy(() => import('./pages/CinematicSeriesDetail'));
 const EventDetailPage = lazy(() => import('./pages/EventDetailPage'));
 const BrainstormDetailPage = lazy(() => import('./pages/BrainstormDetailPage'));
 const CinematicSystemCenter = lazy(() => import('./pages/CinematicSystemCenter'));
@@ -105,7 +106,7 @@ function CurtainOverlay() {
 function Layout() {
   const location = useLocation();
   const isDashboardHome = location.pathname === '/';
-  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series';
+  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series' || location.pathname.startsWith('/series/');
 
   // ---- Offline detection ----
   const [isOnline, setIsOnline] = useState(true);
@@ -318,7 +319,8 @@ export default function App() {
           <Route path="tasks" element={<Tasks />} />
           <Route path="series" element={<CinematicSeries />} />
           <Route path="series-old" element={<Series />} />
-          <Route path="series/:id" element={<SeriesDetail />} />
+          <Route path="series-old/:id" element={<SeriesDetail />} />
+          <Route path="series/:id" element={<CinematicSeriesDetail />} />
           <Route path="study" element={<Study />} />
           <Route path="study/:id" element={<StudyDetail />} />
           <Route path="study-mistakes" element={<StudyMistakes />} />
