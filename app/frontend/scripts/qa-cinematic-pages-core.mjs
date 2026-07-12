@@ -64,6 +64,15 @@ const pages = [
     expectedCanvasCount: 2,
     virtualTimeBudgetMs: 14000,
   },
+  {
+    key: 'chains',
+    path: '/#/industry-chains',
+    markers: ['cinematic-ingest-shell', '产业链底座', 'chain-detail-embedded', 'chain-core-box'],
+    maxScreenshotMs: 9000,
+    maxDomDumpMs: 6000,
+    expectedCanvasCount: 2,
+    virtualTimeBudgetMs: 16000,
+  },
 ];
 
 export function selectCinematicPages(pageKeys) {

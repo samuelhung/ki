@@ -9,19 +9,19 @@ interface GlobalShare {
   d: number; d_import_global: number; d_import_ratio: number; d_import_national: number;
 }
 interface Substitute { node: string; maturity: string; trigger: string; advantage: string; bottleneck: string; }
-interface ChainNode {
+export interface ChainNode {
   id: string; chain: string; name: string; node_type: string; description: string;
   global_shares: GlobalShare[]; substitutes: Substitute[]; upstream_ids: string[];
   data_sources: Record<string, string>; sort_order: number; last_updated?: string;
 }
 
-interface ChainHint {
+export interface ChainHint {
   id: string; event_id: string; node_id: string; chain: string; field: string;
   current_value: string; suggested_value: string; source_quote: string;
   confidence: number; status: string; node_name: string;
 }
 
-interface ChainSuggestion {
+export interface ChainSuggestion {
   id: string; chain_name: string; event_id: string; nodes_json: any[];
   reason: string; source_quote: string; confidence: number; status: string;
   created_at: string;
@@ -246,7 +246,7 @@ function ShareGroupPanel({
 }
 
 // ── Edit Modal ──
-function EditModal({ node, allNodes, defaultChain, onClose, onSaved }: { node: ChainNode | null; allNodes: ChainNode[]; defaultChain?: string; onClose: () => void; onSaved: () => void }) {
+export function EditModal({ node, allNodes, defaultChain, onClose, onSaved }: { node: ChainNode | null; allNodes: ChainNode[]; defaultChain?: string; onClose: () => void; onSaved: () => void }) {
   const [tab, setTab] = useState('basic');
   const [saving, setSaving] = useState(false);
   const [aiText, setAiText] = useState('');
@@ -476,7 +476,7 @@ function EditModal({ node, allNodes, defaultChain, onClose, onSaved }: { node: C
 
 // ── Hints Review Modal ──
 
-function HintsReviewModal({ hints, onClose, onResolved }: { hints: ChainHint[]; onClose: () => void; onResolved: () => void }) {
+export function HintsReviewModal({ hints, onClose, onResolved }: { hints: ChainHint[]; onClose: () => void; onResolved: () => void }) {
   const [idx, setIdx] = useState(0);
   const [resolving, setResolving] = useState(false);
   const [editedValue, setEditedValue] = useState('');
@@ -586,17 +586,18 @@ function getTransitionLabel(prevType: string, nextType: string): string {
 
 // ── Chain Detail Modal ──
 
-function ChainDetailModal({ chainName, chainIcon, chainFlowSummary, nodes, allNodes, onClose, onCollectNode, onCollectChain, onEditNode, onSaved }: {
+export function ChainDetailModal({ chainName, chainIcon, chainFlowSummary, nodes, allNodes, onClose, onCollectNode, onCollectChain, onEditNode, onSaved, embedded = false }: {
   chainName: string;
   chainIcon?: string;
   chainFlowSummary?: string;
   nodes: ChainNode[];
   allNodes: ChainNode[];
-  onClose: () => void;
+  onClose?: () => void;
   onCollectNode: (id: string) => void;
   onCollectChain: (name: string) => void;
   onEditNode: (n: ChainNode) => void;
   onSaved: () => void;
+  embedded?: boolean;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [sourcesExpanded, setSourcesExpanded] = useState<Set<string>>(new Set());
@@ -701,8 +702,8 @@ function ChainDetailModal({ chainName, chainIcon, chainFlowSummary, nodes, allNo
   useEffect(() => { loadReport(false); }, [chainName]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
-      <div className="bg-[#141518] border border-[#2A2B30] rounded-xl w-full max-w-[1080px] max-h-[90vh] flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+    <div className={embedded ? 'chain-detail-embedded' : 'fixed inset-0 z-50 flex items-center justify-center bg-black/60'} onClick={embedded ? undefined : onClose}>
+      <div className={embedded ? 'chain-detail-embedded-shell' : 'bg-[#141518] border border-[#2A2B30] rounded-xl w-full max-w-[1080px] max-h-[90vh] flex flex-col shadow-2xl'} onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center gap-2.5 px-5 py-3 border-b border-[#2A2B30] shrink-0">
           {getChainIcon(chainName, chainIcon)}
@@ -715,7 +716,7 @@ function ChainDetailModal({ chainName, chainIcon, chainFlowSummary, nodes, allNo
           >
             {collectingChain ? <Loader2 size={10} className="animate-spin" /> : <Search size={10} />} 联网采集
           </button>
-          <button onClick={onClose} className="text-gray-500 hover:text-white ml-2"><X size={16} /></button>
+          {!embedded && <button onClick={onClose} className="text-gray-500 hover:text-white ml-2"><X size={16} /></button>}
         </div>
 
         {/* Body: top flow + bottom (analysis | chat) */}

@@ -33,6 +33,7 @@ const CinematicStudy = lazy(() => import('./pages/CinematicStudy'));
 const Toolbox = lazy(() => import('./pages/Toolbox'));
 const CinematicToolbox = lazy(() => import('./pages/CinematicToolbox'));
 const IndustryChains = lazy(() => import('./pages/IndustryChains'));
+const CinematicIndustryChains = lazy(() => import('./pages/CinematicIndustryChains'));
 const IndustryFlow = lazy(() => import('./pages/IndustryFlow'));
 
 function PageLoading() {
@@ -107,7 +108,7 @@ function CurtainOverlay() {
 function Layout() {
   const location = useLocation();
   const isDashboardHome = location.pathname === '/';
-  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series' || location.pathname.startsWith('/series/') || location.pathname === '/study' || location.pathname.startsWith('/study/') || location.pathname === '/study-mistakes';
+  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series' || location.pathname.startsWith('/series/') || location.pathname === '/study' || location.pathname.startsWith('/study/') || location.pathname === '/study-mistakes' || location.pathname === '/industry-chains' || location.pathname === '/chains';
 
   // ---- Offline detection ----
   const [isOnline, setIsOnline] = useState(true);
@@ -330,9 +331,11 @@ export default function App() {
           <Route path="study-mistakes-old" element={<StudyMistakes legacy />} />
           <Route path="toolbox" element={<CinematicToolbox />} />
           <Route path="toolbox-old" element={<Toolbox />} />
-          <Route path="industry-chains" element={<IndustryChains />} />
+          <Route path="industry-chains" element={<CinematicIndustryChains />} />
+          <Route path="industry-chains-old" element={<IndustryChains />} />
           <Route path="industry-flow" element={<IndustryFlow />} />
-          <Route path="chains" element={<IndustryChains />} />
+          <Route path="chains" element={<CinematicIndustryChains />} />
+          <Route path="chains-old" element={<IndustryChains />} />
           <Route path="tools" element={<CinematicToolbox />} />
         </Route>
       </Routes>

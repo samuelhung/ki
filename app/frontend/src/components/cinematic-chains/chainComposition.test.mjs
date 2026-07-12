@@ -1,0 +1,18 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+const app = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8');
+const page = readFileSync(new URL('../../pages/CinematicIndustryChains.tsx', import.meta.url), 'utf8');
+
+test('industry chains use the shared cinematic workspace', () => {
+  assert.match(page, /CinematicTemplatePage/);
+  assert.match(page, /CinematicLaserWorkspace/);
+  assert.match(page, /LegacyChainDetail/);
+  assert.match(page, /LaserFlow/);
+});
+
+test('industry chains preserve explicit legacy comparison routes', () => {
+  assert.match(app, /path="industry-chains-old"/);
+  assert.match(app, /path="chains-old"/);
+});
