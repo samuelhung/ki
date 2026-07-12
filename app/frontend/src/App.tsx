@@ -29,6 +29,7 @@ const KnowledgeGraph = lazy(() => import('./pages/KnowledgeGraph'));
 const Study = lazy(() => import('./pages/Study'));
 const StudyDetail = lazy(() => import('./pages/StudyDetail'));
 const StudyMistakes = lazy(() => import('./pages/StudyMistakes'));
+const CinematicStudy = lazy(() => import('./pages/CinematicStudy'));
 const Toolbox = lazy(() => import('./pages/Toolbox'));
 const CinematicToolbox = lazy(() => import('./pages/CinematicToolbox'));
 const IndustryChains = lazy(() => import('./pages/IndustryChains'));
@@ -106,7 +107,7 @@ function CurtainOverlay() {
 function Layout() {
   const location = useLocation();
   const isDashboardHome = location.pathname === '/';
-  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series' || location.pathname.startsWith('/series/');
+  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series' || location.pathname.startsWith('/series/') || location.pathname === '/study' || location.pathname.startsWith('/study/') || location.pathname === '/study-mistakes';
 
   // ---- Offline detection ----
   const [isOnline, setIsOnline] = useState(true);
@@ -321,9 +322,12 @@ export default function App() {
           <Route path="series-old" element={<Series />} />
           <Route path="series-old/:id" element={<SeriesDetail />} />
           <Route path="series/:id" element={<CinematicSeriesDetail />} />
-          <Route path="study" element={<Study />} />
-          <Route path="study/:id" element={<StudyDetail />} />
-          <Route path="study-mistakes" element={<StudyMistakes />} />
+          <Route path="study" element={<CinematicStudy />} />
+          <Route path="study/:id" element={<CinematicStudy />} />
+          <Route path="study-old" element={<Study legacy />} />
+          <Route path="study-old/:id" element={<StudyDetail />} />
+          <Route path="study-mistakes" element={<CinematicStudy />} />
+          <Route path="study-mistakes-old" element={<StudyMistakes legacy />} />
           <Route path="toolbox" element={<CinematicToolbox />} />
           <Route path="toolbox-old" element={<Toolbox />} />
           <Route path="industry-chains" element={<IndustryChains />} />

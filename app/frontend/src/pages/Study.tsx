@@ -25,7 +25,7 @@ const STATUS_LABELS: Record<string, string> = { draft: '草稿', ready: '已生�
 const CORRECT_LABELS: Record<number, string> = { 1: '✓', 0: '✗' };
 const CORRECT_COLORS: Record<number, string> = { 1: 'text-emerald-400', 0: 'text-red-400' };
 
-export default function Study() {
+export default function Study({ legacy = false }: { legacy?: boolean }) {
   const navigate = useNavigate();
   const { navigateWithCurtain } = useCurtain();
   const [items, setItems] = useState<StudyItem[]>([]);
@@ -98,7 +98,7 @@ export default function Study() {
       if (!r.ok) throw new Error('创建失败');
       const data = await r.json();
       closeCreate();
-      navigate(`/study/${data.material_id}`);
+      navigate(`${legacy ? '/study-old' : '/study'}/${data.material_id}`);
     } catch (e: any) {
       setError(e.message || '创建失败');
     } finally {
@@ -139,7 +139,7 @@ export default function Study() {
       if (data.auto_created) {
         // 教材类：已自动创建记录，直接跳转
         closeCreate();
-        navigate(`/study/${data.material_id}`);
+        navigate(`${legacy ? '/study-old' : '/study'}/${data.material_id}`);
         return;
       }
       setNewContent(data.text || '');
@@ -274,7 +274,7 @@ export default function Study() {
                   {filtered.map(item => (
                     <tr
                       key={item.id}
-                      onClick={() => navigateWithCurtain(`/study/${item.id}`)}
+                      onClick={() => navigateWithCurtain(`${legacy ? '/study-old' : '/study'}/${item.id}`)}
                       className="border-b border-[#2A2B30] last:border-b-0 hover:bg-[#1A1B20] cursor-pointer transition-colors"
                     >
                       <td className="py-3 px-3 text-center">

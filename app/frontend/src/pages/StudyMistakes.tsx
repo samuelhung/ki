@@ -18,7 +18,7 @@ interface MistakeItem {
 
 const SUBJECTS = ['全部', '语文', '数学', '英语'];
 
-export default function StudyMistakes() {
+export default function StudyMistakes({ legacy = false }: { legacy?: boolean }) {
   const navigate = useNavigate();
   const { navigateWithCurtain } = useCurtain();
   const [items, setItems] = useState<MistakeItem[]>([]);
@@ -62,7 +62,7 @@ export default function StudyMistakes() {
       {/* 吸顶头部 */}
       <div className="shrink-0 sticky top-0 z-10 bg-[#0B0C10] px-4 md:px-8 pt-4 md:pt-8">
         <div className="max-w-[1080px] mx-auto">
-          <button onClick={() => navigate('/study')} className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 mb-3 transition-colors">
+          <button onClick={() => navigate(legacy ? '/study-old' : '/study')} className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 mb-3 transition-colors">
             <ArrowLeft size={14} /> 辅导中心
           </button>
           <div className="flex items-center gap-3 mb-4">
@@ -137,7 +137,7 @@ export default function StudyMistakes() {
                       {items.map(item => (
                         <tr
                           key={item.id}
-                          onClick={() => navigateWithCurtain(`/study/${item.id}`)}
+                          onClick={() => navigateWithCurtain(`${legacy ? '/study-old' : '/study'}/${item.id}`)}
                           className="border-b border-[#2A2B30] last:border-b-0 hover:bg-[#1A1B20] cursor-pointer transition-colors"
                         >
                           <td className="py-3 px-4">

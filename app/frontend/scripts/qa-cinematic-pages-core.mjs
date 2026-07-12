@@ -55,6 +55,15 @@ const pages = [
     expectedCanvasCount: 2,
     virtualTimeBudgetMs: 14000,
   },
+  {
+    key: 'study',
+    path: '/#/study',
+    markers: ['cinematic-ingest-shell', '学习中枢', 'study-detail-legacy-embedded', 'study-core-box'],
+    maxScreenshotMs: 8000,
+    maxDomDumpMs: 5500,
+    expectedCanvasCount: 2,
+    virtualTimeBudgetMs: 14000,
+  },
 ];
 
 function pageUrl(baseUrl, path) {

@@ -66,7 +66,7 @@ interface UnitInfo { unit_num: number; theme: string; items: UnitItem[]; }
 type VersionTab = 'child' | 'parent';
 type FormatTab = 'md' | 'html' | 'pdf' | 'original' | 'lessons';
 
-interface StudyMaterial {
+export interface StudyMaterial {
   id: string; subject: string; grade: string; textbook: string; study_type: string;
   title: string; source_type: string; raw_content: string;
   child_version: string; parent_version: string;
@@ -193,8 +193,16 @@ function resolveUnits(title: string, lessons: TextbookLesson[]): UnitInfo[] {
 
 /* ── component ── */
 
-export default function StudyDetail() {
-  const { id } = useParams<{ id: string }>();
+interface StudyDetailProps {
+  embedded?: boolean;
+  materialId?: string;
+  onMaterialChange?: (material: StudyMaterial) => void;
+  onDeleted?: (materialId: string) => void;
+}
+
+export default function StudyDetail({ embedded = false, materialId, onMaterialChange, onDeleted }: StudyDetailProps) {
+  const { id: routeId } = useParams<{ id: string }>();
+  const id = materialId || routeId;
   const navigate = useNavigate();
   const [material, setMaterial] = useState<StudyMaterial | null>(null);
   const [loading, setLoading] = useState(true);
@@ -212,7 +220,9 @@ export default function StudyDetail() {
     try {
       const r = await apiFetch(`/api/study/${id}`);
       if (!r.ok) throw new Error('资料不存在');
-      setMaterial(await r.json());
+      const next = await r.json();
+      setMaterial(next);
+      onMaterialChange?.(next);
     } catch (e: any) { setError(e.message); } finally { setLoading(false); }
   };
 
@@ -244,7 +254,8 @@ export default function StudyDetail() {
     try {
       const r = await apiFetch(`/api/study/${id}`, { method: 'DELETE' });
       if (!r.ok) throw new Error('删除失败');
-      navigate('/study');
+      if (embedded) onDeleted?.(id);
+      else navigate('/study-old');
     } catch (e: any) { setError(e.message || '删除失败'); setDeleting(false); }
   };
 
@@ -277,20 +288,20 @@ export default function StudyDetail() {
   const showVersionTabs = isReady && !isTextbook;
   const mdSource = version === 'child' ? (material?.child_version || '') : (material?.parent_version || '');
 
-  if (loading) return <div className="flex-1 bg-[#0B0C10] flex items-center justify-center"><Loader2 size={24} className="animate-spin text-gray-500" /></div>;
+  if (loading) return <div className={`${embedded ? 'study-detail-legacy-embedded is-loading' : 'flex-1 bg-[#0B0C10]'} flex items-center justify-center`}><Loader2 size={24} className="animate-spin text-gray-500" /></div>;
   if (error || !material) return (
-    <div className="flex-1 bg-[#0B0C10] flex items-center justify-center">
+    <div className={`${embedded ? 'study-detail-legacy-embedded is-error' : 'flex-1 bg-[#0B0C10]'} flex items-center justify-center`}>
       <div className="text-center"><p className="text-red-400 text-sm">{error || '资料不存在'}</p>
-        <button onClick={() => navigate('/study')} className="mt-4 text-xs text-gray-500 hover:text-gray-300">返回辅导中心</button>
+        <button onClick={() => navigate(embedded ? '/study' : '/study-old')} className="mt-4 text-xs text-gray-500 hover:text-gray-300">返回辅导中心</button>
       </div>
     </div>
   );
 
   return (
-    <div className="flex-1 bg-[#0B0C10] text-white flex flex-col h-full overflow-hidden">
+    <div className={`${embedded ? 'study-detail-legacy-embedded' : 'flex-1 bg-[#0B0C10]'} text-white flex flex-col h-full overflow-hidden`}>
       <div className="shrink-0 sticky top-0 z-10 bg-[#0B0C10] px-4 md:px-8 pt-4 md:pt-8">
         <div className="max-w-[1080px] mx-auto">
-          <button onClick={() => navigate('/study')} className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 mb-3 transition-colors">
+          <button onClick={() => navigate(embedded ? '/study' : '/study-old')} className="study-detail-back flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 mb-3 transition-colors">
             <ArrowLeft size={14} /> 辅导中心
           </button>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
