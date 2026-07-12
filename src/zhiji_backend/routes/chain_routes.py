@@ -21,6 +21,7 @@ class AnalyzeRequest(BaseModel):
 class ChainReportRequest(BaseModel):
     chain_name: str
     force: bool = False
+    cache_only: bool = False
 
 
 class NodeUpdate(BaseModel):
@@ -231,6 +232,8 @@ def chain_report(req: ChainReportRequest):
                     "cached": True,
                     "updated_at": cached.get("updated_at", ""),
                 }
+        if req.cache_only:
+            return {"report": None, "chain_name": chain_name, "cached": False, "missing": True}
 
     # Read nodes
     with connect() as conn:

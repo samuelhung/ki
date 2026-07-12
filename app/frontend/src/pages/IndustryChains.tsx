@@ -683,14 +683,15 @@ export function ChainDetailModal({ chainName, chainIcon, chainFlowSummary, nodes
     apiFetch('/api/chains/report', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chain_name: chainName, force }),
+      body: JSON.stringify({ chain_name: chainName, force, cache_only: embedded && !force }),
     })
       .then(r => r.json())
       .then(d => {
         if (d.report) {
           setReport(d.report);
           setReportFromCache(!!d.cached);
-        } else setReportError(d.error || '分析失败');
+        } else if (d.missing) { setReport(null); setReportError(''); }
+        else setReportError(d.error || '分析失败');
       })
       .catch(e => setReportError(e.message))
       .finally(() => setReportLoading(false));
@@ -869,6 +870,7 @@ export function ChainDetailModal({ chainName, chainIcon, chainFlowSummary, nodes
               <div className="text-red-400 text-sm py-4">{reportError}</div>
             )}
             {report && !reportLoading && <ChainReport report={report} />}
+            {!report && !reportLoading && !reportError && <button onClick={() => loadReport(true)} className="flex items-center gap-2 py-8 text-xs text-gray-500 hover:text-emerald-400"><Sparkles size={14} />生成产业链分析报告</button>}
           </div>
 
             {/* ── RIGHT: 智能答疑 ── */}
