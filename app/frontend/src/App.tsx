@@ -15,6 +15,7 @@ const CinematicIngest = lazy(() => import('./pages/CinematicIngest'));
 const Events = lazy(() => import('./pages/Events'));
 const Sources = lazy(() => import('./pages/Sources'));
 const Brainstorm = lazy(() => import('./pages/Brainstorm'));
+const CinematicBrainstorm = lazy(() => import('./pages/CinematicBrainstorm'));
 const Tasks = lazy(() => import('./pages/Tasks'));
 const Series = lazy(() => import('./pages/Series'));
 const CinematicSeries = lazy(() => import('./pages/CinematicSeries'));
@@ -108,7 +109,7 @@ function CurtainOverlay() {
 function Layout() {
   const location = useLocation();
   const isDashboardHome = location.pathname === '/';
-  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series' || location.pathname.startsWith('/series/') || location.pathname === '/study' || location.pathname.startsWith('/study/') || location.pathname === '/study-mistakes' || location.pathname === '/industry-chains' || location.pathname === '/chains';
+  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series' || location.pathname.startsWith('/series/') || location.pathname === '/study' || location.pathname.startsWith('/study/') || location.pathname === '/study-mistakes' || location.pathname === '/industry-chains' || location.pathname === '/chains' || location.pathname === '/brainstorm' || location.pathname.startsWith('/brainstorm/');
 
   // ---- Offline detection ----
   const [isOnline, setIsOnline] = useState(true);
@@ -310,8 +311,10 @@ export default function App() {
           <Route path="ingest" element={<CinematicIngest />} />
           <Route path="events" element={<Events />} />
           <Route path="sources" element={<Sources />} />
-          <Route path="brainstorm" element={<Brainstorm />} />
-          <Route path="brainstorm/:id" element={<BrainstormDetailPage />} />
+          <Route path="brainstorm" element={<CinematicBrainstorm />} />
+          <Route path="brainstorm/:id" element={<CinematicBrainstorm />} />
+          <Route path="brainstorm-old" element={<Brainstorm />} />
+          <Route path="brainstorm-old/:id" element={<BrainstormDetailPage />} />
           <Route path="events/:id" element={<EventDetailPage />} />
           <Route path="system" element={<CinematicSystemCenter />} />
           <Route path="settings" element={<CinematicSystemCenter />} />

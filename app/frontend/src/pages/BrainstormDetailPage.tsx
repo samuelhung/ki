@@ -5,7 +5,7 @@ import { renderMarkdown } from '../components/MarkdownRenderer';
 import { formatTimeBeijing } from '../utils';
 import { apiFetch } from '../api';
 
-interface BrainstormQuestion {
+export interface BrainstormQuestion {
   id: string;
   event_id: string;
   question: string;
@@ -48,8 +48,15 @@ function sourceLabel(source_id: string): string {
   }
 }
 
-export default function BrainstormDetailPage() {
-  const { id } = useParams<{ id: string }>();
+interface BrainstormDetailPageProps {
+  embedded?: boolean;
+  questionId?: string;
+  onQuestionChange?: (question: BrainstormQuestion) => void;
+}
+
+export default function BrainstormDetailPage({ embedded = false, questionId, onQuestionChange }: BrainstormDetailPageProps) {
+  const { id: routeId } = useParams<{ id: string }>();
+  const id = questionId || routeId;
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
@@ -102,6 +109,7 @@ export default function BrainstormDetailPage() {
       }
       const qData = await qRes.json();
       setQuestion(qData);
+      onQuestionChange?.(qData);
 
       let answered: string[] = [];
       try { answered = JSON.parse(qData.answered_event_ids || '[]'); } catch (e) {}
@@ -475,7 +483,7 @@ export default function BrainstormDetailPage() {
   // ── Loading ──
   if (loading) {
     return (
-      <div className="flex-1 bg-[#0B0C10] flex items-center justify-center">
+      <div className={`${embedded ? 'brainstorm-detail-embedded is-loading' : 'flex-1 bg-[#0B0C10]'} flex items-center justify-center`}>
         <Loader2 size={24} className="animate-spin text-gray-600" />
       </div>
     );
@@ -484,7 +492,7 @@ export default function BrainstormDetailPage() {
   // ── Not Found ──
   if (notFound || !question) {
     return (
-      <div className="flex-1 bg-[#0B0C10] text-white p-8">
+      <div className={`${embedded ? 'brainstorm-detail-embedded is-error' : 'flex-1 bg-[#0B0C10] text-white p-8'}`}>
         <div className="max-w-[1080px] mx-auto py-16 text-center">
           <p className="text-sm text-red-400">问题不存在</p>
           <button onClick={() => navigate(-1)} className="mt-4 px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors">返回</button>
@@ -494,11 +502,11 @@ export default function BrainstormDetailPage() {
   }
 
   return (
-    <div className="flex-1 bg-[#0B0C10] text-white p-4 md:p-8 overflow-y-auto custom-scrollbar">
+    <div className={`${embedded ? 'brainstorm-detail-embedded is-ready' : 'flex-1 bg-[#0B0C10] text-white p-4 md:p-8 overflow-y-auto custom-scrollbar'}`}>
       <div className="max-w-[1080px] mx-auto">
 
         {/* Breadcrumb */}
-        <div className="flex items-center mb-6">
+        <div className={`flex items-center mb-6${embedded ? ' brainstorm-detail-back' : ''}`}>
           <button onClick={() => navigate('/brainstorm')} className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors">
             <ArrowLeft size={14} /> 头脑风暴
           </button>

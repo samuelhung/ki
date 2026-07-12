@@ -73,6 +73,15 @@ const pages = [
     expectedCanvasCount: 2,
     virtualTimeBudgetMs: 16000,
   },
+  {
+    key: 'brainstorm',
+    path: '/#/brainstorm',
+    markers: ['cinematic-ingest-shell', '脑暴问答', 'brainstorm-detail-embedded', 'brainstorm-core-box'],
+    maxScreenshotMs: 9000,
+    maxDomDumpMs: 6500,
+    expectedCanvasCount: 2,
+    virtualTimeBudgetMs: 16000,
+  },
 ];
 
 export function selectCinematicPages(pageKeys) {
