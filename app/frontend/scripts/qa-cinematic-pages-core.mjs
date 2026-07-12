@@ -76,7 +76,7 @@ const pages = [
   {
     key: 'brainstorm',
     path: '/#/brainstorm',
-    markers: ['cinematic-ingest-shell', '脑暴问答', 'brainstorm-detail-embedded', 'brainstorm-core-box'],
+    markers: ['cinematic-ingest-shell', '脑暴问答', 'brainstorm-detail-embedded is-ready', 'brainstorm-core-box'],
     maxScreenshotMs: 9000,
     maxDomDumpMs: 6500,
     expectedCanvasCount: 2,

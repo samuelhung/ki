@@ -514,7 +514,7 @@ export default function BrainstormDetailPage({ embedded = false, questionId, onQ
 
         {/* Header */}
         <div className="mb-6">
-          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+          <div className="brainstorm-detail-header flex flex-col sm:flex-row sm:items-start justify-between gap-4">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-2">
                 <Lightbulb size={24} className="text-purple-400 shrink-0" />
@@ -527,7 +527,7 @@ export default function BrainstormDetailPage({ embedded = false, questionId, onQ
                 {question.updated_at && <span>更新于 {formatTimeBeijing(question.updated_at)}</span>}
               </div>
             </div>
-            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap">
+            <div className="brainstorm-detail-actions flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap">
               <button onClick={startConversation} disabled={conversationLoading || selectedEventIds.size === 0}
                 className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 border border-purple-500/30 transition-colors disabled:opacity-50 flex items-center gap-1.5">
                 {conversationLoading ? <Loader2 size={14} className="animate-spin" /> : <MessageSquare size={14} />}
