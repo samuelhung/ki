@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { Check, ExternalLink, Layers, Lightbulb, Loader2, PenTool, Plus, RefreshCw, Search, Sparkles, Zap } from 'lucide-react';
+import { Check, ExternalLink, Layers, Lightbulb, Loader2, PenTool, Plus, RefreshCw, Search, Zap } from 'lucide-react';
 import { useCurtain } from '../CurtainContext';
 import { apiFetch } from '../api';
 import CinematicLaserWorkspace from '../components/cinematic/CinematicLaserWorkspace';
@@ -16,7 +16,7 @@ import '../components/cinematic-series/cinematic-series.css';
 
 type Mode = 'choose' | 'global1' | 'global2' | 'topic' | 'results' | 'manual' | 'suggest';
 type Member = { id: string; title: string; overview?: string };
-type SeriesItem = { id: string; name: string; description?: string; member_ids: string; status: string; created_at: string; members?: Member[] };
+type SeriesItem = { id: string; name: string; description?: string; member_ids: string; status: string; created_at: string; updated_at?: string; intro?: string; summary?: string; paper?: string; members?: Member[] };
 type Group = { name: string; description: string; event_ids: string[]; event_titles?: string[]; count: number };
 type Candidate = { name: string; description: string; member_ids: string[]; member_titles?: string[]; rationale?: string; _duplicate_of?: { id: string; name: string; status: string } };
 type EventItem = { id: string; title: string; overview?: string; ai_summary?: string; topic?: string; content_type?: string; status?: string; created_at?: string };
@@ -28,6 +28,7 @@ export default function CinematicSeries() {
   const [activeHub, setActiveHub] = useState<string | null>(null);
   const [items, setItems] = useState<SeriesItem[]>([]);
   const [selectedId, setSelectedId] = useState('');
+  const [selectedDetail, setSelectedDetail] = useState<SeriesItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [dialog, setDialog] = useState(false);
@@ -63,7 +64,18 @@ export default function CinematicSeries() {
 
   useEffect(() => { loadSeries(); }, []);
 
-  const selected = items.find((item) => item.id === selectedId) || items[0];
+  useEffect(() => {
+    if (!selectedId) { setSelectedDetail(null); return; }
+    let active = true;
+    apiFetch(`/api/ingest/series/${selectedId}`)
+      .then((response) => response.ok ? response.json() : null)
+      .then((detail) => { if (active && detail) setSelectedDetail(detail); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [selectedId]);
+
+  const selectedFromList = items.find((item) => item.id === selectedId) || items[0];
+  const selected = selectedDetail?.id === selectedId ? selectedDetail : selectedFromList;
   const stats = useMemo(() => getSeriesStats(items), [items]);
   const coreBoxHeight = Math.min(Math.max(viewportHeight * 0.158, 126), 178);
   const beamVerticalOffset = (coreBoxHeight - 6) / Math.max(viewportHeight, 1) - 0.5;
@@ -155,11 +167,12 @@ export default function CinematicSeries() {
   const status = <section className="ingest-observation cinematic-observation series-status" aria-label="专题状态"><div className="panel-status"><i className="signal-dot" /><span>专题工作台</span></div><span>聚合分散内容，建立持续生长的知识专题</span><div className="system-status-summary"><span className="is-good">专题 {stats.total}</span><span className="is-cyan">就绪 {stats.ready}</span><span className="is-warn">处理中 {stats.processing}</span></div><div className="panel-detail-grid"><span>当前<b>{selected?.name || '--'}</b></span><span>内容<b>{selected ? getSeriesMemberCount(selected) : 0} 条</b></span></div></section>;
   const index = <><div className="ingest-topic-orbit series-topic-orbit" aria-label="专题分组"><button className="is-active is-gold"><Layers size={14} /><span>专题</span></button></div><div className="ingest-index-list series-index-list">{items.map((item, index) => <button key={item.id} className={`ingest-index-item${selected?.id === item.id ? ' is-active' : ''}`} style={{ '--index-depth-scale': 1 - Math.min(index, 8) * .032, '--index-depth-z': `${-Math.min(index, 8) * 3}px`, '--index-depth-opacity': 1 - Math.min(index, 8) * .055 } as CSSProperties} onClick={() => setSelectedId(item.id)}><div className="index-title"><b>{item.name}</b><span><em className="is-cyan">{getSeriesMemberCount(item)} 条</em></span></div><small>{item.description || '持续整理中的知识专题'}</small></button>)}</div></>;
 
-  return <CinematicTemplatePage className="cinematic-series" profile={profile} topic="violet" style={style} variant="system" status={status} commands={commands} workspace={<CinematicLaserWorkspace ariaLabel="专题聚合舱" indexAriaLabel="专题索引" index={index} stageAriaLabel="专题详情" stage={<><LaserFlow {...CINEMATIC_LASER_PRESET} verticalBeamOffset={beamVerticalOffset} dpr={laserRenderProfile.dpr} maxFps={laserRenderProfile.maxFps} /><SeriesDetail item={selected} loading={loading} error={error} onOpen={() => selected && navigateWithCurtain(`/series/${selected.id}`)} /><div className="laser-media-box series-core-box"><span>KNOWLEDGE SERIES</span><b>{selected?.name || '等待专题'}</b><div><em>成员<strong>{selected ? getSeriesMemberCount(selected) : 0} 条</strong></em><em>状态<strong>{selected?.status || '--'}</strong></em><button onClick={() => selected && navigateWithCurtain(`/series/${selected.id}`)} disabled={!selected}>进入专题 <ExternalLink size={13} /></button></div></div></>} />} overlays={dialog ? <SeriesDialog mode={mode} setMode={setMode} busy={busy} message={message} groups={groups} selectedGroups={selectedGroups} setSelectedGroups={setSelectedGroups} candidates={candidates} duplicates={duplicates} topic={topic} setTopic={setTopic} events={events} eventQuery={eventQuery} setEventQuery={setEventQuery} manualTitle={manualTitle} setManualTitle={setManualTitle} selectedEvents={selectedEvents} setSelectedEvents={setSelectedEvents} savingIndex={savingIndex} suggestion={suggestion} createdName={createdName} onClose={close} onGlobal1={globalStage1} onGlobal2={globalStage2} onTopic={topicDiscover} onSave={saveCandidate} onManualOpen={() => open('manual')} onManual={manualCreate} onAdopt={adoptSuggestion} onOpenCreated={() => createdId && navigateWithCurtain(`/series/${createdId}`)} /> : null} activeHub={activeHub} onActiveHubChange={setActiveHub} onNavigate={(path) => navigateWithCurtain(path)} />;
+  return <CinematicTemplatePage className="cinematic-series" profile={profile} topic="violet" style={style} variant="system" status={status} commands={commands} workspace={<CinematicLaserWorkspace ariaLabel="专题聚合舱" indexAriaLabel="专题索引" index={index} stageAriaLabel="专题详情" stage={<><LaserFlow {...CINEMATIC_LASER_PRESET} verticalBeamOffset={beamVerticalOffset} dpr={laserRenderProfile.dpr} maxFps={laserRenderProfile.maxFps} /><SeriesDetail item={selected} loading={loading} error={error} onOpenMember={(memberId) => navigateWithCurtain(`/events/${memberId}`)} /><div className="laser-media-box series-core-box"><span>KNOWLEDGE SERIES</span><b>{selected?.name || '等待专题'}</b><div><em>成员<strong>{selected ? getSeriesMemberCount(selected) : 0} 条</strong></em><em>状态<strong>{selected?.status || '--'}</strong></em><em>更新<strong>{selected?.updated_at?.slice(0, 10) || selected?.created_at?.slice(0, 10) || '--'}</strong></em></div></div></>} />} overlays={dialog ? <SeriesDialog mode={mode} setMode={setMode} busy={busy} message={message} groups={groups} selectedGroups={selectedGroups} setSelectedGroups={setSelectedGroups} candidates={candidates} duplicates={duplicates} topic={topic} setTopic={setTopic} events={events} eventQuery={eventQuery} setEventQuery={setEventQuery} manualTitle={manualTitle} setManualTitle={setManualTitle} selectedEvents={selectedEvents} setSelectedEvents={setSelectedEvents} savingIndex={savingIndex} suggestion={suggestion} createdName={createdName} onClose={close} onGlobal1={globalStage1} onGlobal2={globalStage2} onTopic={topicDiscover} onSave={saveCandidate} onManualOpen={() => open('manual')} onManual={manualCreate} onAdopt={adoptSuggestion} onOpenCreated={() => createdId && navigateWithCurtain(`/series/${createdId}`)} /> : null} activeHub={activeHub} onActiveHubChange={setActiveHub} onNavigate={(path) => navigateWithCurtain(path)} />;
 }
 
-function SeriesDetail({ item, loading, error, onOpen }: { item?: SeriesItem; loading: boolean; error: string; onOpen: () => void }) {
-  return <section className="ingest-detail-reader series-detail-reader" aria-label="专题详情"><header><span>SERIES INTELLIGENCE</span><h2>{loading ? '专题加载中' : item?.name || '暂无专题'}</h2><small>{item?.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : '旧版对比：/#/series-old'}</small></header><div className="detail-scroll-shell"><div className="detail-scroll series-detail-body">{error ? <p className="series-empty is-error">{error}</p> : !item ? <p className="series-empty">使用左侧操作入口发现或创建第一个专题</p> : <><nav className="ingest-detail-tabs series-detail-tabs"><button className="ingest-tab-trigger launcher-action pixel-command is-active"><Sparkles size={14} /><b>专题概览</b><span>OVERVIEW</span></button><button className="ingest-tab-trigger launcher-action pixel-command" onClick={onOpen}><ExternalLink size={14} /><b>完整内容</b><span>OPEN</span></button></nav><p className="series-description">{item.description || '该专题正在持续吸收相关内容，形成可追踪的知识脉络。'}</p><div className="series-member-list">{(item.members || []).slice(0, 8).map((member, index) => <button key={member.id} onClick={onOpen}><i>{String(index + 1).padStart(2, '0')}</i><span><b>{member.title}</b><small>{member.overview || '进入专题查看完整内容'}</small></span></button>)}</div></>}</div></div></section>;
+function SeriesDetail({ item, loading, error, onOpenMember }: { item?: SeriesItem; loading: boolean; error: string; onOpenMember: (memberId: string) => void }) {
+  const narrative = item?.intro || item?.summary || item?.description;
+  return <section className="ingest-detail-reader series-detail-reader" aria-label="专题详情"><header><span>SERIES INTELLIGENCE</span><h2>{loading ? '专题加载中' : item?.name || '暂无专题'}</h2><small>{item?.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : '旧版对比：/#/series-old'}</small></header><div className="detail-scroll-shell"><div className="detail-scroll series-detail-body">{error ? <p className="series-empty is-error">{error}</p> : !item ? <p className="series-empty">使用左侧操作入口发现或创建第一个专题</p> : <><p className="series-description">{item.description || '该专题正在持续吸收相关内容，形成可追踪的知识脉络。'}</p>{narrative && narrative !== item.description && <section className="series-narrative"><span>{item.intro ? '专题导言' : '结构化总结'}</span><p>{narrative}</p></section>}<div className="series-member-list">{(item.members || []).map((member, index) => <button key={member.id} onClick={() => onOpenMember(member.id)}><i>{String(index + 1).padStart(2, '0')}</i><span><b>{member.title}</b><small>{member.overview || '打开内容详情'}</small></span><ExternalLink size={12} /></button>)}</div></>}</div></div></section>;
 }
 
 function SeriesDialog(props: any) {
