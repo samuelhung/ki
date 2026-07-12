@@ -123,7 +123,7 @@ async function connectCdp(wsUrl) {
         if (!pending.has(id)) return;
         pending.delete(id);
         rejectCommand(new Error(`CDP timeout: ${method}`));
-      }, 15000);
+      }, 30000);
     });
   }
 
