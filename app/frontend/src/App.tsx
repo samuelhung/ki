@@ -17,6 +17,7 @@ const Sources = lazy(() => import('./pages/Sources'));
 const Brainstorm = lazy(() => import('./pages/Brainstorm'));
 const CinematicBrainstorm = lazy(() => import('./pages/CinematicBrainstorm'));
 const Tasks = lazy(() => import('./pages/Tasks'));
+const CinematicTasks = lazy(() => import('./pages/CinematicTasks'));
 const Series = lazy(() => import('./pages/Series'));
 const CinematicSeries = lazy(() => import('./pages/CinematicSeries'));
 const SeriesDetail = lazy(() => import('./pages/SeriesDetail'));
@@ -109,7 +110,7 @@ function CurtainOverlay() {
 function Layout() {
   const location = useLocation();
   const isDashboardHome = location.pathname === '/';
-  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series' || location.pathname.startsWith('/series/') || location.pathname === '/study' || location.pathname.startsWith('/study/') || location.pathname === '/study-mistakes' || location.pathname === '/industry-chains' || location.pathname === '/chains' || location.pathname === '/brainstorm' || location.pathname.startsWith('/brainstorm/');
+  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series' || location.pathname.startsWith('/series/') || location.pathname === '/study' || location.pathname.startsWith('/study/') || location.pathname === '/study-mistakes' || location.pathname === '/industry-chains' || location.pathname === '/chains' || location.pathname === '/brainstorm' || location.pathname.startsWith('/brainstorm/') || location.pathname === '/tasks';
 
   // ---- Offline detection ----
   const [isOnline, setIsOnline] = useState(true);
@@ -321,7 +322,8 @@ export default function App() {
           <Route path="system-old" element={<SystemDoc />} />
           <Route path="settings-old" element={<SystemSettings />} />
           <Route path="knowledge-graph" element={<KnowledgeGraph />} />
-          <Route path="tasks" element={<Tasks />} />
+          <Route path="tasks" element={<CinematicTasks />} />
+          <Route path="tasks-old" element={<Tasks />} />
           <Route path="series" element={<CinematicSeries />} />
           <Route path="series-old" element={<Series />} />
           <Route path="series-old/:id" element={<SeriesDetail />} />
