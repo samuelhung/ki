@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Layers, ArrowLeft, Sparkles, Loader2, Trash2, ChevronDown, ExternalLink, Bell, Plus, X, RefreshCw, Check } from 'lucide-react';
 import Modal from '../components/Modal';
@@ -164,6 +164,10 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
   // Refresh (manual scan → populates suggestions)
   const [refreshing, setRefreshing] = useState(false);
   const [allProcessed, setAllProcessed] = useState(false);
+  const [suggestionsLoaded, setSuggestionsLoaded] = useState(false);
+  const viewStateRef = useRef(new Map<string, { tab: typeof tab; panelId: string | null; scrollTop: number }>());
+  const currentSeriesRef = useRef(id);
+  const contentRef = useRef<HTMLDivElement | null>(null);
 
   function commitSeries(next: SeriesDetailData | null) {
     setSeries(next);
@@ -171,15 +175,27 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
   }
 
   useEffect(() => {
+    const previousId = currentSeriesRef.current;
+    if (previousId && previousId !== id) {
+      viewStateRef.current.set(previousId, { tab, panelId, scrollTop: contentRef.current?.scrollTop || 0 });
+    }
+    currentSeriesRef.current = id;
+    const restored = id ? viewStateRef.current.get(id) : null;
     setError('');
-    setPanelId(null);
+    setPanelId(restored?.panelId || null);
+    setTab(restored?.tab || 'overview');
+    setSuggestions([]);
+    setSuggestionsLoaded(false);
+    setShowSuggestions(false);
     if (embedded) {
       commitSeries(initialSeries);
       setLoading(!initialSeries);
     } else {
       loadDetail();
     }
-    loadSuggestions();
+    window.requestAnimationFrame(() => {
+      if (contentRef.current) contentRef.current.scrollTop = restored?.scrollTop || 0;
+    });
   }, [id, embedded]);
 
   useEffect(() => {
@@ -191,9 +207,7 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
 
   // Restore allProcessed from sessionStorage on mount
   useEffect(() => {
-    if (sessionStorage.getItem(`series_${id}_all_processed`)) {
-      setAllProcessed(true);
-    }
+    setAllProcessed(Boolean(sessionStorage.getItem(`series_${id}_all_processed`)));
   }, [id]);
 
   // Restore generating state on mount (survives refresh / navigation)
@@ -201,9 +215,9 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
     const genIntro = sessionStorage.getItem(`series_${id}_gen_intro`);
     const genSummary = sessionStorage.getItem(`series_${id}_gen_summary`);
     const genPaper = sessionStorage.getItem(`series_${id}_gen_paper`);
-    if (genIntro) setIntroGenerating(true);
-    if (genSummary) setSummaryGenerating(true);
-    if (genPaper) setPaperGenerating(true);
+    setIntroGenerating(Boolean(genIntro));
+    setSummaryGenerating(Boolean(genSummary));
+    setPaperGenerating(Boolean(genPaper));
 
     if (!genIntro && !genSummary && !genPaper) return;
 
@@ -251,11 +265,24 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
         // No pending suggestions — everything has been processed
         setAllProcessed(true);
       }
-    } catch (_) {}
+      setSuggestionsLoaded(true);
+    } catch (_) { setSuggestionsLoaded(true); }
+  }
+
+  function selectTab(nextTab: typeof tab) {
+    setTab(nextTab);
+    if (id) viewStateRef.current.set(id, { tab: nextTab, panelId, scrollTop: contentRef.current?.scrollTop || 0 });
+  }
+
+  function togglePanel(nextPanelId: string) {
+    const next = panelId === nextPanelId ? null : nextPanelId;
+    setPanelId(next);
+    if (id) viewStateRef.current.set(id, { tab, panelId: next, scrollTop: contentRef.current?.scrollTop || 0 });
   }
 
   async function handleGenerateIntro() {
     if (!series) return;
+    setError('');
     sessionStorage.setItem(`series_${id}_gen_intro`, '1');
     setIntroGenerating(true);
     try {
@@ -270,6 +297,7 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
 
   async function handleGenerateSummary() {
     if (!series) return;
+    setError('');
     sessionStorage.setItem(`series_${id}_gen_summary`, '1');
     setSummaryGenerating(true);
     try {
@@ -284,6 +312,7 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
 
   async function handleGeneratePaper() {
     if (!series) return;
+    setError('');
     sessionStorage.setItem(`series_${id}_gen_paper`, '1');
     setPaperGenerating(true);
     try {
@@ -441,7 +470,7 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
 
   return (
     <div className={`${embedded ? 'series-detail-legacy-embedded' : 'flex-1 bg-[#0B0C10] p-4 md:p-8 overflow-y-auto custom-scrollbar'} text-white`}>
-      <div className={embedded ? 'series-detail-legacy-content' : 'max-w-[1080px] mx-auto'}>
+      <div ref={contentRef} onScroll={() => { if (id) viewStateRef.current.set(id, { tab, panelId, scrollTop: contentRef.current?.scrollTop || 0 }); }} className={embedded ? 'series-detail-legacy-content' : 'max-w-[1080px] mx-auto'}>
 
         {/* Breadcrumb */}
         <div className={`flex items-center mb-6${embedded ? ' series-legacy-breadcrumb' : ''}`}>
@@ -461,21 +490,19 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
               </div>
               {series.description && <p className="text-sm text-gray-400">{series.description}</p>}
               <div className="flex items-center gap-3 mt-2 text-[11px] text-gray-600 flex-wrap">
-                <span className="flex items-center gap-1">
-                  {members.length} 条内容
-                  {suggestions.length === 0 && !allProcessed && (
-                    <button onClick={handleRefresh} disabled={refreshing}
-                      className="p-0.5 rounded hover:bg-[#2A2B30] transition-colors text-gray-600 hover:text-violet-400"
-                      title="扫描新内容">
-                      {refreshing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
-                    </button>
-                  )}
-                </span>
+                <span>{members.length} 条内容</span>
+                <button onClick={handleRefresh} disabled={refreshing}
+                  className="series-scan-action flex items-center gap-1 text-gray-500 hover:text-violet-300 transition-colors"
+                  title="按需扫描新内容">
+                  {refreshing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+                  {refreshing ? '扫描中' : '扫描新内容'}
+                </button>
                 {suggestions.length > 0 && (
                   <button onClick={() => setShowSuggestions(true)} className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 transition-colors">
                     <Bell size={10} /> 待确认 ({suggestions.length})
                   </button>
                 )}
+                {suggestionsLoaded && suggestions.length === 0 && allProcessed && <span className="text-emerald-500/60">暂无新增建议</span>}
                 <span>创建于 {formatTimeBeijing(series.created_at)}</span>
                 {series.updated_at && <span>更新于 {formatTimeBeijing(series.updated_at)}</span>}
               </div>
@@ -509,6 +536,7 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
               </button>
             </div>
           </div>
+          {(introGenerating || summaryGenerating || paperGenerating || error) && <div className={`series-operation-state${error ? ' is-error' : ''}`}>{error || (introGenerating ? '正在生成专题导言' : summaryGenerating ? '正在生成结构化速览' : '正在生成深度分析')}<span>{error ? '请检查服务状态后重试' : '内容完成后会自动同步到左侧列表与底部状态盒'}</span></div>}
         </div>
 
         {/* Intro — above tabs, with clickable refs */}
@@ -532,19 +560,19 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
         {/* Tab bar */}
         <div className="flex items-center justify-between mb-6 border-b border-[#2A2B30]">
           <div className="flex gap-4">
-            <button onClick={() => setTab('overview')}
+            <button onClick={() => selectTab('overview')}
               className={`px-3 py-2 rounded text-xs font-medium transition-colors border-b-2 -mb-px ${tab === 'overview' ? 'text-purple-400 border-purple-400' : 'text-gray-500 border-transparent hover:text-gray-300'}`}>
               结构化速览
             </button>
-            <button onClick={() => setTab('paper')}
+            <button onClick={() => selectTab('paper')}
               className={`px-3 py-2 rounded text-xs font-medium transition-colors border-b-2 -mb-px ${tab === 'paper' ? 'text-sky-400 border-sky-400' : 'text-gray-500 border-transparent hover:text-gray-300'}`}>
               深度分析
             </button>
-            <button onClick={() => setTab('content')}
+            <button onClick={() => selectTab('content')}
               className={`px-3 py-2 rounded text-xs font-medium transition-colors border-b-2 -mb-px ${tab === 'content' ? 'text-purple-400 border-purple-400' : 'text-gray-500 border-transparent hover:text-gray-300'}`}>
               专题内容
             </button>
-            <button onClick={() => setTab('knowledge')}
+            <button onClick={() => selectTab('knowledge')}
               className={`px-3 py-2 rounded text-xs font-medium transition-colors border-b-2 -mb-px ${tab === 'knowledge' ? 'text-emerald-400 border-emerald-400' : 'text-gray-500 border-transparent hover:text-gray-300'}`}>
               知识网络
             </button>
@@ -624,7 +652,7 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
                   <div className="absolute left-6 top-full w-px h-6 bg-gradient-to-b from-[#2A2B30] to-transparent" />
                 )}
                 <div className="bg-[#141518] border border-[#2A2B30] rounded-xl overflow-hidden mb-2">
-                  <button onClick={() => setPanelId(panelId === m.id ? null : m.id)}
+                  <button onClick={() => togglePanel(m.id)}
                     className="w-full flex items-start gap-4 p-4 text-left hover:bg-[#1A1B20] transition-colors group">
                     <div className="shrink-0 w-8 h-8 rounded-full bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-xs font-bold text-purple-400">{idx + 1}</div>
                     <div className="flex-1 min-w-0">

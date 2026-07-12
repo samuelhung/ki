@@ -5,6 +5,8 @@ import {
   buildStage2Payload,
   getSeriesMemberCount,
   getSeriesStats,
+  filterSeriesItems,
+  mergeEventPage,
   removeSeriesItem,
   syncSeriesItem,
   parseMemberIds,
@@ -79,4 +81,22 @@ test('removeSeriesItem selects the adjacent remaining series', () => {
     items: [{ id: 'a' }, { id: 'b' }],
     selectedId: 'b',
   });
+});
+
+test('filterSeriesItems matches query and status without mutating source items', () => {
+  const items = [
+    { id: 'a', name: '中国社会转型', description: '乡土重建', status: 'published' },
+    { id: 'b', name: 'AI 监管', description: '模型治理', status: 'draft' },
+  ];
+  assert.deepEqual(filterSeriesItems(items, '社会', 'all'), [items[0]]);
+  assert.deepEqual(filterSeriesItems(items, '', 'draft'), [items[1]]);
+  assert.deepEqual(items.map((item) => item.id), ['a', 'b']);
+});
+
+test('mergeEventPage appends unique events and resets for a new query', () => {
+  const existing = [{ id: 'a' }, { id: 'b' }];
+  assert.deepEqual(mergeEventPage(existing, [{ id: 'b' }, { id: 'c' }], false), [
+    { id: 'a' }, { id: 'b' }, { id: 'c' },
+  ]);
+  assert.deepEqual(mergeEventPage(existing, [{ id: 'c' }], true), [{ id: 'c' }]);
 });

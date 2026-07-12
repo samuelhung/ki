@@ -50,3 +50,24 @@ export function removeSeriesItem(items, removedId) {
   const nextIndex = Math.min(Math.max(removedIndex, 0), nextItems.length - 1);
   return { items: nextItems, selectedId: nextItems[nextIndex]?.id || '' };
 }
+
+export function filterSeriesItems(items, query = '', status = 'all') {
+  const normalizedQuery = query.trim().toLowerCase();
+  return (Array.isArray(items) ? items : []).filter((item) => {
+    if (status !== 'all' && item?.status !== status) return false;
+    if (!normalizedQuery) return true;
+    return `${item?.name || ''} ${item?.description || ''}`.toLowerCase().includes(normalizedQuery);
+  });
+}
+
+export function mergeEventPage(existing, incoming, reset = false) {
+  const source = reset ? [] : (Array.isArray(existing) ? existing : []);
+  const result = [...source];
+  const ids = new Set(source.map((item) => item?.id));
+  for (const item of Array.isArray(incoming) ? incoming : []) {
+    if (!item?.id || ids.has(item.id)) continue;
+    ids.add(item.id);
+    result.push(item);
+  }
+  return result;
+}
