@@ -46,6 +46,15 @@ const pages = [
     expectedCanvasCount: 2,
     virtualTimeBudgetMs: 14000,
   },
+  {
+    key: 'series',
+    path: '/#/series',
+    markers: ['cinematic-ingest-shell', '专题工作台', 'series-detail-reader', 'series-core-box'],
+    maxScreenshotMs: 8000,
+    maxDomDumpMs: 5500,
+    expectedCanvasCount: 2,
+    virtualTimeBudgetMs: 14000,
+  },
 ];
 
 function pageUrl(baseUrl, path) {
