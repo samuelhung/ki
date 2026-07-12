@@ -20,6 +20,8 @@
 .toolbox-results b, .toolbox-compare b { color: rgba(255,255,255,.94); font: 500 15px ui-monospace, monospace; }
 .toolbox-results .is-danger b, .toolbox-compare .is-danger b { color: #fb7185; text-shadow: 0 0 15px rgba(251,113,133,.28); }
 .toolbox-results p { grid-column: 1 / -1; color: rgba(251,191,36,.74); font-size: 11px; line-height: 1.7; }
+.toolbox-cost-anatomy { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; gap: 14px; align-items: center; margin-top: 18px; padding: 18px 0; border-top: 1px solid rgba(255,255,255,.07); border-bottom: 1px solid rgba(255,255,255,.07); }
+.toolbox-cost-anatomy > span { display: grid; gap: 5px; }.toolbox-cost-anatomy small { color: rgba(255,255,255,.32); font-size: 9px; }.toolbox-cost-anatomy b { color: rgba(255,255,255,.88); font: 500 14px ui-monospace,monospace; }.toolbox-cost-anatomy i { color: rgba(103,232,249,.55); font-style: normal; }.toolbox-cost-anatomy .is-total b { color: #f7c873; }.toolbox-cost-anatomy > em { grid-column: 1 / -1; color: rgba(255,255,255,.4); font-size: 10px; line-height: 1.6; }
 .toolbox-schedule-toggle { display: flex; gap: 7px; margin-top: 20px; }
 .toolbox-schedule { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 10px; }
 .toolbox-schedule span { display: grid; gap: 3px; border-bottom: 1px solid rgba(255,255,255,.06); padding: 6px 0; }
@@ -38,4 +40,4 @@
 .toolbox-result-box > span { color: rgba(255,255,255,.34); font: 10px ui-monospace, monospace; }.toolbox-result-box > b { font-size: 22px; }
 .toolbox-result-box > div { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; }.toolbox-result-box em { display: grid; gap: 4px; color: rgba(255,255,255,.34); font-size: 10px; }.toolbox-result-box strong { color: #fff; font: 500 15px ui-monospace, monospace; }
 @media (max-width: 1440px) { .toolbox-input-grid { gap: 10px 16px; }.toolbox-results, .toolbox-compare { gap: 12px 16px; }.toolbox-result-box { grid-template-columns: 120px 160px 1fr; padding: 16px 26px; } }
-@media (max-width: 1180px) { .toolbox-detail-reader { left: calc(var(--beam-center-x) + 18px); }.toolbox-schedule { grid-template-columns: 1fr; }.toolbox-comparison-path header,.toolbox-comparison-path > div { gap: 8px; font-size: 9px; } }
+@media (max-width: 1180px) { .toolbox-detail-reader { left: calc(var(--beam-center-x) + 18px); }.toolbox-schedule { grid-template-columns: 1fr; }.toolbox-comparison-path header,.toolbox-comparison-path > div { gap: 8px; font-size: 9px; }.toolbox-cost-anatomy { gap: 8px; } }
