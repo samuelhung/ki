@@ -83,34 +83,41 @@ def list_series(include_candidates: bool = False):
     """List all series with member event titles. Excludes candidates by default."""
     init_db()
     with connect() as conn:
+        fields = "id, name, description, member_ids, status, created_at, updated_at"
         if include_candidates:
-            rows = conn.execute(
-                "SELECT * FROM series ORDER BY created_at DESC"
-            ).fetchall()
+            rows = conn.execute(f"SELECT {fields} FROM series ORDER BY created_at DESC").fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM series WHERE status != 'candidate' ORDER BY created_at DESC"
+                f"SELECT {fields} FROM series WHERE status != 'candidate' ORDER BY created_at DESC"
             ).fetchall()
+
+        parsed_ids = {}
+        all_member_ids = []
+        for row in rows:
+            try:
+                member_ids = json.loads(row["member_ids"] or "[]")
+            except (json.JSONDecodeError, TypeError):
+                member_ids = []
+            parsed_ids[row["id"]] = member_ids
+            all_member_ids.extend(member_ids)
+
+        title_map = {}
+        unique_member_ids = list(dict.fromkeys(all_member_ids))
+        if unique_member_ids:
+            placeholders = ",".join(["?" for _ in unique_member_ids])
+            event_rows = conn.execute(
+                f"SELECT id, title FROM events WHERE id IN ({placeholders})",
+                unique_member_ids,
+            ).fetchall()
+            title_map = {row["id"]: row["title"] for row in event_rows}
 
         items = []
         for row in rows:
             s = dict(row)
-            try:
-                member_ids = json.loads(s.get("member_ids", "[]"))
-            except (json.JSONDecodeError, TypeError):
-                member_ids = []
-            # Resolve member titles while the connection is still open.
-            members = []
-            if member_ids:
-                placeholders = ",".join(["?" for _ in member_ids])
-                event_rows = conn.execute(
-                    f"SELECT id, title FROM events WHERE id IN ({placeholders})",
-                    member_ids,
-                ).fetchall()
-                title_map = {r["id"]: r["title"] for r in event_rows}
-                for mid in member_ids:
-                    members.append({"id": mid, "title": title_map.get(mid, "(已删除)")})
-            s["members"] = members
+            s["members"] = [
+                {"id": member_id, "title": title_map.get(member_id, "(已删除)")}
+                for member_id in parsed_ids[row["id"]]
+            ]
             items.append(s)
 
     return {"items": items}

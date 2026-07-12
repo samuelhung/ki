@@ -24,7 +24,7 @@ interface SeriesMember {
   created_at: string;
 }
 
-interface SeriesDetailData {
+export interface SeriesDetailData {
   id: string;
   name: string;
   description: string;
@@ -37,6 +37,14 @@ interface SeriesDetailData {
   created_at: string;
   updated_at?: string;
   members: SeriesMember[];
+}
+
+interface SeriesDetailProps {
+  embedded?: boolean;
+  seriesId?: string;
+  initialSeries?: SeriesDetailData | null;
+  onSeriesChange?: (series: SeriesDetailData) => void;
+  onDeleted?: (seriesId: string) => void;
 }
 
 interface Suggestion {
@@ -130,12 +138,12 @@ function summaryToHtml(md: string, mode?: 'summary' | 'paper'): string {
   return sanitizeHtml(html);
 }
 
-export default function SeriesDetail({ embedded = false, seriesId }: { embedded?: boolean; seriesId?: string }) {
+export default function SeriesDetail({ embedded = false, seriesId, initialSeries = null, onSeriesChange, onDeleted }: SeriesDetailProps) {
   const { id: routeId } = useParams<{ id: string }>();
   const id = seriesId || routeId;
   const navigate = useNavigate();
-  const [series, setSeries] = useState<SeriesDetailData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [series, setSeries] = useState<SeriesDetailData | null>(initialSeries);
+  const [loading, setLoading] = useState(!initialSeries);
   const [error, setError] = useState('');
   const [introGenerating, setIntroGenerating] = useState(false);
   const [summaryGenerating, setSummaryGenerating] = useState(false);
@@ -157,7 +165,29 @@ export default function SeriesDetail({ embedded = false, seriesId }: { embedded?
   const [refreshing, setRefreshing] = useState(false);
   const [allProcessed, setAllProcessed] = useState(false);
 
-  useEffect(() => { loadDetail(); loadSuggestions(); }, [id]);
+  function commitSeries(next: SeriesDetailData | null) {
+    setSeries(next);
+    if (next) onSeriesChange?.(next);
+  }
+
+  useEffect(() => {
+    setError('');
+    setPanelId(null);
+    if (embedded) {
+      commitSeries(initialSeries);
+      setLoading(!initialSeries);
+    } else {
+      loadDetail();
+    }
+    loadSuggestions();
+  }, [id, embedded]);
+
+  useEffect(() => {
+    if (embedded && initialSeries?.id === id) {
+      setSeries(initialSeries);
+      setLoading(false);
+    }
+  }, [embedded, id, initialSeries]);
 
   // Restore allProcessed from sessionStorage on mount
   useEffect(() => {
@@ -178,7 +208,8 @@ export default function SeriesDetail({ embedded = false, seriesId }: { embedded?
     if (!genIntro && !genSummary && !genPaper) return;
 
     // Poll until content arrives
-    const interval = setInterval(async () => {
+    const poll = async () => {
+      if (document.hidden) return;
       try {
         const r = await apiFetch(`/api/ingest/series/${id}`);
         const d = await r.json();
@@ -186,10 +217,13 @@ export default function SeriesDetail({ embedded = false, seriesId }: { embedded?
         if (genIntro && d.intro) { setIntroGenerating(false); sessionStorage.removeItem(`series_${id}_gen_intro`); changed = true; }
         if (genSummary && d.summary) { setSummaryGenerating(false); sessionStorage.removeItem(`series_${id}_gen_summary`); changed = true; }
         if (genPaper && d.paper) { setPaperGenerating(false); sessionStorage.removeItem(`series_${id}_gen_paper`); changed = true; }
-        if (changed) setSeries(d);
+        if (changed) commitSeries(d);
       } catch (_) {}
-    }, 2000);
-    return () => clearInterval(interval);
+    };
+    const interval = setInterval(poll, 2000);
+    const handleVisibility = () => { if (!document.hidden) poll(); };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => { clearInterval(interval); document.removeEventListener('visibilitychange', handleVisibility); };
   }, [id]);
 
   async function loadDetail() {
@@ -198,7 +232,7 @@ export default function SeriesDetail({ embedded = false, seriesId }: { embedded?
       const r = await apiFetch(`/api/ingest/series/${id}`);
       if (!r.ok) throw new Error('专题不存在');
       const d = await r.json();
-      setSeries(d);
+      commitSeries(d);
       if (!d.intro && !d.summary && !d.paper) setTab('content');
     } catch (e: any) { setError(e.message); }
     setLoading(false);
@@ -228,7 +262,7 @@ export default function SeriesDetail({ embedded = false, seriesId }: { embedded?
       const r = await apiFetch(`/api/ingest/series/${id}/intro`, { method: 'PUT' });
       if (!r.ok) { setError((await r.json()).detail || '导言生成失败'); setIntroGenerating(false); sessionStorage.removeItem(`series_${id}_gen_intro`); return; }
       const d = await r.json();
-      setSeries(prev => prev ? { ...prev, intro: d.intro } : prev);
+      if (series) commitSeries({ ...series, intro: d.intro });
     } catch (e: any) { setError(e.message); }
     setIntroGenerating(false);
     sessionStorage.removeItem(`series_${id}_gen_intro`);
@@ -242,7 +276,7 @@ export default function SeriesDetail({ embedded = false, seriesId }: { embedded?
       const r = await apiFetch(`/api/ingest/series/${id}/summary`, { method: 'PUT' });
       if (!r.ok) { setError((await r.json()).detail || '总结生成失败'); setSummaryGenerating(false); sessionStorage.removeItem(`series_${id}_gen_summary`); return; }
       const d = await r.json();
-      setSeries(prev => prev ? { ...prev, summary: d.summary } : prev);
+      if (series) commitSeries({ ...series, summary: d.summary });
     } catch (e: any) { setError(e.message); }
     setSummaryGenerating(false);
     sessionStorage.removeItem(`series_${id}_gen_summary`);
@@ -256,7 +290,7 @@ export default function SeriesDetail({ embedded = false, seriesId }: { embedded?
       const r = await apiFetch(`/api/ingest/series/${id}/paper`, { method: 'PUT' });
       if (!r.ok) { setError((await r.json()).detail || '论文生成失败'); setPaperGenerating(false); sessionStorage.removeItem(`series_${id}_gen_paper`); return; }
       const d = await r.json();
-      setSeries(prev => prev ? { ...prev, paper: d.paper } : prev);
+      if (series) commitSeries({ ...series, paper: d.paper });
     } catch (e: any) { setError(e.message); }
     setPaperGenerating(false);
     sessionStorage.removeItem(`series_${id}_gen_paper`);
@@ -265,7 +299,12 @@ export default function SeriesDetail({ embedded = false, seriesId }: { embedded?
   async function handleDelete() {
     if (!series) return;
     setDeleting(true);
-    try { await apiFetch(`/api/ingest/series/${id}`, { method: 'DELETE' }); navigate('/series'); }
+    try {
+      const response = await apiFetch(`/api/ingest/series/${id}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('删除失败');
+      if (embedded) onDeleted?.(id || '');
+      else navigate('/series');
+    }
     catch (_) { setDeleting(false); setConfirmDelete(false); }
   }
 
@@ -287,16 +326,18 @@ export default function SeriesDetail({ embedded = false, seriesId }: { embedded?
     setProgressStage('adding');
     try {
       // Stage 1: Add members
-      await apiFetch(`/api/ingest/series/${id}/members`, {
+      const addResponse = await apiFetch(`/api/ingest/series/${id}/members`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ event_ids: [...selectedIds] }),
       });
+      if (!addResponse.ok) throw new Error('添加成员失败');
       setProgressStage('summary');
 
       // Stage 2: Regenerate structured summary
       setSummaryGenerating(true);
       sessionStorage.setItem(`series_${id}_gen_summary`, '1');
-      await apiFetch(`/api/ingest/series/${id}/summary`, { method: 'PUT' });
+      const summaryResponse = await apiFetch(`/api/ingest/series/${id}/summary`, { method: 'PUT' });
+      if (!summaryResponse.ok) throw new Error('重新生成总结失败');
       setSummaryGenerating(false);
       sessionStorage.removeItem(`series_${id}_gen_summary`);
       setProgressStage('paper');
@@ -304,7 +345,8 @@ export default function SeriesDetail({ embedded = false, seriesId }: { embedded?
       // Stage 3: Regenerate deep analysis
       setPaperGenerating(true);
       sessionStorage.setItem(`series_${id}_gen_paper`, '1');
-      await apiFetch(`/api/ingest/series/${id}/paper`, { method: 'PUT' });
+      const paperResponse = await apiFetch(`/api/ingest/series/${id}/paper`, { method: 'PUT' });
+      if (!paperResponse.ok) throw new Error('重新生成深度分析失败');
       setPaperGenerating(false);
       sessionStorage.removeItem(`series_${id}_gen_paper`);
       setProgressStage('done');
@@ -326,7 +368,14 @@ export default function SeriesDetail({ embedded = false, seriesId }: { embedded?
         setShowProgress(false);
         setShowSuggestions(false);
       }, 1500);
-    } catch (_) {}
+    } catch (reason: any) {
+      setError(reason?.message || '批量添加失败');
+      setShowProgress(false);
+      setSummaryGenerating(false);
+      setPaperGenerating(false);
+      sessionStorage.removeItem(`series_${id}_gen_summary`);
+      sessionStorage.removeItem(`series_${id}_gen_paper`);
+    }
     setBatchAdding(false);
   }
 

@@ -3,7 +3,7 @@
 .cinematic-series .series-index-list::-webkit-scrollbar { display: none; }
 .cinematic-series .series-index-list .ingest-index-item { min-height: 58px; }
 .cinematic-series .series-index-list .index-title b { width: max-content !important; max-width: 250px !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
-.cinematic-series .series-index-list .ingest-index-item > small { display: block; max-width: 245px; margin-top: 4px; color: rgba(255,255,255,.28); font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cinematic-series .series-index-list .ingest-index-item > small { display: block; max-width: 245px; margin-top: 4px; color: rgba(255,255,255,.38); font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .series-detail-body { padding-bottom: 190px; }
 .series-description { max-width: 820px; margin: 8px 0 20px; color: rgba(255,255,255,.7); font-size: 13px; line-height: 1.9; }
 .series-narrative { max-width: 860px; margin: 0 0 20px; padding: 15px 0 18px; border-block: 1px solid rgba(167,139,250,.12); }

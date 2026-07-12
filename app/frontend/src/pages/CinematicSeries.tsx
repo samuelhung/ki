@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Check, ExternalLink, Layers, Lightbulb, Loader2, PenTool, Plus, RefreshCw, Search, Zap } from 'lucide-react';
 import { useCurtain } from '../CurtainContext';
 import { apiFetch } from '../api';
@@ -7,7 +7,7 @@ import CinematicTemplatePage from '../components/cinematic/CinematicTemplatePage
 import { CINEMATIC_LASER_PRESET } from '../components/cinematic/cinematicLaserPreset';
 import { useCinematicTemplateLayout } from '../components/cinematic/useCinematicTemplateLayout';
 import { useLaserRenderProfile } from '../components/cinematic-ingest/useLaserRenderProfile';
-import { buildStage2Payload, getSeriesMemberCount, getSeriesStats } from '../components/cinematic-series/seriesWorkspace.mjs';
+import { buildStage2Payload, getSeriesMemberCount, getSeriesStats, removeSeriesItem, syncSeriesItem } from '../components/cinematic-series/seriesWorkspace.mjs';
 import LaserFlow from '../components/react-bits/LaserFlow';
 import LegacySeriesDetail from './SeriesDetail';
 import '../components/cinematic/cinematic.css';
@@ -22,6 +22,7 @@ type SeriesItem = { id: string; name: string; description?: string; member_ids: 
 type Group = { name: string; description: string; event_ids: string[]; event_titles?: string[]; count: number };
 type Candidate = { name: string; description: string; member_ids: string[]; member_titles?: string[]; rationale?: string; _duplicate_of?: { id: string; name: string; status: string } };
 type EventItem = { id: string; title: string; overview?: string; ai_summary?: string; topic?: string; content_type?: string; status?: string; created_at?: string };
+type SeriesDetailData = SeriesItem & { members: Member[]; sort_order?: string; unscanned_count?: number };
 
 export default function CinematicSeries() {
   const { navigateWithCurtain } = useCurtain();
@@ -50,6 +51,7 @@ export default function CinematicSeries() {
   const [createdId, setCreatedId] = useState('');
   const [createdName, setCreatedName] = useState('');
   const [suggestion, setSuggestion] = useState<{ name: string; description: string } | null>(null);
+  const detailCacheRef = useRef(new Map<string, SeriesDetailData>());
 
   async function loadSeries() {
     setLoading(true);
@@ -68,13 +70,36 @@ export default function CinematicSeries() {
 
   useEffect(() => {
     if (!selectedId) { setSelectedDetail(null); return; }
+    const cached = detailCacheRef.current.get(selectedId);
+    if (cached) { setSelectedDetail(cached); return; }
+    setSelectedDetail(null);
     let active = true;
     apiFetch(`/api/ingest/series/${selectedId}`)
       .then((response) => response.ok ? response.json() : null)
-      .then((detail) => { if (active && detail) setSelectedDetail(detail); })
+      .then((detail) => {
+        if (!active || !detail) return;
+        detailCacheRef.current.set(selectedId, detail);
+        setSelectedDetail(detail);
+      })
       .catch(() => {});
     return () => { active = false; };
   }, [selectedId]);
+
+  const handleSeriesChange = useCallback((detail: SeriesDetailData) => {
+    detailCacheRef.current.set(detail.id, detail);
+    setSelectedDetail((current) => current?.id === detail.id ? detail : current);
+    setItems((current) => syncSeriesItem(current, detail));
+  }, []);
+
+  const handleSeriesDeleted = useCallback((seriesId: string) => {
+    detailCacheRef.current.delete(seriesId);
+    setSelectedDetail(null);
+    setItems((current) => {
+      const next = removeSeriesItem(current, seriesId);
+      setSelectedId(next.selectedId);
+      return next.items;
+    });
+  }, []);
 
   const selectedFromList = items.find((item) => item.id === selectedId) || items[0];
   const selected = selectedDetail?.id === selectedId ? selectedDetail : selectedFromList;
@@ -167,9 +192,9 @@ export default function CinematicSeries() {
     <button className="launcher-action ingest-command-metric is-source" onClick={loadSeries}><RefreshCw size={15} /><b>刷新专题</b><span>{items.length} 个</span><small>REFRESH</small></button>
   </div></section>;
   const status = <section className="ingest-observation cinematic-observation series-status" aria-label="专题状态"><div className="panel-status"><i className="signal-dot" /><span>专题工作台</span></div><span>聚合分散内容，建立持续生长的知识专题</span><div className="system-status-summary"><span className="is-good">专题 {stats.total}</span><span className="is-cyan">就绪 {stats.ready}</span><span className="is-warn">处理中 {stats.processing}</span></div><div className="panel-detail-grid"><span>当前<b>{selected?.name || '--'}</b></span><span>内容<b>{selected ? getSeriesMemberCount(selected) : 0} 条</b></span></div></section>;
-  const index = <><div className="ingest-topic-orbit series-topic-orbit" aria-label="专题分组"><button className="is-active is-gold"><Layers size={14} /><span>专题</span></button></div><div className="ingest-index-list series-index-list">{items.map((item, index) => <button key={item.id} className={`ingest-index-item${selected?.id === item.id ? ' is-active' : ''}`} style={{ '--index-depth-scale': 1 - Math.min(index, 8) * .032, '--index-depth-z': `${-Math.min(index, 8) * 3}px`, '--index-depth-opacity': 1 - Math.min(index, 8) * .055 } as CSSProperties} onClick={() => setSelectedId(item.id)}><div className="index-title"><b>{item.name}</b><span><em className="is-cyan">{getSeriesMemberCount(item)} 条</em></span></div><small>{item.description || '持续整理中的知识专题'}</small></button>)}</div></>;
+  const index = <><div className="ingest-topic-orbit series-topic-orbit" aria-label="专题分组"><button className="is-active is-gold"><Layers size={14} /><span>专题</span></button></div><div className="ingest-index-list series-index-list">{items.map((item, index) => <button key={item.id} className={`ingest-index-item${selected?.id === item.id ? ' is-active' : ''}`} style={{ '--index-depth-scale': 1 - Math.min(index, 8) * .032, '--index-depth-z': `${-Math.min(index, 8) * 3}px`, '--index-depth-opacity': 1 - Math.min(index, 8) * .035 } as CSSProperties} onClick={() => setSelectedId(item.id)}><div className="index-title"><b>{item.name}</b><span><em className="is-cyan">{getSeriesMemberCount(item)} 条</em></span></div><small>{item.description || '持续整理中的知识专题'}</small></button>)}</div></>;
 
-  return <CinematicTemplatePage className="cinematic-series" profile={profile} topic="violet" style={style} variant="system" status={status} commands={commands} workspace={<CinematicLaserWorkspace ariaLabel="专题聚合舱" indexAriaLabel="专题索引" index={index} stageAriaLabel="专题详情" stage={<><LaserFlow {...CINEMATIC_LASER_PRESET} verticalBeamOffset={beamVerticalOffset} dpr={laserRenderProfile.dpr} maxFps={laserRenderProfile.maxFps} />{selected ? <LegacySeriesDetail key={selected.id} embedded seriesId={selected.id} /> : <div className="series-cinematic-loading">{loading ? <Loader2 className="animate-spin" /> : error || '暂无专题'}</div>}<div className="laser-media-box series-core-box"><span>KNOWLEDGE SERIES</span><b>{selected?.name || '等待专题'}</b><div><em>成员<strong>{selected ? getSeriesMemberCount(selected) : 0} 条</strong></em><em>状态<strong>{selected?.status || '--'}</strong></em><em>更新<strong>{selected?.updated_at?.slice(0, 10) || selected?.created_at?.slice(0, 10) || '--'}</strong></em></div></div></>} />} overlays={dialog ? <SeriesDialog mode={mode} setMode={setMode} busy={busy} message={message} groups={groups} selectedGroups={selectedGroups} setSelectedGroups={setSelectedGroups} candidates={candidates} duplicates={duplicates} topic={topic} setTopic={setTopic} events={events} eventQuery={eventQuery} setEventQuery={setEventQuery} manualTitle={manualTitle} setManualTitle={setManualTitle} selectedEvents={selectedEvents} setSelectedEvents={setSelectedEvents} savingIndex={savingIndex} suggestion={suggestion} createdName={createdName} onClose={close} onGlobal1={globalStage1} onGlobal2={globalStage2} onTopic={topicDiscover} onSave={saveCandidate} onManualOpen={() => open('manual')} onManual={manualCreate} onAdopt={adoptSuggestion} onOpenCreated={() => createdId && navigateWithCurtain(`/series/${createdId}`)} /> : null} activeHub={activeHub} onActiveHubChange={setActiveHub} onNavigate={(path) => navigateWithCurtain(path)} />;
+  return <CinematicTemplatePage className="cinematic-series" profile={profile} topic="violet" style={style} variant="system" status={status} commands={commands} workspace={<CinematicLaserWorkspace ariaLabel="专题聚合舱" indexAriaLabel="专题索引" index={index} stageAriaLabel="专题详情" stage={<><LaserFlow {...CINEMATIC_LASER_PRESET} verticalBeamOffset={beamVerticalOffset} dpr={laserRenderProfile.dpr} maxFps={laserRenderProfile.maxFps} />{selected ? <LegacySeriesDetail embedded seriesId={selected.id} initialSeries={selectedDetail?.id === selected.id ? selectedDetail as SeriesDetailData : null} onSeriesChange={handleSeriesChange} onDeleted={handleSeriesDeleted} /> : <div className="series-cinematic-loading">{loading ? <Loader2 className="animate-spin" /> : error || '暂无专题'}</div>}<div className="laser-media-box series-core-box"><span>KNOWLEDGE SERIES</span><b>{selected?.name || '等待专题'}</b><div><em>成员<strong>{selected ? getSeriesMemberCount(selected) : 0} 条</strong></em><em>状态<strong>{selected?.status || '--'}</strong></em><em>更新<strong>{selected?.updated_at?.slice(0, 10) || selected?.created_at?.slice(0, 10) || '--'}</strong></em></div></div></>} />} overlays={dialog ? <SeriesDialog mode={mode} setMode={setMode} busy={busy} message={message} groups={groups} selectedGroups={selectedGroups} setSelectedGroups={setSelectedGroups} candidates={candidates} duplicates={duplicates} topic={topic} setTopic={setTopic} events={events} eventQuery={eventQuery} setEventQuery={setEventQuery} manualTitle={manualTitle} setManualTitle={setManualTitle} selectedEvents={selectedEvents} setSelectedEvents={setSelectedEvents} savingIndex={savingIndex} suggestion={suggestion} createdName={createdName} onClose={close} onGlobal1={globalStage1} onGlobal2={globalStage2} onTopic={topicDiscover} onSave={saveCandidate} onManualOpen={() => open('manual')} onManual={manualCreate} onAdopt={adoptSuggestion} onOpenCreated={() => createdId && navigateWithCurtain(`/series/${createdId}`)} /> : null} activeHub={activeHub} onActiveHubChange={setActiveHub} onNavigate={(path) => navigateWithCurtain(path)} />;
 }
 
 function SeriesDialog(props: any) {

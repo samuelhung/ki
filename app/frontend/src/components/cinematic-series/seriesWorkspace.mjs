@@ -26,3 +26,27 @@ export function buildStage2Payload(groups) {
     name_hint: selected.map((group) => group?.name).filter(Boolean).join('、'),
   };
 }
+
+const SERIES_LIST_FIELDS = [
+  'id', 'name', 'description', 'member_ids', 'members', 'status', 'created_at', 'updated_at',
+];
+
+export function syncSeriesItem(items, detail) {
+  if (!detail?.id) return Array.isArray(items) ? items : [];
+  const summary = Object.fromEntries(
+    SERIES_LIST_FIELDS
+      .filter((field) => detail[field] !== undefined)
+      .map((field) => [field, detail[field]]),
+  );
+  return (Array.isArray(items) ? items : []).map((item) => (
+    item.id === detail.id ? { ...item, ...summary } : item
+  ));
+}
+
+export function removeSeriesItem(items, removedId) {
+  const current = Array.isArray(items) ? items : [];
+  const removedIndex = current.findIndex((item) => item.id === removedId);
+  const nextItems = current.filter((item) => item.id !== removedId);
+  const nextIndex = Math.min(Math.max(removedIndex, 0), nextItems.length - 1);
+  return { items: nextItems, selectedId: nextItems[nextIndex]?.id || '' };
+}

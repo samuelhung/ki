@@ -51,6 +51,10 @@ def test_series_list_resolves_members_before_connection_closes(tmp_path, monkeyp
             """INSERT INTO series (id, name, description, member_ids, status)
                VALUES ('series-1', '测试专题', '用于连接生命周期回归', '["evt-series-1"]', 'published')"""
         )
+        conn.execute(
+            "UPDATE series SET intro = '大段导言', summary = '大段总结', paper = '大段分析' "
+            "WHERE id = 'series-1'"
+        )
 
     client = TestClient(app)
 
@@ -59,6 +63,9 @@ def test_series_list_resolves_members_before_connection_closes(tmp_path, monkeyp
     assert response.status_code == 200
     payload = response.json()
     assert payload["items"][0]["members"] == [{"id": "evt-series-1", "title": "专题成员一"}]
+    assert "intro" not in payload["items"][0]
+    assert "summary" not in payload["items"][0]
+    assert "paper" not in payload["items"][0]
 
 
 def test_init_db_creates_sqlite_file(tmp_path, monkeypatch):

@@ -5,6 +5,8 @@ import {
   buildStage2Payload,
   getSeriesMemberCount,
   getSeriesStats,
+  removeSeriesItem,
+  syncSeriesItem,
   parseMemberIds,
 } from './seriesWorkspace.mjs';
 
@@ -35,4 +37,46 @@ test('buildStage2Payload deduplicates event ids and joins selected group names',
     { name: '产业', event_ids: ['b', 'c'] },
   ]);
   assert.deepEqual(payload, { event_ids: ['a', 'b', 'c'], name_hint: '宏观、产业' });
+});
+
+test('syncSeriesItem updates list metadata from the authoritative detail', () => {
+  const items = [
+    { id: 'a', name: '旧标题', member_ids: '["1"]', members: [{ id: '1' }], status: 'draft' },
+    { id: 'b', name: '保留项', member_ids: '[]', status: 'published' },
+  ];
+  const detail = {
+    id: 'a',
+    name: '新标题',
+    description: '新描述',
+    member_ids: '["1","2"]',
+    members: [{ id: '1' }, { id: '2' }],
+    status: 'published',
+    updated_at: '2026-07-12 12:00:00',
+    intro: '列表不需要的大字段',
+  };
+
+  assert.deepEqual(syncSeriesItem(items, detail), [
+    {
+      id: 'a',
+      name: '新标题',
+      description: '新描述',
+      member_ids: '["1","2"]',
+      members: [{ id: '1' }, { id: '2' }],
+      status: 'published',
+      updated_at: '2026-07-12 12:00:00',
+    },
+    items[1],
+  ]);
+});
+
+test('removeSeriesItem selects the adjacent remaining series', () => {
+  const items = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+  assert.deepEqual(removeSeriesItem(items, 'b'), {
+    items: [{ id: 'a' }, { id: 'c' }],
+    selectedId: 'c',
+  });
+  assert.deepEqual(removeSeriesItem(items, 'c'), {
+    items: [{ id: 'a' }, { id: 'b' }],
+    selectedId: 'b',
+  });
 });
