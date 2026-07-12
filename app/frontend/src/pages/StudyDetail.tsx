@@ -232,9 +232,10 @@ export default function StudyDetail({ embedded = false, materialId, onMaterialCh
   useEffect(() => {
     if (!material) return;
     if (format !== null) return;
-    if (material.study_type === '教材/课本' && material.source_type === 'pdf') setFormat('original');
+    if (embedded && material.study_type === '教材/课本' && material.lessons_json?.length) setFormat('lessons');
+    else if (material.study_type === '教材/课本' && material.source_type === 'pdf') setFormat('original');
     else setFormat('md');
-  }, [material]);
+  }, [material, embedded]);
 
   const handleGenerate = async () => {
     if (!id) return;
