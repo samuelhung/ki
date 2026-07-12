@@ -235,8 +235,8 @@ def judge_task(task_id: str):
     if not row:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    _run_task_ai_judge(task_id, row["title"], row["description"])
-    return get_task(task_id)
+    judgment = _run_task_ai_judge(task_id, row["title"], row["description"])
+    return {"task": get_task(task_id), "judgment": judgment}
 
 
 def _run_task_ai_judge(task_id: str, title: str, description: str):

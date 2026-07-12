@@ -33,3 +33,17 @@ export function removeTask(tasks, removedId, selectedId) {
   if (selectedId !== removedId) return { tasks: nextTasks, selectedId };
   return { tasks: nextTasks, selectedId: nextTasks[Math.min(index, nextTasks.length - 1)]?.id || '' };
 }
+
+export function resolveSelectedTask(visibleTasks, selectedId) {
+  return visibleTasks.find((task) => task.id === selectedId) || visibleTasks[0] || null;
+}
+
+export function taskTiming(task, today = new Date().toISOString().slice(0, 10)) {
+  if (task.status === 'done') return { tone: 'done', label: '已完成' };
+  if (!task.due_date) return { tone: 'neutral', label: '无截止日' };
+  const dayMs = 24 * 60 * 60 * 1000;
+  const difference = Math.round((Date.parse(`${task.due_date}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / dayMs);
+  if (difference < 0) return { tone: 'overdue', label: `逾期 ${Math.abs(difference)} 天` };
+  if (difference === 0) return { tone: 'today', label: '今日到期' };
+  return { tone: 'upcoming', label: `${difference} 天后到期` };
+}

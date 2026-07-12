@@ -5,6 +5,8 @@ import {
   getTaskStats,
   mergeTaskSnapshot,
   removeTask,
+  resolveSelectedTask,
+  taskTiming,
 } from './taskWorkspace.mjs';
 
 const tasks = [
@@ -34,4 +36,17 @@ test('mergeTaskSnapshot preserves local mutations and deletion tombstones', () =
 test('removeTask selects the adjacent task without forcing another selection later', () => {
   assert.deepEqual(removeTask(tasks, 'b', 'b'), { tasks: [tasks[0], tasks[2]], selectedId: 'c' });
   assert.deepEqual(removeTask(tasks, 'b', 'a'), { tasks: [tasks[0], tasks[2]], selectedId: 'a' });
+});
+
+test('resolveSelectedTask never keeps a task hidden by the active filters', () => {
+  assert.equal(resolveSelectedTask(tasks, 'a')?.id, 'a');
+  assert.equal(resolveSelectedTask([tasks[1], tasks[2]], 'a')?.id, 'b');
+  assert.equal(resolveSelectedTask([], 'a'), null);
+});
+
+test('taskTiming distinguishes overdue today and upcoming tasks', () => {
+  assert.deepEqual(taskTiming({ ...tasks[0], due_date: '2026-07-10' }, '2026-07-12'), { tone: 'overdue', label: '逾期 2 天' });
+  assert.deepEqual(taskTiming({ ...tasks[0], due_date: '2026-07-12' }, '2026-07-12'), { tone: 'today', label: '今日到期' });
+  assert.deepEqual(taskTiming({ ...tasks[0], due_date: '2026-07-15' }, '2026-07-12'), { tone: 'upcoming', label: '3 天后到期' });
+  assert.deepEqual(taskTiming({ ...tasks[2], due_date: '2026-07-10' }, '2026-07-12'), { tone: 'done', label: '已完成' });
 });
