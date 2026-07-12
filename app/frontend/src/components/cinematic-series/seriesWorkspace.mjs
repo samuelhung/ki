@@ -15,7 +15,7 @@ export function getSeriesMemberCount(series) {
 
 export function getSeriesStats(series) {
   const items = Array.isArray(series) ? series : [];
-  const ready = items.filter((item) => ['ready', 'completed', 'active'].includes(item?.status)).length;
+  const ready = items.filter((item) => ['ready', 'completed', 'active', 'published'].includes(item?.status)).length;
   return { total: items.length, ready, processing: items.length - ready };
 }
 

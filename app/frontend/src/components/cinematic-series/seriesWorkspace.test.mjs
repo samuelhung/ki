@@ -23,9 +23,10 @@ test('getSeriesStats separates ready and processing topics', () => {
   assert.deepEqual(getSeriesStats([
     { status: 'ready' },
     { status: 'completed' },
+    { status: 'published' },
     { status: 'processing' },
     { status: 'pending' },
-  ]), { total: 4, ready: 2, processing: 2 });
+  ]), { total: 5, ready: 3, processing: 2 });
 });
 
 test('buildStage2Payload deduplicates event ids and joins selected group names', () => {
