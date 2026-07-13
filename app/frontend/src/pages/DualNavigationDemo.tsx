@@ -1,4 +1,4 @@
-import type { PointerEvent } from 'react';
+import { useEffect, useRef, type PointerEvent } from 'react';
 import CinematicScene from '../components/cinematic/CinematicScene';
 import CircularGallery, { type CircularGalleryItem } from '../components/react-bits/CircularGallery';
 import GooeyNav, { type GooeyNavItem } from '../components/react-bits/GooeyNav';
@@ -23,16 +23,38 @@ const BOTTOM_ITEMS: CircularGalleryItem[] = [
   { image: 'https://picsum.photos/seed/dn-control/1000/750', text: 'Control' },
   { image: 'https://picsum.photos/seed/dn-observe/1000/750', text: 'Observe' },
   { image: 'https://picsum.photos/seed/dn-archive/1000/750', text: 'Archive' },
+  { image: 'https://picsum.photos/seed/dn-synthesis/1000/750', text: 'Synthesis' },
+  { image: 'https://picsum.photos/seed/dn-timeline/1000/750', text: 'Timeline' },
 ];
 
 export default function DualNavigationDemo() {
+  const revealFrameRef = useRef(0);
+  const revealTargetRef = useRef<HTMLElement | null>(null);
+  const revealPointRef = useRef({ x: -9999, y: -9999 });
+
+  useEffect(() => () => {
+    if (revealFrameRef.current) cancelAnimationFrame(revealFrameRef.current);
+  }, []);
+
   const handlePointerMove = (event: PointerEvent<HTMLElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
-    event.currentTarget.style.setProperty('--reveal-x', `${event.clientX - rect.left}px`);
-    event.currentTarget.style.setProperty('--reveal-y', `${event.clientY - rect.top}px`);
+    revealTargetRef.current = event.currentTarget;
+    revealPointRef.current = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    if (revealFrameRef.current) return;
+    revealFrameRef.current = requestAnimationFrame(() => {
+      const target = revealTargetRef.current;
+      if (target) {
+        target.style.setProperty('--reveal-x', `${revealPointRef.current.x}px`);
+        target.style.setProperty('--reveal-y', `${revealPointRef.current.y}px`);
+      }
+      revealFrameRef.current = 0;
+    });
   };
 
   const handlePointerLeave = (event: PointerEvent<HTMLElement>) => {
+    revealTargetRef.current = null;
+    if (revealFrameRef.current) cancelAnimationFrame(revealFrameRef.current);
+    revealFrameRef.current = 0;
     event.currentTarget.style.setProperty('--reveal-x', '-9999px');
     event.currentTarget.style.setProperty('--reveal-y', '-9999px');
   };
@@ -76,13 +98,14 @@ export default function DualNavigationDemo() {
           scrollEase={0.12}
           itemScale={0.34}
           dpr={1.25}
+          interactive={false}
           textColor="#f7f5ff"
         />
       </section>
 
       <footer className="dual-nav-demo__footer">
-        <span>SECONDARY / 08</span>
-        <span>LOOP 2.7</span>
+        <span>SECONDARY / 10</span>
+        <span>STATIC / LOCKED</span>
       </footer>
     </main>
   );

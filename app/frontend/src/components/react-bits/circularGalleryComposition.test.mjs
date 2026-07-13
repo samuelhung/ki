@@ -31,7 +31,7 @@ test('gallery item scaling changes cards and spacing proportionally', () => {
 });
 
 test('gallery starts from the second loop so items frame both sides', () => {
-  assert.match(gallery, /const initialOffset = this\.medias\[0\]\.width \* items\.length/);
+  assert.match(gallery, /interactive \? items\.length : \(items\.length - 1\) \/ 2/);
   assert.match(gallery, /this\.scroll\.current = initialOffset/);
   assert.match(gallery, /this\.scroll\.target = initialOffset/);
 });
@@ -39,4 +39,26 @@ test('gallery starts from the second loop so items frame both sides', () => {
 test('gallery supports a page-specific pixel ratio cap', () => {
   assert.match(gallery, /dpr = 2/);
   assert.match(gallery, /Math\.min\(window\.devicePixelRatio \|\| 1, dpr\)/);
+});
+
+test('gallery supports a static non-interactive render mode', () => {
+  assert.match(gallery, /interactive = true/);
+  assert.match(gallery, /interactive \? \[\.\.\.items, \.\.\.items\] : items/);
+  assert.match(gallery, /if \(this\.interactive\) this\.addEvents\(\)/);
+  assert.match(gallery, /if \(this\.interactive\) this\.update\(\); else this\.renderFrame\(\)/);
+  assert.match(gallery, /tabIndex=\{interactive \? 0 : -1\}/);
+  assert.match(gallery, /interactive \? '循环图片画廊，可使用滚轮、拖拽或方向键浏览' : '静态循环图片画廊'/);
+});
+
+test('static gallery centers one copy of the supplied items', () => {
+  assert.match(gallery, /items\.length - 1\) \/ 2/);
+  assert.match(gallery, /if \(!this\.interactive\) return/);
+  assert.match(gallery, /requestRender/);
+});
+
+test('static gallery reduces geometry and recenters after resize', () => {
+  assert.match(gallery, /heightSegments:\s*interactive \? 50 : 24/);
+  assert.match(gallery, /widthSegments:\s*interactive \? 100 : 48/);
+  assert.match(gallery, /if \(!this\.interactive && this\.medias\[0\]\)/);
+  assert.match(gallery, /this\.scroll\.current = staticOffset/);
 });

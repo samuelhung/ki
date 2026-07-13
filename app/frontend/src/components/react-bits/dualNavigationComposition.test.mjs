@@ -86,3 +86,21 @@ test('dual navigation demo reuses the Today hero copy and typography', () => {
   assert.doesNotMatch(page, /Dual Navigation/);
   assert.match(pageCss, /\.dual-nav-demo__hero\s*\{[^}]*--cinematic-ui-scale:/s);
 });
+
+test('dual navigation uses a fixed ten-item non-interactive gallery', () => {
+  const items = page.match(/const BOTTOM_ITEMS:[^=]+= \[([\s\S]*?)\n\];/)?.[1] || '';
+  assert.equal((items.match(/image:/g) || []).length, 10);
+  assert.match(page, /interactive=\{false\}/);
+  assert.match(page, /STATIC \/ LOCKED/);
+  assert.doesNotMatch(page, /LOOP 2\.7/);
+});
+
+test('pointer reveal coalesces updates and bounds the filtered area', () => {
+  assert.match(page, /requestAnimationFrame/);
+  assert.match(page, /cancelAnimationFrame/);
+  assert.match(page, /revealFrameRef/);
+  assert.match(pageCss, /\.dual-nav-demo__reveal\s*\{[^}]*width:\s*560px/s);
+  assert.match(pageCss, /\.dual-nav-demo__reveal\s*\{[^}]*height:\s*560px/s);
+  assert.match(pageCss, /transform:\s*translate3d\(/);
+  assert.match(pageCss, /circle at center/);
+});

@@ -4,6 +4,17 @@ import { arcTransform, lerp, snapTarget, wrapOffset } from './circularGalleryMat
 import './CircularGallery.css';
 
 export interface CircularGalleryItem { image: string; text: string }
+interface CircularGalleryProps {
+  items: CircularGalleryItem[];
+  bend?: number;
+  textColor?: string;
+  borderRadius?: number;
+  scrollSpeed?: number;
+  scrollEase?: number;
+  itemScale?: number;
+  dpr?: number;
+  interactive?: boolean;
+}
 interface Size { width: number; height: number }
 interface ScrollState { ease: number; current: number; target: number; last: number; position: number }
 type GL = Renderer['gl'];
@@ -59,11 +70,11 @@ function createFallbackTexture(gl: GL, text: string) {
 
 class GalleryMedia {
   plane: Mesh; label: Mesh; program: Program; extra = 0; width = 0; widthTotal = 0; x = 0;
-  constructor(private gl: GL, geometry: Plane, private item: CircularGalleryItem, private index: number, private length: number, private scene: Transform, private screen: Size, private viewport: Size, private bend: number, borderRadius: number, textColor: string, private itemScale: number) {
+  constructor(private gl: GL, geometry: Plane, private item: CircularGalleryItem, private index: number, private length: number, private scene: Transform, private screen: Size, private viewport: Size, private bend: number, borderRadius: number, textColor: string, private itemScale: number, requestRender: () => void) {
     const texture = createFallbackTexture(gl, item.text) || new Texture(gl); const image = new Image(); image.crossOrigin = 'anonymous'; image.src = item.image;
     const uniforms = { tMap: { value: texture }, uPlaneSizes: { value: [1, 1] }, uImageSizes: { value: [800, 600] }, uSpeed: { value: 0 }, uTime: { value: Math.random() * 100 }, uBorderRadius: { value: borderRadius } };
     this.program = new Program(gl, { vertex, fragment, uniforms, transparent: true, depthTest: false, depthWrite: false });
-    image.onload = () => { texture.image = image; uniforms.uImageSizes.value = [image.naturalWidth, image.naturalHeight]; };
+    image.onload = () => { texture.image = image; uniforms.uImageSizes.value = [image.naturalWidth, image.naturalHeight]; requestRender(); };
     this.plane = new Mesh(gl, { geometry, program: this.program }); this.plane.setParent(scene);
     const labelData = createCanvasTexture(gl, item.text, textColor); const labelProgram = new Program(gl, { vertex: labelVertex, fragment: labelFragment, uniforms: { tMap: { value: labelData.texture } }, transparent: true, depthTest: false, depthWrite: false });
     this.label = new Mesh(gl, { geometry: new Plane(gl), program: labelProgram }); this.label.setParent(scene); (this.label as any)._aspect = labelData.aspect;
@@ -76,44 +87,49 @@ class GalleryMedia {
     const labelHeight = this.plane.scale.y * .12; this.label.scale.set(labelHeight * (this.label as any)._aspect, labelHeight, 1);
     this.width = this.plane.scale.x + 2 * this.itemScale; this.widthTotal = this.width * this.length; this.x = this.width * this.index;
   }
-  update(scroll: ScrollState, direction: 'right' | 'left') {
+  update(scroll: ScrollState, direction: 'right' | 'left', wrap = true) {
     this.plane.position.x = this.x - scroll.current - this.extra; const arc = arcTransform(this.plane.position.x, this.viewport.width, this.bend);
     this.plane.position.y = arc.y; this.plane.rotation.z = arc.rotation;
     this.label.position.x = this.plane.position.x; this.label.position.y = arc.y - this.plane.scale.y * .5 - this.label.scale.y * .75; this.label.rotation.z = arc.rotation;
     const speed = scroll.current - scroll.last;
     this.program.uniforms.uTime.value += Math.min(.04, .012 + Math.abs(speed) * .04); this.program.uniforms.uSpeed.value = speed;
-    const shift = wrapOffset(this.plane.position.x, this.plane.scale.x / 2, this.viewport.width / 2, this.widthTotal, direction);
-    if (shift) this.extra += shift;
+    if (wrap) {
+      const shift = wrapOffset(this.plane.position.x, this.plane.scale.x / 2, this.viewport.width / 2, this.widthTotal, direction);
+      if (shift) this.extra += shift;
+    }
   }
 }
 
 class GalleryApp {
   renderer: Renderer; gl: GL; camera: Camera; scene = new Transform(); geometry: Plane; medias: GalleryMedia[] = []; screen = { width: 1, height: 1 }; viewport = { width: 1, height: 1 };
-  scroll: ScrollState; raf = 0; isDown = false; start = 0; resizeObserver: ResizeObserver; snapTimer = 0; visible = true;
-  constructor(private container: HTMLElement, items: CircularGalleryItem[], private bend: number, textColor: string, borderRadius: number, private scrollSpeed: number, scrollEase: number, itemScale: number, dpr: number) {
+  scroll: ScrollState; raf = 0; isDown = false; start = 0; resizeObserver: ResizeObserver; snapTimer = 0; visible = true; destroyed = false;
+  constructor(private container: HTMLElement, items: CircularGalleryItem[], private bend: number, textColor: string, borderRadius: number, private scrollSpeed: number, scrollEase: number, itemScale: number, dpr: number, private interactive: boolean) {
     this.scroll = { ease: scrollEase, current: 0, target: 0, last: 0, position: 0 };
     this.renderer = new Renderer({ alpha: true, antialias: true, dpr: Math.min(window.devicePixelRatio || 1, dpr) }); this.gl = this.renderer.gl; this.gl.clearColor(0, 0, 0, 0); container.appendChild(this.gl.canvas as HTMLCanvasElement);
-    this.camera = new Camera(this.gl); this.camera.fov = 45; this.camera.position.z = 20; this.geometry = new Plane(this.gl, { heightSegments: 50, widthSegments: 100 });
-    this.resize(); const doubled = [...items, ...items]; this.medias = doubled.map((item, index) => new GalleryMedia(this.gl, this.geometry, item, index, doubled.length, this.scene, this.screen, this.viewport, bend, borderRadius, textColor, itemScale));
-    const initialOffset = this.medias[0].width * items.length; this.scroll.current = initialOffset; this.scroll.target = initialOffset; this.scroll.last = initialOffset;
-    this.resizeObserver = new ResizeObserver(this.resize); this.resizeObserver.observe(container); this.addEvents(); this.update();
+    this.camera = new Camera(this.gl); this.camera.fov = 45; this.camera.position.z = 20; this.geometry = new Plane(this.gl, { heightSegments: interactive ? 50 : 24, widthSegments: interactive ? 100 : 48 });
+    this.resize(); const sourceItems = interactive ? [...items, ...items] : items; this.medias = sourceItems.map((item, index) => new GalleryMedia(this.gl, this.geometry, item, index, sourceItems.length, this.scene, this.screen, this.viewport, bend, borderRadius, textColor, itemScale, this.requestRender));
+    const initialOffset = this.medias[0].width * (interactive ? items.length : (items.length - 1) / 2); this.scroll.current = initialOffset; this.scroll.target = initialOffset; this.scroll.last = initialOffset;
+    this.resizeObserver = new ResizeObserver(this.resize); this.resizeObserver.observe(container); if (this.interactive) this.addEvents();
+    if (this.interactive) this.update(); else this.renderFrame();
   }
-  resize = () => { this.screen = { width: Math.max(1, this.container.clientWidth), height: Math.max(1, this.container.clientHeight) }; this.renderer.setSize(this.screen.width, this.screen.height); this.camera.perspective({ aspect: this.screen.width / this.screen.height }); const fov = this.camera.fov * Math.PI / 180; const height = 2 * Math.tan(fov / 2) * this.camera.position.z; this.viewport = { width: height * this.camera.aspect, height }; this.medias.forEach(media => media.resize(this.screen, this.viewport)); };
+  resize = () => { this.screen = { width: Math.max(1, this.container.clientWidth), height: Math.max(1, this.container.clientHeight) }; this.renderer.setSize(this.screen.width, this.screen.height); this.camera.perspective({ aspect: this.screen.width / this.screen.height }); const fov = this.camera.fov * Math.PI / 180; const height = 2 * Math.tan(fov / 2) * this.camera.position.z; this.viewport = { width: height * this.camera.aspect, height }; this.medias.forEach(media => media.resize(this.screen, this.viewport)); if (!this.interactive && this.medias[0]) { const staticOffset = this.medias[0].width * (this.medias.length - 1) / 2; this.scroll.current = staticOffset; this.scroll.target = staticOffset; this.scroll.last = staticOffset; this.renderFrame(); } };
+  requestRender = () => { if (!this.interactive && !this.destroyed) this.renderFrame(); };
   snap = () => { if (this.medias[0]) this.scroll.target = snapTarget(this.scroll.target, this.medias[0].width); };
   queueSnap = () => { window.clearTimeout(this.snapTimer); this.snapTimer = window.setTimeout(this.snap, 180); };
-  onWheel = (event: WheelEvent) => { event.preventDefault(); const delta = event.deltaY || event.deltaX; this.scroll.target += (delta > 0 ? this.scrollSpeed : -this.scrollSpeed) * .2; this.queueSnap(); };
-  onPointerDown = (event: PointerEvent) => { this.isDown = true; this.scroll.position = this.scroll.current; this.start = event.clientX; this.container.setPointerCapture?.(event.pointerId); };
-  onPointerMove = (event: PointerEvent) => { if (!this.isDown) return; this.scroll.target = this.scroll.position + (this.start - event.clientX) * (this.scrollSpeed * .025); };
-  onPointerUp = () => { if (!this.isDown) return; this.isDown = false; this.snap(); };
-  onKeyDown = (event: KeyboardEvent) => { if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return; event.preventDefault(); this.scroll.target += (event.key === 'ArrowRight' ? 1 : -1) * this.scrollSpeed * 5; this.queueSnap(); };
+  onWheel = (event: WheelEvent) => { if (!this.interactive) return; event.preventDefault(); const delta = event.deltaY || event.deltaX; this.scroll.target += (delta > 0 ? this.scrollSpeed : -this.scrollSpeed) * .2; this.queueSnap(); };
+  onPointerDown = (event: PointerEvent) => { if (!this.interactive) return; this.isDown = true; this.scroll.position = this.scroll.current; this.start = event.clientX; this.container.setPointerCapture?.(event.pointerId); };
+  onPointerMove = (event: PointerEvent) => { if (!this.interactive || !this.isDown) return; this.scroll.target = this.scroll.position + (this.start - event.clientX) * (this.scrollSpeed * .025); };
+  onPointerUp = () => { if (!this.interactive || !this.isDown) return; this.isDown = false; this.snap(); };
+  onKeyDown = (event: KeyboardEvent) => { if (!this.interactive || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return; event.preventDefault(); this.scroll.target += (event.key === 'ArrowRight' ? 1 : -1) * this.scrollSpeed * 5; this.queueSnap(); };
   onVisibility = () => { this.visible = !document.hidden; if (this.visible && !this.raf) this.update(); else if (!this.visible && this.raf) { cancelAnimationFrame(this.raf); this.raf = 0; } };
   addEvents() { this.container.addEventListener('wheel', this.onWheel, { passive: false }); this.container.addEventListener('pointerdown', this.onPointerDown); this.container.addEventListener('pointermove', this.onPointerMove); this.container.addEventListener('pointerup', this.onPointerUp); this.container.addEventListener('pointercancel', this.onPointerUp); this.container.addEventListener('keydown', this.onKeyDown); document.addEventListener('visibilitychange', this.onVisibility); }
-  update = () => { if (!this.visible) { this.raf = 0; return; } this.scroll.current = lerp(this.scroll.current, this.scroll.target, this.scroll.ease); const direction = this.scroll.current > this.scroll.last ? 'right' : 'left'; this.medias.forEach(media => media.update(this.scroll, direction)); this.renderer.render({ scene: this.scene, camera: this.camera }); this.scroll.last = this.scroll.current; this.raf = requestAnimationFrame(this.update); };
-  destroy() { cancelAnimationFrame(this.raf); clearTimeout(this.snapTimer); this.resizeObserver.disconnect(); this.container.removeEventListener('wheel', this.onWheel); this.container.removeEventListener('pointerdown', this.onPointerDown); this.container.removeEventListener('pointermove', this.onPointerMove); this.container.removeEventListener('pointerup', this.onPointerUp); this.container.removeEventListener('pointercancel', this.onPointerUp); this.container.removeEventListener('keydown', this.onKeyDown); document.removeEventListener('visibilitychange', this.onVisibility); const canvas = this.gl.canvas as HTMLCanvasElement; canvas.remove(); this.gl.getExtension('WEBGL_lose_context')?.loseContext(); }
+  renderFrame = () => { const direction = this.scroll.current > this.scroll.last ? 'right' : 'left'; this.medias.forEach(media => media.update(this.scroll, direction, this.interactive)); this.renderer.render({ scene: this.scene, camera: this.camera }); this.scroll.last = this.scroll.current; };
+  update = () => { if (!this.visible) { this.raf = 0; return; } this.scroll.current = lerp(this.scroll.current, this.scroll.target, this.scroll.ease); this.renderFrame(); this.raf = requestAnimationFrame(this.update); };
+  destroy() { this.destroyed = true; cancelAnimationFrame(this.raf); clearTimeout(this.snapTimer); this.resizeObserver.disconnect(); this.container.removeEventListener('wheel', this.onWheel); this.container.removeEventListener('pointerdown', this.onPointerDown); this.container.removeEventListener('pointermove', this.onPointerMove); this.container.removeEventListener('pointerup', this.onPointerUp); this.container.removeEventListener('pointercancel', this.onPointerUp); this.container.removeEventListener('keydown', this.onKeyDown); document.removeEventListener('visibilitychange', this.onVisibility); const canvas = this.gl.canvas as HTMLCanvasElement; canvas.remove(); this.gl.getExtension('WEBGL_lose_context')?.loseContext(); }
 }
 
-export default function CircularGallery({ items, bend = 3, textColor = '#ffffff', borderRadius = .05, scrollSpeed = 2, scrollEase = .05, itemScale = 1, dpr = 2 }: { items: CircularGalleryItem[]; bend?: number; textColor?: string; borderRadius?: number; scrollSpeed?: number; scrollEase?: number; itemScale?: number; dpr?: number }) {
+export default function CircularGallery({ items, bend = 3, textColor = '#ffffff', borderRadius = .05, scrollSpeed = 2, scrollEase = .05, itemScale = 1, dpr = 2, interactive = true }: CircularGalleryProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { if (!containerRef.current || !items.length) return; const app = new GalleryApp(containerRef.current, items, bend, textColor, borderRadius, scrollSpeed, scrollEase, itemScale, dpr); return () => app.destroy(); }, [items, bend, textColor, borderRadius, scrollSpeed, scrollEase, itemScale, dpr]);
-  return <div ref={containerRef} className="circular-gallery" tabIndex={0} role="region" aria-label="循环图片画廊，可使用滚轮、拖拽或方向键浏览" />;
+  useEffect(() => { if (!containerRef.current || !items.length) return; const app = new GalleryApp(containerRef.current, items, bend, textColor, borderRadius, scrollSpeed, scrollEase, itemScale, dpr, interactive); return () => app.destroy(); }, [items, bend, textColor, borderRadius, scrollSpeed, scrollEase, itemScale, dpr, interactive]);
+  return <div ref={containerRef} className={`circular-gallery${interactive ? '' : ' is-static'}`} tabIndex={interactive ? 0 : -1} role="region" aria-label={interactive ? '循环图片画廊，可使用滚轮、拖拽或方向键浏览' : '静态循环图片画廊'} />;
 }
