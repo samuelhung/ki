@@ -69,3 +69,11 @@ test('film layer reveals the live scene around the pointer', () => {
   assert.match(pageCss, /-webkit-mask-image:/);
   assert.match(pageCss, /mask-image:/);
 });
+
+test('pointer reveal locally brightens the existing scene without another canvas', () => {
+  assert.match(page, /className="dual-nav-demo__reveal"/);
+  assert.match(pageCss, /\.dual-nav-demo__reveal/);
+  assert.match(pageCss, /-webkit-backdrop-filter:\s*brightness\(1\.75\)/);
+  assert.match(pageCss, /backdrop-filter:\s*brightness\(1\.75\)/);
+  assert.doesNotMatch(page, /<canvas/);
+});

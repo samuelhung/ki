@@ -1,4 +1,4 @@
-import { useRef, type PointerEvent } from 'react';
+import type { PointerEvent } from 'react';
 import CinematicScene from '../components/cinematic/CinematicScene';
 import CircularGallery, { type CircularGalleryItem } from '../components/react-bits/CircularGallery';
 import GooeyNav, { type GooeyNavItem } from '../components/react-bits/GooeyNav';
@@ -26,24 +26,22 @@ const BOTTOM_ITEMS: CircularGalleryItem[] = [
 ];
 
 export default function DualNavigationDemo() {
-  const filmRef = useRef<HTMLDivElement>(null);
-
   const handlePointerMove = (event: PointerEvent<HTMLElement>) => {
-    if (!filmRef.current) return;
     const rect = event.currentTarget.getBoundingClientRect();
-    filmRef.current.style.setProperty('--reveal-x', `${event.clientX - rect.left}px`);
-    filmRef.current.style.setProperty('--reveal-y', `${event.clientY - rect.top}px`);
+    event.currentTarget.style.setProperty('--reveal-x', `${event.clientX - rect.left}px`);
+    event.currentTarget.style.setProperty('--reveal-y', `${event.clientY - rect.top}px`);
   };
 
-  const handlePointerLeave = () => {
-    filmRef.current?.style.setProperty('--reveal-x', '-9999px');
-    filmRef.current?.style.setProperty('--reveal-y', '-9999px');
+  const handlePointerLeave = (event: PointerEvent<HTMLElement>) => {
+    event.currentTarget.style.setProperty('--reveal-x', '-9999px');
+    event.currentTarget.style.setProperty('--reveal-y', '-9999px');
   };
 
   return (
     <main className="dual-nav-demo" onPointerMove={handlePointerMove} onPointerLeave={handlePointerLeave}>
       <CinematicScene focus={0} variant="ingest" laserPrimary />
-      <div ref={filmRef} className="dual-nav-demo__film" aria-hidden="true" />
+      <div className="dual-nav-demo__film" aria-hidden="true" />
+      <div className="dual-nav-demo__reveal" aria-hidden="true" />
 
       <header className="dual-nav-demo__top">
         <span className="dual-nav-demo__index">NAV / 01</span>
