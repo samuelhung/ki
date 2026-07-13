@@ -28,6 +28,8 @@
 }
 
 .dual-nav-demo__film {
+  --reveal-x: -9999px;
+  --reveal-y: -9999px;
   position: absolute;
   z-index: 2;
   inset: 0;
@@ -35,6 +37,22 @@
   box-shadow:
     inset 0 170px 160px rgba(0, 0, 0, .48),
     inset 0 -260px 220px rgba(0, 0, 0, .7);
+  -webkit-mask-image: radial-gradient(
+    circle at var(--reveal-x) var(--reveal-y),
+    transparent 0,
+    rgba(0, 0, 0, .08) 80px,
+    rgba(0, 0, 0, .45) 160px,
+    #000 260px
+  );
+  mask-image: radial-gradient(
+    circle at var(--reveal-x) var(--reveal-y),
+    transparent 0,
+    rgba(0, 0, 0, .08) 80px,
+    rgba(0, 0, 0, .45) 160px,
+    #000 260px
+  );
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
   pointer-events: none;
 }
 

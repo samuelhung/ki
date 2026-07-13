@@ -58,3 +58,14 @@ test('dual navigation reuses the reduced cinematic Three.js background', () => {
   assert.match(pageCss, /\.dual-nav-demo > \.cinematic-scene-canvas/);
   assert.match(pageCss, /\.dual-nav-demo__film/);
 });
+
+test('film layer reveals the live scene around the pointer', () => {
+  assert.match(page, /style\.setProperty\('--reveal-x'/);
+  assert.match(page, /style\.setProperty\('--reveal-y'/);
+  assert.match(page, /'--reveal-x', '-9999px'/);
+  assert.match(page, /onPointerMove=\{handlePointerMove\}/);
+  assert.match(page, /onPointerLeave=\{handlePointerLeave\}/);
+  assert.match(pageCss, /radial-gradient\(\s*circle at var\(--reveal-x\) var\(--reveal-y\)/);
+  assert.match(pageCss, /-webkit-mask-image:/);
+  assert.match(pageCss, /mask-image:/);
+});
