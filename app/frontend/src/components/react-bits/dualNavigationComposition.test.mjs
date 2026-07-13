@@ -77,3 +77,12 @@ test('pointer reveal locally brightens the existing scene without another canvas
   assert.match(pageCss, /backdrop-filter:\s*brightness\(2\.6\)/);
   assert.doesNotMatch(page, /<canvas/);
 });
+
+test('dual navigation demo reuses the Today hero copy and typography', () => {
+  assert.match(page, /className="cinematic-hero dual-nav-demo__hero"/);
+  assert.match(page, /className="brand-title">知几</);
+  assert.match(page, /className="line3">其神乎 见微知著</);
+  assert.match(page, /真正的洞察，不在声势浩大处，而在一线微光/);
+  assert.doesNotMatch(page, /Dual Navigation/);
+  assert.match(pageCss, /\.dual-nav-demo__hero\s*\{[^}]*--cinematic-ui-scale:/s);
+});
