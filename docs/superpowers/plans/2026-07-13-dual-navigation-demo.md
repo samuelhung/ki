@@ -103,3 +103,32 @@ Verify `/#/demo/dual-nav` at 2560x1440, 1440x900, and 1180x820. Click all top it
 - [ ] **Step 4: Commit the implementation**
 
 Stage only the demo, reusable components, tests, route, and package script changes. Commit with `add dual navigation demo`.
+
+### Task 6: Add The Reduced Cinematic Background
+
+**Files:**
+- Modify: `app/frontend/src/pages/DualNavigationDemo.tsx`
+- Modify: `app/frontend/src/pages/DualNavigationDemo.css`
+- Modify: `app/frontend/src/components/react-bits/dualNavigationComposition.test.mjs`
+
+- [ ] **Step 1: Write a failing composition test**
+
+Assert that the demo renders `CinematicScene` with `variant="ingest"` and `laserPrimary`, and that the page CSS contains a scoped scene filter and layer order.
+
+- [ ] **Step 2: Run the test and verify RED**
+
+Run: `node --test src/components/react-bits/dualNavigationComposition.test.mjs`
+
+Expected: FAIL because the scene is not mounted.
+
+- [ ] **Step 3: Mount the existing reduced Three.js scene**
+
+Import the existing cinematic stylesheet and `CinematicScene`, render it before the menu layers, and keep the OGL gallery unchanged.
+
+- [ ] **Step 4: Tune the page-scoped background**
+
+Use opacity and brightness controls on `.dual-nav-demo > .cinematic-scene-canvas`, keep it at z-index 1, apply a restrained film overlay at z-index 2, and move all navigation content above it.
+
+- [ ] **Step 5: Verify performance and appearance**
+
+Repeat the three viewport screenshots, check that both canvases are nonblank, verify Gooey particles and gallery scrolling, run the full test suite and Vite build, then commit with `add cinematic background to dual nav demo`.

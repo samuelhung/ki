@@ -12,7 +12,9 @@ Create a standalone full-screen demo that places React Bits Gooey Nav at the top
 
 ## Layout
 
-- Use a near-black full-screen stage with restrained ambient lighting.
+- Use the existing Three.js `CinematicScene` as a reduced cinematic background rather than porting it to OGL.
+- Render it with `variant="ingest"` and `laserPrimary` so it uses the existing 620-particle, 36fps profile.
+- Apply page-scoped filtering so the globe and terrain remain atmospheric and do not compete with either menu.
 - Center Gooey Nav near the top safe area.
 - Leave the middle of the screen visually quiet, with only a small demo title and interaction status.
 - Place Circular Gallery in a bottom band measuring about 30% of desktop viewport height.
@@ -49,6 +51,7 @@ Create a standalone full-screen demo that places React Bits Gooey Nav at the top
 ## Non-Goals
 
 - No synchronization between the two menus.
+- No Three.js-to-OGL background rewrite and no attempt to merge both WebGL contexts.
 - No real page navigation.
 - No business data or API calls.
 - No redesign of the existing standalone Circular Gallery demo.
