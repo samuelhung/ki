@@ -161,3 +161,35 @@ Mask the film from transparent at the pointer center to fully opaque by roughly 
 - [ ] **Step 5: Verify and commit**
 
 Check stationary, moved, and pointer-leave screenshots; verify Gooey and OGL input still work; run tests and build; commit with `add pointer reveal to cinematic demo`.
+
+### Task 8: Freeze The Gallery And Reduce Runtime Work
+
+**Files:**
+- Modify: `app/frontend/src/components/react-bits/CircularGallery.tsx`
+- Modify: `app/frontend/src/components/react-bits/CircularGallery.css`
+- Modify: `app/frontend/src/components/react-bits/circularGalleryComposition.test.mjs`
+- Modify: `app/frontend/src/components/react-bits/dualNavigationComposition.test.mjs`
+- Modify: `app/frontend/src/pages/DualNavigationDemo.tsx`
+- Modify: `app/frontend/src/pages/DualNavigationDemo.css`
+
+- [ ] **Step 1: Write failing static-mode contracts**
+
+Assert that `CircularGallery` accepts `interactive={false}`, creates only one copy of the item list in static mode, skips input listeners and continuous RAF, exposes a non-focusable static region, and that the dual-navigation page supplies exactly 10 items.
+
+- [ ] **Step 2: Run focused tests and verify RED**
+
+Run: `node --test src/components/react-bits/circularGalleryComposition.test.mjs src/components/react-bits/dualNavigationComposition.test.mjs`
+
+Expected: FAIL because static mode and the additional items do not exist.
+
+- [ ] **Step 3: Implement static OGL rendering**
+
+Add an `interactive` prop defaulting to `true`. When false, construct only the provided item array, center the media strip around zero, skip wheel/pointer/keyboard/visibility listeners, render once after initialization, and request another render only after image load or resize.
+
+- [ ] **Step 4: Bound and throttle pointer reveal work**
+
+Use one requestAnimationFrame callback to write the latest pointer coordinates. Resize the reveal element to 560px square, position it with `translate3d`, and keep its radial mask centered inside that bounded element.
+
+- [ ] **Step 5: Verify behavior and performance**
+
+Run the focused tests, `npm run test:cinematic-scene`, `npm run build`, and `git diff --check`. At 1180x820, 1440x900, and 2560x1440, confirm 10 visible gallery items, no gallery movement after wheel/drag/arrow input, working Gooey particles, a working pointer reveal, two canvases, no overflow, and no console warnings or errors.

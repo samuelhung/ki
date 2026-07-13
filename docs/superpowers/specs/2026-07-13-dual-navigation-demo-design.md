@@ -35,8 +35,18 @@ Create a standalone full-screen demo that places React Bits Gooey Nav at the top
 - Reuse the existing OGL `CircularGallery` implementation.
 - Preserve `borderRadius=0.1`, `scrollSpeed=2.7`, and `scrollEase=0.12`.
 - Reduce card and label scale through a component sizing prop rather than global CSS transforms.
-- Preserve wheel, drag, arrow-key, snapping, wrapping, image fallback, and visibility pause behavior.
-- The gallery remains independently scrollable and does not change the Gooey Nav selection.
+- Fix the dual-navigation composition to exactly 10 menu items.
+- Add a reusable non-interactive gallery mode that disables wheel, drag, touch, arrow-key, snapping, and wrapping for this page without changing the standalone Circular Gallery demo.
+- In non-interactive mode, create only the 10 visible media objects instead of a duplicated 20-item loop and center them symmetrically around the scene origin.
+- Stop the continuous animation frame loop in non-interactive mode. Render only on initialization, texture completion, and resize.
+- The static gallery remains visually independent and does not change the Gooey Nav selection.
+
+## Performance
+
+- Coalesce pointer reveal coordinates to at most one DOM update per animation frame.
+- Restrict the expensive `backdrop-filter` reveal layer to a pointer-sized 560px square instead of filtering the full viewport.
+- Keep the existing reduced Three.js background profile, two-canvas architecture, image fallbacks, and hidden-tab pause behavior.
+- Do not replace the OGL gallery with DOM cards and do not add another WebGL context.
 
 ## Responsive Behavior
 
@@ -49,7 +59,7 @@ Create a standalone full-screen demo that places React Bits Gooey Nav at the top
 - Add composition tests for the new route, Gooey Nav parameters, independent state, and compact gallery sizing.
 - Add focused tests for any extracted Gooey Nav particle helpers.
 - Run `npm run test:cinematic-scene` and `npm run build`.
-- Verify the rendered demo at 2560x1440, 1440x900, and 1180x820, including Gooey clicks and gallery wheel/drag input.
+- Verify the rendered demo at 2560x1440, 1440x900, and 1180x820, including Gooey clicks and confirming that gallery wheel, drag, and keyboard input no longer move the gallery.
 
 ## Non-Goals
 
