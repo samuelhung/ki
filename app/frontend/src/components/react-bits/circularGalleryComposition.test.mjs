@@ -22,3 +22,16 @@ test('labels use scene coordinates so card scaling does not hide them', () => {
   assert.match(gallery, /this\.label\.setParent\(scene\)/);
   assert.match(gallery, /this\.label\.position\.x = this\.plane\.position\.x/);
 });
+
+test('gallery item scaling changes cards and spacing proportionally', () => {
+  assert.match(gallery, /itemScale = 1/);
+  assert.match(gallery, /this\.plane\.scale\.y = .* \* this\.itemScale/);
+  assert.match(gallery, /this\.plane\.scale\.x = .* \* this\.itemScale/);
+  assert.match(gallery, /2 \* this\.itemScale/);
+});
+
+test('gallery starts from the second loop so items frame both sides', () => {
+  assert.match(gallery, /const initialOffset = this\.medias\[0\]\.width \* items\.length/);
+  assert.match(gallery, /this\.scroll\.current = initialOffset/);
+  assert.match(gallery, /this\.scroll\.target = initialOffset/);
+});

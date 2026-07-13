@@ -1,0 +1,176 @@
+.gooey-nav {
+  --gooey-color-1: #f3f1ff;
+  --gooey-color-2: #7ee8fa;
+  --gooey-color-3: #d6a7ff;
+  --gooey-color-4: #ffcf77;
+  position: relative;
+  color: #fff;
+}
+
+.gooey-nav nav {
+  position: relative;
+  display: flex;
+  transform: translate3d(0, 0, .01px);
+}
+
+.gooey-nav ul {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  gap: clamp(18px, 2vw, 32px);
+  margin: 0;
+  padding: 0 16px;
+  list-style: none;
+}
+
+.gooey-nav li {
+  position: relative;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, .68);
+  cursor: pointer;
+  text-shadow: 0 1px 1px rgba(5, 4, 7, .4);
+  transition: color .3s ease, box-shadow .3s ease;
+}
+
+.gooey-nav li::after {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: 999px;
+  background: #f7f5ff;
+  content: "";
+  opacity: 0;
+  transform: scale(0);
+  transition: opacity .3s ease, transform .3s ease;
+}
+
+.gooey-nav li.is-active {
+  color: #08070b;
+  text-shadow: none;
+}
+
+.gooey-nav li.is-active::after {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.gooey-nav a {
+  display: inline-block;
+  padding: 10px 18px;
+  color: inherit;
+  font: 500 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.gooey-nav a:focus {
+  outline: none;
+}
+
+.gooey-nav li:focus-within:has(:focus-visible) {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .85);
+}
+
+.gooey-nav__effect {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  display: grid;
+  width: 0;
+  height: 0;
+  place-items: center;
+  pointer-events: none;
+}
+
+.gooey-nav__text {
+  color: #fff;
+  font: 500 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  transition: color .3s ease;
+}
+
+.gooey-nav__text.is-active {
+  color: #08070b;
+}
+
+.gooey-nav__filter {
+  filter: blur(7px) contrast(100);
+  mix-blend-mode: lighten;
+}
+
+.gooey-nav__filter::before {
+  position: absolute;
+  z-index: -2;
+  inset: -76px;
+  background: #050407;
+  content: "";
+}
+
+.gooey-nav__filter::after {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: 999px;
+  background: #f7f5ff;
+  content: "";
+  opacity: 0;
+  transform: scale(0);
+}
+
+.gooey-nav__filter.is-active::after {
+  animation: gooey-nav-pill .3s ease both;
+}
+
+.gooey-nav__particle,
+.gooey-nav__point {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  opacity: 0;
+  transform-origin: center;
+}
+
+.gooey-nav__particle {
+  position: absolute;
+  top: calc(50% - 8px);
+  left: calc(50% - 8px);
+  animation: gooey-nav-particle var(--time) ease 1 -.35s;
+}
+
+.gooey-nav__point {
+  background: var(--color);
+  animation: gooey-nav-point var(--time) ease 1 -.35s;
+  opacity: 1;
+}
+
+@keyframes gooey-nav-pill {
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes gooey-nav-particle {
+  0% { opacity: 1; transform: rotate(0deg) translate(var(--start-x), var(--start-y)); animation-timing-function: cubic-bezier(.55, 0, 1, .45); }
+  70% { opacity: 1; transform: rotate(calc(var(--rotate) * .5)) translate(calc(var(--end-x) * 1.2), calc(var(--end-y) * 1.2)); animation-timing-function: ease; }
+  85% { opacity: 1; transform: rotate(calc(var(--rotate) * .66)) translate(var(--end-x), var(--end-y)); }
+  100% { opacity: 1; transform: rotate(calc(var(--rotate) * 1.2)) translate(calc(var(--end-x) * .5), calc(var(--end-y) * .5)); }
+}
+
+@keyframes gooey-nav-point {
+  0% { opacity: 0; transform: scale(0); animation-timing-function: cubic-bezier(.55, 0, 1, .45); }
+  25% { transform: scale(calc(var(--scale) * .25)); }
+  38% { opacity: 1; }
+  65% { opacity: 1; transform: scale(var(--scale)); animation-timing-function: ease; }
+  85% { opacity: 1; transform: scale(var(--scale)); }
+  100% { opacity: 0; transform: scale(0); }
+}
+
+@media (max-width: 1180px) {
+  .gooey-nav ul { gap: 8px; }
+  .gooey-nav a { padding: 9px 13px; font-size: 10px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gooey-nav__particle,
+  .gooey-nav__point { display: none; }
+  .gooey-nav__filter.is-active::after { animation-duration: 1ms; }
+}

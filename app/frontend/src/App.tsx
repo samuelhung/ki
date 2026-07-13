@@ -39,6 +39,7 @@ const IndustryChains = lazy(() => import('./pages/IndustryChains'));
 const CinematicIndustryChains = lazy(() => import('./pages/CinematicIndustryChains'));
 const IndustryFlow = lazy(() => import('./pages/IndustryFlow'));
 const CircularGalleryDemo = lazy(() => import('./pages/CircularGalleryDemo'));
+const DualNavigationDemo = lazy(() => import('./pages/DualNavigationDemo'));
 
 function PageLoading() {
   return <div className="h-full flex items-center justify-center text-xs text-gray-500">加载中...</div>;
@@ -112,8 +113,8 @@ function CurtainOverlay() {
 function Layout() {
   const location = useLocation();
   const isDashboardHome = location.pathname === '/';
-  const isStandaloneDemo = location.pathname === '/demo/circular-gallery';
-  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest' || location.pathname === '/events' || location.pathname === '/sources' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series' || location.pathname.startsWith('/series/') || location.pathname === '/study' || location.pathname.startsWith('/study/') || location.pathname === '/study-mistakes' || location.pathname === '/industry-chains' || location.pathname === '/chains' || location.pathname === '/brainstorm' || location.pathname.startsWith('/brainstorm/') || location.pathname === '/tasks' || location.pathname === '/demo/circular-gallery';
+  const isStandaloneDemo = location.pathname === '/demo/circular-gallery' || location.pathname === '/demo/dual-nav';
+  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest' || location.pathname === '/events' || location.pathname === '/sources' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series' || location.pathname.startsWith('/series/') || location.pathname === '/study' || location.pathname.startsWith('/study/') || location.pathname === '/study-mistakes' || location.pathname === '/industry-chains' || location.pathname === '/chains' || location.pathname === '/brainstorm' || location.pathname.startsWith('/brainstorm/') || location.pathname === '/tasks' || isStandaloneDemo;
 
   // ---- Offline detection ----
   const [isOnline, setIsOnline] = useState(true);
@@ -348,6 +349,7 @@ export default function App() {
           <Route path="chains-old" element={<IndustryChains />} />
           <Route path="tools" element={<CinematicToolbox />} />
           <Route path="demo/circular-gallery" element={<CircularGalleryDemo />} />
+          <Route path="demo/dual-nav" element={<DualNavigationDemo />} />
         </Route>
       </Routes>
     </EventCacheProvider>

@@ -59,7 +59,7 @@ function createFallbackTexture(gl: GL, text: string) {
 
 class GalleryMedia {
   plane: Mesh; label: Mesh; program: Program; extra = 0; width = 0; widthTotal = 0; x = 0;
-  constructor(private gl: GL, geometry: Plane, private item: CircularGalleryItem, private index: number, private length: number, private scene: Transform, private screen: Size, private viewport: Size, private bend: number, borderRadius: number, textColor: string) {
+  constructor(private gl: GL, geometry: Plane, private item: CircularGalleryItem, private index: number, private length: number, private scene: Transform, private screen: Size, private viewport: Size, private bend: number, borderRadius: number, textColor: string, private itemScale: number) {
     const texture = createFallbackTexture(gl, item.text) || new Texture(gl); const image = new Image(); image.crossOrigin = 'anonymous'; image.src = item.image;
     const uniforms = { tMap: { value: texture }, uPlaneSizes: { value: [1, 1] }, uImageSizes: { value: [800, 600] }, uSpeed: { value: 0 }, uTime: { value: Math.random() * 100 }, uBorderRadius: { value: borderRadius } };
     this.program = new Program(gl, { vertex, fragment, uniforms, transparent: true, depthTest: false, depthWrite: false });
@@ -71,10 +71,10 @@ class GalleryMedia {
   }
   resize(screen: Size, viewport: Size) {
     this.screen = screen; this.viewport = viewport; const scale = screen.height / 1500;
-    this.plane.scale.y = (viewport.height * (900 * scale)) / screen.height; this.plane.scale.x = (viewport.width * (700 * scale)) / screen.width;
+    this.plane.scale.y = ((viewport.height * (900 * scale)) / screen.height) * this.itemScale; this.plane.scale.x = ((viewport.width * (700 * scale)) / screen.width) * this.itemScale;
     this.program.uniforms.uPlaneSizes.value = [this.plane.scale.x, this.plane.scale.y];
     const labelHeight = this.plane.scale.y * .12; this.label.scale.set(labelHeight * (this.label as any)._aspect, labelHeight, 1);
-    this.width = this.plane.scale.x + 2; this.widthTotal = this.width * this.length; this.x = this.width * this.index;
+    this.width = this.plane.scale.x + 2 * this.itemScale; this.widthTotal = this.width * this.length; this.x = this.width * this.index;
   }
   update(scroll: ScrollState, direction: 'right' | 'left') {
     this.plane.position.x = this.x - scroll.current - this.extra; const arc = arcTransform(this.plane.position.x, this.viewport.width, this.bend);
@@ -90,11 +90,12 @@ class GalleryMedia {
 class GalleryApp {
   renderer: Renderer; gl: GL; camera: Camera; scene = new Transform(); geometry: Plane; medias: GalleryMedia[] = []; screen = { width: 1, height: 1 }; viewport = { width: 1, height: 1 };
   scroll: ScrollState; raf = 0; isDown = false; start = 0; resizeObserver: ResizeObserver; snapTimer = 0; visible = true;
-  constructor(private container: HTMLElement, items: CircularGalleryItem[], private bend: number, textColor: string, borderRadius: number, private scrollSpeed: number, scrollEase: number) {
+  constructor(private container: HTMLElement, items: CircularGalleryItem[], private bend: number, textColor: string, borderRadius: number, private scrollSpeed: number, scrollEase: number, itemScale: number) {
     this.scroll = { ease: scrollEase, current: 0, target: 0, last: 0, position: 0 };
     this.renderer = new Renderer({ alpha: true, antialias: true, dpr: Math.min(window.devicePixelRatio || 1, 2) }); this.gl = this.renderer.gl; this.gl.clearColor(0, 0, 0, 0); container.appendChild(this.gl.canvas as HTMLCanvasElement);
     this.camera = new Camera(this.gl); this.camera.fov = 45; this.camera.position.z = 20; this.geometry = new Plane(this.gl, { heightSegments: 50, widthSegments: 100 });
-    this.resize(); const doubled = [...items, ...items]; this.medias = doubled.map((item, index) => new GalleryMedia(this.gl, this.geometry, item, index, doubled.length, this.scene, this.screen, this.viewport, bend, borderRadius, textColor));
+    this.resize(); const doubled = [...items, ...items]; this.medias = doubled.map((item, index) => new GalleryMedia(this.gl, this.geometry, item, index, doubled.length, this.scene, this.screen, this.viewport, bend, borderRadius, textColor, itemScale));
+    const initialOffset = this.medias[0].width * items.length; this.scroll.current = initialOffset; this.scroll.target = initialOffset; this.scroll.last = initialOffset;
     this.resizeObserver = new ResizeObserver(this.resize); this.resizeObserver.observe(container); this.addEvents(); this.update();
   }
   resize = () => { this.screen = { width: Math.max(1, this.container.clientWidth), height: Math.max(1, this.container.clientHeight) }; this.renderer.setSize(this.screen.width, this.screen.height); this.camera.perspective({ aspect: this.screen.width / this.screen.height }); const fov = this.camera.fov * Math.PI / 180; const height = 2 * Math.tan(fov / 2) * this.camera.position.z; this.viewport = { width: height * this.camera.aspect, height }; this.medias.forEach(media => media.resize(this.screen, this.viewport)); };
@@ -111,8 +112,8 @@ class GalleryApp {
   destroy() { cancelAnimationFrame(this.raf); clearTimeout(this.snapTimer); this.resizeObserver.disconnect(); this.container.removeEventListener('wheel', this.onWheel); this.container.removeEventListener('pointerdown', this.onPointerDown); this.container.removeEventListener('pointermove', this.onPointerMove); this.container.removeEventListener('pointerup', this.onPointerUp); this.container.removeEventListener('pointercancel', this.onPointerUp); this.container.removeEventListener('keydown', this.onKeyDown); document.removeEventListener('visibilitychange', this.onVisibility); const canvas = this.gl.canvas as HTMLCanvasElement; canvas.remove(); this.gl.getExtension('WEBGL_lose_context')?.loseContext(); }
 }
 
-export default function CircularGallery({ items, bend = 3, textColor = '#ffffff', borderRadius = .05, scrollSpeed = 2, scrollEase = .05 }: { items: CircularGalleryItem[]; bend?: number; textColor?: string; borderRadius?: number; scrollSpeed?: number; scrollEase?: number }) {
+export default function CircularGallery({ items, bend = 3, textColor = '#ffffff', borderRadius = .05, scrollSpeed = 2, scrollEase = .05, itemScale = 1 }: { items: CircularGalleryItem[]; bend?: number; textColor?: string; borderRadius?: number; scrollSpeed?: number; scrollEase?: number; itemScale?: number }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { if (!containerRef.current || !items.length) return; const app = new GalleryApp(containerRef.current, items, bend, textColor, borderRadius, scrollSpeed, scrollEase); return () => app.destroy(); }, [items, bend, textColor, borderRadius, scrollSpeed, scrollEase]);
+  useEffect(() => { if (!containerRef.current || !items.length) return; const app = new GalleryApp(containerRef.current, items, bend, textColor, borderRadius, scrollSpeed, scrollEase, itemScale); return () => app.destroy(); }, [items, bend, textColor, borderRadius, scrollSpeed, scrollEase, itemScale]);
   return <div ref={containerRef} className="circular-gallery" tabIndex={0} role="region" aria-label="循环图片画廊，可使用滚轮、拖拽或方向键浏览" />;
 }
