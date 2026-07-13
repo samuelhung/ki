@@ -35,3 +35,8 @@ test('gallery starts from the second loop so items frame both sides', () => {
   assert.match(gallery, /this\.scroll\.current = initialOffset/);
   assert.match(gallery, /this\.scroll\.target = initialOffset/);
 });
+
+test('gallery supports a page-specific pixel ratio cap', () => {
+  assert.match(gallery, /dpr = 2/);
+  assert.match(gallery, /Math\.min\(window\.devicePixelRatio \|\| 1, dpr\)/);
+});

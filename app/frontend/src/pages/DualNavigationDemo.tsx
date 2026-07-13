@@ -1,5 +1,7 @@
+import CinematicScene from '../components/cinematic/CinematicScene';
 import CircularGallery, { type CircularGalleryItem } from '../components/react-bits/CircularGallery';
 import GooeyNav, { type GooeyNavItem } from '../components/react-bits/GooeyNav';
+import '../components/cinematic/cinematic.css';
 import './DualNavigationDemo.css';
 
 const TOP_ITEMS: GooeyNavItem[] = [
@@ -25,6 +27,9 @@ const BOTTOM_ITEMS: CircularGalleryItem[] = [
 export default function DualNavigationDemo() {
   return (
     <main className="dual-nav-demo">
+      <CinematicScene focus={0} variant="ingest" laserPrimary />
+      <div className="dual-nav-demo__film" aria-hidden="true" />
+
       <header className="dual-nav-demo__top">
         <span className="dual-nav-demo__index">NAV / 01</span>
         <GooeyNav
@@ -53,6 +58,7 @@ export default function DualNavigationDemo() {
           scrollSpeed={2.7}
           scrollEase={0.12}
           itemScale={0.34}
+          dpr={1.25}
           textColor="#f7f5ff"
         />
       </section>

@@ -25,6 +25,7 @@ test('dual navigation demo uses the approved reference parameters', () => {
   assert.match(page, /scrollSpeed=\{2\.7\}/);
   assert.match(page, /scrollEase=\{0\.12\}/);
   assert.match(page, /itemScale=\{0\.34\}/);
+  assert.match(page, /dpr=\{1\.25\}/);
 });
 
 test('gooey nav prevents route changes and cleans up particle timers', () => {
@@ -48,4 +49,12 @@ test('dual navigation demo is registered as an isolated full-screen route', () =
 test('top navigation leaves enough safe area for the 90px particle radius', () => {
   assert.match(pageCss, /top:\s*clamp\(96px,\s*8vh,\s*128px\)/);
   assert.match(pageCss, /top:\s*92px/);
+});
+
+test('dual navigation reuses the reduced cinematic Three.js background', () => {
+  assert.match(page, /import CinematicScene from/);
+  assert.match(page, /<CinematicScene focus=\{0\} variant="ingest" laserPrimary/);
+  assert.match(page, /className="dual-nav-demo__film"/);
+  assert.match(pageCss, /\.dual-nav-demo > \.cinematic-scene-canvas/);
+  assert.match(pageCss, /\.dual-nav-demo__film/);
 });
