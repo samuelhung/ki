@@ -14,6 +14,7 @@ interface CircularGalleryProps {
   itemScale?: number;
   dpr?: number;
   interactive?: boolean;
+  onItemSelect?: (item: CircularGalleryItem, index: number) => void;
 }
 interface Size { width: number; height: number }
 interface ScrollState { ease: number; current: number; target: number; last: number; position: number }
@@ -128,8 +129,28 @@ class GalleryApp {
   destroy() { this.destroyed = true; cancelAnimationFrame(this.raf); clearTimeout(this.snapTimer); this.resizeObserver.disconnect(); this.container.removeEventListener('wheel', this.onWheel); this.container.removeEventListener('pointerdown', this.onPointerDown); this.container.removeEventListener('pointermove', this.onPointerMove); this.container.removeEventListener('pointerup', this.onPointerUp); this.container.removeEventListener('pointercancel', this.onPointerUp); this.container.removeEventListener('keydown', this.onKeyDown); document.removeEventListener('visibilitychange', this.onVisibility); const canvas = this.gl.canvas as HTMLCanvasElement; canvas.remove(); this.gl.getExtension('WEBGL_lose_context')?.loseContext(); }
 }
 
-export default function CircularGallery({ items, bend = 3, textColor = '#ffffff', borderRadius = .05, scrollSpeed = 2, scrollEase = .05, itemScale = 1, dpr = 2, interactive = true }: CircularGalleryProps) {
+export default function CircularGallery({ items, bend = 3, textColor = '#ffffff', borderRadius = .05, scrollSpeed = 2, scrollEase = .05, itemScale = 1, dpr = 2, interactive = true, onItemSelect }: CircularGalleryProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (!containerRef.current || !items.length) return; const app = new GalleryApp(containerRef.current, items, bend, textColor, borderRadius, scrollSpeed, scrollEase, itemScale, dpr, interactive); return () => app.destroy(); }, [items, bend, textColor, borderRadius, scrollSpeed, scrollEase, itemScale, dpr, interactive]);
-  return <div ref={containerRef} className={`circular-gallery${interactive ? '' : ' is-static'}`} tabIndex={interactive ? 0 : -1} role="region" aria-label={interactive ? '循环图片画廊，可使用滚轮、拖拽或方向键浏览' : '静态循环图片画廊'} />;
+  return (
+    <div ref={containerRef} className={`circular-gallery${interactive ? '' : ' is-static'}`} tabIndex={interactive ? 0 : -1} role="region" aria-label={interactive ? '循环图片画廊，可使用滚轮、拖拽或方向键浏览' : '静态循环图片画廊'}>
+      {onItemSelect && (
+        <div className="circular-gallery__actions">
+          {items.map((item, index) => {
+            const offset = index - (items.length - 1) / 2;
+            return (
+              <button
+                key={`${item.text}-${index}`}
+                type="button"
+                aria-label={item.text}
+                title={item.text}
+                style={{ left: `calc(50% + ${offset * 4.25}%)`, top: `${50 + Math.abs(offset) * 1.15}%`, transform: `translate(-50%, -50%) rotate(${-offset * 2.2}deg)` }}
+                onClick={() => onItemSelect(item, index)}
+              />
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }

@@ -155,6 +155,104 @@
   pointer-events: none;
 }
 
+.dual-nav-action-backdrop {
+  position: absolute;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, .58);
+  backdrop-filter: blur(8px);
+}
+
+.dual-nav-action-dialog {
+  position: relative;
+  width: min(560px, calc(100vw - 40px));
+  padding: 34px 38px 30px;
+  border: 1px solid rgba(255, 221, 158, .26);
+  border-radius: 6px;
+  background: rgba(6, 5, 8, .98);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .025), 0 24px 90px rgba(0, 0, 0, .82), 0 0 42px rgba(214, 163, 76, .08);
+  color: #f8f2e7;
+}
+
+.dual-nav-action-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, .52);
+  cursor: pointer;
+}
+
+.dual-nav-action-close:hover { color: #fff; }
+
+.dual-nav-action-dialog header span,
+.dual-nav-action-field label {
+  color: rgba(255, 211, 133, .62);
+  font: 9px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.dual-nav-action-dialog header h2 {
+  margin: 12px 0 10px;
+  font: 500 30px/1.2 "Songti SC", "STSong", serif;
+}
+
+.dual-nav-action-dialog header p {
+  max-width: 430px;
+  margin: 0;
+  color: rgba(255, 255, 255, .58);
+  font-size: 13px;
+  line-height: 1.75;
+}
+
+.dual-nav-action-field {
+  margin-top: 28px;
+  border-bottom: 1px solid rgba(255, 255, 255, .16);
+}
+
+.dual-nav-action-field label { display: block; margin-bottom: 10px; }
+
+.dual-nav-action-field textarea {
+  display: block;
+  width: 100%;
+  min-height: 88px;
+  padding: 0 0 14px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #fff;
+  font: 14px/1.7 system-ui, sans-serif;
+}
+
+.dual-nav-action-field textarea::placeholder { color: rgba(255, 255, 255, .28); }
+
+.dual-nav-action-dialog > footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+
+.dual-nav-action-dialog > footer button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 0 7px;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 211, 133, .78);
+  background: transparent;
+  color: rgba(255, 244, 222, .94);
+  font-size: 13px;
+  cursor: pointer;
+  text-shadow: 0 0 16px rgba(255, 196, 90, .28);
+}
+
 @media (max-width: 1180px) {
   .dual-nav-demo__top { top: 92px; grid-template-columns: auto; gap: 0; }
   .dual-nav-demo__top > .dual-nav-demo__index { display: none; }

@@ -62,3 +62,10 @@ test('static gallery reduces geometry and recenters after resize', () => {
   assert.match(gallery, /if \(!this\.interactive && this\.medias\[0\]\)/);
   assert.match(gallery, /this\.scroll\.current = staticOffset/);
 });
+
+test('static gallery can expose stable item selection hit targets', () => {
+  assert.match(gallery, /onItemSelect\?: \(item: CircularGalleryItem, index: number\) => void/);
+  assert.match(gallery, /circular-gallery__actions/);
+  assert.match(gallery, /onClick=\{\(\) => onItemSelect\(item, index\)\}/);
+  assert.match(gallery, /aria-label=\{item\.text\}/);
+});

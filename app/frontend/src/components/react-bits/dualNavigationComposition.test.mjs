@@ -104,3 +104,12 @@ test('pointer reveal coalesces updates and bounds the filtered area', () => {
   assert.match(pageCss, /transform:\s*translate3d\(/);
   assert.match(pageCss, /circle at center/);
 });
+
+test('demo previews six global modal actions in the gallery', () => {
+  for (const label of ['抖音分享', '文件上传', '概念沉淀', '信息源扫描', '全局发现', '主题发现']) {
+    assert.match(page, new RegExp(`text: '${label}'`));
+  }
+  assert.match(page, /onItemSelect=\{setActiveAction\}/);
+  assert.match(page, /dual-nav-action-dialog/);
+  assert.match(page, /role="dialog"/);
+});
