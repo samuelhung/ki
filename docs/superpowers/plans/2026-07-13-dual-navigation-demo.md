@@ -132,3 +132,32 @@ Use opacity and brightness controls on `.dual-nav-demo > .cinematic-scene-canvas
 - [ ] **Step 5: Verify performance and appearance**
 
 Repeat the three viewport screenshots, check that both canvases are nonblank, verify Gooey particles and gallery scrolling, run the full test suite and Vite build, then commit with `add cinematic background to dual nav demo`.
+
+### Task 7: Add Pointer-Reveal Lighting
+
+**Files:**
+- Modify: `app/frontend/src/pages/DualNavigationDemo.tsx`
+- Modify: `app/frontend/src/pages/DualNavigationDemo.css`
+- Modify: `app/frontend/src/components/react-bits/dualNavigationComposition.test.mjs`
+
+- [ ] **Step 1: Write a failing pointer-reveal contract**
+
+Assert that the demo updates `--reveal-x` and `--reveal-y`, resets both values off-screen on pointer leave, and defines a radial mask on the film layer.
+
+- [ ] **Step 2: Run the test and verify RED**
+
+Run: `node --test src/components/react-bits/dualNavigationComposition.test.mjs`
+
+Expected: FAIL because the reveal handlers and mask do not exist.
+
+- [ ] **Step 3: Implement pointer coordinates**
+
+Attach pointer move and leave handlers to the demo root. Write viewport-relative coordinates to CSS variables on a film ref without setting React state.
+
+- [ ] **Step 4: Add the transparent spotlight mask**
+
+Mask the film from transparent at the pointer center to fully opaque by roughly 260px. Keep `pointer-events: none` on the film and reset the variables to `-9999px` when inactive.
+
+- [ ] **Step 5: Verify and commit**
+
+Check stationary, moved, and pointer-leave screenshots; verify Gooey and OGL input still work; run tests and build; commit with `add pointer reveal to cinematic demo`.
