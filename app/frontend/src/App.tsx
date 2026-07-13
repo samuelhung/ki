@@ -38,6 +38,7 @@ const CinematicToolbox = lazy(() => import('./pages/CinematicToolbox'));
 const IndustryChains = lazy(() => import('./pages/IndustryChains'));
 const CinematicIndustryChains = lazy(() => import('./pages/CinematicIndustryChains'));
 const IndustryFlow = lazy(() => import('./pages/IndustryFlow'));
+const CircularGalleryDemo = lazy(() => import('./pages/CircularGalleryDemo'));
 
 function PageLoading() {
   return <div className="h-full flex items-center justify-center text-xs text-gray-500">加载中...</div>;
@@ -111,7 +112,8 @@ function CurtainOverlay() {
 function Layout() {
   const location = useLocation();
   const isDashboardHome = location.pathname === '/';
-  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest' || location.pathname === '/events' || location.pathname === '/sources' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series' || location.pathname.startsWith('/series/') || location.pathname === '/study' || location.pathname.startsWith('/study/') || location.pathname === '/study-mistakes' || location.pathname === '/industry-chains' || location.pathname === '/chains' || location.pathname === '/brainstorm' || location.pathname.startsWith('/brainstorm/') || location.pathname === '/tasks';
+  const isStandaloneDemo = location.pathname === '/demo/circular-gallery';
+  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest' || location.pathname === '/events' || location.pathname === '/sources' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series' || location.pathname.startsWith('/series/') || location.pathname === '/study' || location.pathname.startsWith('/study/') || location.pathname === '/study-mistakes' || location.pathname === '/industry-chains' || location.pathname === '/chains' || location.pathname === '/brainstorm' || location.pathname.startsWith('/brainstorm/') || location.pathname === '/tasks' || location.pathname === '/demo/circular-gallery';
 
   // ---- Offline detection ----
   const [isOnline, setIsOnline] = useState(true);
@@ -216,7 +218,7 @@ function Layout() {
         onDrop={handleDrop}
       >
         {/* Offline banner */}
-        {!isOnline && (
+        {!isStandaloneDemo && !isOnline && (
           <div className="absolute top-0 left-0 right-0 z-50 bg-black/45 border-b border-amber-300/20 text-amber-100/80 text-xs px-4 py-1.5 flex items-center justify-center gap-2 backdrop-blur-sm shadow-[0_0_24px_rgba(214,163,76,0.12)]">
             <WifiOff size={12} />
             <span>后端未连接 — 部分功能不可用</span>
@@ -230,7 +232,7 @@ function Layout() {
         )}
 
         {/* Drag-drop overlay */}
-        {dragOver && (
+        {!isStandaloneDemo && dragOver && (
           <div className="absolute inset-0 z-40 bg-purple-600/20 border-2 border-dashed border-purple-400 rounded-lg flex items-center justify-center pointer-events-none">
             <div className="text-center">
               <Upload size={48} className="text-purple-400 mx-auto mb-2" />
@@ -241,7 +243,7 @@ function Layout() {
         )}
 
         {/* Uploading indicator */}
-        {uploading.length > 0 && (
+        {!isStandaloneDemo && uploading.length > 0 && (
           <div className="absolute bottom-4 right-4 z-50 bg-gray-900/90 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-300 max-w-xs">
             <div className="flex items-center gap-2 mb-1">
               <Upload size={12} className="text-purple-400" />
@@ -345,6 +347,7 @@ export default function App() {
           <Route path="chains" element={<CinematicIndustryChains />} />
           <Route path="chains-old" element={<IndustryChains />} />
           <Route path="tools" element={<CinematicToolbox />} />
+          <Route path="demo/circular-gallery" element={<CircularGalleryDemo />} />
         </Route>
       </Routes>
     </EventCacheProvider>
