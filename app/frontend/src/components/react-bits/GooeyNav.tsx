@@ -3,6 +3,9 @@ import './GooeyNav.css';
 
 export interface GooeyNavItem { label: string; href: string }
 
+const DEFAULT_PARTICLE_DISTANCES: [number, number] = [90, 10];
+const DEFAULT_PARTICLE_COLORS = [1, 2, 3, 1, 2, 3, 1, 4];
+
 interface GooeyNavProps {
   items: GooeyNavItem[];
   animationTime?: number;
@@ -12,6 +15,8 @@ interface GooeyNavProps {
   timeVariance?: number;
   colors?: number[];
   initialActiveIndex?: number;
+  activeIndex?: number;
+  onNavigate?: (item: GooeyNavItem, index: number) => void;
 }
 
 const noise = (amount = 1) => amount / 2 - Math.random() * amount;
@@ -20,18 +25,21 @@ export default function GooeyNav({
   items,
   animationTime = 600,
   particleCount = 15,
-  particleDistances = [90, 10],
+  particleDistances = DEFAULT_PARTICLE_DISTANCES,
   particleR = 100,
   timeVariance = 300,
-  colors = [1, 2, 3, 1, 2, 3, 1, 4],
+  colors = DEFAULT_PARTICLE_COLORS,
   initialActiveIndex = 0,
+  activeIndex: controlledActiveIndex,
+  onNavigate,
 }: GooeyNavProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const navRef = useRef<HTMLUListElement>(null);
   const filterRef = useRef<HTMLSpanElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
   const timerIdsRef = useRef<number[]>([]);
-  const [activeIndex, setActiveIndex] = useState(initialActiveIndex);
+  const [internalActiveIndex, setInternalActiveIndex] = useState(initialActiveIndex);
+  const activeIndex = controlledActiveIndex ?? internalActiveIndex;
 
   const updateEffectPosition = useCallback((element: HTMLElement) => {
     if (!containerRef.current || !filterRef.current || !textRef.current) return;
@@ -92,30 +100,25 @@ export default function GooeyNav({
       timerIdsRef.current.push(createTimer);
     }
   }, [animationTime, clearParticles, colors, particleCount, particleDistances, particleR, timeVariance]);
+  const makeParticlesRef = useRef(makeParticles);
+  makeParticlesRef.current = makeParticles;
 
-  const activate = useCallback((element: HTMLElement, index: number) => {
+  const activate = useCallback((index: number) => {
     if (activeIndex === index) return;
-    setActiveIndex(index);
-    updateEffectPosition(element);
-    if (textRef.current) {
-      textRef.current.classList.remove('is-active');
-      void textRef.current.offsetWidth;
-      textRef.current.classList.add('is-active');
-    }
-    if (filterRef.current) makeParticles(filterRef.current);
-  }, [activeIndex, makeParticles, updateEffectPosition]);
+    if (controlledActiveIndex === undefined) setInternalActiveIndex(index);
+  }, [activeIndex, controlledActiveIndex]);
 
   const handleClick = (event: MouseEvent<HTMLAnchorElement>, index: number) => {
     event.preventDefault();
-    const item = event.currentTarget.parentElement;
-    if (item) activate(item, index);
+    activate(index);
+    onNavigate?.(items[index], index);
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLAnchorElement>, index: number) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
-    const item = event.currentTarget.parentElement;
-    if (item) activate(item, index);
+    activate(index);
+    onNavigate?.(items[index], index);
   };
 
   useEffect(() => {
@@ -123,6 +126,7 @@ export default function GooeyNav({
     if (activeItem) {
       updateEffectPosition(activeItem);
       textRef.current?.classList.add('is-active');
+      if (filterRef.current) makeParticlesRef.current(filterRef.current);
     }
 
     const observer = new ResizeObserver(() => {

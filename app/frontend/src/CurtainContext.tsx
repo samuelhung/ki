@@ -12,6 +12,12 @@ interface CurtainContextValue {
 
 const CurtainContext = createContext<CurtainContextValue | null>(null);
 
+function shouldBypassCurtain(to: string | number) {
+  if (typeof to !== 'string') return false;
+  const pathname = to.split(/[?#]/, 1)[0];
+  return pathname === '/ingest';
+}
+
 export function useCurtain() {
   const ctx = useContext(CurtainContext);
   if (!ctx) throw new Error('useCurtain must be used within CurtainProvider');
@@ -43,6 +49,12 @@ export function CurtainProvider({ children }: { children: React.ReactNode }) {
     ) return;
     if (!href.startsWith('/')) return;
     if (curtainPhaseRef.current !== 'idle') return;
+    if (shouldBypassCurtain(href)) {
+      e.preventDefault();
+      e.stopPropagation();
+      navigate(href);
+      return;
+    }
 
     // Don't intercept if it's the same path (avoids unnecessary transitions)
     if (href === location.pathname) return;
@@ -51,7 +63,7 @@ export function CurtainProvider({ children }: { children: React.ReactNode }) {
     e.stopPropagation();
     pendingNav.current = href;
     setCurtainPhase('covering');
-  }, [location.pathname]);
+  }, [location.pathname, navigate]);
 
   React.useEffect(() => {
     document.addEventListener('click', handleNavClick, true);
@@ -78,9 +90,13 @@ export function CurtainProvider({ children }: { children: React.ReactNode }) {
   // Programmatic navigation with curtain
   const navigateWithCurtain = useCallback((to: string | number) => {
     if (curtainPhaseRef.current !== 'idle') return;
+    if (shouldBypassCurtain(to)) {
+      navigate(to as string);
+      return;
+    }
     pendingNav.current = to;
     setCurtainPhase('covering');
-  }, []);
+  }, [navigate]);
 
   return (
     <CurtainContext.Provider value={{ curtainPhase, setCurtainPhase, onAnimationComplete, navigateWithCurtain }}>

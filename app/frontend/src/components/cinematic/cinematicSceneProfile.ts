@@ -68,8 +68,8 @@ const LASER_PRIMARY_OVERRIDES: Partial<Record<CinematicSceneVariant, Partial<Cin
   ingest: {
     pixelRatioScale: 0.58,
     particleCount: 620,
-    globeIntensity: 0.58,
-    terrainIntensity: 0.42,
+    globeIntensity: 0.7,
+    terrainIntensity: 2.2,
     signalIntensity: 0.34,
     particleIntensity: 0.58,
     motion: 0.34,

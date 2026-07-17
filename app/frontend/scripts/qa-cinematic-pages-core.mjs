@@ -8,6 +8,7 @@ import { inflateSync } from 'node:zlib';
 
 const chromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const defaultViewport = { width: 2560, height: 1440 };
+const performanceSettleMs = 5000;
 
 const pages = [
   {
@@ -18,14 +19,15 @@ const pages = [
     maxDomDumpMs: 7000,
     expectedCanvasCount: 1,
     virtualTimeBudgetMs: 22000,
+    screenshotSettleMs: 1800,
   },
   {
     key: 'ingest',
     path: '/#/ingest',
-    markers: ['cinematic-ingest-shell', '处理轨道', 'ingest-detail-reader', 'laser-media-box'],
+    markers: ['ki-shell-legacy-ingest', 'ki-ingest-split-stage', 'ingest-detail-reader', 'dual-nav-action-menu'],
     maxScreenshotMs: 6500,
     maxDomDumpMs: 5500,
-    expectedCanvasCount: 2,
+    expectedCanvasCount: 1,
     virtualTimeBudgetMs: 14000,
   },
   {
@@ -110,11 +112,82 @@ export function selectCinematicPages(pageKeys) {
   return pages.filter((page) => requested.has(page.key));
 }
 
+export function buildCinematicVisitSequence(pageKeys, revisitFirstPage = false, warmRevisitCount = 1) {
+  const selected = selectCinematicPages(pageKeys);
+  const visits = selected.map((page, index) => ({
+    ...page,
+    visit: index === 0 ? 'cold' : 'route',
+  }));
+  if (revisitFirstPage && selected[0]) {
+    for (let index = 0; index < Math.max(1, warmRevisitCount); index += 1) {
+      visits.push({ ...selected[0], visit: `warm-revisit-${index + 1}` });
+      if (index < warmRevisitCount - 1 && selected[1]) {
+        visits.push({ ...selected[1], visit: `route-repeat-${index + 1}` });
+      }
+    }
+  }
+  return visits;
+}
+
+export function summarizeNavigationResources(resources) {
+  return resources.reduce((summary, resource) => {
+    const transferSize = Number(resource.transferSize || 0);
+    const encodedBodySize = Number(resource.encodedBodySize || 0);
+    const decodedBodySize = Number(resource.decodedBodySize || 0);
+    summary.resourceCount += 1;
+    summary.transferBytes += transferSize;
+    summary.encodedBytes += encodedBodySize;
+    summary.decodedBytes += decodedBodySize;
+    if (transferSize === 0 && decodedBodySize > 0) summary.cacheHitCount += 1;
+    if (/\.(?:js|css)(?:$|\?)/.test(resource.name || '')) summary.jsCssTransferBytes += transferSize;
+    return summary;
+  }, {
+    resourceCount: 0,
+    cacheHitCount: 0,
+    transferBytes: 0,
+    encodedBytes: 0,
+    decodedBytes: 0,
+    jsCssTransferBytes: 0,
+  });
+}
+
+export function summarizeDocumentNavigation(navigation, includeDocumentNavigation) {
+  if (!includeDocumentNavigation) {
+    return {
+      navigationKind: 'spa-route',
+      browserNavigationMs: null,
+      domInteractiveMs: null,
+      domContentLoadedMs: null,
+      loadEventEndMs: null,
+    };
+  }
+  return {
+    navigationKind: 'document',
+    browserNavigationMs: Number((navigation?.duration || 0).toFixed(2)),
+    domInteractiveMs: Number((navigation?.domInteractive || 0).toFixed(2)),
+    domContentLoadedMs: Number((navigation?.domContentLoaded || 0).toFixed(2)),
+    loadEventEndMs: Number((navigation?.loadEventEnd || 0).toFixed(2)),
+  };
+}
+
+export async function stopChildProcess(child, timeoutMs = 3000) {
+  if (!child || child.exitCode !== null) return;
+  const waitForExit = () => Promise.race([
+    once(child, 'exit').then(() => true),
+    new Promise((resolveWait) => setTimeout(() => resolveWait(false), timeoutMs)),
+  ]);
+
+  child.kill('SIGTERM');
+  if (await waitForExit()) return;
+  if (child.exitCode === null) child.kill('SIGKILL');
+  await waitForExit();
+}
+
 function pageUrl(baseUrl, path) {
   return new URL(path, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).toString();
 }
 
-async function findFreePort() {
+export async function findFreePort() {
   const server = net.createServer();
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
@@ -204,6 +277,149 @@ async function waitFor(cdp, label, source, timeoutMs = 20000) {
   throw new Error(`Timed out waiting for ${label}`);
 }
 
+async function collectRuntimePerformance(cdp, sampleMs = 3000, exercise) {
+  const beforeResult = await cdp.send('Performance.getMetrics');
+  const beforeMetrics = Object.fromEntries((beforeResult.metrics || []).map((metric) => [metric.name, metric.value]));
+  const runtimePromise = evaluate(cdp, `
+    return new Promise((resolve) => {
+      const frameDurations = [];
+      const longTasks = [];
+      let previousFrame = null;
+      let observer = null;
+      try {
+        observer = new PerformanceObserver((list) => {
+          list.getEntries().forEach((entry) => longTasks.push(entry.duration));
+        });
+        observer.observe({ entryTypes: ['longtask'] });
+      } catch (_) {
+        observer = null;
+      }
+
+      const startedAt = performance.now();
+      const finish = () => {
+        observer?.disconnect();
+        const sortedFrames = [...frameDurations].sort((a, b) => a - b);
+        const averageFrameDurationMs = frameDurations.length
+          ? frameDurations.reduce((total, value) => total + value, 0) / frameDurations.length
+          : 0;
+        const p95Index = sortedFrames.length ? Math.min(sortedFrames.length - 1, Math.floor(sortedFrames.length * .95)) : 0;
+        const resources = performance.getEntriesByType('resource');
+        const routeAssets = resources.filter((entry) => /\\.(?:js|css)(?:$|\\?)/.test(entry.name));
+        const canvas = document.querySelector('.cinematic-scene-canvas');
+        resolve({
+          sampleMs: ${sampleMs},
+          viewportWidth: window.innerWidth,
+          viewportHeight: window.innerHeight,
+          frameCount: frameDurations.length,
+          averageFps: averageFrameDurationMs ? Number((1000 / averageFrameDurationMs).toFixed(2)) : 0,
+          averageFrameDurationMs: Number(averageFrameDurationMs.toFixed(2)),
+          frameDurationP95Ms: Number((sortedFrames[p95Index] || 0).toFixed(2)),
+          longestFrameMs: Number((sortedFrames.at(-1) || 0).toFixed(2)),
+          longTaskCount: longTasks.length,
+          longTaskTotalMs: Number(longTasks.reduce((total, value) => total + value, 0).toFixed(2)),
+          longestLongTaskMs: Number(Math.max(0, ...longTasks).toFixed(2)),
+          resourceTransferBytes: routeAssets.reduce((total, entry) => total + (entry.transferSize || 0), 0),
+          resourceEncodedBytes: routeAssets.reduce((total, entry) => total + (entry.encodedBodySize || 0), 0),
+          routeAssetCount: routeAssets.length,
+          rendererCalls: Number(canvas?.dataset.renderCalls || 0),
+          rendererFps: Number(canvas?.dataset.renderFps || 0),
+          rendererTriangles: Number(canvas?.dataset.renderTriangles || 0),
+          rendererLines: Number(canvas?.dataset.renderLines || 0),
+          rendererPoints: Number(canvas?.dataset.renderPoints || 0),
+          rendererQualityScale: Number(canvas?.dataset.qualityScale || 1),
+          rendererPixelRatio: Number(canvas?.dataset.pixelRatio || 0),
+          rendererShaderOctaves: canvas?.dataset.shaderOctaves || '',
+          gpuRenderer: canvas?.dataset.gpuRenderer || '',
+          gpuVendor: canvas?.dataset.gpuVendor || '',
+        });
+      };
+      const sampleFrame = (now) => {
+        if (previousFrame !== null) frameDurations.push(now - previousFrame);
+        previousFrame = now;
+        if (now - startedAt >= ${sampleMs}) finish();
+        else requestAnimationFrame(sampleFrame);
+      };
+      requestAnimationFrame(sampleFrame);
+    });
+  `, sampleMs + 5000);
+  if (exercise) await exercise(cdp, sampleMs);
+  const runtime = await runtimePromise;
+  const cdpResult = await cdp.send('Performance.getMetrics');
+  const cdpMetrics = Object.fromEntries((cdpResult.metrics || []).map((metric) => [metric.name, metric.value]));
+  return {
+    ...runtime,
+    jsHeapUsedBytes: Math.round(cdpMetrics.JSHeapUsedSize || 0),
+    jsHeapTotalBytes: Math.round(cdpMetrics.JSHeapTotalSize || 0),
+    taskDurationMs: Number((((cdpMetrics.TaskDuration || 0) - (beforeMetrics.TaskDuration || 0)) * 1000).toFixed(2)),
+    scriptDurationMs: Number((((cdpMetrics.ScriptDuration || 0) - (beforeMetrics.ScriptDuration || 0)) * 1000).toFixed(2)),
+    layoutDurationMs: Number((((cdpMetrics.LayoutDuration || 0) - (beforeMetrics.LayoutDuration || 0)) * 1000).toFixed(2)),
+  };
+}
+
+const wait = (durationMs) => new Promise((resolveWait) => setTimeout(resolveWait, durationMs));
+
+async function sweepPointer(cdp, sampleMs, viewport) {
+  const steps = 24;
+  for (let index = 0; index < steps; index += 1) {
+    const progress = index / Math.max(1, steps - 1);
+    await cdp.send('Input.dispatchMouseEvent', {
+      type: 'mouseMoved',
+      x: Math.round(viewport.width * (0.18 + progress * 0.64)),
+      y: Math.round(viewport.height * (0.32 + Math.sin(progress * Math.PI * 2) * 0.18)),
+    });
+    await wait(sampleMs / steps);
+  }
+}
+
+async function scrollWorkspace(cdp, sampleMs, viewport) {
+  const steps = 18;
+  for (let index = 0; index < steps; index += 1) {
+    await cdp.send('Input.dispatchMouseEvent', {
+      type: 'mouseWheel',
+      x: Math.round(viewport.width * 0.3),
+      y: Math.round(viewport.height * 0.54),
+      deltaX: 0,
+      deltaY: index < steps / 2 ? 110 : -110,
+    });
+    await wait(sampleMs / steps);
+  }
+}
+
+async function openQueueModal(cdp, sampleMs) {
+  await evaluate(cdp, `
+    const button = document.querySelector('button[aria-label="处理队列"]');
+    button?.click();
+    return Boolean(button);
+  `);
+  await wait(sampleMs);
+}
+
+async function closeInteractionModal(cdp) {
+  await evaluate(cdp, `
+    document.querySelector('button[aria-label="关闭"]')?.click();
+    return true;
+  `);
+}
+
+async function collectInteractionPerformance(cdp, pageKey, viewport) {
+  const scenarios = [{ name: 'idle' }];
+  if (pageKey === 'today' || pageKey === 'ingest') {
+    scenarios.push({ name: 'pointer', exercise: (client, sampleMs) => sweepPointer(client, sampleMs, viewport) });
+  }
+  if (pageKey === 'ingest') {
+    scenarios.push({ name: 'scroll', exercise: (client, sampleMs) => scrollWorkspace(client, sampleMs, viewport) });
+    scenarios.push({ name: 'modal', exercise: openQueueModal });
+  }
+
+  const samples = [];
+  for (const scenario of scenarios) {
+    const metrics = await collectRuntimePerformance(cdp, 1800, scenario.exercise);
+    samples.push({ name: scenario.name, ...metrics });
+    if (scenario.name === 'modal') await closeInteractionModal(cdp);
+  }
+  return samples;
+}
+
 async function fetchHealth(baseUrl) {
   const startedAt = performance.now();
   try {
@@ -248,12 +464,42 @@ async function capturePageWithCdp({ cdp, url, page, screenshotPath }) {
     page.virtualTimeBudgetMs + 6000,
   );
 
+  const readyMs = Math.round(performance.now() - startedAt);
+  if (page.screenshotSettleMs) await wait(page.screenshotSettleMs);
   const html = await evaluate(cdp, `return document.documentElement.outerHTML;`);
   const screenshot = await cdp.send('Page.captureScreenshot', { format: 'png', fromSurface: true });
   writeFileSync(screenshotPath, Buffer.from(screenshot.data, 'base64'));
   return {
+    readyMs,
     durationMs: Math.round(performance.now() - startedAt),
     html,
+  };
+}
+
+async function collectNavigationPerformance(cdp, readyMs, includeDocumentNavigation) {
+  const snapshot = await evaluate(cdp, `
+    const navigation = performance.getEntriesByType('navigation').at(-1);
+    const resources = performance.getEntriesByType('resource').map((entry) => ({
+      name: entry.name,
+      initiatorType: entry.initiatorType,
+      transferSize: entry.transferSize,
+      encodedBodySize: entry.encodedBodySize,
+      decodedBodySize: entry.decodedBodySize,
+    }));
+    return {
+      navigation: navigation ? {
+        duration: navigation.duration,
+        domInteractive: navigation.domInteractive,
+        domContentLoaded: navigation.domContentLoadedEventEnd,
+        loadEventEnd: navigation.loadEventEnd,
+      } : null,
+      resources,
+    };
+  `);
+  return {
+    readyMs,
+    ...summarizeDocumentNavigation(snapshot.navigation, includeDocumentNavigation),
+    ...summarizeNavigationResources(snapshot.resources || []),
   };
 }
 
@@ -362,6 +608,9 @@ export async function runCinematicPagesQa({
   enforceScreenshotPerformance = enforcePerformance,
   viewport = defaultViewport,
   pageKeys,
+  gpuMode = 'swiftshader',
+  revisitFirstPage = false,
+  warmRevisitCount = 1,
 } = {}) {
   const resolvedOutDir = resolve(outDir);
   mkdirSync(resolvedOutDir, { recursive: true });
@@ -370,18 +619,19 @@ export async function runCinematicPagesQa({
   const reports = [];
   const port = await findFreePort();
   const userDataDir = mkdtempSync(resolve(tmpdir(), 'ki-cinematic-pages-'));
+  const gpuArgs = gpuMode === 'metal'
+    ? ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu-rasterization']
+    : ['--disable-gpu', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
   const chrome = spawn(chromePath, [
     '--headless=new',
-    '--disable-gpu',
-    '--use-angle=swiftshader',
-    '--enable-unsafe-swiftshader',
+    ...gpuArgs,
     '--hide-scrollbars',
     '--no-first-run',
     '--no-default-browser-check',
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${userDataDir}`,
     `--window-size=${viewport.width},${viewport.height}`,
-    pageUrl(baseUrl, '/#/'),
+    'about:blank',
   ], { stdio: ['ignore', 'ignore', 'pipe'] });
   const chromeStderr = [];
   chrome.stderr.on('data', (chunk) => chromeStderr.push(chunk.toString()));
@@ -394,13 +644,28 @@ export async function runCinematicPagesQa({
     cdp = await connectCdp(tab.webSocketDebuggerUrl);
     await cdp.send('Page.enable');
     await cdp.send('Runtime.enable');
+    await cdp.send('Performance.enable');
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: viewport.width,
+      height: viewport.height,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
 
-    for (const page of selectCinematicPages(pageKeys)) {
+    for (const page of buildCinematicVisitSequence(pageKeys, revisitFirstPage, warmRevisitCount)) {
       const url = pageUrl(baseUrl, page.path);
       const viewportLabel = `${viewport.width}x${viewport.height}`;
-      const screenshotPath = resolve(resolvedOutDir, `${page.key}-${viewportLabel}.png`);
+      const visitSuffix = revisitFirstPage ? `-${page.visit}` : '';
+      const screenshotPath = resolve(resolvedOutDir, `${page.key}${visitSuffix}-${viewportLabel}.png`);
+      await evaluate(cdp, `performance.clearResourceTimings(); return true;`);
       const capture = await capturePageWithCdp({ cdp, url, page, screenshotPath });
+      const navigationPerformance = await collectNavigationPerformance(cdp, capture.readyMs, page.visit === 'cold');
       const screenshotVisual = readPngVisualStats(screenshotPath);
+      if (mode === 'performance') await wait(performanceSettleMs);
+      const interactionPerformance = mode === 'performance'
+        ? await collectInteractionPerformance(cdp, page.key, viewport)
+        : null;
+      const runtimePerformance = interactionPerformance?.find((sample) => sample.name === 'idle') || null;
       const html = capture.html || '';
       const stderr = chromeStderr.join('').trim();
       const markerStatus = Object.fromEntries(page.markers.map((marker) => [marker, html.includes(marker)]));
@@ -423,8 +688,10 @@ export async function runCinematicPagesQa({
 
       reports.push({
         key: page.key,
+        visit: page.visit,
         url,
         screenshotPath,
+        readyMs: capture.readyMs,
         screenshotMs: capture.durationMs,
         domDumpMs: 0,
         domBytes: html.length,
@@ -438,6 +705,9 @@ export async function runCinematicPagesQa({
           expectedCanvasCount: page.expectedCanvasCount,
         },
         screenshotVisual,
+        navigationPerformance,
+        runtimePerformance,
+        interactionPerformance,
         chromeIssues,
         thresholdsEnforced: {
           screenshotMs: enforceScreenshotPerformance,
@@ -448,11 +718,12 @@ export async function runCinematicPagesQa({
     }
   } finally {
     cdp?.close();
-    chrome.kill('SIGTERM');
+    await stopChildProcess(chrome);
   }
 
   const report = {
     mode,
+    gpuMode,
     baseUrl,
     viewport,
     capturedAt: new Date().toISOString(),
@@ -469,10 +740,11 @@ export async function runCinematicPagesQa({
   for (const page of reports) {
     console.log(`${page.key}: pass=${page.pass} screenshot_ms=${page.screenshotMs} dom_ms=${page.domDumpMs} canvas=${page.canvasCount} virtual_time=${page.virtualTimeBudgetMs}`);
     console.log(`${page.key}_thresholds=${JSON.stringify(page.thresholds)}`);
+    if (page.runtimePerformance) console.log(`${page.key}_runtime=${JSON.stringify(page.runtimePerformance)}`);
     console.log(`${page.key}_screenshot=${page.screenshotPath}`);
   }
   console.log(`pass=${report.pass}`);
 
-  if (!report.pass) process.exit(1);
+  if (!report.pass) throw new Error(`Cinematic page QA failed: ${reportPath}`);
   return report;
 }

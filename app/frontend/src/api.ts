@@ -1,9 +1,10 @@
 const origin = window.location.origin;
-const isViteDev = origin === 'http://127.0.0.1:5173' || origin === 'http://localhost:5173';
+const isViteDev = import.meta.env.DEV;
 const sameOrigin = origin.endsWith(':9120') || origin === 'tauri://localhost' || origin === 'https://tauri.localhost';
-const DEFAULT_BACKEND = sameOrigin ? '' : 'http://127.0.0.1:9120';
+const DEFAULT_BACKEND = sameOrigin || isViteDev ? '' : 'http://127.0.0.1:9120';
 
 export function getBackendUrl(): string {
+  if (isViteDev) return '';
   try {
     const stored = localStorage.getItem('ki_backend_url');
     if (stored && stored.trim()) return stored.trim().replace(/\/+$/, '');
@@ -46,9 +47,29 @@ function withAuth(init?: RequestInit): RequestInit | undefined {
   return { ...init, headers };
 }
 
-export function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+let viteSessionBootstrap: Promise<boolean> | null = null;
+
+async function bootstrapViteRemoteSession(): Promise<boolean> {
+  if (!isViteDev) return false;
+  if (!viteSessionBootstrap) {
+    viteSessionBootstrap = fetch('/__ki_remote_session', {
+      cache: 'no-store',
+      credentials: 'include',
+    })
+      .then((response) => response.ok)
+      .catch(() => false)
+      .finally(() => { viteSessionBootstrap = null; });
+  }
+  return viteSessionBootstrap;
+}
+
+export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   if (typeof input === 'string' && input.startsWith('/api/')) {
-    return fetch(getBackendUrl() + input, withAuth(init));
+    const requestInit = withAuth(init);
+    const response = await fetch(getBackendUrl() + input, requestInit);
+    if (!isViteDev || response.status !== 401 || getApiToken()) return response;
+    if (!await bootstrapViteRemoteSession()) return response;
+    return fetch(getBackendUrl() + input, requestInit);
   }
   return fetch(input, init);
 }

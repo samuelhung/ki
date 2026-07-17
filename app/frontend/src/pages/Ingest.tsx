@@ -1,33 +1,52 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { createPortal } from 'react-dom';
+import { useLocation } from 'react-router-dom';
+import type { LucideIcon } from 'lucide-react';
 import { useCurtain } from '../CurtainContext';
-import { Upload, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Loader2, Trash2, Search, Maximize2, Download, Globe, Coins, Brain, Telescope, Zap, X, List, RotateCcw } from 'lucide-react';
+import { Upload, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Loader2, Trash2, Search, Maximize2, Download, Globe, Coins, Brain, Telescope, Zap, X, List, RotateCcw, Sparkles, Radio, FileText, Link2 } from 'lucide-react';
 import MetricCard from '../components/MetricCard';
 import Modal from '../components/Modal';
 import Checkbox from '../components/Checkbox';
 import EmptyState from '../components/EmptyState';
 import ModuleHeroTabs, { WANXIANG_TABS } from '../components/ModuleHeroTabs';
+import { ContentDetailPanel } from '../components/cinematic-ingest/ContentDetailPanel';
+import { useIngestDetailActions } from '../components/cinematic-ingest/useIngestDetailActions';
+import { useDebouncedValue } from '../components/cinematic-ingest/useDebouncedValue';
+import type { DetailTab, EventItem, TopicKey } from '../components/cinematic-ingest/ingestTypes';
+import { EmbeddedBriefingList, type EmbeddedBriefingTopic } from '../components/ingest/EmbeddedBriefingList';
+import { EmbeddedIngestList } from '../components/ingest/EmbeddedIngestList';
+import { EmbeddedIngestWorkspace } from '../components/ingest/EmbeddedIngestWorkspace';
+import { isLatestRequest, shouldPollQueue } from '../components/ingest/ingestRequestPolicy';
+import { abortableDelay, RequestLifecycle } from '../components/ingest/requestLifecycle';
 import { formatTimeBeijing, sourceLabel, sourceBadgeClass } from '../utils';
 import { apiFetch } from '../api';
+import '../components/cinematic-ingest/cinematic-ingest.css';
 
 interface IngestStats { today_submissions: number; processing: number; completed: number; }
 
-interface Event {
-  id: string; source_id: string; title: string; title_cn?: string;
-  url: string; topic: string; status: string; created_at: string;
-  raw_summary?: string; ai_summary?: string; overview?: string; last_error?: string;
-  summary_cn?: string; translation_status?: string; transcript_path?: string; summary_path?: string;
-  video_path?: string; audio_path?: string; document_path?: string;
-  associated_questions?: any[];
-}
+interface Event extends EventItem { url: string; }
 
 interface ProgressStage { key: string; label: string; status: 'pending' | 'active' | 'done' | 'error'; }
 interface IngestStatus { event_id: string; status: string; progress_stages?: ProgressStage[]; }
-interface BriefingTopic { topic: string; topic_label?: string; summary?: string; events: Array<{ event_id: string; title_cn?: string; title?: string; highlight?: string; source_name?: string; created_at?: string; relevance?: { high: number; medium: number }; }>; }
 interface Source { id: string; name: string; type: string; url: string; topic: string; priority: string; enabled: number; }
 
 const PAGE_SIZE = 15;
 const API_BASE = '/api/events';
+const DETAIL_TABS: Array<{ key: DetailTab; label: string; meta: string; icon: LucideIcon }> = [
+  { key: 'body', label: '转写原文', meta: 'TRANSCRIPT', icon: FileText },
+  { key: 'summary', label: 'AI 总结', meta: 'SUMMARY', icon: Sparkles },
+  { key: 'questions', label: '关联问题', meta: 'LINKED Q', icon: Link2 },
+  { key: 'chain', label: '产业分析', meta: 'INDUSTRY', icon: Radio },
+];
+export interface IngestActionRequest {
+  type: 'douyin' | 'file' | 'concept' | 'queue';
+  nonce: number;
+}
+
+interface IngestProps {
+  embedded?: boolean;
+  actionRequest?: IngestActionRequest | null;
+}
 
 /** ingest_type → 中文标签 */
 function taskTypeLabel(ingestType: string): string {
@@ -54,20 +73,21 @@ function taskTitle(t: any): string {
   return taskTypeLabel(t.ingest_type);
 }
 
-export default function Ingest() {
+export default function Ingest({ embedded = false, actionRequest = null }: IngestProps) {
+  const location = useLocation();
   const [stats, setStats] = useState<IngestStats>({ today_submissions: 0, processing: 0, completed: 0 });
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [historyTab, setHistoryTab] = useState<'格局' | '财富' | '认知' | '前瞻' | 'briefing'>('格局');
   const [page, setPage] = useState(1);
   const [totalCounts, setTotalCounts] = useState<Record<string, number>>({ douyin: 0, file: 0 });
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(() => new URLSearchParams(location.search).get('search') || '');
+  const debouncedSearch = useDebouncedValue(search, 250);
   const [total, setTotal] = useState(0);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [briefingTopics, setBriefingTopics] = useState<BriefingTopic[]>([]);
+  const [briefingTopics, setBriefingTopics] = useState<EmbeddedBriefingTopic[]>([]);
   const [briefingLoading, setBriefingLoading] = useState(false);
   const [bpExpanded, setBpExpanded] = useState<Set<string>>(new Set());
-  const navigate = useNavigate();
   const { navigateWithCurtain } = useCurtain();
   const [modalType, setModalType] = useState<'douyin' | 'file' | 'concept' | 'queue' | null>(null);
   const [douyinText, setDouyinText] = useState('');
@@ -99,6 +119,119 @@ export default function Ingest() {
   const [briefingError, setBriefingError] = useState('');
   const [queueItems, setQueueItems] = useState<any[]>([]);
   const [queueShowAllDone, setQueueShowAllDone] = useState(false);
+  const [searchPortalTarget, setSearchPortalTarget] = useState<HTMLElement | null>(null);
+  const [activeEventId, setActiveEventId] = useState<string | null>(null);
+  const eventRequestSequenceRef = useRef(0);
+  const eventRequestAbortRef = useRef<AbortController | null>(null);
+  const statsRequestLifecycleRef = useRef(new RequestLifecycle());
+  const statusRequestLifecycleRef = useRef(new RequestLifecycle());
+  const queueRequestLifecycleRef = useRef(new RequestLifecycle());
+  const briefingRequestLifecycleRef = useRef(new RequestLifecycle());
+  const topicCountRequestLifecycleRef = useRef(new RequestLifecycle());
+  const completionTimerRef = useRef<number | null>(null);
+  const details = useIngestDetailActions({
+    activeEventId,
+    historyTab: (historyTab === 'briefing' ? '格局' : historyTab) as TopicKey,
+    setToast,
+  });
+  const selectedEvent = events.find((event) => event.id === activeEventId) || null;
+
+  const loadStats = useCallback(async () => {
+    const { sequence, signal } = statsRequestLifecycleRef.current.start();
+    try {
+      const response = await apiFetch('/api/ingest/stats', { signal });
+      const data = await response.json();
+      if (statsRequestLifecycleRef.current.isCurrent(sequence)) setStats(data);
+    } catch (error: any) {
+      if (error?.name !== 'AbortError' && statsRequestLifecycleRef.current.isCurrent(sequence)) {
+        console.error('加载统计数据失败', error);
+      }
+    }
+  }, []);
+
+  const loadEvents = useCallback(async () => {
+    const requestSequence = ++eventRequestSequenceRef.current;
+    eventRequestAbortRef.current?.abort();
+    const requestController = new AbortController();
+    eventRequestAbortRef.current = requestController;
+    setLoading(true);
+    const sourceId = historyTab === 'briefing' ? '' : 'douyin,user-upload,user-concept';
+    const topicFilter = ['格局', '财富', '认知', '前瞻'].includes(historyTab) ? `&topic=${historyTab}` : '';
+    const searchParam = debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : '';
+    try {
+      const response = await apiFetch(`${API_BASE}?source_id=${sourceId}${topicFilter}${searchParam}&limit=${PAGE_SIZE}&offset=${(page - 1) * PAGE_SIZE}&count=1`, {
+        signal: requestController.signal,
+      });
+      const data = await response.json();
+      if (!isLatestRequest(requestSequence, eventRequestSequenceRef.current)) return;
+      setEventsError('');
+      if (data && typeof data === 'object' && 'items' in data) {
+        setEvents(data.items || []);
+        setTotal(data.total || 0);
+      } else {
+        setEvents(Array.isArray(data) ? data : []);
+      }
+    } catch (error: any) {
+      if (isLatestRequest(requestSequence, eventRequestSequenceRef.current)) {
+        if (error?.name !== 'AbortError') {
+          console.error('加载事件列表失败', error);
+          setEventsError(error.message || '加载事件列表失败');
+        }
+      }
+    } finally {
+      if (isLatestRequest(requestSequence, eventRequestSequenceRef.current)) setLoading(false);
+    }
+  }, [debouncedSearch, historyTab, page]);
+
+  const loadQueue = useCallback(async () => {
+    const { sequence, signal } = queueRequestLifecycleRef.current.start();
+    try {
+      const response = await apiFetch('/api/ingest/queue?limit=30', { signal });
+      const data = await response.json();
+      if (queueRequestLifecycleRef.current.isCurrent(sequence)) {
+        setQueueItems(data.items || []);
+      }
+    } catch (error: any) {
+      if (error?.name !== 'AbortError' && queueRequestLifecycleRef.current.isCurrent(sequence)) {
+        console.error('加载处理队列失败', error);
+      }
+    }
+  }, []);
+
+  const loadTopicCounts = useCallback(async () => {
+    const { sequence, signal } = topicCountRequestLifecycleRef.current.start();
+    try {
+      const response = await apiFetch('/api/events/topic-counts', { signal });
+      const data = await response.json();
+      if (topicCountRequestLifecycleRef.current.isCurrent(sequence)) setTopicCounts(data);
+    } catch (error: any) {
+      if (error?.name !== 'AbortError' && topicCountRequestLifecycleRef.current.isCurrent(sequence)) {
+        console.error('加载话题计数失败', error);
+      }
+    }
+  }, []);
+
+  const loadBriefing = useCallback(async () => {
+    const { sequence, signal } = briefingRequestLifecycleRef.current.start();
+    setBriefingLoading(true);
+    try {
+      const response = await apiFetch('/api/briefing/latest?briefing_type=quick', { signal });
+      if (response.ok) {
+        const data = await response.json();
+        if (briefingRequestLifecycleRef.current.isCurrent(sequence)) {
+          setBriefingError('');
+          setBriefingTopics(data.topics || []);
+        }
+      }
+    } catch (error: any) {
+      if (error?.name !== 'AbortError' && briefingRequestLifecycleRef.current.isCurrent(sequence)) {
+        console.error('加载简报失败', error);
+        setBriefingError(error.message || '加载简报失败');
+      }
+    } finally {
+      if (briefingRequestLifecycleRef.current.isCurrent(sequence)) setBriefingLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (mobileSelectMode && selectedIds.length === 0) {
@@ -107,13 +240,38 @@ export default function Ingest() {
   }, [selectedIds, mobileSelectMode]);
 
   useEffect(() => {
-    loadEvents();
-    loadStats();
-  }, [historyTab, page, search]);
+    if (historyTab !== 'briefing') {
+      void loadEvents();
+      return;
+    }
+    eventRequestSequenceRef.current += 1;
+    eventRequestAbortRef.current?.abort();
+  }, [historyTab, loadEvents]);
 
   useEffect(() => {
-    if (historyTab === 'briefing') loadBriefing();
-  }, [historyTab]);
+    void loadStats();
+  }, [loadStats]);
+
+  useEffect(() => {
+    if (historyTab === 'briefing') {
+      void loadBriefing();
+      return;
+    }
+    briefingRequestLifecycleRef.current.abort();
+    setBriefingLoading(false);
+  }, [historyTab, loadBriefing]);
+
+  useEffect(() => {
+    if (!embedded || historyTab === 'briefing') return;
+    setActiveEventId((current) => (
+      events.some((event) => event.id === current) ? current : events[0]?.id ?? null
+    ));
+  }, [embedded, events, historyTab]);
+
+  useEffect(() => {
+    if (!embedded) return;
+    setSearchPortalTarget(document.getElementById('ki-shell-top-accessory'));
+  }, [embedded]);
 
   // auto-dismiss toast
   useEffect(() => {
@@ -122,27 +280,45 @@ export default function Ingest() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  useEffect(() => { loadTopicCounts(); }, []);
+  useEffect(() => { void loadTopicCounts(); }, [loadTopicCounts]);
 
-  // 轮询处理队列
-  useEffect(() => {
-    loadQueue();
-    const interval = setInterval(loadQueue, 3000);
-    return () => clearInterval(interval);
+  useEffect(() => () => {
+    eventRequestSequenceRef.current += 1;
+    eventRequestAbortRef.current?.abort();
+    statsRequestLifecycleRef.current.abort();
+    statusRequestLifecycleRef.current.abort();
+    queueRequestLifecycleRef.current.abort();
+    briefingRequestLifecycleRef.current.abort();
+    topicCountRequestLifecycleRef.current.abort();
+    if (completionTimerRef.current !== null) window.clearTimeout(completionTimerRef.current);
   }, []);
 
-  async function loadQueue() {
-    try {
-      const r = await apiFetch('/api/ingest/queue?limit=30');
-      const d = await r.json();
-      const items = d.items || [];
-      setQueueItems(items);
-    } catch (_) { /* silent */ }
-  }
+  const queuePollingActive = shouldPollQueue(modalType === 'queue', queueItems, pollId);
+
+  // Only keep the queue warm while the user can see it or active work exists.
+  useEffect(() => {
+    if (!queuePollingActive) return;
+    const pollQueue = () => {
+      if (!document.hidden) void loadQueue();
+    };
+    const onVisibilityChange = () => {
+      if (!document.hidden) pollQueue();
+    };
+    pollQueue();
+    const interval = window.setInterval(pollQueue, 3000);
+    document.addEventListener('visibilitychange', onVisibilityChange, { passive: true });
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      queueRequestLifecycleRef.current.abort();
+    };
+  }, [loadQueue, queuePollingActive]);
 
   async function deleteQueueTask(taskId: string) {
     try {
+      queueRequestLifecycleRef.current.abort();
       await apiFetch(`/api/ingest/queue/${taskId}`, { method: 'DELETE' });
+      queueRequestLifecycleRef.current.abort();
       setQueueItems(prev => prev.filter(t => t.id !== taskId));
     } catch (_) { /* silent */ }
   }
@@ -150,54 +326,8 @@ export default function Ingest() {
   async function retryQueueTask(taskId: string) {
     try {
       await apiFetch(`/api/ingest/queue/${taskId}/retry`, { method: 'POST' });
-      loadQueue();
+      await loadQueue();
     } catch (_) { /* silent */ }
-  }
-
-  async function loadTopicCounts() {
-    try {
-      const r = await apiFetch('/api/events/topic-counts');
-      const d = await r.json();
-      setTopicCounts(d);
-    } catch (e: any) { console.error('加载话题计数失败', e); }
-  }
-
-  async function loadStats() {
-    try {
-      const r = await apiFetch('/api/ingest/stats');
-      const d = await r.json();
-      setStats(d);
-    } catch (e: any) { console.error('加载统计数据失败', e); }
-  }
-
-  async function loadBriefing() {
-    setBriefingLoading(true);
-    try {
-      const r = await apiFetch('/api/briefing/latest?briefing_type=quick');
-      if (r.ok) {
-        const d = await r.json();
-        setBriefingTopics(d.topics || []);
-      }
-    } catch (e: any) { console.error('加载简报失败', e); setBriefingError(e.message || '加载简报失败'); }
-    setBriefingLoading(false);
-  }
-
-  async function loadEvents() {
-    setLoading(true);
-    const sourceId = historyTab === 'briefing' ? '' : 'douyin,user-upload,user-concept';
-    const topicFilter = ['格局','财富','认知','前瞻'].includes(historyTab) ? `&topic=${historyTab}` : '';
-    const searchParam = search ? `&search=${encodeURIComponent(search)}` : '';
-    try {
-      const r = await apiFetch(`${API_BASE}?source_id=${sourceId}${topicFilter}${searchParam}&limit=${PAGE_SIZE}&offset=${(page-1)*PAGE_SIZE}&count=1`);
-      const d = await r.json();
-      if (d && typeof d === 'object' && 'items' in d) {
-        setEvents(d.items || []);
-        setTotal(d.total || 0);
-      } else {
-        setEvents(Array.isArray(d) ? d : []);
-      }
-    } catch (e: any) { console.error('加载事件列表失败', e); setEventsError(e.message || '加载事件列表失败'); }
-    setLoading(false);
   }
 
   async function handleCollect() {
@@ -210,7 +340,7 @@ export default function Ingest() {
       });
       const d = await r.json();
       setToast({ text: `采集完成：新增 ${d.new_events || 0} 条`, type: 'success' });
-      await loadEvents();
+      await Promise.all([loadEvents(), loadStats(), loadTopicCounts()]);
     } catch (e: any) {
       setToast({ text: `采集失败: ${e.message}`, type: 'info' });
     }
@@ -236,28 +366,47 @@ export default function Ingest() {
     setSubmitting(false);
   }
 
-  async function pollIngestStatus(eventId: string) {
-    for (let i = 0; i < 120; i++) {
-      await new Promise(r => setTimeout(r, 2000));
-      try {
-        const r = await apiFetch(`/api/ingest/status/${eventId}`);
-        if (!r.ok) continue;
-        const d = await r.json();
-        setPollStatus(d);
-        setProgressStages(d.progress_stages || null);
-        if (d.status === 'completed' || d.status === 'failed' || d.status === 'error') {
-          // Don't close the queue modal — only close douyin/file submit modals
-          setTimeout(() => {
-            setModalType(prev => prev === 'queue' ? 'queue' : null);
-            setPollId(null); setPollStatus(null); setProgressStages(null);
-            loadEvents(); loadStats(); loadTopicCounts(); loadQueue();
+  const pollIngestStatus = useCallback(async (eventId: string) => {
+    if (completionTimerRef.current !== null) {
+      window.clearTimeout(completionTimerRef.current);
+      completionTimerRef.current = null;
+    }
+    const { sequence, signal } = statusRequestLifecycleRef.current.start();
+
+    try {
+      for (let attempt = 0; attempt < 120; attempt += 1) {
+        await abortableDelay(2000, signal);
+        const response = await apiFetch(`/api/ingest/status/${eventId}`, { signal });
+        if (!response.ok || !statusRequestLifecycleRef.current.isCurrent(sequence)) continue;
+        const data = await response.json();
+        if (!statusRequestLifecycleRef.current.isCurrent(sequence)) return;
+
+        setPollStatus(data);
+        setProgressStages(data.progress_stages || null);
+        if (data.status === 'completed' || data.status === 'failed' || data.status === 'error') {
+          completionTimerRef.current = window.setTimeout(() => {
+            if (!statusRequestLifecycleRef.current.isCurrent(sequence)) return;
+            completionTimerRef.current = null;
+            setModalType(current => current === 'queue' ? 'queue' : null);
+            setPollId(null);
+            setPollStatus(null);
+            setProgressStages(null);
+            statusRequestLifecycleRef.current.abort();
+            void Promise.all([loadEvents(), loadStats(), loadTopicCounts(), loadQueue()]);
           }, 1500);
           return;
         }
-      } catch (e: any) { console.error('轮询状态失败', e); }
+      }
+
+      if (statusRequestLifecycleRef.current.isCurrent(sequence)) {
+        setPollStatus({ event_id: eventId, status: 'error' });
+      }
+    } catch (error: any) {
+      if (error?.name !== 'AbortError' && statusRequestLifecycleRef.current.isCurrent(sequence)) {
+        console.error('轮询状态失败', error);
+      }
     }
-    setPollStatus({ event_id: eventId, status: 'error' });
-  }
+  }, [loadEvents, loadQueue, loadStats, loadTopicCounts]);
 
   async function handleFileSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -294,7 +443,7 @@ export default function Ingest() {
       setToast({ text: d.ai_summary ? '概念已沉淀，AI 已自动补全' : '概念已沉淀', type: 'success' });
       setConceptTitle(''); setConceptTopic(''); setConceptDesc('');
       setModalType(null);
-      loadEvents();
+      await Promise.all([loadEvents(), loadStats(), loadTopicCounts()]);
     } catch (e: any) { setCeError(e.message); }
     finally { setConceptSubmitting(false); }
   }
@@ -309,14 +458,14 @@ export default function Ingest() {
     finally { setTogglingSrc(null); }
   }
 
-  async function handleDelete(eventId: string, e: React.MouseEvent) {
+  const handleDelete = useCallback(async (eventId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm('确定要删除这条记录吗？')) return;
     try {
       await apiFetch(`${API_BASE}/${eventId}`, { method: 'DELETE' });
-      loadEvents(); loadStats();
+      await Promise.all([loadEvents(), loadStats()]);
     } catch (e: any) { console.error('删除事件失败', e); }
-  }
+  }, [loadEvents, loadStats]);
 
   async function handleBatchDelete() {
     if (selectedIds.length === 0) return;
@@ -330,14 +479,33 @@ export default function Ingest() {
     } catch (e: any) { console.error('批量删除事件失败', e); }
   }
 
-  function openDetail(eventId: string) {
+  const openDetail = useCallback((eventId: string) => {
+    if (embedded) {
+      setActiveEventId(eventId);
+      return;
+    }
     navigateWithCurtain(`/events/${eventId}`);
-  }
+  }, [embedded, navigateWithCurtain]);
+
+  const handleEmbeddedTopicChange = useCallback((topic: TopicKey) => {
+    setHistoryTab(topic);
+    setPage(1);
+    setActiveEventId(null);
+  }, []);
 
   function openModal(type: 'douyin' | 'file' | 'concept' | 'queue') {
     setDyError(''); setFlError(''); setPollStatus(null); setProgressStages(null);
     setModalType(type);
   }
+
+  useEffect(() => {
+    if (!actionRequest) return;
+    if (actionRequest.type === 'queue') {
+      loadQueue();
+      setQueueShowAllDone(false);
+    }
+    openModal(actionRequest.type);
+  }, [actionRequest?.nonce]);
 
   function toggleSelect(id: string) {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -353,25 +521,187 @@ export default function Ingest() {
     }
   }
 
+  const detailTabs = useMemo(() => (
+    <nav className="ingest-detail-tabs" aria-label="内容详情维度">
+      {DETAIL_TABS.map((tab) => {
+        const Icon = tab.icon;
+        return (
+          <button
+            key={tab.key}
+            type="button"
+            className={`ingest-tab-trigger launcher-action pixel-command is-${tab.key}${details.detailTab === tab.key ? ' is-active' : ''}`}
+            onClick={() => {
+              details.setDetailTab(tab.key);
+              if (tab.key === 'summary' && details.detail && !details.detail.ai_summary && details.summarizingId !== details.detail.id) {
+                details.handleSummarize(details.detail.id);
+              }
+              if (tab.key === 'chain' && details.detail && !details.chainAnalysis && !details.chainLoading) {
+                details.handleChainAnalyze();
+              }
+            }}
+          >
+            <Icon size={15} />
+            <b>{tab.label}</b>
+            <span>{tab.meta}</span>
+          </button>
+        );
+      })}
+    </nav>
+  ), [
+    details.chainAnalysis,
+    details.chainLoading,
+    details.detail,
+    details.detailTab,
+    details.handleChainAnalyze,
+    details.handleSummarize,
+    details.setDetailTab,
+    details.summarizingId,
+  ]);
+
+  const handleEmbeddedSummarize = useCallback(() => {
+    if (details.detail) void details.handleSummarize(details.detail.id);
+  }, [details.detail, details.handleSummarize]);
+
+  const handleEmbeddedSearchChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    setSearch(event.target.value);
+    setPage(1);
+  }, []);
+
+  const embeddedList = useMemo(() => historyTab === 'briefing' ? (
+    <EmbeddedBriefingList
+      topics={briefingTopics}
+      activeEventId={activeEventId}
+      loading={briefingLoading}
+      error={briefingError}
+      onRetry={loadBriefing}
+      onSelect={openDetail}
+    />
+  ) : (
+    <EmbeddedIngestList
+      events={events}
+      activeEventId={activeEventId}
+      activeTopic={historyTab}
+      loading={loading}
+      error={eventsError}
+      onRetry={loadEvents}
+      onSelect={openDetail}
+      onDelete={handleDelete}
+    />
+  ), [
+    activeEventId,
+    briefingError,
+    briefingLoading,
+    briefingTopics,
+    events,
+    eventsError,
+    handleDelete,
+    historyTab,
+    loadBriefing,
+    loadEvents,
+    loading,
+    openDetail,
+  ]);
+
+  const embeddedSearch = useMemo(() => (
+    <label className="ki-ingest-list-search">
+      <Search size={14} />
+      <input
+        value={search}
+        onChange={handleEmbeddedSearchChange}
+        placeholder="搜索内容标题"
+      />
+    </label>
+  ), [handleEmbeddedSearchChange, search]);
+
+  const embeddedDetail = useMemo(() => (
+        <ContentDetailPanel
+          detail={details.detail}
+          fallback={selectedEvent}
+          loading={details.detailLoading}
+          error={details.detailError}
+          tab={details.detailTab}
+          detailTabs={detailTabs}
+          summarizing={Boolean(details.detail && details.summarizingId === details.detail.id)}
+          contemplating={details.contemplating}
+          contemplateError={details.contemplateError}
+          contemplateResults={details.contemplateResults}
+          contemplateSelected={details.contemplateSelected}
+          contemplateLinking={details.contemplateLinking}
+          linkedQuestions={details.linkedQuestions}
+          linkedQuestionsLoading={details.linkedQuestionsLoading}
+          chainAnalysis={details.chainAnalysis}
+          chainLoading={details.chainLoading}
+          chainError={details.chainError}
+          chainHints={details.chainHints}
+          syncingHints={details.syncingHints}
+          syncResult={details.syncResult}
+          onSummarize={handleEmbeddedSummarize}
+          onContemplate={details.handleContemplate}
+          onToggleQuestion={details.toggleQuestion}
+          onLinkQuestions={details.handleContemplateLink}
+          onChainAnalyze={details.handleChainAnalyze}
+          onSyncHints={details.handleSyncHints}
+        />
+  ), [
+    detailTabs,
+    details.chainAnalysis,
+    details.chainError,
+    details.chainHints,
+    details.chainLoading,
+    details.contemplateError,
+    details.contemplateLinking,
+    details.contemplateResults,
+    details.contemplateSelected,
+    details.contemplating,
+    details.detail,
+    details.detailError,
+    details.detailLoading,
+    details.detailTab,
+    details.handleChainAnalyze,
+    details.handleContemplate,
+    details.handleContemplateLink,
+    details.handleSyncHints,
+    details.linkedQuestions,
+    details.linkedQuestionsLoading,
+    details.summarizingId,
+    details.syncingHints,
+    details.syncResult,
+    details.toggleQuestion,
+    handleEmbeddedSummarize,
+    selectedEvent,
+  ]);
+
+  const embeddedStage = useMemo(() => (
+    <EmbeddedIngestWorkspace
+      activeTopic={historyTab}
+      onTopicChange={handleEmbeddedTopicChange}
+      list={embeddedList}
+      detail={embeddedDetail}
+      accessory={searchPortalTarget ? createPortal(embeddedSearch, searchPortalTarget) : null}
+    />
+  ), [embeddedDetail, embeddedList, embeddedSearch, handleEmbeddedTopicChange, historyTab, searchPortalTarget]);
+
   // ── Render ──
   return (
     <>
-      <div className="flex-1 bg-[#0B0C10] text-white flex flex-col h-full overflow-hidden">
+      <div className={`legacy-ingest-root${embedded ? ' is-shell-embedded cinematic-ingest' : ''} flex-1 bg-[#0B0C10] text-white flex flex-col h-full overflow-hidden`}>
         {/* Sticky module hero */}
+        {!embedded && (
         <div className="shrink-0 sticky top-0 z-10 bg-[#0B0C10] px-4 md:px-8 pt-4 md:pt-8 pb-3">
-          <div className="max-w-[1080px] mx-auto">
+          <div className={`${embedded ? 'max-w-[1500px]' : 'max-w-[1080px]'} mx-auto`}>
             <ModuleHeroTabs
               title="万象资料"
               subtitle="每一份内容，都是一粒思想的种子"
               icon={<Download size={23} />}
-              tabs={WANXIANG_TABS.map(tab => tab.to === '/ingest' ? { ...tab, count: total || stats.completed || undefined } : tab)}
-              chips={[
+              compact={embedded}
+              tabs={WANXIANG_TABS.map(tab => tab.to === '/ingest' && !embedded ? { ...tab, count: total || stats.completed || undefined } : tab)}
+              chips={embedded ? [] : [
                 { label: '今日新增', value: stats.today_submissions },
                 { label: '累计采集', value: stats.completed },
                 { label: '队列处理中', value: stats.processing || queueItems.filter((t: any) => t.status === 'running' || t.status === 'pending').length },
                 { label: '信息源', value: 8 },
               ]}
-              actions={[
+              actions={embedded ? [] : [
                 { label: '处理队列', icon: <List size={14} />, tone: 'purple', onClick: () => { loadQueue(); setQueueShowAllDone(false); openModal('queue'); } },
                 { label: '抖音分享', icon: <Zap size={14} />, tone: 'pink', onClick: () => openModal('douyin') },
                 { label: '上传文件', icon: <Upload size={14} />, tone: 'emerald', onClick: () => openModal('file') },
@@ -390,14 +720,19 @@ export default function Ingest() {
             />
           </div>
         </div>
+        )}
 
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto custom-scrollbar px-4 md:px-8 pb-4 md:pb-8">
-          <div className="max-w-[1080px] mx-auto pt-4">
+          <div className={`${embedded ? 'max-w-[1500px]' : 'max-w-[1080px]'} mx-auto pt-4`}>
+
+            {embedded ? embeddedStage : (
+            <>
 
             {/* 内容分类 tab */}
-            <div className="hidden md:block border-b border-[#2A2B30] mb-4">
-              <div className="flex gap-6 overflow-x-auto">
+            <div className="legacy-ingest-categories hidden md:block border-b border-[#2A2B30] mb-4">
+              <div className="legacy-ingest-category-toolbar flex items-end justify-between gap-6">
+              <div className="legacy-ingest-category-tabs flex gap-6 overflow-x-auto">
                 {([
                   { key: '格局' as const, label: '格局', sub: '地缘政治·大国博弈·国际关系', icon: Globe, color: 'text-blue-400' },
                   { key: '财富' as const, label: '财富', sub: '经济金融·商业洞察·投资理财', icon: Coins, color: 'text-amber-400' },
@@ -408,12 +743,31 @@ export default function Ingest() {
                   <button key={t.key} onClick={() => { setHistoryTab(t.key); setPage(1); }}
                     className={`pb-3 text-sm font-medium transition-colors relative whitespace-nowrap flex flex-col items-center ${historyTab === t.key ? 'text-white' : 'text-gray-500 hover:text-gray-300'}`}>
                     <div className="flex items-center"><t.icon size={18} className={`${t.color} mr-1.5`} />{t.label}</div>
-                    {t.sub && <div className="text-[10px] text-gray-500 mt-0.5 font-normal">{t.sub}</div>}
+                    {t.sub && <div className="legacy-ingest-category-sub text-[10px] text-gray-500 mt-0.5 font-normal">{t.sub}</div>}
                     {historyTab === t.key && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-purple-500" />}
                   </button>
                 ))}
               </div>
+              {embedded && (
+                <div className="legacy-ingest-toolbar-search relative w-[360px] shrink-0 mb-2">
+                  <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
+                  <input
+                    value={search}
+                    onChange={e => { setSearch(e.target.value); setPage(1); }}
+                    placeholder="搜索内容标题…"
+                    className="h-9 w-full pl-8 pr-3 text-sm bg-black/20 border border-white/[0.08] rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50"
+                  />
+                </div>
+              )}
+              </div>
             </div>
+
+            {embedded && (
+              <div className="legacy-ingest-toolbar-search relative md:hidden mb-3">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
+                <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="搜索内容标题…" className="h-9 w-full pl-8 pr-3 text-sm bg-black/20 border border-white/[0.08] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500/50" />
+              </div>
+            )}
 
             <select
               className="md:hidden w-full px-3 py-2 text-sm bg-[#141518] border border-[#2A2B30] rounded-lg text-white focus:outline-none focus:border-purple-500/50 mb-4"
@@ -449,8 +803,8 @@ export default function Ingest() {
           ) : events.length === 0 ? (
             <EmptyState icon="📥" title="暂无内容" hint="上传抖音链接或文件开始摄入" />
           ) : (
-            <div className="bg-[#141518] border border-[#2A2B30] rounded-xl overflow-hidden">
-              <div className="hidden md:grid grid-cols-12 gap-4 px-5 py-3 text-sm text-gray-500 border-b border-[#2A2B30] items-center">
+            <div className="legacy-ingest-list bg-[#141518] border border-[#2A2B30] rounded-xl overflow-hidden">
+              <div className="legacy-ingest-list-head hidden md:grid grid-cols-12 gap-4 px-5 py-3 text-sm text-gray-500 border-b border-[#2A2B30] items-center">
                 <div className="col-span-1 flex justify-center">
                   <Checkbox
                     checked={events.length > 0 && selectedIds.length === events.length}
@@ -466,7 +820,7 @@ export default function Ingest() {
                 <React.Fragment key={evt.id}>
                 {/* 桌面行 — 不动 */}
                 <div onClick={() => { if (window.getSelection()?.toString()) return; toggleSelect(evt.id); }}
-                  className={`hidden md:grid grid-cols-12 gap-4 px-5 py-3 items-center hover:bg-[#1A1B20] transition-colors cursor-pointer border-b border-[#2A2B30] last:border-b-0 ${evt.status === 'processing' ? 'opacity-60' : ''}`}>
+                  className={`legacy-ingest-list-row hidden md:grid grid-cols-12 gap-4 px-5 py-3 items-center hover:bg-[#1A1B20] transition-colors cursor-pointer border-b border-[#2A2B30] last:border-b-0 ${evt.status === 'processing' ? 'opacity-60' : ''}`}>
                   <div className="col-span-1 flex justify-center" onClick={e => e.stopPropagation()}>
                     <Checkbox checked={selectedIds.includes(evt.id)} onChange={() => toggleSelect(evt.id)} />
                   </div>
@@ -495,7 +849,7 @@ export default function Ingest() {
                       openDetail(evt.id);
                     }
                   }}
-                  className={`md:hidden flex items-center gap-3 px-4 py-3 hover:bg-[#1A1B20] transition-colors cursor-pointer active:bg-[#2A2B30] border-b border-[#2A2B30] last:border-b-0 ${selectedIds.includes(evt.id) ? 'bg-purple-500/10' : ''} ${evt.status === 'processing' ? 'opacity-60' : ''}`}
+                  className={`legacy-ingest-list-row md:hidden flex items-center gap-3 px-4 py-3 hover:bg-[#1A1B20] transition-colors cursor-pointer active:bg-[#2A2B30] border-b border-[#2A2B30] last:border-b-0 ${selectedIds.includes(evt.id) ? 'bg-purple-500/10' : ''} ${evt.status === 'processing' ? 'opacity-60' : ''}`}
                 >
                   {mobileSelectMode && (
                     <Checkbox checked={selectedIds.includes(evt.id)} onChange={() => toggleSelect(evt.id)} />
@@ -595,6 +949,8 @@ export default function Ingest() {
             </div>
           </div>
           )}
+            </>
+            )}
         </div>
       </div>
       </div>

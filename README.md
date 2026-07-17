@@ -55,6 +55,10 @@ npm run qa:cinematic-ingest -- http://10.8.0.105:9120/#/ingest tmp/visual-qa-rem
 cd app/frontend
 npm run qa:cinematic-ingest:perf -- http://10.8.0.105:9120/#/ingest tmp/perf-qa-remote
 
+# 正式构建 Metal 基线（冷启动、路由往返、暖缓存）
+cd app/frontend
+npm run qa:cinematic-pages:production -- tmp/cinematic-pages-production-1440 1440x900
+
 # 桌面端构建
 export PATH="/Users/mrh/flutter/bin:$PATH"
 cd desktop && flutter build macos --release
@@ -114,6 +118,9 @@ curl -fsS http://10.8.0.105:9120/api/health
 - 是否还停留在 `加载中...`
 - 关键 DOM 标记是否存在：内容采集 shell、处理轨道、列表、详情、详情 tab、媒体盒
 - Chrome stderr 中的 error 摘要
+
+电影化首页和内容采集页的 Apple M4 / Metal 实机 GPU 基线见
+[`docs/cinematic-real-gpu-baseline.md`](docs/cinematic-real-gpu-baseline.md)。实机采集必须使用前台可见标签，后台标签的浏览器限频数据不得作为 GPU 性能结论。
 
 ## 发布原则
 

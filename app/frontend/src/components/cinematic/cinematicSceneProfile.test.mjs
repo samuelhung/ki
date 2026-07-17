@@ -41,6 +41,8 @@ test('laser-primary pages reduce backdrop load without darkening too far', () =>
   assert.equal(system.particleCount, 520);
   assert.equal(ingest.maxFps, 36);
   assert.equal(system.maxFps, 32);
+  assert.equal(ingest.globeIntensity, 0.7);
+  assert.equal(ingest.terrainIntensity, 2.2);
   assert.ok(ingest.bgIntensity >= 0.8);
   assert.ok(system.bgIntensity >= 0.74);
   assert.ok(ingest.motion < CINEMATIC_SCENE_BASE_VARIANTS.ingest.motion);

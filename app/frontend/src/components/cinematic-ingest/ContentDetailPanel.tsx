@@ -1,11 +1,11 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { Link2, Loader2 } from 'lucide-react';
 import { renderMarkdown } from '../MarkdownRenderer';
 import { formatTimeBeijing, sourceLabel, statusLabel } from '../../utils';
 import type { ChainHint, ContemplateSuggestion, DetailTab, EventItem, LinkedQuestion } from './ingestTypes';
 import { ingestCopy } from './ingestCopy';
 
-export function ContentDetailPanel({
+function ContentDetailPanelComponent({
   detail,
   fallback,
   loading,
@@ -213,3 +213,5 @@ export function ContentDetailPanel({
     </section>
   );
 }
+
+export const ContentDetailPanel = memo(ContentDetailPanelComponent);

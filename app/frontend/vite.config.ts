@@ -3,6 +3,19 @@ import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
 const appVersion = '1.3.14';
+const remoteBackend = 'http://10.8.0.105:9120';
+const apiProxy = {
+  '/__ki_remote_session': {
+    target: remoteBackend,
+    changeOrigin: true,
+    cookieDomainRewrite: '',
+    rewrite: () => '/',
+  },
+  '/api': {
+    target: remoteBackend,
+    changeOrigin: true,
+  },
+};
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -30,8 +43,9 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 5173,
     strictPort: true,
-    proxy: {
-      '/api': 'http://127.0.0.1:9120',
-    },
+    proxy: apiProxy,
+  },
+  preview: {
+    proxy: apiProxy,
   },
 });
