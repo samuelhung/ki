@@ -75,6 +75,13 @@ test('gooey nav prevents route changes and cleans up particle timers', () => {
   assert.match(gooeyNav, /useEffect\(\(\) => \{[\s\S]*if \(filterRef\.current\) makeParticlesRef\.current\(filterRef\.current\)/);
 });
 
+test('top navigation lets the gooey particles start before route navigation unmounts them', () => {
+  assert.match(gooeyNav, /navigationDelay\?: number/);
+  assert.match(gooeyNav, /setPendingActiveIndex\(index\)/);
+  assert.match(gooeyNav, /window\.setTimeout\(\(\) => onNavigate\?\.\(items\[index\], index\), navigationDelay\)/);
+  assert.match(shell, /navigationDelay=\{480\}/);
+});
+
 test('gooey nav replaces the browser focus outline with its own item focus style', () => {
   assert.match(gooeyCss, /\.gooey-nav a:focus\s*\{[^}]*outline:\s*none/);
   assert.match(gooeyCss, /focus-within:has\(:focus-visible\)/);
@@ -193,6 +200,25 @@ test('pointer reveal locally brightens the existing scene without another canvas
   assert.match(pageCss, /-webkit-backdrop-filter:\s*brightness\(2\.6\)/);
   assert.match(pageCss, /backdrop-filter:\s*brightness\(2\.6\)/);
   assert.doesNotMatch(shell, /<canvas/);
+});
+
+test('gooey navigation portals the original filter outside transformed navigation ancestors', () => {
+  const filter = gooeyCss.match(/\.gooey-nav__filter\s*\{([^}]*)\}/s)?.[1] || '';
+  assert.match(gooeyNav, /import \{ createPortal \} from 'react-dom'/);
+  assert.match(gooeyNav, /closest\('main'\)/);
+  assert.match(gooeyNav, /const hostRect = effectHost\.getBoundingClientRect\(\)/);
+  assert.match(gooeyNav, /left: `\$\{itemRect\.left - hostRect\.left\}px`/);
+  assert.match(gooeyNav, /createPortal\([\s\S]*effectHost/);
+  assert.match(filter, /filter:\s*blur\(7px\) contrast\(100\) blur\(0\)/);
+  assert.match(filter, /mix-blend-mode:\s*lighten/);
+  assert.match(gooeyCss, /\.gooey-nav__filter::before\s*\{[^}]*inset:\s*-75px[^}]*background:\s*#000/s);
+  assert.match(gooeyCss, /--gooey-color-1:[^;]+;[\s\S]*--gooey-color-4:/);
+  assert.doesNotMatch(gooeyNav, /<feGaussianBlur|<feColorMatrix|<feBlend/);
+});
+
+test('gooey particles keep the original pill and particle timing', () => {
+  assert.match(gooeyCss, /animation:\s*gooey-nav-pill \.3s ease both/);
+  assert.match(gooeyCss, /@keyframes gooey-nav-pill\s*\{[\s\S]*to\s*\{\s*opacity:\s*1;/);
 });
 
 test('home backdrop uses opacity reveal instead of a full-canvas css filter', () => {

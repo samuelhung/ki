@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Layers, ArrowLeft, Sparkles, Loader2, Trash2, ChevronDown, ExternalLink, Bell, Plus, X, RefreshCw, Check } from 'lucide-react';
+import { Layers, ArrowLeft, Sparkles, Loader2, Trash2, ChevronDown, ExternalLink, Bell, Plus, X, RefreshCw, Check, Ellipsis } from 'lucide-react';
 import Modal from '../components/Modal';
 import { formatTimeBeijing, sourceLabel } from '../utils';
 import { escapeHtml, sanitizeHtml } from '../safeHtml';
@@ -144,12 +144,14 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
   const navigate = useNavigate();
   const [series, setSeries] = useState<SeriesDetailData | null>(initialSeries);
   const [loading, setLoading] = useState(!initialSeries);
-  const [error, setError] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const [operationError, setOperationError] = useState('');
   const [introGenerating, setIntroGenerating] = useState(false);
   const [summaryGenerating, setSummaryGenerating] = useState(false);
   const [paperGenerating, setPaperGenerating] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [panelId, setPanelId] = useState<string | null>(null);  // expanded card
   const [tab, setTab] = useState<'overview' | 'paper' | 'content' | 'knowledge'>('overview');
 
@@ -168,6 +170,7 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
   const viewStateRef = useRef(new Map<string, { tab: typeof tab; panelId: string | null; scrollTop: number }>());
   const currentSeriesRef = useRef(id);
   const contentRef = useRef<HTMLDivElement | null>(null);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
 
   function commitSeries(next: SeriesDetailData | null) {
     setSeries(next);
@@ -181,12 +184,14 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
     }
     currentSeriesRef.current = id;
     const restored = id ? viewStateRef.current.get(id) : null;
-    setError('');
+    setLoadError('');
+    setOperationError('');
     setPanelId(restored?.panelId || null);
     setTab(restored?.tab || 'overview');
     setSuggestions([]);
     setSuggestionsLoaded(false);
     setShowSuggestions(false);
+    setMoreMenuOpen(false);
     if (embedded) {
       commitSeries(initialSeries);
       setLoading(!initialSeries);
@@ -204,6 +209,22 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
       setLoading(false);
     }
   }, [embedded, id, initialSeries]);
+
+  useEffect(() => {
+    if (!moreMenuOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!moreMenuRef.current?.contains(event.target as Node)) setMoreMenuOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMoreMenuOpen(false);
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [moreMenuOpen]);
 
   // Restore allProcessed from sessionStorage on mount
   useEffect(() => {
@@ -242,13 +263,14 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
 
   async function loadDetail() {
     setLoading(true);
+    setLoadError('');
     try {
       const r = await apiFetch(`/api/ingest/series/${id}`);
       if (!r.ok) throw new Error('专题不存在');
       const d = await r.json();
       commitSeries(d);
       if (!d.intro && !d.summary && !d.paper) setTab('content');
-    } catch (e: any) { setError(e.message); }
+    } catch (e: any) { setLoadError(e.message); }
     setLoading(false);
   }
 
@@ -282,45 +304,45 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
 
   async function handleGenerateIntro() {
     if (!series) return;
-    setError('');
+    setOperationError('');
     sessionStorage.setItem(`series_${id}_gen_intro`, '1');
     setIntroGenerating(true);
     try {
       const r = await apiFetch(`/api/ingest/series/${id}/intro`, { method: 'PUT' });
-      if (!r.ok) { setError((await r.json()).detail || '导言生成失败'); setIntroGenerating(false); sessionStorage.removeItem(`series_${id}_gen_intro`); return; }
+      if (!r.ok) { setOperationError((await r.json()).detail || '导言生成失败'); setIntroGenerating(false); sessionStorage.removeItem(`series_${id}_gen_intro`); return; }
       const d = await r.json();
       if (series) commitSeries({ ...series, intro: d.intro });
-    } catch (e: any) { setError(e.message); }
+    } catch (e: any) { setOperationError(e.message); }
     setIntroGenerating(false);
     sessionStorage.removeItem(`series_${id}_gen_intro`);
   }
 
   async function handleGenerateSummary() {
     if (!series) return;
-    setError('');
+    setOperationError('');
     sessionStorage.setItem(`series_${id}_gen_summary`, '1');
     setSummaryGenerating(true);
     try {
       const r = await apiFetch(`/api/ingest/series/${id}/summary`, { method: 'PUT' });
-      if (!r.ok) { setError((await r.json()).detail || '总结生成失败'); setSummaryGenerating(false); sessionStorage.removeItem(`series_${id}_gen_summary`); return; }
+      if (!r.ok) { setOperationError((await r.json()).detail || '总结生成失败'); setSummaryGenerating(false); sessionStorage.removeItem(`series_${id}_gen_summary`); return; }
       const d = await r.json();
       if (series) commitSeries({ ...series, summary: d.summary });
-    } catch (e: any) { setError(e.message); }
+    } catch (e: any) { setOperationError(e.message); }
     setSummaryGenerating(false);
     sessionStorage.removeItem(`series_${id}_gen_summary`);
   }
 
   async function handleGeneratePaper() {
     if (!series) return;
-    setError('');
+    setOperationError('');
     sessionStorage.setItem(`series_${id}_gen_paper`, '1');
     setPaperGenerating(true);
     try {
       const r = await apiFetch(`/api/ingest/series/${id}/paper`, { method: 'PUT' });
-      if (!r.ok) { setError((await r.json()).detail || '论文生成失败'); setPaperGenerating(false); sessionStorage.removeItem(`series_${id}_gen_paper`); return; }
+      if (!r.ok) { setOperationError((await r.json()).detail || '论文生成失败'); setPaperGenerating(false); sessionStorage.removeItem(`series_${id}_gen_paper`); return; }
       const d = await r.json();
       if (series) commitSeries({ ...series, paper: d.paper });
-    } catch (e: any) { setError(e.message); }
+    } catch (e: any) { setOperationError(e.message); }
     setPaperGenerating(false);
     sessionStorage.removeItem(`series_${id}_gen_paper`);
   }
@@ -350,6 +372,7 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
 
   async function handleBatchAdd() {
     if (selectedIds.length === 0) return;
+    setOperationError('');
     setBatchAdding(true);
     setShowProgress(true);
     setProgressStage('adding');
@@ -398,7 +421,7 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
         setShowSuggestions(false);
       }, 1500);
     } catch (reason: any) {
-      setError(reason?.message || '批量添加失败');
+      setOperationError(reason?.message || '批量添加失败');
       setShowProgress(false);
       setSummaryGenerating(false);
       setPaperGenerating(false);
@@ -454,11 +477,11 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
   }
 
   // ── Error ──
-  if (error || !series) {
+  if (loadError || !series) {
     return (
       <div className={`${embedded ? 'series-detail-legacy-embedded is-error' : 'flex-1 bg-[#0B0C10] p-8'} text-white`}>
         <div className="max-w-[1080px] mx-auto py-16 text-center">
-          <p className="text-sm text-red-400">{error || '专题不存在'}</p>
+          <p className="text-sm text-red-400">{loadError || '专题不存在'}</p>
           <button onClick={() => navigate('/series')} className="mt-4 px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors">返回专题列表</button>
         </div>
       </div>
@@ -467,6 +490,7 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
 
   const members = series.members || [];
   const lastIdx = members.length - 1;
+  const anyGenerating = introGenerating || summaryGenerating || paperGenerating;
 
   return (
     <div className={`${embedded ? 'series-detail-legacy-embedded' : 'flex-1 bg-[#0B0C10] p-4 md:p-8 overflow-y-auto custom-scrollbar'} text-white`}>
@@ -507,53 +531,78 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
                 {series.updated_at && <span>更新于 {formatTimeBeijing(series.updated_at)}</span>}
               </div>
             </div>
-            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap">
-              <button onClick={handleGenerateIntro} disabled={introGenerating || members.length < 2}
-                className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 border border-amber-500/30 transition-colors disabled:opacity-50 flex items-center gap-1.5">
-                {introGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                <span className="hidden sm:inline">{series.intro ? '重新生成导言' : 'AI 生成导言'}</span>
-              </button>
-              <button onClick={handleGenerateSummary} disabled={summaryGenerating || members.length < 2}
-                className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30 transition-colors disabled:opacity-50 flex items-center gap-1.5">
-                {summaryGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                <span className="hidden sm:inline">{series.summary ? '重新生成总结' : 'AI 生成总结'}</span>
-              </button>
-              <button onClick={handleGeneratePaper} disabled={paperGenerating || members.length < 2}
-                className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 border border-sky-500/30 transition-colors disabled:opacity-50 flex items-center gap-1.5">
-                {paperGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                <span className="hidden sm:inline">{series.paper ? '重新生成深度分析' : 'AI 深度分析'}</span>
-              </button>
+            <div className="series-detail-header-actions flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap">
+              {!embedded && <>
+                <button onClick={handleGenerateIntro} disabled={introGenerating || members.length < 2}
+                  className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 border border-amber-500/30 transition-colors disabled:opacity-50 flex items-center gap-1.5">
+                  {introGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                  <span className="hidden sm:inline">{series.intro ? '重新生成导言' : 'AI 生成导言'}</span>
+                </button>
+                <button onClick={handleGenerateSummary} disabled={summaryGenerating || members.length < 2}
+                  className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30 transition-colors disabled:opacity-50 flex items-center gap-1.5">
+                  {summaryGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                  <span className="hidden sm:inline">{series.summary ? '重新生成总结' : 'AI 生成总结'}</span>
+                </button>
+                <button onClick={handleGeneratePaper} disabled={paperGenerating || members.length < 2}
+                  className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 border border-sky-500/30 transition-colors disabled:opacity-50 flex items-center gap-1.5">
+                  {paperGenerating ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                  <span className="hidden sm:inline">{series.paper ? '重新生成深度分析' : 'AI 深度分析'}</span>
+                </button>
+              </>}
               <button
                 onClick={() => navigate(`/tasks?source=series&source_id=${id}&source_label=来自专题：${series?.name || ''}`)}
-                className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 border border-sky-500/30 transition-colors flex items-center gap-1.5"
+                className={embedded ? 'series-header-action series-header-task-action' : 'px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 border border-sky-500/30 transition-colors flex items-center gap-1.5'}
               >
                 <Plus size={14} />
                 <span className="hidden sm:inline">添加待办</span>
               </button>
-              <button onClick={() => setConfirmDelete(true)}
-                className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium text-red-400 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 transition-colors flex items-center gap-1.5">
-                <Trash2 size={14} />
-              </button>
+              {embedded ? (
+                <div ref={moreMenuRef} className="series-more-actions">
+                  <button type="button" className="series-header-action" aria-label="更多专题操作" title="更多专题操作" aria-expanded={moreMenuOpen} onClick={() => setMoreMenuOpen((open) => !open)}>
+                    <Ellipsis size={16} />
+                  </button>
+                  {moreMenuOpen && (
+                    <div className="series-more-menu">
+                      <button type="button" onClick={() => { setMoreMenuOpen(false); setConfirmDelete(true); }}>
+                        <Trash2 size={13} />删除专题
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <button onClick={() => setConfirmDelete(true)}
+                  className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium text-red-400 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 transition-colors flex items-center gap-1.5">
+                  <Trash2 size={14} />
+                </button>
+              )}
             </div>
           </div>
-          {(introGenerating || summaryGenerating || paperGenerating || error) && <div className={`series-operation-state${error ? ' is-error' : ''}`}>{error || (introGenerating ? '正在生成专题导言' : summaryGenerating ? '正在生成结构化速览' : '正在生成深度分析')}<span>{error ? '请检查服务状态后重试' : '内容完成后会自动同步到左侧列表与底部状态盒'}</span></div>}
+          {(introGenerating || summaryGenerating || paperGenerating || operationError) && <div className={`series-operation-state${operationError ? ' is-error' : ''}`}>{operationError || (introGenerating ? '正在生成专题导言' : summaryGenerating ? '正在生成结构化速览' : '正在生成深度分析')}<span>{operationError ? '请检查服务状态后重试' : '内容完成后会自动同步到左侧列表与底部状态盒'}</span></div>}
         </div>
 
         {/* Intro — above tabs, with clickable refs */}
-        {series.intro && (
-          <div className="mb-6 bg-gradient-to-r from-purple-500/5 to-transparent border border-purple-500/10 rounded-xl p-5">
-            <div className="flex items-center gap-2 mb-3">
+        {(embedded || series.intro) && (
+          <div className="series-intro-section mb-6 bg-gradient-to-r from-purple-500/5 to-transparent border border-purple-500/10 rounded-xl p-5">
+            <div className="series-context-heading flex items-center gap-2 mb-3">
               <Sparkles size={14} className="text-purple-400" />
               <span className="text-xs font-medium text-purple-400">专题导言</span>
+              {embedded && (
+                <button className="series-context-action series-intro-action" onClick={handleGenerateIntro} disabled={anyGenerating || members.length < 2}>
+                  {introGenerating ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                  {series.intro ? '重新生成' : '生成导言'}
+                </button>
+              )}
             </div>
-            <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-line">
-              {series.intro.split('\n').map((line, i) => (
-                <React.Fragment key={i}>
-                  {i > 0 && <br />}
-                  {renderLineWithRefs(line, handleRefClick)}
-                </React.Fragment>
-              ))}
-            </p>
+            {series.intro ? (
+              <p className="text-sm text-gray-300 leading-relaxed whitespace-pre-line">
+                {series.intro.split('\n').map((line, i) => (
+                  <React.Fragment key={i}>
+                    {i > 0 && <br />}
+                    {renderLineWithRefs(line, handleRefClick)}
+                  </React.Fragment>
+                ))}
+              </p>
+            ) : <p className="series-context-empty">尚未生成专题导言。</p>}
           </div>
         )}
 
@@ -584,9 +633,14 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
           <div className="space-y-6">
             {series.summary ? (
               <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="w-1 h-3 rounded-full bg-emerald-400" />
+                <div className="series-context-heading flex items-center gap-2 mb-3">
                   <span className="text-[11px] text-emerald-400 font-medium">结构化速览</span>
+                  {embedded && (
+                    <button className="series-context-action series-summary-action" onClick={handleGenerateSummary} disabled={anyGenerating || members.length < 2}>
+                      {summaryGenerating ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                      重新生成
+                    </button>
+                  )}
                 </div>
                 <div
                   className="text-xs ref-container"
@@ -601,11 +655,12 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
                 />
               </div>
             ) : (
-              <div className="py-12 text-center">
-                <p className="text-xs text-gray-500">点击上方「AI 生成总结」按钮生成结构化速览</p>
+              <div className="series-context-empty-state py-12 text-center">
+                <p className="text-xs text-gray-500">尚未生成结构化速览</p>
+                {embedded && <button className="series-context-action series-summary-action" onClick={handleGenerateSummary} disabled={anyGenerating || members.length < 2}><Sparkles size={12} />生成结构化速览</button>}
               </div>
             )}
-            {!series.intro && !series.summary && (
+            {!embedded && !series.intro && !series.summary && (
               <div className="py-8 text-center border-t border-[#2A2B30]">
                 <p className="text-xs text-gray-500">点击上方「AI 生成导言」或「AI 生成总结」来丰富专题概览</p>
               </div>
@@ -618,10 +673,15 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
           <div className="space-y-6">
             {series.paper ? (
               <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="w-1 h-3 rounded-full bg-sky-400" />
+                <div className="series-context-heading flex items-center gap-2 mb-3">
                   <span className="text-[11px] text-sky-400 font-medium">深度分析</span>
                   <span className="text-[10px] text-gray-600">论文/讲稿式</span>
+                  {embedded && (
+                    <button className="series-context-action series-paper-action" onClick={handleGeneratePaper} disabled={anyGenerating || members.length < 2}>
+                      {paperGenerating ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                      重新生成
+                    </button>
+                  )}
                 </div>
                 <div
                   className="text-sm text-gray-300 leading-relaxed whitespace-pre-line ref-container"
@@ -636,8 +696,9 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
                 />
               </div>
             ) : (
-              <div className="py-12 text-center">
-                <p className="text-xs text-gray-500">点击上方「AI 深度分析」按钮生成论文式深度分析</p>
+              <div className="series-context-empty-state py-12 text-center">
+                <p className="text-xs text-gray-500">尚未生成深度分析</p>
+                {embedded && <button className="series-context-action series-paper-action" onClick={handleGeneratePaper} disabled={anyGenerating || members.length < 2}><Sparkles size={12} />生成深度分析</button>}
               </div>
             )}
           </div>

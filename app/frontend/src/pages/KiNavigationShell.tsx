@@ -146,7 +146,7 @@ export default function KiNavigationShell({
               cursorCharacter="|"
             />
           </button>
-          <GooeyNav items={TOP_ITEMS} particleCount={15} particleDistances={GOOEY_PARTICLE_DISTANCES} particleR={100} animationTime={600} timeVariance={300} activeIndex={activeTopIndex} onNavigate={handleNavigate} />
+          <GooeyNav items={TOP_ITEMS} particleCount={15} particleDistances={GOOEY_PARTICLE_DISTANCES} particleR={100} animationTime={600} timeVariance={300} activeIndex={activeTopIndex} navigationDelay={480} onNavigate={handleNavigate} />
         </div>
         <div id="ki-shell-top-accessory" className="dual-nav-demo__top-accessory">{topAccessory}</div>
       </header>

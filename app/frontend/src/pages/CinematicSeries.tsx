@@ -1,18 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Check, ExternalLink, Layers, Lightbulb, Loader2, PenTool, Plus, RefreshCw, Search, Zap } from 'lucide-react';
-import { useCurtain } from '../CurtainContext';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Check, ExternalLink, Layers, Lightbulb, Loader2, PenTool, Plus, Search, Zap } from 'lucide-react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { apiFetch } from '../api';
-import CinematicLaserWorkspace from '../components/cinematic/CinematicLaserWorkspace';
-import CinematicTemplatePage from '../components/cinematic/CinematicTemplatePage';
-import { CINEMATIC_LASER_PRESET } from '../components/cinematic/cinematicLaserPreset';
-import { useCinematicTemplateLayout } from '../components/cinematic/useCinematicTemplateLayout';
-import { useLaserRenderProfile } from '../components/cinematic-ingest/useLaserRenderProfile';
-import { buildStage2Payload, filterSeriesItems, getSeriesMemberCount, getSeriesStats, mergeEventPage, removeSeriesItem, syncSeriesItem } from '../components/cinematic-series/seriesWorkspace.mjs';
-import LaserFlow from '../components/react-bits/LaserFlow';
+import { buildStage2Payload, filterSeriesItems, getSeriesMemberCount, mergeEventPage, removeSeriesItem, syncSeriesItem } from '../components/cinematic-series/seriesWorkspace.mjs';
+import SpotlightListRow from '../components/react-bits/SpotlightListRow';
+import type { DualNavigationActionItem } from './DualNavigationActionMenu';
+import KiNavigationShell from './KiNavigationShell';
 import LegacySeriesDetail from './SeriesDetail';
-import '../components/cinematic/cinematic.css';
 import '../components/cinematic-ingest/cinematic-ingest.css';
-import '../components/cinematic-ingest/cinematic-ingest-performance.css';
 import '../components/cinematic-series/cinematic-series.css';
 import '../components/cinematic-series/cinematic-series-detail.css';
 
@@ -25,10 +20,8 @@ type EventItem = { id: string; title: string; overview?: string; ai_summary?: st
 type SeriesDetailData = SeriesItem & { members: Member[]; sort_order?: string; unscanned_count?: number };
 
 export default function CinematicSeries() {
-  const { navigateWithCurtain } = useCurtain();
-  const { profile, style } = useCinematicTemplateLayout('system');
-  const { viewportHeight, laserRenderProfile } = useLaserRenderProfile();
-  const [activeHub, setActiveHub] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const { id: routeId = '' } = useParams<{ id?: string }>();
   const [items, setItems] = useState<SeriesItem[]>([]);
   const [selectedId, setSelectedId] = useState('');
   const [selectedDetail, setSelectedDetail] = useState<SeriesItem | null>(null);
@@ -48,7 +41,6 @@ export default function CinematicSeries() {
   const [eventsHasMore, setEventsHasMore] = useState(false);
   const [eventsLoadingMore, setEventsLoadingMore] = useState(false);
   const [seriesQuery, setSeriesQuery] = useState('');
-  const [seriesStatus, setSeriesStatus] = useState<'all' | 'published' | 'draft'>('all');
   const [manualTitle, setManualTitle] = useState('');
   const [selectedEvents, setSelectedEvents] = useState<Set<string>>(new Set());
   const [savingIndex, setSavingIndex] = useState<number | null>(null);
@@ -64,13 +56,28 @@ export default function CinematicSeries() {
       const data = await response.json();
       const next = data.items || [];
       setItems(next);
-      setSelectedId((current) => current && next.some((item: SeriesItem) => item.id === current) ? current : next[0]?.id || '');
+      setSelectedId((current) => {
+        if (routeId && next.some((item: SeriesItem) => item.id === routeId)) return routeId;
+        if (current && next.some((item: SeriesItem) => item.id === current)) return current;
+        return next[0]?.id || '';
+      });
       setError('');
     } catch (reason: any) { setError(reason?.message || '专题加载失败'); }
     setLoading(false);
   }
 
   useEffect(() => { loadSeries(); }, []);
+
+  useEffect(() => {
+    if (!routeId || items.length === 0) return;
+    const routeItem = items.find((item) => item.id === routeId);
+    if (routeItem) {
+      if (selectedId !== routeId) setSelectedId(routeId);
+      return;
+    }
+    const fallbackId = items.some((item) => item.id === selectedId) ? selectedId : items[0]?.id || '';
+    navigate(fallbackId ? `/series/${fallbackId}` : '/series', { replace: true });
+  }, [items, navigate, routeId, selectedId]);
 
   useEffect(() => {
     if (!selectedId) { setSelectedDetail(null); return; }
@@ -98,19 +105,15 @@ export default function CinematicSeries() {
   const handleSeriesDeleted = useCallback((seriesId: string) => {
     detailCacheRef.current.delete(seriesId);
     setSelectedDetail(null);
-    setItems((current) => {
-      const next = removeSeriesItem(current, seriesId);
-      setSelectedId(next.selectedId);
-      return next.items;
-    });
-  }, []);
+    const next = removeSeriesItem(items, seriesId);
+    setItems(next.items);
+    setSelectedId(next.selectedId);
+    navigate(next.selectedId ? `/series/${next.selectedId}` : '/series', { replace: true });
+  }, [items, navigate]);
 
   const selectedFromList = items.find((item) => item.id === selectedId) || items[0];
   const selected = selectedDetail?.id === selectedId ? selectedDetail : selectedFromList;
-  const stats = useMemo(() => getSeriesStats(items), [items]);
-  const filteredItems = useMemo(() => filterSeriesItems(items, seriesQuery, seriesStatus), [items, seriesQuery, seriesStatus]);
-  const coreBoxHeight = Math.min(Math.max(viewportHeight * 0.158, 126), 178);
-  const beamVerticalOffset = (coreBoxHeight - 6) / Math.max(viewportHeight, 1) - 0.5;
+  const filteredItems = useMemo(() => filterSeriesItems(items, seriesQuery, 'all'), [items, seriesQuery]);
 
   function open(modeToOpen: Mode = 'choose') {
     setDialog(true); setMode(modeToOpen); setMessage(''); setCandidates([]); setDuplicates([]);
@@ -203,16 +206,74 @@ export default function CinematicSeries() {
     setCreatedName(suggestion.name); setSuggestion(null); await loadSeries(); setBusy(false);
   }
 
-  const commands = <section className="ingest-command-launcher series-command-launcher" aria-label="专题操作"><div className="launcher-actions">
-    <button className="launcher-action ingest-command-metric is-douyin" onClick={globalStage1}><Zap size={15} /><b>全局发现</b><span>AI 聚类</span><small>DISCOVER</small></button>
-    <button className="launcher-action ingest-command-metric is-file" onClick={() => open('topic')}><Search size={15} /><b>主题发现</b><span>定向扫描</span><small>TOPIC</small></button>
-    <button className="launcher-action ingest-command-metric is-concept" onClick={() => open('manual')}><PenTool size={15} /><b>自由组题</b><span>手动编排</span><small>COMPOSE</small></button>
-    <button className="launcher-action ingest-command-metric is-source" onClick={loadSeries}><RefreshCw size={15} /><b>刷新专题</b><span>{items.length} 个</span><small>REFRESH</small></button>
-  </div></section>;
-  const status = <section className="ingest-observation cinematic-observation series-status" aria-label="专题状态"><div className="panel-status"><i className="signal-dot" /><span>专题工作台</span></div><span>聚合分散内容，建立持续生长的知识专题</span><div className="system-status-summary"><span className="is-good">专题 {stats.total}</span><span className="is-cyan">就绪 {stats.ready}</span><span className="is-warn">处理中 {stats.processing}</span></div><div className="panel-detail-grid"><span>当前<b>{selected?.name || '--'}</b></span><span>内容<b>{selected ? getSeriesMemberCount(selected) : 0} 条</b></span></div></section>;
-  const index = <><div className="ingest-topic-orbit series-topic-orbit" aria-label="专题分组">{([['all', '全部'], ['published', '发布'], ['draft', '草稿']] as const).map(([value, label]) => <button key={value} className={seriesStatus === value ? 'is-active is-gold' : ''} onClick={() => setSeriesStatus(value)}><Layers size={14} /><span>{label}</span></button>)}</div><label className="series-index-search"><Search size={13} /><input value={seriesQuery} onChange={(event) => setSeriesQuery(event.target.value)} placeholder="搜索专题" /></label><div className="ingest-index-list series-index-list">{filteredItems.map((item, index) => <button key={item.id} className={`ingest-index-item${selected?.id === item.id ? ' is-active' : ''}`} style={{ '--index-depth-scale': 1 - Math.min(index, 8) * .032, '--index-depth-z': `${-Math.min(index, 8) * 3}px`, '--index-depth-opacity': 1 - Math.min(index, 8) * .035 } as CSSProperties} onClick={() => setSelectedId(item.id)}><div className="index-title"><b>{item.name}</b><span><em className="is-cyan">{getSeriesMemberCount(item)} 条</em></span></div><small>{item.description || '持续整理中的知识专题'}</small></button>)}</div></>;
+  const handleGlobalAction = useCallback((item: DualNavigationActionItem) => {
+    if (item.key === 'global') { void globalStage1(); return true; }
+    if (item.key === 'topic') { open('topic'); return true; }
+    if (item.key === 'compose') { open('manual'); return true; }
+    return false;
+  }, []);
 
-  return <CinematicTemplatePage className="cinematic-series" profile={profile} topic="violet" style={style} variant="system" status={status} commands={commands} workspace={<CinematicLaserWorkspace ariaLabel="专题聚合舱" indexAriaLabel="专题索引" index={index} stageAriaLabel="专题详情" stage={<><LaserFlow {...CINEMATIC_LASER_PRESET} verticalBeamOffset={beamVerticalOffset} dpr={laserRenderProfile.dpr} maxFps={laserRenderProfile.maxFps} />{selected ? <LegacySeriesDetail embedded seriesId={selected.id} initialSeries={selectedDetail?.id === selected.id ? selectedDetail as SeriesDetailData : null} onSeriesChange={handleSeriesChange} onDeleted={handleSeriesDeleted} /> : <div className="series-cinematic-loading">{loading ? <Loader2 className="animate-spin" /> : error || '暂无专题'}</div>}<div className="laser-media-box series-core-box"><span>KNOWLEDGE SERIES</span><b>{selected?.name || '等待专题'}</b><div><em>内容<strong>{selected ? getSeriesMemberCount(selected) : 0} 条</strong></em><em>更新<strong>{selected?.updated_at?.slice(0, 10) || selected?.created_at?.slice(0, 10) || '--'}</strong></em></div></div></>} />} overlays={dialog ? <SeriesDialog mode={mode} setMode={setMode} busy={busy} message={message} groups={groups} selectedGroups={selectedGroups} setSelectedGroups={setSelectedGroups} candidates={candidates} duplicates={duplicates} topic={topic} setTopic={setTopic} events={events} eventQuery={eventQuery} setEventQuery={setEventQuery} eventsHasMore={eventsHasMore} eventsLoadingMore={eventsLoadingMore} onLoadMoreEvents={() => loadEvents(false)} manualTitle={manualTitle} setManualTitle={setManualTitle} selectedEvents={selectedEvents} setSelectedEvents={setSelectedEvents} savingIndex={savingIndex} suggestion={suggestion} createdName={createdName} onClose={close} onGlobal1={globalStage1} onGlobal2={globalStage2} onTopic={topicDiscover} onSave={saveCandidate} onManualOpen={() => open('manual')} onManual={manualCreate} onAdopt={adoptSuggestion} onOpenCreated={() => createdId && navigateWithCurtain(`/series/${createdId}`)} /> : null} activeHub={activeHub} onActiveHubChange={setActiveHub} onNavigate={(path) => navigateWithCurtain(path)} />;
+  const handleSelectSeries = useCallback((seriesId: string) => {
+    setSelectedId(seriesId);
+    navigate(`/series/${seriesId}`);
+  }, [navigate]);
+
+  return (
+    <KiNavigationShell
+      className="ki-shell-ingest-preview ki-shell-series"
+      sceneVariant="ingest"
+      laserPrimary
+      onGlobalAction={handleGlobalAction}
+      topAccessory={(
+        <label className="ki-ingest-list-search" aria-label="搜索专题">
+          <Search size={14} />
+          <input value={seriesQuery} onChange={(event) => setSeriesQuery(event.target.value)} placeholder="搜索专题" />
+        </label>
+      )}
+    >
+      <section className="ki-shell-content" aria-label="专题系列工作区">
+        <div className="ki-shell-legacy-ingest">
+          <div className="legacy-ingest-root is-shell-embedded cinematic-ingest ki-series-embedded-root flex-1 bg-[#0B0C10] text-white flex flex-col h-full overflow-hidden">
+            <div className="flex-1 overflow-hidden px-4 md:px-8 pb-4 md:pb-8">
+              <div className="max-w-[1500px] mx-auto pt-4 h-full">
+                <div className="ki-ingest-split-stage">
+                  <section className="ki-ingest-list-pane" aria-label="专题列表">
+                    <div className="ki-ingest-event-list series-list" aria-live="polite">
+                      {filteredItems.map((item) => (
+                        <SpotlightListRow key={item.id} active={selected?.id === item.id} spotlightColor="rgba(167, 139, 250, 0.2)">
+                          <button type="button" className="ki-ingest-list-row series-list-row" onClick={() => handleSelectSeries(item.id)}>
+                            <span className="ki-ingest-list-topic is-gold"><span className="ki-ingest-list-type-icon"><Layers size={14} /></span><em>{item.status === 'draft' ? '草稿' : '专题'}</em></span>
+                            <strong>{item.name}</strong>
+                            <small className="ki-ingest-list-meta">{getSeriesMemberCount(item)} 条 · {item.description || '持续整理中的知识专题'}</small>
+                          </button>
+                        </SpotlightListRow>
+                      ))}
+                      {!loading && !error && filteredItems.length === 0 && <p className="ki-ingest-pane-state">暂无匹配专题</p>}
+                      {loading && <p className="ki-ingest-pane-state"><Loader2 size={15} className="animate-spin" />专题加载中</p>}
+                      {!loading && error && <p className="ki-ingest-pane-state is-error">{error}<button type="button" onClick={loadSeries}>重试</button></p>}
+                    </div>
+                  </section>
+
+                  <section className="ki-ingest-detail-pane" aria-label="专题详情">
+                    {selected ? (
+                      <LegacySeriesDetail
+                        embedded
+                        seriesId={selected.id}
+                        initialSeries={selectedDetail?.id === selected.id ? selectedDetail as SeriesDetailData : null}
+                        onSeriesChange={handleSeriesChange}
+                        onDeleted={handleSeriesDeleted}
+                      />
+                    ) : <div className="series-cinematic-loading">{loading ? <Loader2 className="animate-spin" /> : error || '暂无专题'}</div>}
+                  </section>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      {dialog && <SeriesDialog mode={mode} setMode={setMode} busy={busy} message={message} groups={groups} selectedGroups={selectedGroups} setSelectedGroups={setSelectedGroups} candidates={candidates} duplicates={duplicates} topic={topic} setTopic={setTopic} events={events} eventQuery={eventQuery} setEventQuery={setEventQuery} eventsHasMore={eventsHasMore} eventsLoadingMore={eventsLoadingMore} onLoadMoreEvents={() => loadEvents(false)} manualTitle={manualTitle} setManualTitle={setManualTitle} selectedEvents={selectedEvents} setSelectedEvents={setSelectedEvents} savingIndex={savingIndex} suggestion={suggestion} createdName={createdName} onClose={close} onGlobal1={globalStage1} onGlobal2={globalStage2} onTopic={topicDiscover} onSave={saveCandidate} onManualOpen={() => open('manual')} onManual={manualCreate} onAdopt={adoptSuggestion} onOpenCreated={() => createdId && navigate(`/series/${createdId}`)} />}
+    </KiNavigationShell>
+  );
 }
 
 function SeriesDialog(props: any) {

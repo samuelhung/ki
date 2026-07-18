@@ -1,6 +1,22 @@
 export type LoanType = 'flat' | 'annuity' | 'compare';
 export type FlatMode = 'forward' | 'reverse';
 
+export const MAX_LOAN_YEARS = 50;
+export const MAX_LOAN_PERIODS = MAX_LOAN_YEARS * 12;
+
+export function clampLoanYearsInput(value: string): string {
+  const parsedYears = Number.parseFloat(value);
+  return Number.isFinite(parsedYears) && parsedYears > MAX_LOAN_YEARS
+    ? String(MAX_LOAN_YEARS)
+    : value;
+}
+
+export function loanPeriodsFromYears(value: string | number): number {
+  const parsedYears = typeof value === 'number' ? value : Number.parseFloat(value);
+  const years = Number.isFinite(parsedYears) && parsedYears > 0 ? parsedYears : 5;
+  return Math.min(MAX_LOAN_PERIODS, Math.max(1, Math.round(years * 12)));
+}
+
 export interface FlatResult {
   monthlyPayment: number;
   monthlyPrincipal: number;

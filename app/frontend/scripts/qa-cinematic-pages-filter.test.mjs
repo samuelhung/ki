@@ -19,6 +19,28 @@ test('selectCinematicPages rejects unknown page keys', () => {
   assert.throws(() => selectCinematicPages(['missing']), /Unknown cinematic page key/);
 });
 
+test('toolbox performance baseline follows the migrated single-canvas shell', () => {
+  const [toolbox] = selectCinematicPages(['toolbox']);
+  assert.equal(toolbox.expectedCanvasCount, 1);
+  assert.deepEqual(toolbox.markers, [
+    'ki-shell-toolbox',
+    'toolbox-tool-list',
+    'toolbox-detail-reader',
+    'toolbox-primary-results',
+  ]);
+});
+
+test('series performance baseline follows the migrated single-canvas shell', () => {
+  const [series] = selectCinematicPages(['series']);
+  assert.equal(series.expectedCanvasCount, 1);
+  assert.deepEqual(series.markers, [
+    'ki-shell-series',
+    'series-status-tabs',
+    'series-list',
+    'series-detail-legacy-content',
+  ]);
+});
+
 test('production visits capture cold route and warm-revisit phases in one browser session', () => {
   assert.deepEqual(
     buildCinematicVisitSequence(['today', 'ingest'], true, 3).map(({ key, visit }) => ({ key, visit })),

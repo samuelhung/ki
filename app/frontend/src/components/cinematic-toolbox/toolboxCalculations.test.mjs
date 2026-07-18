@@ -1,12 +1,23 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  MAX_LOAN_PERIODS,
   calcAnnuity,
   calcComparison,
   calcFlatForward,
   calcFlatReverse,
+  clampLoanYearsInput,
+  loanPeriodsFromYears,
   pickScheduleRows,
 } from './toolboxCalculations.ts';
+
+test('loan periods preserve normal terms and cap pathological input', () => {
+  assert.equal(loanPeriodsFromYears('5'), 60);
+  assert.equal(loanPeriodsFromYears('999999'), MAX_LOAN_PERIODS);
+  assert.equal(MAX_LOAN_PERIODS, 600);
+  assert.equal(clampLoanYearsInput('999999'), '50');
+  assert.equal(clampLoanYearsInput(''), '');
+});
 
 test('flat forward calculation preserves principal interest and effective rate', () => {
   const result = calcFlatForward(100000, 60, 0.2);

@@ -15,7 +15,11 @@ const CurtainContext = createContext<CurtainContextValue | null>(null);
 function shouldBypassCurtain(to: string | number) {
   if (typeof to !== 'string') return false;
   const pathname = to.split(/[?#]/, 1)[0];
-  return pathname === '/ingest';
+  return pathname === '/ingest'
+    || pathname === '/toolbox'
+    || pathname === '/tools'
+    || pathname === '/series'
+    || pathname.startsWith('/series/');
 }
 
 export function useCurtain() {

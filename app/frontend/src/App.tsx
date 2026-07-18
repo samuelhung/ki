@@ -25,7 +25,6 @@ const CinematicTasks = lazy(() => import('./pages/CinematicTasks'));
 const Series = lazy(() => import('./pages/Series'));
 const CinematicSeries = lazy(() => import('./pages/CinematicSeries'));
 const SeriesDetail = lazy(() => import('./pages/SeriesDetail'));
-const CinematicSeriesDetail = lazy(() => import('./pages/CinematicSeriesDetail'));
 const EventDetailPage = lazy(() => import('./pages/EventDetailPage'));
 const BrainstormDetailPage = lazy(() => import('./pages/BrainstormDetailPage'));
 const CinematicSystemCenter = lazy(() => import('./pages/CinematicSystemCenter'));
@@ -54,7 +53,11 @@ function PageLoading() {
 function CurtainOverlay() {
   const location = useLocation();
   const { curtainPhase, onAnimationComplete } = useCurtain();
-  const skipInitialCurtain = location.pathname === '/' || location.pathname === '/ingest';
+  const skipInitialCurtain = location.pathname === '/' || location.pathname === '/ingest'
+    || location.pathname === '/toolbox'
+    || location.pathname === '/tools'
+    || location.pathname === '/series'
+    || location.pathname.startsWith('/series/');
   const [pageEntering, setPageEntering] = useState(() => !skipInitialCurtain);
   const active = curtainPhase !== 'idle' || pageEntering;
   const leftTarget = curtainPhase === 'covering' ? 0 : '-104%';
@@ -345,7 +348,7 @@ export default function App() {
           <Route path="series" element={<CinematicSeries />} />
           <Route path="series-old" element={<Series />} />
           <Route path="series-old/:id" element={<SeriesDetail />} />
-          <Route path="series/:id" element={<CinematicSeriesDetail />} />
+          <Route path="series/:id" element={<CinematicSeries />} />
           <Route path="study" element={<CinematicStudy />} />
           <Route path="study/:id" element={<CinematicStudy />} />
           <Route path="study-old" element={<Study legacy />} />

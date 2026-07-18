@@ -1,41 +1,67 @@
-import { useMemo, useState, type CSSProperties } from 'react';
-import { ArrowRightLeft, Calculator, RefreshCw, Table, Wrench } from 'lucide-react';
-import { useCurtain } from '../CurtainContext';
-import CinematicLaserWorkspace from '../components/cinematic/CinematicLaserWorkspace';
-import CinematicTemplatePage from '../components/cinematic/CinematicTemplatePage';
-import { CINEMATIC_LASER_PRESET } from '../components/cinematic/cinematicLaserPreset';
-import { useCinematicTemplateLayout } from '../components/cinematic/useCinematicTemplateLayout';
-import { useLaserRenderProfile } from '../components/cinematic-ingest/useLaserRenderProfile';
+import { memo, useCallback, useMemo, useState } from 'react';
 import {
+  ArrowRightLeft,
+  Calculator,
+  Landmark,
+  RefreshCw,
+  Search,
+} from 'lucide-react';
+import {
+  MAX_LOAN_YEARS,
   calcAnnuity,
   calcComparison,
   calcFlatForward,
   calcFlatReverse,
+  clampLoanYearsInput,
   flatSummary,
   formatLi,
   formatMoney,
   formatPercent,
+  loanPeriodsFromYears,
   pickScheduleRows,
   type FlatMode,
   type LoanType,
 } from '../components/cinematic-toolbox/toolboxCalculations';
-import LaserFlow from '../components/react-bits/LaserFlow';
-import '../components/cinematic/cinematic.css';
+import SpotlightListRow from '../components/react-bits/SpotlightListRow';
+import KiNavigationShell from './KiNavigationShell';
 import '../components/cinematic-ingest/cinematic-ingest.css';
-import '../components/cinematic-ingest/cinematic-ingest-performance.css';
 import '../components/cinematic-toolbox/cinematic-toolbox.css';
 
 const MODES = [
-  { key: 'flat', label: '等本等息', meta: 'FLAT', accent: 'gold' },
-  { key: 'annuity', label: '等额本息', meta: 'ANNUITY', accent: 'cyan' },
-  { key: 'compare', label: '方案对比', meta: 'COMPARE', accent: 'violet' },
+  { key: 'flat', label: '等本等息', meta: '真实资金成本', icon: Calculator },
+  { key: 'annuity', label: '等额本息', meta: '标准银行还款', icon: Landmark },
+  { key: 'compare', label: '方案对比', meta: '双方案持有成本', icon: ArrowRightLeft },
 ] as const;
 
+interface FieldProps {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  hint?: string;
+  max?: number;
+}
+
 export default function CinematicToolbox() {
-  const { navigateWithCurtain } = useCurtain();
-  const { profile, style } = useCinematicTemplateLayout('system');
-  const { viewportHeight, laserRenderProfile } = useLaserRenderProfile();
-  const [activeHub, setActiveHub] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+
+  return (
+    <KiNavigationShell
+      className="ki-shell-ingest-preview ki-shell-toolbox"
+      sceneVariant="ingest"
+      laserPrimary
+      topAccessory={(
+        <label className="ki-ingest-list-search" aria-label="搜索工具">
+          <Search size={14} />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索工具" />
+        </label>
+      )}
+    >
+      <ToolboxWorkspace query={query} />
+    </KiNavigationShell>
+  );
+}
+
+const ToolboxWorkspace = memo(function ToolboxWorkspace({ query }: { query: string }) {
   const [loanType, setLoanType] = useState<LoanType>('flat');
   const [flatMode, setFlatMode] = useState<FlatMode>('forward');
   const [principal, setPrincipal] = useState('100000');
@@ -45,9 +71,9 @@ export default function CinematicToolbox() {
   const [annualRate, setAnnualRate] = useState('3');
   const [compareFlatRate, setCompareFlatRate] = useState('0.18');
   const [compareAnnualRate, setCompareAnnualRate] = useState('3');
-  const [showSchedule, setShowSchedule] = useState(false);
+  const handleYearsChange = useCallback((value: string) => setYears(clampLoanYearsInput(value)), []);
 
-  const periods = useMemo(() => Math.max(1, Math.round((Number.parseFloat(years) || 5) * 12)), [years]);
+  const periods = useMemo(() => loanPeriodsFromYears(years), [years]);
   const principalValue = Number.parseFloat(principal);
   const reverseMonthlyPayment = principalValue / periods + Number.parseFloat(reverseInterest || '0');
   const flatResult = useMemo(() => {
@@ -62,89 +88,228 @@ export default function CinematicToolbox() {
   }, [flatMode, flatRate, loanType, periods, principalValue, reverseMonthlyPayment]);
   const annuityData = useMemo(() => {
     const rate = Number.parseFloat(annualRate);
-    return loanType === 'annuity' && principalValue > 0 && rate > 0 ? calcAnnuity(principalValue, periods, rate) : null;
+    return loanType === 'annuity' && principalValue > 0 && rate >= 0
+      ? calcAnnuity(principalValue, periods, rate)
+      : null;
   }, [annualRate, loanType, periods, principalValue]);
   const compareData = useMemo(() => {
     if (loanType !== 'compare' || principalValue <= 0) return null;
     const flat = Number.parseFloat(compareFlatRate);
     const annual = Number.parseFloat(compareAnnualRate);
-    if (!(flat > 0) || !(annual > 0)) return null;
-    return calcComparison(principalValue, periods, flat, annual);
+    return flat > 0 && annual >= 0 ? calcComparison(principalValue, periods, flat, annual) : null;
   }, [compareAnnualRate, compareFlatRate, loanType, periods, principalValue]);
+  const visibleScheduleRows = useMemo(
+    () => annuityData ? pickScheduleRows(annuityData.schedule) : [],
+    [annuityData],
+  );
 
-  const reset = () => {
-    setPrincipal('100000'); setYears('5'); setFlatRate('0.2'); setReverseInterest('200');
-    setAnnualRate('3'); setCompareFlatRate('0.18'); setCompareAnnualRate('3'); setShowSchedule(false);
-  };
   const activeMode = MODES.find((mode) => mode.key === loanType) || MODES[0];
-  const coreBoxHeight = Math.min(Math.max(viewportHeight * 0.158, 126), 178);
-  const beamVerticalOffset = (coreBoxHeight - 6) / Math.max(viewportHeight, 1) - 0.5;
-  const primaryResult = flatResult?.monthlyPayment || annuityData?.result.monthlyPayment || compareData?.flatMonthly || 0;
-  const totalInterest = flatResult?.totalInterest || annuityData?.result.totalInterest || compareData?.flatTotalInterest || 0;
+  const toolVisible = '贷款利率换算器 金融 等本等息 等额本息 方案对比'.includes(query.trim());
 
-  const status = (
-    <section className="ingest-observation cinematic-observation toolbox-status" aria-label="工具状态">
-      <div className="panel-status"><i className="signal-dot" /><span>计算工具</span></div>
-      <span>贷款利率换算与方案成本校验</span>
-      <div className="system-status-summary"><span className="is-good">引擎 就绪</span><span className="is-cyan">模式 {activeMode.label}</span></div>
-      <div className="panel-detail-grid"><span>本金<b>{principal || '--'}</b></span><span>期限<b>{periods}期</b></span><span>月供<b>{primaryResult ? formatMoney(primaryResult) : '--'}</b></span><span>利息<b>{totalInterest ? formatMoney(totalInterest) : '--'}</b></span></div>
-    </section>
-  );
-  const commands = (
-    <section className="ingest-command-launcher" aria-label="工具操作">
-      <div className="launcher-actions">
-        <button className="launcher-action ingest-command-metric is-douyin" onClick={reset}><RefreshCw size={15} /><b>重置参数</b><span>DEFAULT</span><small>RESET</small></button>
-        <button className="launcher-action ingest-command-metric is-file" onClick={() => setLoanType('compare')}><ArrowRightLeft size={15} /><b>方案对比</b><span>DUAL</span><small>COMPARE</small></button>
-        <button className="launcher-action ingest-command-metric is-concept" onClick={() => { setLoanType('annuity'); setShowSchedule(true); }}><Table size={15} /><b>还款计划</b><span>{periods}期</span><small>SCHEDULE</small></button>
-      </div>
-    </section>
-  );
-  const index = (
-    <>
-      <div className="ingest-topic-orbit toolbox-mode-orbit" aria-label="工具分类"><button className="is-active is-gold"><Calculator size={14} /><span>金融</span></button></div>
-      <div className="ingest-index-list toolbox-mode-list">{MODES.map((mode, index) => <button key={mode.key} className={`ingest-index-item${loanType === mode.key ? ' is-active' : ''}`} style={{ '--index-depth-scale': 1 - index * 0.045, '--index-depth-z': `${-index * 3}px`, '--index-depth-opacity': 1 - index * 0.1 } as CSSProperties} onClick={() => setLoanType(mode.key)}><div className="index-title"><b>{mode.label}</b><span><em className={`is-${mode.accent}`}>{mode.meta}</em></span></div></button>)}</div>
-    </>
-  );
+  function reset() {
+    setLoanType('flat');
+    setFlatMode('forward');
+    setPrincipal('100000');
+    setYears('5');
+    setFlatRate('0.2');
+    setReverseInterest('200');
+    setAnnualRate('3');
+    setCompareFlatRate('0.18');
+    setCompareAnnualRate('3');
+  }
 
   return (
-    <CinematicTemplatePage
-      className="cinematic-toolbox"
-      profile={profile}
-      topic="cyan"
-      style={style}
-      variant="system"
-      status={status}
-      commands={commands}
-      workspace={<CinematicLaserWorkspace ariaLabel="工具计算舱" indexAriaLabel="工具模式" index={index} stageAriaLabel="贷款计算器" stage={<><LaserFlow {...CINEMATIC_LASER_PRESET} verticalBeamOffset={beamVerticalOffset} dpr={laserRenderProfile.dpr} maxFps={laserRenderProfile.maxFps} /><ToolDetail loanType={loanType} setLoanType={setLoanType} flatMode={flatMode} setFlatMode={setFlatMode} principal={principal} setPrincipal={setPrincipal} years={years} setYears={setYears} periods={periods} flatRate={flatRate} setFlatRate={setFlatRate} reverseInterest={reverseInterest} setReverseInterest={setReverseInterest} annualRate={annualRate} setAnnualRate={setAnnualRate} compareFlatRate={compareFlatRate} setCompareFlatRate={setCompareFlatRate} compareAnnualRate={compareAnnualRate} setCompareAnnualRate={setCompareAnnualRate} flatResult={flatResult} annuityData={annuityData} compareData={compareData} showSchedule={showSchedule} setShowSchedule={setShowSchedule} /><div className="laser-media-box toolbox-result-box"><span>CALCULATION CORE</span><b>{activeMode.label}</b><div><em>月供<strong>{primaryResult ? `${formatMoney(primaryResult)} 元` : '--'}</strong></em><em>总利息<strong>{totalInterest ? `${formatMoney(totalInterest)} 元` : '--'}</strong></em><em>期限<strong>{periods} 期</strong></em></div></div></>} />}
-      activeHub={activeHub}
-      onActiveHubChange={setActiveHub}
-      onNavigate={(path) => path === '/docs' ? window.open('/docs', '_blank', 'noopener,noreferrer') : navigateWithCurtain(path)}
-    />
-  );
-}
+    <section className="ki-shell-content" aria-label="工具箱工作区">
+        <div className="ki-shell-legacy-ingest">
+          <div className="legacy-ingest-root is-shell-embedded cinematic-ingest ki-toolbox-embedded-root flex-1 bg-[#0B0C10] text-white flex flex-col h-full overflow-hidden">
+            <div className="flex-1 overflow-y-auto custom-scrollbar px-4 md:px-8 pb-4 md:pb-8">
+              <div className="max-w-[1500px] mx-auto pt-4">
+                <div className="ki-ingest-split-stage">
+                  <section className="ki-ingest-list-pane" aria-label="工具列表">
+                    <nav className="ingest-topic-orbit ki-ingest-topic-orbit toolbox-category-tabs" aria-label="工具分类">
+                      <button type="button" className="is-active is-gold"><Landmark size={17} /><span>金融</span></button>
+                    </nav>
+                    <div className="ki-ingest-event-list toolbox-tool-list">
+                      {toolVisible ? (
+                        <SpotlightListRow active>
+                          <button type="button" className="ki-ingest-list-row toolbox-tool-row">
+                            <span className="ki-ingest-list-topic is-gold">
+                              <span className="ki-ingest-list-type-icon"><Calculator size={14} /></span>
+                              <em>金融</em>
+                            </span>
+                            <strong>贷款利率换算器</strong>
+                            <small className="ki-ingest-list-meta">名义利率、真实年化与持有成本</small>
+                          </button>
+                        </SpotlightListRow>
+                      ) : <p className="toolbox-empty">没有匹配工具</p>}
+                    </div>
+                  </section>
 
-function Field({ label, value, onChange, hint }: { label: string; value: string; onChange: (value: string) => void; hint?: string }) {
-  return <label className="toolbox-field"><span>{label}</span><input type="number" value={value} onChange={(event) => onChange(event.target.value)} />{hint && <small>{hint}</small>}</label>;
-}
+                  <section className="ki-ingest-detail-pane" aria-label="贷款利率换算器">
+                    <section className="ingest-detail-reader toolbox-detail-reader" aria-label="贷款利率换算器">
+                      <header className="toolbox-detail-header">
+                        <span>FINANCE TOOL · {activeMode.label}</span>
+                        <h2>贷款利率换算器</h2>
+                        <small><a href="/#/toolbox-old">旧版对比：/#/toolbox-old</a></small>
+                        <button type="button" onClick={reset} title="重置参数" aria-label="重置参数"><RefreshCw size={17} /></button>
+                      </header>
 
-function ToolDetail(props: any) {
-  return (
-    <section className="ingest-detail-reader toolbox-detail-reader" aria-label="计算详情">
-      <header><span>CALCULATION SURFACE</span><h2>贷款利率换算器</h2><small>旧版对比：/#/toolbox-old</small></header>
-      <div className="detail-scroll-shell"><div className="detail-scroll toolbox-detail-body">
-        <nav className="ingest-detail-tabs toolbox-detail-tabs">{MODES.map((mode) => <button key={mode.key} className={`ingest-tab-trigger launcher-action pixel-command${props.loanType === mode.key ? ' is-active' : ''}`} onClick={() => props.setLoanType(mode.key)}><Calculator size={14} /><b>{mode.label}</b><span>{mode.meta}</span></button>)}</nav>
-        <div className={`toolbox-input-grid is-${props.loanType}`}><Field label="贷款金额（元）" value={props.principal} onChange={props.setPrincipal} /><Field label="还款年限" value={props.years} onChange={props.setYears} hint={`${props.periods} 期（月）`} />
-          {props.loanType === 'flat' && <><div className="toolbox-segment"><button className={props.flatMode === 'forward' ? 'is-active' : ''} onClick={() => props.setFlatMode('forward')}>正向</button><button className={props.flatMode === 'reverse' ? 'is-active' : ''} onClick={() => props.setFlatMode('reverse')}>反向</button></div>{props.flatMode === 'forward' ? <Field label="月分期利率（%）" value={props.flatRate} onChange={props.setFlatRate} /> : <Field label="每月固定利息（元）" value={props.reverseInterest} onChange={props.setReverseInterest} />}</>}
-          {props.loanType === 'annuity' && <Field label="合同年化利率（%）" value={props.annualRate} onChange={props.setAnnualRate} />}
-          {props.loanType === 'compare' && <><Field label="等本等息月分期率（%）" value={props.compareFlatRate} onChange={props.setCompareFlatRate} /><Field label="等额本息年化率（%）" value={props.compareAnnualRate} onChange={props.setCompareAnnualRate} /></>}
+                      <nav className="ingest-detail-tabs toolbox-detail-tabs" aria-label="计算模式">
+                        {MODES.map((mode) => {
+                          const Icon = mode.icon;
+                          return (
+                            <button
+                              key={mode.key}
+                              type="button"
+                              className={`ingest-tab-trigger launcher-action pixel-command is-${mode.key}${loanType === mode.key ? ' is-active' : ''}`}
+                              onClick={() => setLoanType(mode.key)}
+                            >
+                              <Icon size={16} /><b>{mode.label}</b><span>{mode.meta}</span>
+                            </button>
+                          );
+                        })}
+                      </nav>
+
+                      <div className="detail-scroll-shell">
+                        <div className="detail-scroll toolbox-detail-scroll">
+                          <section className="toolbox-reading-section toolbox-parameter-section">
+                            <div className="toolbox-section-heading">
+                              <span className="toolbox-section-label">计算参数</span>
+                              {loanType === 'flat' && (
+                                <div className="toolbox-segment" aria-label="等本等息计算方向">
+                                  <button type="button" className={flatMode === 'forward' ? 'is-active' : ''} onClick={() => setFlatMode('forward')}>正向</button>
+                                  <button type="button" className={flatMode === 'reverse' ? 'is-active' : ''} onClick={() => setFlatMode('reverse')}>反向</button>
+                                </div>
+                              )}
+                            </div>
+                            <div className={`toolbox-input-grid is-${loanType}`}>
+                              <Field label="贷款金额（元）" value={principal} onChange={setPrincipal} />
+                              <Field label="还款年限" value={years} onChange={handleYearsChange} hint={`${periods} 期（月）`} max={MAX_LOAN_YEARS} />
+                              {loanType === 'flat' && (
+                                flatMode === 'forward'
+                                  ? <Field label="月分期利率（%）" value={flatRate} onChange={setFlatRate} hint="每期手续费率" />
+                                  : <Field label="每月固定利息（元）" value={reverseInterest} onChange={setReverseInterest} hint={`月供 ${Number.isFinite(reverseMonthlyPayment) ? formatMoney(reverseMonthlyPayment) : '--'} 元`} />
+                              )}
+                              {loanType === 'annuity' && <Field label="合同年化利率（%）" value={annualRate} onChange={setAnnualRate} hint="利息按剩余本金计算" />}
+                              {loanType === 'compare' && (
+                                <>
+                                  <Field label="等本等息月分期率（%）" value={compareFlatRate} onChange={setCompareFlatRate} />
+                                  <Field label="等额本息年化率（%）" value={compareAnnualRate} onChange={setCompareAnnualRate} />
+                                </>
+                              )}
+                            </div>
+                          </section>
+
+                          {flatResult && (
+                            <>
+                              <section className="toolbox-reading-section toolbox-result-section">
+                                <span className="toolbox-section-label">核心结果</span>
+                                {flatMode === 'reverse' && flatResult.derivedFlatRate !== undefined && (
+                                  <p className="toolbox-derived-rate"><ArrowRightLeft size={14} />反推月分期利率 <b>{formatPercent(flatResult.derivedFlatRate)}</b>，名义月息 {formatLi(flatResult.derivedFlatRate / .1)}</p>
+                                )}
+                                <div className="toolbox-primary-results">
+                                  <Result label="月供" value={`${formatMoney(flatResult.monthlyPayment)} 元`} />
+                                  <Result label="真实年化" value={formatPercent(flatResult.realAnnualRate)} tone="danger" />
+                                </div>
+                                <div className="toolbox-metric-list">
+                                  <Result label="总利息" value={`${formatMoney(flatResult.totalInterest)} 元`} />
+                                  <Result label="名义年化" value={formatPercent(flatResult.nominalAnnualRate)} />
+                                  <Result label="名义月息" value={formatLi(flatResult.nominalMonthlyLi)} />
+                                  <Result label="真实月息" value={formatLi(flatResult.realMonthlyLi)} tone="danger" />
+                                </div>
+                                <p className="toolbox-result-summary">{flatSummary(flatResult)}</p>
+                              </section>
+                              <section className="toolbox-reading-section toolbox-cost-section">
+                                <span className="toolbox-section-label">每期成本拆解</span>
+                                <div className="toolbox-cost-anatomy">
+                                  <span><small>每期本金</small><b>{formatMoney(flatResult.monthlyPrincipal)}</b></span><i>+</i>
+                                  <span><small>固定利息</small><b>{formatMoney(flatResult.monthlyInterest)}</b></span><i>=</i>
+                                  <span className="is-total"><small>每期月供</small><b>{formatMoney(flatResult.monthlyPayment)}</b></span>
+                                </div>
+                              </section>
+                              <section className="toolbox-reading-section toolbox-explanation">
+                                <span className="toolbox-section-label">成本说明</span>
+                                <h3>为什么“销售说的”和“真实成本”不一样？</h3>
+                                <p>等本等息每期利息始终按初始本金计算，但本金会逐月归还。实际占用的资金越来越少，因此真实年化通常高于简单相乘得到的名义年化。</p>
+                                <p>比较不同方案时，应以合同披露的综合年化利率和提前结清成本为准。</p>
+                              </section>
+                            </>
+                          )}
+
+                          {annuityData && (
+                            <>
+                              <section className="toolbox-reading-section toolbox-result-section">
+                                <span className="toolbox-section-label">核心结果</span>
+                                <div className="toolbox-primary-results">
+                                  <Result label="月供" value={`${formatMoney(annuityData.result.monthlyPayment)} 元`} />
+                                  <Result label="还款总额" value={`${formatMoney(annuityData.result.totalPayment)} 元`} />
+                                </div>
+                                <div className="toolbox-metric-list">
+                                  <Result label="总利息" value={`${formatMoney(annuityData.result.totalInterest)} 元`} />
+                                  <Result label="利息占比" value={formatPercent(annuityData.result.interestRatio)} />
+                                </div>
+                              </section>
+                              <section className="toolbox-reading-section toolbox-schedule-wrap">
+                                <span className="toolbox-section-label">还款计划明细</span>
+                                <div className="toolbox-schedule-head"><span>期数</span><span>当期月供</span><span>当期本金</span><span>当期利息</span><span>剩余本金</span></div>
+                                <div className="toolbox-schedule">
+                                  {visibleScheduleRows.map((row) => (
+                                    <span key={row.period}><b>第 {row.period} 期</b><em>{formatMoney(row.payment)}</em><em>{formatMoney(row.principal)}</em><em>{formatMoney(row.interest)}</em><small>{formatMoney(row.balance)}</small></span>
+                                  ))}
+                                </div>
+                              </section>
+                            </>
+                          )}
+
+                          {compareData && (
+                            <>
+                              <section className="toolbox-reading-section toolbox-result-section">
+                                <span className="toolbox-section-label">方案核心对比</span>
+                                <div className="toolbox-primary-results">
+                                  <Result label="等本等息月供" value={`${formatMoney(compareData.flatMonthly)} 元`} tone="danger" />
+                                  <Result label="等额本息月供" value={`${formatMoney(compareData.annuityMonthly)} 元`} />
+                                </div>
+                                <div className="toolbox-metric-list">
+                                  <Result label="等本等息总利息" value={`${formatMoney(compareData.flatTotalInterest)} 元`} tone="danger" />
+                                  <Result label="等额本息总利息" value={`${formatMoney(compareData.annuityTotalInterest)} 元`} />
+                                  <Result label="等本等息真实年化" value={formatPercent(compareData.flatIrr)} tone="danger" />
+                                  <Result label="等额本息年化" value={formatPercent(compareData.annualRate)} />
+                                </div>
+                                <p className="toolbox-recommendation"><ArrowRightLeft size={15} /><span>{compareData.recommendation}{compareData.tipping ? ` 成本拐点约在第 ${compareData.tipping.month} 期。` : ''}</span></p>
+                              </section>
+                              <section className="toolbox-reading-section toolbox-comparison-path">
+                                <span className="toolbox-section-label">持有节点</span>
+                                <header><span>期数</span><span>等本等息总成本</span><span>等额本息总成本</span><span>成本差</span></header>
+                                {compareData.rows.map((row) => (
+                                  <div key={row.month} className={`is-${row.winner}`}><b>{row.month} 期</b><span>{formatMoney(row.flatTotal)}</span><span>{formatMoney(row.annuityTotal)}</span><em>{row.diff > 0 ? '+' : ''}{formatMoney(row.diff)}</em></div>
+                                ))}
+                              </section>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </section>
+                  </section>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-        {props.flatResult && <><div className="toolbox-results"><Result label="月供" value={`${formatMoney(props.flatResult.monthlyPayment)} 元`} /><Result label="总利息" value={`${formatMoney(props.flatResult.totalInterest)} 元`} /><Result label="名义年化" value={formatPercent(props.flatResult.nominalAnnualRate)} /><Result label="真实年化" value={formatPercent(props.flatResult.realAnnualRate)} tone="danger" /><Result label="名义月息" value={formatLi(props.flatResult.nominalMonthlyLi)} /><Result label="真实月息" value={formatLi(props.flatResult.realMonthlyLi)} tone="danger" /><p>{flatSummary(props.flatResult)}</p></div><section className="toolbox-cost-anatomy"><span><small>每期本金</small><b>{formatMoney(props.flatResult.monthlyPrincipal)}</b></span><i>+</i><span><small>固定利息</small><b>{formatMoney(props.flatResult.monthlyInterest)}</b></span><i>=</i><span className="is-total"><small>每期月供</small><b>{formatMoney(props.flatResult.monthlyPayment)}</b></span><em>利息始终按初始本金计算，剩余本金下降时真实资金成本会高于名义利率。</em></section></>}
-        {props.annuityData && <><div className="toolbox-results"><Result label="月供" value={`${formatMoney(props.annuityData.result.monthlyPayment)} 元`} /><Result label="还款总额" value={`${formatMoney(props.annuityData.result.totalPayment)} 元`} /><Result label="总利息" value={`${formatMoney(props.annuityData.result.totalInterest)} 元`} /><Result label="利息占比" value={formatPercent(props.annuityData.result.interestRatio)} /></div><button className="toolbox-schedule-toggle" onClick={() => props.setShowSchedule(!props.showSchedule)}><Table size={14} />还款计划明细</button>{props.showSchedule && <div className="toolbox-schedule-wrap"><div className="toolbox-schedule-head"><span>期数</span><span>当期月供</span><span>剩余本金</span></div><div className="toolbox-schedule">{pickScheduleRows(props.annuityData.schedule).map((row: any) => <span key={row.period}><b>第 {row.period} 期</b><em>{formatMoney(row.payment)}</em><small>{formatMoney(row.balance)}</small></span>)}</div></div>}</>}
-        {props.compareData && <><div className="toolbox-compare"><Result label="等本等息月供" value={`${formatMoney(props.compareData.flatMonthly)} 元`} tone="danger" /><Result label="等额本息月供" value={`${formatMoney(props.compareData.annuityMonthly)} 元`} /><Result label="等本等息总利息" value={`${formatMoney(props.compareData.flatTotalInterest)} 元`} tone="danger" /><Result label="等额本息总利息" value={`${formatMoney(props.compareData.annuityTotalInterest)} 元`} /><Result label="等本等息真实年化" value={formatPercent(props.compareData.flatIrr)} tone="danger" /><Result label="等额本息年化" value={formatPercent(props.compareData.annualRate)} /></div><section className="toolbox-comparison-path"><header><span>持有节点</span><span>等本等息总成本</span><span>等额本息总成本</span><span>成本差</span></header>{props.compareData.rows.map((row: any) => <div key={row.month} className={row.winner === 'annuity' ? 'is-annuity' : row.winner === 'flat' ? 'is-flat' : ''}><b>{row.month} 期</b><span>{formatMoney(row.flatTotal)}</span><span>{formatMoney(row.annuityTotal)}</span><em>{row.diff > 0 ? '+' : ''}{formatMoney(row.diff)}</em></div>)}</section><p className="toolbox-recommendation"><ArrowRightLeft size={14} /><span>{props.compareData.recommendation}{props.compareData.tipping ? ` 成本拐点约在第 ${props.compareData.tipping.month} 期。` : ''}</span></p></>}
-      </div></div>
     </section>
   );
-}
+});
+
+const Field = memo(function Field({ label, value, onChange, hint, max }: FieldProps) {
+  return (
+    <label className="toolbox-field">
+      <span className="toolbox-field-head">
+        <span>{label}</span>
+        {hint && <small>{hint}</small>}
+      </span>
+      <input type="number" value={value} max={max} onChange={(event) => onChange(event.target.value)} />
+    </label>
+  );
+});
 
 function Result({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return <span className={tone ? `is-${tone}` : ''}><small>{label}</small><b>{value}</b></span>;

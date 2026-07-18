@@ -40,3 +40,31 @@
 .series-load-more { display: flex !important; grid-template-columns: none !important; justify-content: center; gap: 7px !important; color: rgba(167,139,250,.78); }
 @media (max-width: 1440px) { .series-core-box { grid-template-columns: 120px minmax(180px, 1fr) minmax(210px,.7fr); padding: 16px 24px; }.series-core-box > div { gap: 18px; }.cinematic-series .series-index-list,.cinematic-series .series-index-search { width: min(100%, 320px) !important; }.series-dialog { width: min(820px, 88vw); } }
 @media (max-width: 1180px) { .cinematic-series .series-index-list { width: min(100%, 294px) !important; }.series-dialog-backdrop { padding: 4vh 4vw; }.series-dialog { width: 92vw; }.series-detail-body { padding-bottom: 125px; } }
+
+.ki-shell-series .ki-ingest-list-pane {
+  --ki-list-width: 70%;
+}
+
+.ki-shell-series .series-status-tabs {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+
+.ki-shell-series .series-list {
+  padding-top: 0;
+}
+
+.ki-shell-series .series-list-row .ki-ingest-list-meta {
+  max-width: 100%;
+}
+
+.ki-shell-series .series-cinematic-loading {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+@media (max-width: 1280px) {
+  .ki-shell-series .ki-ingest-list-pane {
+    --ki-list-width: 74%;
+  }
+}

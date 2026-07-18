@@ -42,19 +42,19 @@ const pages = [
   {
     key: 'toolbox',
     path: '/#/toolbox',
-    markers: ['cinematic-ingest-shell', '贷款利率换算器', 'toolbox-detail-reader', 'toolbox-result-box'],
+    markers: ['ki-shell-toolbox', 'toolbox-tool-list', 'toolbox-detail-reader', 'toolbox-primary-results'],
     maxScreenshotMs: 8000,
     maxDomDumpMs: 5500,
-    expectedCanvasCount: 2,
+    expectedCanvasCount: 1,
     virtualTimeBudgetMs: 14000,
   },
   {
     key: 'series',
     path: '/#/series',
-    markers: ['cinematic-ingest-shell', '专题工作台', 'series-detail-legacy-content', 'series-core-box'],
+    markers: ['ki-shell-series', 'series-status-tabs', 'series-list', 'series-detail-legacy-content'],
     maxScreenshotMs: 8000,
     maxDomDumpMs: 5500,
-    expectedCanvasCount: 2,
+    expectedCanvasCount: 1,
     virtualTimeBudgetMs: 14000,
   },
   {

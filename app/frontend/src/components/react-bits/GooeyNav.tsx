@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from 'react';
+import { createPortal } from 'react-dom';
 import './GooeyNav.css';
 
 export interface GooeyNavItem { label: string; href: string }
@@ -16,6 +17,7 @@ interface GooeyNavProps {
   colors?: number[];
   initialActiveIndex?: number;
   activeIndex?: number;
+  navigationDelay?: number;
   onNavigate?: (item: GooeyNavItem, index: number) => void;
 }
 
@@ -31,6 +33,7 @@ export default function GooeyNav({
   colors = DEFAULT_PARTICLE_COLORS,
   initialActiveIndex = 0,
   activeIndex: controlledActiveIndex,
+  navigationDelay = 0,
   onNavigate,
 }: GooeyNavProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -38,23 +41,27 @@ export default function GooeyNav({
   const filterRef = useRef<HTMLSpanElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
   const timerIdsRef = useRef<number[]>([]);
+  const navigationTimerRef = useRef<number | null>(null);
+  const [effectHost, setEffectHost] = useState<HTMLElement | null>(null);
   const [internalActiveIndex, setInternalActiveIndex] = useState(initialActiveIndex);
+  const [pendingActiveIndex, setPendingActiveIndex] = useState<number | null>(null);
   const activeIndex = controlledActiveIndex ?? internalActiveIndex;
+  const renderedActiveIndex = pendingActiveIndex ?? activeIndex;
 
   const updateEffectPosition = useCallback((element: HTMLElement) => {
-    if (!containerRef.current || !filterRef.current || !textRef.current) return;
-    const containerRect = containerRef.current.getBoundingClientRect();
+    if (!effectHost || !filterRef.current || !textRef.current) return;
+    const hostRect = effectHost.getBoundingClientRect();
     const itemRect = element.getBoundingClientRect();
     const styles = {
-      left: `${itemRect.left - containerRect.left}px`,
-      top: `${itemRect.top - containerRect.top}px`,
+      left: `${itemRect.left - hostRect.left}px`,
+      top: `${itemRect.top - hostRect.top}px`,
       width: `${itemRect.width}px`,
       height: `${itemRect.height}px`,
     };
     Object.assign(filterRef.current.style, styles);
     Object.assign(textRef.current.style, styles);
     textRef.current.textContent = element.textContent;
-  }, []);
+  }, [effectHost]);
 
   const clearParticles = useCallback(() => {
     timerIdsRef.current.forEach(id => window.clearTimeout(id));
@@ -104,25 +111,41 @@ export default function GooeyNav({
   makeParticlesRef.current = makeParticles;
 
   const activate = useCallback((index: number) => {
-    if (activeIndex === index) return;
+    if (renderedActiveIndex === index) return false;
     if (controlledActiveIndex === undefined) setInternalActiveIndex(index);
-  }, [activeIndex, controlledActiveIndex]);
+    else setPendingActiveIndex(index);
+    return true;
+  }, [controlledActiveIndex, renderedActiveIndex]);
+
+  const navigateAfterEffectStarts = useCallback((index: number, changed: boolean) => {
+    if (navigationTimerRef.current !== null) window.clearTimeout(navigationTimerRef.current);
+    if (!changed || navigationDelay <= 0) {
+      onNavigate?.(items[index], index);
+      return;
+    }
+    navigationTimerRef.current = window.setTimeout(() => onNavigate?.(items[index], index), navigationDelay);
+  }, [items, navigationDelay, onNavigate]);
 
   const handleClick = (event: MouseEvent<HTMLAnchorElement>, index: number) => {
     event.preventDefault();
-    activate(index);
-    onNavigate?.(items[index], index);
+    navigateAfterEffectStarts(index, activate(index));
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLAnchorElement>, index: number) => {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
-    activate(index);
-    onNavigate?.(items[index], index);
+    navigateAfterEffectStarts(index, activate(index));
   };
 
+  useEffect(() => { setPendingActiveIndex(null); }, [controlledActiveIndex]);
+
   useEffect(() => {
-    const activeItem = navRef.current?.querySelectorAll('li')[activeIndex] as HTMLElement | undefined;
+    const host = containerRef.current?.closest('main');
+    setEffectHost(host instanceof HTMLElement ? host : document.body);
+  }, []);
+
+  useEffect(() => {
+    const activeItem = navRef.current?.querySelectorAll('li')[renderedActiveIndex] as HTMLElement | undefined;
     if (activeItem) {
       updateEffectPosition(activeItem);
       textRef.current?.classList.add('is-active');
@@ -130,21 +153,34 @@ export default function GooeyNav({
     }
 
     const observer = new ResizeObserver(() => {
-      const item = navRef.current?.querySelectorAll('li')[activeIndex] as HTMLElement | undefined;
+      const item = navRef.current?.querySelectorAll('li')[renderedActiveIndex] as HTMLElement | undefined;
       if (item) updateEffectPosition(item);
     });
+    const syncPosition = () => {
+      const item = navRef.current?.querySelectorAll('li')[renderedActiveIndex] as HTMLElement | undefined;
+      if (item) updateEffectPosition(item);
+    };
     if (containerRef.current) observer.observe(containerRef.current);
-    return () => observer.disconnect();
-  }, [activeIndex, updateEffectPosition]);
+    window.addEventListener('resize', syncPosition);
+    window.addEventListener('scroll', syncPosition, true);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', syncPosition);
+      window.removeEventListener('scroll', syncPosition, true);
+    };
+  }, [renderedActiveIndex, updateEffectPosition]);
 
-  useEffect(() => clearParticles, [clearParticles]);
+  useEffect(() => () => {
+    clearParticles();
+    if (navigationTimerRef.current !== null) window.clearTimeout(navigationTimerRef.current);
+  }, [clearParticles]);
 
   return (
     <div className="gooey-nav" ref={containerRef}>
       <nav aria-label="Primary demo navigation">
         <ul ref={navRef}>
           {items.map((item, index) => (
-            <li key={item.label} className={activeIndex === index ? 'is-active' : ''}>
+            <li key={item.label} className={renderedActiveIndex === index ? 'is-active' : ''}>
               <a href={item.href} onClick={event => handleClick(event, index)} onKeyDown={event => handleKeyDown(event, index)}>
                 {item.label}
               </a>
@@ -152,8 +188,13 @@ export default function GooeyNav({
           ))}
         </ul>
       </nav>
-      <span className="gooey-nav__effect gooey-nav__filter" ref={filterRef} />
-      <span className="gooey-nav__effect gooey-nav__text" ref={textRef} />
+      {effectHost && createPortal(
+        <>
+          <span className="gooey-nav__effect gooey-nav__filter gooey-nav__portal-effect" ref={filterRef} />
+          <span className="gooey-nav__effect gooey-nav__text gooey-nav__portal-effect" ref={textRef} />
+        </>,
+        effectHost,
+      )}
     </div>
   );
 }
