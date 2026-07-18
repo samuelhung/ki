@@ -1,33 +1,38 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '../../api';
 import type { TaskConfig } from '../SystemSettingsControls';
 import type { SystemConfig } from './systemTypes';
 
-export function useSystemConfig() {
+export function useSystemConfig(enabled: boolean) {
   const [config, setConfig] = useState<SystemConfig | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
 
   useEffect(() => {
-    apiFetch('/api/system-config')
+    if (!enabled || config) return;
+    const controller = new AbortController();
+    apiFetch('/api/system-config', { signal: controller.signal })
       .then((response) => response.json())
       .then(setConfig)
-      .catch(() => setMessage('加载配置失败'));
-  }, []);
+      .catch(() => {
+        if (!controller.signal.aborted) setMessage('加载配置失败');
+      });
+    return () => controller.abort();
+  }, [config, enabled]);
 
-  const updateGeneral = (key: string, value: any) => {
+  const updateGeneral = useCallback((key: string, value: any) => {
     setConfig((current) => current
       ? { ...current, general: { ...current.general, [key]: value } }
       : current);
-  };
+  }, []);
 
-  const updateModule = (module: string, task: string, value: TaskConfig) => {
+  const updateModule = useCallback((module: string, task: string, value: TaskConfig) => {
     setConfig((current) => current
       ? { ...current, [module]: { ...(current as any)[module], [task]: value } }
       : current);
-  };
+  }, []);
 
-  const save = async () => {
+  const save = useCallback(async () => {
     if (!config) return;
     setSaving(true);
     setMessage('');
@@ -43,7 +48,7 @@ export function useSystemConfig() {
     } finally {
       setSaving(false);
     }
-  };
+  }, [config]);
 
   return { config, saving, message, updateGeneral, updateModule, save };
 }

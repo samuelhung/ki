@@ -1,43 +1,35 @@
-import React, { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Activity,
+  BookOpen,
   CheckCircle,
   Database,
   FileText,
-  Layers,
-  Radio,
   RefreshCw,
   Save,
   Settings,
   Wrench,
 } from 'lucide-react';
-import { useCurtain } from '../CurtainContext';
 import { APP_VERSION } from '../constants';
-import CinematicLaserWorkspace from '../components/cinematic/CinematicLaserWorkspace';
-import CinematicTemplatePage from '../components/cinematic/CinematicTemplatePage';
-import { CINEMATIC_LASER_PRESET } from '../components/cinematic/cinematicLaserPreset';
-import { useCinematicTemplateLayout } from '../components/cinematic/useCinematicTemplateLayout';
-import LaserFlow from '../components/react-bits/LaserFlow';
-import { useLaserRenderProfile } from '../components/cinematic-ingest/useLaserRenderProfile';
 import {
-  AI_MODULE_PANES,
   DOC_DETAIL_TABS,
+  MODULE_CONFIG_ITEMS,
   MODULE_CONFIG_KEYS,
   SystemAiModulesPanel,
   SystemBaseConfigPanel,
   SystemDocsPanel,
   SystemLogsPanel,
 } from '../components/cinematic-system/SystemCenterPanels';
-import { SystemAssetBox } from '../components/cinematic-system/SystemAssetBox';
+import { SystemAssetsPanel } from '../components/cinematic-system/SystemAssetBox';
 import { useSystemConfig } from '../components/cinematic-system/useSystemConfig';
 import { useSystemConnection } from '../components/cinematic-system/useSystemConnection';
 import { useSystemDatabase } from '../components/cinematic-system/useSystemDatabase';
 import { useSystemHealth } from '../components/cinematic-system/useSystemHealth';
 import { useSystemLogs } from '../components/cinematic-system/useSystemLogs';
-import '../components/cinematic/cinematic.css';
+import SpotlightListRow from '../components/react-bits/SpotlightListRow';
+import KiNavigationShell from './KiNavigationShell';
 import '../components/cinematic-ingest/cinematic-ingest.css';
-import '../components/cinematic-ingest/cinematic-ingest-performance.css';
 import '../components/cinematic-system/cinematic-system.css';
 
 declare global {
@@ -50,48 +42,55 @@ const canCheckUpdates = () => typeof window !== 'undefined' && Boolean(window.zh
 
 const SECTION_GROUPS = [
   {
+    key: 'observe',
     label: '观测',
+    icon: Activity,
+    accent: 'gold',
     items: [
-      { key: 'docs', label: '系统说明', icon: Layers, accent: 'blue' },
-      { key: 'logs', label: '运行记录', icon: FileText, accent: 'rose' },
+      { key: 'boundary', label: '工程规范', meta: '技术契约与发布护栏', icon: Wrench, accent: 'cyan' },
+      { key: 'changelog', label: '版本记录', meta: '版本演进与变更摘要', icon: BookOpen, accent: 'blue' },
+      { key: 'logs', label: '运行记录', meta: '实时日志与异常定位', icon: FileText, accent: 'rose' },
+      { key: 'assets', label: '资产台账', meta: '实时库存与存储状态', icon: Database, accent: 'gold' },
     ],
   },
   {
+    key: 'control',
     label: '控制',
+    icon: Settings,
+    accent: 'violet',
     items: [
-      { key: 'base_config', label: '基础配置', icon: Settings, accent: 'violet' },
-      { key: 'ai_modules', label: 'AI 模块', icon: Wrench, accent: 'cyan' },
+      { key: 'base_config', label: '基础配置', meta: '模型、连接与默认值', icon: Settings, accent: 'violet' },
+      ...MODULE_CONFIG_ITEMS.map((item) => ({ ...item })),
     ],
   },
 ] as const;
 
-const TAB_LABELS: Record<string, string> = Object.fromEntries(
-  SECTION_GROUPS.flatMap((group) => group.items.map((item) => [item.key, item.label]))
-);
+type SectionKey = (typeof SECTION_GROUPS)[number]['items'][number]['key'];
+type DocPaneKey = (typeof DOC_DETAIL_TABS)[number]['key'];
+type ModuleKey = (typeof MODULE_CONFIG_KEYS)[number];
 
-function formatUptime(sec: number): string {
-  if (sec < 60) return `${Math.floor(sec)}秒`;
-  if (sec < 3600) return `${Math.floor(sec / 60)}分`;
-  if (sec < 86400) return `${Math.floor(sec / 3600)}时${Math.floor((sec % 3600) / 60)}分`;
-  return `${Math.floor(sec / 86400)}天${Math.floor((sec % 86400) / 3600)}时`;
+function isDocPane(section: SectionKey): section is DocPaneKey {
+  return section === 'boundary' || section === 'changelog';
 }
 
-function statText(value: string | number | undefined | null) {
-  if (value === undefined || value === null || value === '') return '--';
-  return value;
+function isAiModuleSection(section: SectionKey): section is ModuleKey {
+  return (MODULE_CONFIG_KEYS as readonly string[]).includes(section);
 }
+
+const SECTION_LABELS = Object.fromEntries(
+  SECTION_GROUPS.flatMap((group) => group.items.map((item) => [item.key, item.label])),
+) as Record<SectionKey, string>;
 
 export default function CinematicSystemCenter() {
   const location = useLocation();
-  const { navigateWithCurtain } = useCurtain();
-  const { profile: templateProfile, style: templateLayoutStyle } = useCinematicTemplateLayout('system');
-  const [activeSection, setActiveSection] = useState(() => (location.pathname === '/settings' ? 'base_config' : 'docs'));
-  const [activeDocPane, setActiveDocPane] = useState<(typeof DOC_DETAIL_TABS)[number]['key']>('portrait');
-  const [activeModule, setActiveModule] = useState<(typeof MODULE_CONFIG_KEYS)[number]>('ingest_pipeline');
-  const [activeAiPane, setActiveAiPane] = useState<(typeof AI_MODULE_PANES)[number]['key']>('params');
+  const [activeSection, setActiveSection] = useState<SectionKey>(() => (
+    location.pathname === '/settings' ? 'base_config' : 'boundary'
+  ));
+  const needsConfig = activeSection === 'base_config' || isAiModuleSection(activeSection);
+  const [updateMessage, setUpdateMessage] = useState('');
   const { health, setHealth, checkHealth } = useSystemHealth();
-  const { config, saving, message, updateGeneral, updateModule, save } = useSystemConfig();
-  const { dbInfo, dbLoading, loadDbInfo } = useSystemDatabase();
+  const { config, saving, message, updateGeneral, updateModule, save } = useSystemConfig(needsConfig);
+  const { dbInfo, dbLoading, loadDbInfo } = useSystemDatabase(activeSection === 'assets');
   const {
     logs,
     logLevel,
@@ -102,10 +101,7 @@ export default function CinematicSystemCenter() {
     logLoading,
     loadLogs,
   } = useSystemLogs(activeSection === 'logs');
-  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'latest' | 'error'>('idle');
-  const [updateMessage, setUpdateMessage] = useState('');
   const {
-    backendUrl,
     urlMode,
     urlInput,
     apiTokenInput,
@@ -117,204 +113,160 @@ export default function CinematicSystemCenter() {
     testConnection,
     saveConnection,
   } = useSystemConnection(setHealth);
-  const [activeHub, setActiveHub] = useState<string | null>(null);
-  const { viewportHeight, laserRenderProfile } = useLaserRenderProfile();
 
   useEffect(() => {
-    if (location.pathname === '/settings') setActiveSection('base_config');
-    if (location.pathname === '/system') setActiveSection('docs');
+    setActiveSection(location.pathname === '/settings' ? 'base_config' : 'boundary');
   }, [location.pathname]);
 
-  const currentTitle = TAB_LABELS[activeSection] || '系统中枢';
-  const activeSystemGroup =
-    SECTION_GROUPS.find((group) => group.items.some((item) => item.key === activeSection)) ||
-    SECTION_GROUPS[0];
-  const activeSystemItems = activeSystemGroup.items.map((item) => ({ ...item, group: activeSystemGroup.label }));
+  const activeGroup = useMemo(() => (
+    SECTION_GROUPS.find((group) => group.items.some((item) => item.key === activeSection)) || SECTION_GROUPS[0]
+  ), [activeSection]);
 
-  const handleCheckUpdate = () => {
+  const handleCheckUpdate = useCallback(() => {
     if (!canCheckUpdates()) {
-      setUpdateStatus('error');
       setUpdateMessage('当前环境不支持桌面端更新检查');
       return;
     }
-    setUpdateStatus('checking');
     setUpdateMessage('已打开系统更新检查，请按弹窗提示继续');
     try {
       window.zhiji_checkUpdates?.postMessage('check');
     } catch (error: any) {
-      setUpdateStatus('error');
       setUpdateMessage(error?.message || '检查失败');
     }
-  };
+  }, []);
 
-  const commandItems = [
-    { key: 'douyin', label: '刷新状态', meta: health.error ? 'RETRY' : `${health.latency_ms || '--'}ms`, code: 'STATUS PING', icon: RefreshCw, onClick: checkHealth },
-    { key: 'file', label: '刷新数据库', meta: dbInfo?.database.size_display || 'DATABASE', code: 'DB SCAN', icon: Database, onClick: loadDbInfo },
-    { key: 'concept', label: '检查更新', meta: canCheckUpdates() ? 'SPARKLE' : 'DESKTOP', code: 'UPDATE', icon: CheckCircle, onClick: handleCheckUpdate },
-    { key: 'scan', label: saving ? '保存中' : '保存配置', meta: message || 'CONFIG', code: 'SAVE', icon: Save, onClick: save },
-  ];
-  const coreBoxHeight = Math.min(Math.max(viewportHeight * 0.158, 126), 178);
-  const beamVerticalOffset = (coreBoxHeight - 6) / Math.max(viewportHeight, 1) - 0.5;
+  const connectionProps = useMemo(() => ({
+    urlMode,
+    urlInput,
+    apiTokenInput,
+    testing,
+    connSaved,
+    setUrlMode,
+    setUrlInput,
+    setApiTokenInput,
+    testConnection,
+    saveConnection,
+  }), [
+    apiTokenInput,
+    connSaved,
+    saveConnection,
+    setApiTokenInput,
+    setUrlInput,
+    setUrlMode,
+    testConnection,
+    testing,
+    urlInput,
+    urlMode,
+  ]);
 
-  const statusPanel = (
-    <section className="ingest-observation cinematic-observation system-status-bay" aria-label="系统状态舱">
-          <div className="panel-status">
-            <i className={`signal-dot${health.error ? ' is-error' : ''}`} />
-            <span>系统中枢</span>
-          </div>
-          <span>{health.error ? health.error : '运行态观测与控制联动'}</span>
-          <div className="system-status-summary" aria-label="运行摘要">
-            <span className={health.data?.ok ? 'is-good' : 'is-bad'}>服务 {health.data?.ok ? '在线' : '离线'}</span>
-            <span className={health.data?.database?.ok ? 'is-good' : 'is-bad'}>主库 {health.data?.database?.ok ? '正常' : '异常'}</span>
-            <span className="is-violet">模型 {config?.general.model || '--'}</span>
-          </div>
-          <div className="panel-detail-grid">
-            <span>连接<b className={health.error ? 'is-bad' : health.data ? 'is-good' : 'is-warn'}>{health.error ? '未连接' : health.data ? '已连接' : '检测中'}</b></span>
-            <span>后端<b className={health.data?.ok ? 'is-good' : 'is-bad'}>{health.data?.ok ? '在线' : '离线'}</b></span>
-            <span>延迟<b className={health.error ? 'is-bad' : 'is-cyan'}>{statText(health.latency_ms ? `${health.latency_ms}ms` : null)}</b></span>
-            <span>版本<b className="is-violet">{health.data?.version || APP_VERSION}</b></span>
-            <span>运行<b className="is-gold">{health.data ? formatUptime(health.data.uptime_sec) : '--'}</b></span>
-            <span>事件<b className="is-gold">{statText(health.data?.database?.event_count)}</b></span>
-            <span>模型<b className="is-violet">{config?.general.model || '--'}</b></span>
-          </div>
-          {message && <p className={message.includes('成功') ? 'is-ok' : 'is-error'}>{message}</p>}
-          {updateMessage && <p>{updateMessage}</p>}
-    </section>
-  );
-  const commandLauncher = (
-    <section className="ingest-command-launcher" aria-label="系统命令入口">
-          <div className="launcher-actions">
-            {commandItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <button key={item.key} type="button" className={`launcher-action ingest-command-metric is-${item.key}`} onClick={item.onClick}>
-                  <Icon size={15} />
-                  <b>{item.label}</b>
-                  <span>{item.meta}</span>
-                  <small>{item.code}</small>
-                </button>
-              );
-            })}
-          </div>
-    </section>
-  );
-  const systemIndex = (
-    <>
-            <div className="ingest-topic-orbit system-section-orbit" aria-label="系统索引分类">
-              {SECTION_GROUPS.map((group, index) => {
-                const Icon = index === 0 ? Activity : Settings;
-                const active = activeSystemGroup.label === group.label;
-                return (
-                  <button
-                    key={group.label}
-                    type="button"
-                    className={`${active ? 'is-active ' : ''}${index === 0 ? 'is-gold' : 'is-violet'}`}
-                    onClick={() => setActiveSection(group.items[0].key)}
-                  >
-                    <Icon size={14} />
-                    <span>{group.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="ingest-index-list system-function-list" aria-label="系统功能切换">
-              {activeSystemItems.map((item, index) => {
-                const active = activeSection === item.key;
-                const center = (activeSystemItems.length - 1) / 2;
-                const distance = Math.abs(index - center);
-                const depth = center > 0 ? distance / center : 0;
-                const depthScale = 1 - Math.min(depth, 1) * 0.16;
-                const depthZ = -Math.round(distance * 3.5);
-                const depthOpacity = 0.74 + (1 - Math.min(depth, 1)) * 0.22;
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    className={`ingest-index-item system-function-item${active ? ' is-active' : ''}`}
-                    title={`${item.group} · ${item.label}`}
-                    style={{
-                      '--index-depth-scale': active ? Math.max(depthScale, 0.98) : depthScale,
-                      '--index-depth-z': `${active ? 0 : depthZ}px`,
-                      '--index-depth-opacity': active ? 1 : depthOpacity,
-                    } as React.CSSProperties}
-                    onClick={() => setActiveSection(item.key)}
-                  >
-                    <div className="index-title">
-                      <b>{item.label}</b>
-                      <span>
-                        <em className={`is-${item.accent}`}>{item.group}</em>
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-    </>
-  );
-  const systemStage = (
-    <>
-            <LaserFlow
-              {...CINEMATIC_LASER_PRESET}
-              verticalBeamOffset={beamVerticalOffset}
-              dpr={laserRenderProfile.dpr}
-              maxFps={laserRenderProfile.maxFps}
-            />
-            <section className="ingest-detail-reader system-detail-reader" aria-label="系统详情">
-              <header>
-                <span>CONTROL SURFACE</span>
-                <h2>{currentTitle}</h2>
-                <small>旧版对比：/#/system-old · /#/settings-old</small>
-              </header>
-              <div className="detail-scroll-shell system-detail-scroll-shell">
-                <div className="detail-scroll system-detail-body">
-                  {activeSection === 'docs' && <SystemDocsPanel activePane={activeDocPane} setActivePane={setActiveDocPane} />}
-                  {activeSection === 'logs' && <SystemLogsPanel logs={logs} total={logTotal} loading={logLoading} level={logLevel} setLevel={setLogLevel} search={logSearch} setSearch={setLogSearch} onRefresh={loadLogs} />}
-                  {activeSection === 'base_config' && <SystemBaseConfigPanel config={config} updateGeneral={updateGeneral} connection={{
-                    health, backendUrl, urlMode, urlInput, apiTokenInput, testing, connSaved,
-                    setUrlMode, setUrlInput, setApiTokenInput, testConnection, saveConnection,
-                  }} />}
-                  {activeSection === 'ai_modules' && <SystemAiModulesPanel
-                    activeModule={activeModule}
-                    setActiveModule={setActiveModule}
-                    activePane={activeAiPane}
-                    setActivePane={setActiveAiPane}
-                    config={config}
-                    updateModule={updateModule}
-                  />}
-                </div>
-              </div>
-            </section>
-            <SystemAssetBox dbInfo={dbInfo} health={health} />
-    </>
-  );
+  const connectionState = health.error ? '离线' : health.data?.ok ? '在线' : health.data ? '异常' : '检测中';
+  const connectionClass = health.error || (health.data && !health.data.ok) ? 'is-error' : health.data?.ok ? 'is-online' : '';
+  const databaseState = health.data?.database?.ok ? '正常' : health.data ? '异常' : '--';
 
   return (
-    <CinematicTemplatePage
-      className="cinematic-system"
-      profile={templateProfile}
-      topic="system"
-      style={templateLayoutStyle}
-      variant="system"
-      status={statusPanel}
-      commands={commandLauncher}
-      workspace={(
-        <CinematicLaserWorkspace
-          className="system-control-console"
-          ariaLabel="系统控制中心"
-          indexClassName="system-index-strip"
-          indexAriaLabel="系统索引"
-          index={systemIndex}
-          stageClassName="system-core-stage"
-          stageAriaLabel="系统核心舱"
-          stage={systemStage}
-        />
+    <KiNavigationShell
+      className="ki-shell-ingest-preview ki-shell-system"
+      sceneVariant="ingest"
+      laserPrimary
+      topAccessory={(
+        <div className="system-shell-status" aria-label="系统状态">
+          <span className={connectionClass}><i />服务 {connectionState}</span>
+          <span className={health.data && !health.data.database?.ok ? 'is-error' : 'is-database'}>主库 {databaseState}</span>
+          <span>{health.data?.version || APP_VERSION}</span>
+          <span>{health.latency_ms ? `${health.latency_ms}ms` : '--ms'}</span>
+        </div>
       )}
-      activeHub={activeHub}
-      onActiveHubChange={setActiveHub}
-      onNavigate={(path) => {
-          if (path === '/docs') window.open('/docs', '_blank', 'noopener,noreferrer');
-          else navigateWithCurtain(path);
-      }}
-    />
+    >
+      <section className="ki-shell-content" aria-label="系统中枢工作区">
+        <div className="ki-shell-legacy-ingest">
+          <div className="legacy-ingest-root is-shell-embedded cinematic-ingest cinematic-system ki-system-embedded-root flex-1 bg-[#0B0C10] text-white flex flex-col h-full overflow-hidden">
+            <div className="flex-1 overflow-hidden px-4 md:px-8 pb-4 md:pb-8">
+              <div className="max-w-[1500px] mx-auto pt-4 h-full">
+                <div className="ki-ingest-split-stage">
+                  <section className="ki-ingest-list-pane" aria-label="系统功能">
+                    <nav className="ingest-topic-orbit ki-ingest-topic-orbit system-group-tabs" aria-label="系统功能分组">
+                      {SECTION_GROUPS.map((group) => {
+                        const Icon = group.icon;
+                        return (
+                          <button
+                            key={group.key}
+                            type="button"
+                            className={`${activeGroup.key === group.key ? 'is-active ' : ''}is-${group.accent}`}
+                            onClick={() => setActiveSection(group.items[0].key)}
+                          >
+                            <Icon size={17} />
+                            <span>{group.label}</span>
+                          </button>
+                        );
+                      })}
+                    </nav>
+                    <div className="ki-ingest-event-list system-function-list" data-group={activeGroup.key} aria-live="polite">
+                      {activeGroup.items.map((item) => {
+                        const Icon = item.icon;
+                        return (
+                          <SpotlightListRow
+                            key={item.key}
+                            active={activeSection === item.key}
+                            spotlightColor="rgba(167, 139, 250, 0.2)"
+                          >
+                            <button type="button" className="ki-ingest-list-row system-function-row" onClick={() => setActiveSection(item.key)}>
+                              <span className={`ki-ingest-list-topic is-${item.accent}`}>
+                                <span className="ki-ingest-list-type-icon"><Icon size={14} /></span>
+                                <em>{activeGroup.label}</em>
+                              </span>
+                              <strong>{item.label}</strong>
+                              <small className="ki-ingest-list-meta">{item.meta}</small>
+                            </button>
+                          </SpotlightListRow>
+                        );
+                      })}
+                    </div>
+                  </section>
+
+                  <section className="ki-ingest-detail-pane" aria-label={SECTION_LABELS[activeSection]}>
+                    <section className="ingest-detail-reader system-detail-reader" aria-label="系统详情">
+                      <header className="system-detail-header">
+                        <span>CONTROL SURFACE · {activeGroup.label.toUpperCase()}</span>
+                        <h2>{SECTION_LABELS[activeSection]}</h2>
+                        <small>
+                          旧版对比：<a href="/#/system-old">/#/system-old</a> · <a href="/#/settings-old">/#/settings-old</a>
+                        </small>
+                        <div className="system-detail-actions" aria-label="系统操作">
+                          <button type="button" title="刷新状态" aria-label="刷新状态" onClick={checkHealth}><RefreshCw size={17} /></button>
+                          <button type="button" title="刷新数据库" aria-label="刷新数据库" onClick={loadDbInfo}><Database size={17} /></button>
+                          <button type="button" title="检查更新" aria-label="检查更新" onClick={handleCheckUpdate}><CheckCircle size={17} /></button>
+                          <button type="button" title="保存配置" aria-label="保存配置" onClick={save} disabled={saving}><Save size={17} /></button>
+                        </div>
+                      </header>
+
+                      {(message || updateMessage) && (
+                        <div className="system-operation-message" role="status">
+                          {message && <span className={message.includes('成功') ? 'is-ok' : ''}>{message}</span>}
+                          {updateMessage && <span>{updateMessage}</span>}
+                        </div>
+                      )}
+
+                      <div className="detail-scroll-shell system-detail-scroll-shell">
+                        <div className="detail-scroll system-detail-body">
+                          {isDocPane(activeSection) && <SystemDocsPanel activePane={activeSection} />}
+                          {activeSection === 'logs' && <SystemLogsPanel logs={logs} total={logTotal} loading={logLoading} level={logLevel} setLevel={setLogLevel} search={logSearch} setSearch={setLogSearch} onRefresh={loadLogs} />}
+                          {activeSection === 'assets' && <SystemAssetsPanel dbInfo={dbInfo} health={health} loading={dbLoading} />}
+                          {activeSection === 'base_config' && <SystemBaseConfigPanel config={config} updateGeneral={updateGeneral} connection={connectionProps} />}
+                          {isAiModuleSection(activeSection) && <SystemAiModulesPanel
+                            activeModule={activeSection}
+                            config={config}
+                            updateModule={updateModule}
+                          />}
+                        </div>
+                      </div>
+                    </section>
+                  </section>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </KiNavigationShell>
   );
 }

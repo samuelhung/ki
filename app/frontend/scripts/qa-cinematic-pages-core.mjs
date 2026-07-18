@@ -33,10 +33,10 @@ const pages = [
   {
     key: 'system',
     path: '/#/system',
-    markers: ['cinematic-ingest-shell', '系统中枢', 'system-detail-reader', 'system-core-box'],
+    markers: ['ki-shell-system', 'ki-ingest-split-stage', 'system-detail-reader', 'system-function-list'],
     maxScreenshotMs: 8000,
     maxDomDumpMs: 5500,
-    expectedCanvasCount: 2,
+    expectedCanvasCount: 1,
     virtualTimeBudgetMs: 14000,
   },
   {
@@ -385,6 +385,39 @@ async function scrollWorkspace(cdp, sampleMs, viewport) {
   }
 }
 
+async function switchSeries(cdp, sampleMs) {
+  await evaluate(cdp, `
+    const buttons = [...document.querySelectorAll('.series-list-row')];
+    buttons[1]?.click();
+    return buttons.length;
+  `);
+  await wait(sampleMs);
+}
+
+async function scrollSeriesDetail(cdp, sampleMs, viewport) {
+  const steps = 18;
+  for (let index = 0; index < steps; index += 1) {
+    await cdp.send('Input.dispatchMouseEvent', {
+      type: 'mouseWheel',
+      x: Math.round(viewport.width * 0.68),
+      y: Math.round(viewport.height * 0.54),
+      deltaX: 0,
+      deltaY: index < steps / 2 ? 120 : -120,
+    });
+    await wait(sampleMs / steps);
+  }
+}
+
+async function openSeriesKnowledge(cdp, sampleMs) {
+  await evaluate(cdp, `
+    const button = [...document.querySelectorAll('.series-detail-legacy-content button')]
+      .find((item) => item.textContent?.trim() === '知识网络');
+    button?.click();
+    return Boolean(button);
+  `);
+  await wait(sampleMs);
+}
+
 async function openQueueModal(cdp, sampleMs) {
   await evaluate(cdp, `
     const button = document.querySelector('button[aria-label="处理队列"]');
@@ -401,15 +434,78 @@ async function closeInteractionModal(cdp) {
   `);
 }
 
+async function switchSystemControl(cdp, sampleMs) {
+  const groupFound = await evaluate(cdp, `
+    const groupButton = [...document.querySelectorAll('.system-group-tabs button')]
+      .find((item) => item.textContent?.includes('控制'));
+    groupButton?.click();
+    return Boolean(groupButton);
+  `);
+  if (!groupFound) throw new Error('System performance interaction failed: control group not found');
+  await wait(Math.min(240, sampleMs / 4));
+  const moduleFound = await evaluate(cdp, `
+    const moduleButton = [...document.querySelectorAll('.system-function-row')]
+      .find((item) => item.textContent?.includes('内容采集'));
+    moduleButton?.click();
+    return Boolean(moduleButton);
+  `);
+  if (!moduleFound) throw new Error('System performance interaction failed: ingest module not found');
+  await waitFor(cdp, 'system ingest module selection', `
+    return document.querySelector('.system-detail-header h2')?.textContent?.trim() === '内容采集';
+  `, Math.max(1000, sampleMs));
+  await wait(Math.max(0, sampleMs - Math.min(240, sampleMs / 4)));
+}
+
+async function scrollSystemDetail(cdp, sampleMs, viewport) {
+  const steps = 18;
+  const initialScrollTop = await evaluate(cdp, `
+    return document.querySelector('.system-detail-body')?.scrollTop ?? null;
+  `);
+  if (initialScrollTop === null) throw new Error('System performance interaction failed: detail scroller not found');
+  for (let index = 0; index < steps; index += 1) {
+    await cdp.send('Input.dispatchMouseEvent', {
+      type: 'mouseWheel',
+      x: Math.round(viewport.width * 0.76),
+      y: Math.round(viewport.height * 0.54),
+      deltaX: 0,
+      deltaY: index < steps / 2 ? 110 : -110,
+    });
+    await wait(sampleMs / steps);
+    if (index === steps / 2 - 1) {
+      const scrolledTop = await evaluate(cdp, `
+        return document.querySelector('.system-detail-body')?.scrollTop ?? null;
+      `);
+      if (scrolledTop === null || scrolledTop <= initialScrollTop) {
+        throw new Error('System performance interaction failed: detail scroller did not move');
+      }
+    }
+  }
+}
+
+export function buildInteractionScenarioNames(pageKey) {
+  const names = ['idle'];
+  if (pageKey === 'today' || pageKey === 'ingest') names.push('pointer');
+  if (pageKey === 'ingest') names.push('scroll', 'modal');
+  if (pageKey === 'system') names.push('system-switch', 'system-scroll');
+  if (pageKey === 'series') names.push('series-switch', 'series-scroll', 'series-knowledge');
+  return names;
+}
+
 async function collectInteractionPerformance(cdp, pageKey, viewport) {
-  const scenarios = [{ name: 'idle' }];
-  if (pageKey === 'today' || pageKey === 'ingest') {
-    scenarios.push({ name: 'pointer', exercise: (client, sampleMs) => sweepPointer(client, sampleMs, viewport) });
-  }
-  if (pageKey === 'ingest') {
-    scenarios.push({ name: 'scroll', exercise: (client, sampleMs) => scrollWorkspace(client, sampleMs, viewport) });
-    scenarios.push({ name: 'modal', exercise: openQueueModal });
-  }
+  const exercises = {
+    pointer: (client, sampleMs) => sweepPointer(client, sampleMs, viewport),
+    scroll: (client, sampleMs) => scrollWorkspace(client, sampleMs, viewport),
+    modal: openQueueModal,
+    'system-switch': switchSystemControl,
+    'system-scroll': (client, sampleMs) => scrollSystemDetail(client, sampleMs, viewport),
+    'series-switch': switchSeries,
+    'series-scroll': (client, sampleMs) => scrollSeriesDetail(client, sampleMs, viewport),
+    'series-knowledge': openSeriesKnowledge,
+  };
+  const scenarios = buildInteractionScenarioNames(pageKey).map((name) => ({
+    name,
+    exercise: exercises[name],
+  }));
 
   const samples = [];
   for (const scenario of scenarios) {

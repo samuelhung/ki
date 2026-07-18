@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Layers, ArrowLeft, Sparkles, Loader2, Trash2, ChevronDown, ExternalLink, Bell, Plus, X, RefreshCw, Check, Ellipsis } from 'lucide-react';
+import { Layers, ArrowLeft, Sparkles, Loader2, Trash2, ChevronDown, ExternalLink, Bell, ListPlus, Plus, X, RefreshCw, Check } from 'lucide-react';
 import Modal from '../components/Modal';
 import { formatTimeBeijing, sourceLabel } from '../utils';
 import { escapeHtml, sanitizeHtml } from '../safeHtml';
@@ -151,7 +151,6 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
   const [paperGenerating, setPaperGenerating] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [panelId, setPanelId] = useState<string | null>(null);  // expanded card
   const [tab, setTab] = useState<'overview' | 'paper' | 'content' | 'knowledge'>('overview');
 
@@ -170,7 +169,18 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
   const viewStateRef = useRef(new Map<string, { tab: typeof tab; panelId: string | null; scrollTop: number }>());
   const currentSeriesRef = useRef(id);
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const moreMenuRef = useRef<HTMLDivElement | null>(null);
+  const scrollFrameRef = useRef(0);
+  const summaryHtml = useMemo(() => series?.summary ? summaryToHtml(series.summary) : '', [series?.summary]);
+  const paperHtml = useMemo(() => series?.paper ? summaryToHtml(series.paper, 'paper') : '', [series?.paper]);
+
+  function commitScrollState() {
+    scrollFrameRef.current = 0;
+    if (id) viewStateRef.current.set(id, { tab, panelId, scrollTop: contentRef.current?.scrollTop || 0 });
+  }
+
+  function handleContentScroll() {
+    if (!scrollFrameRef.current) scrollFrameRef.current = requestAnimationFrame(commitScrollState);
+  }
 
   function commitSeries(next: SeriesDetailData | null) {
     setSeries(next);
@@ -178,6 +188,10 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
   }
 
   useEffect(() => {
+    if (scrollFrameRef.current) {
+      cancelAnimationFrame(scrollFrameRef.current);
+      scrollFrameRef.current = 0;
+    }
     const previousId = currentSeriesRef.current;
     if (previousId && previousId !== id) {
       viewStateRef.current.set(previousId, { tab, panelId, scrollTop: contentRef.current?.scrollTop || 0 });
@@ -191,7 +205,6 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
     setSuggestions([]);
     setSuggestionsLoaded(false);
     setShowSuggestions(false);
-    setMoreMenuOpen(false);
     if (embedded) {
       commitSeries(initialSeries);
       setLoading(!initialSeries);
@@ -203,28 +216,16 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
     });
   }, [id, embedded]);
 
+  useEffect(() => () => {
+    if (scrollFrameRef.current) cancelAnimationFrame(scrollFrameRef.current);
+  }, []);
+
   useEffect(() => {
     if (embedded && initialSeries?.id === id) {
       setSeries(initialSeries);
       setLoading(false);
     }
   }, [embedded, id, initialSeries]);
-
-  useEffect(() => {
-    if (!moreMenuOpen) return;
-    const handlePointerDown = (event: PointerEvent) => {
-      if (!moreMenuRef.current?.contains(event.target as Node)) setMoreMenuOpen(false);
-    };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMoreMenuOpen(false);
-    };
-    document.addEventListener('pointerdown', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [moreMenuOpen]);
 
   // Restore allProcessed from sessionStorage on mount
   useEffect(() => {
@@ -494,7 +495,7 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
 
   return (
     <div className={`${embedded ? 'series-detail-legacy-embedded' : 'flex-1 bg-[#0B0C10] p-4 md:p-8 overflow-y-auto custom-scrollbar'} text-white`}>
-      <div ref={contentRef} onScroll={() => { if (id) viewStateRef.current.set(id, { tab, panelId, scrollTop: contentRef.current?.scrollTop || 0 }); }} className={embedded ? 'series-detail-legacy-content' : 'max-w-[1080px] mx-auto'}>
+      <div ref={contentRef} onScroll={handleContentScroll} className={embedded ? 'series-detail-legacy-content' : 'max-w-[1080px] mx-auto'}>
 
         {/* Breadcrumb */}
         <div className={`flex items-center mb-6${embedded ? ' series-legacy-breadcrumb' : ''}`}>
@@ -552,23 +553,22 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
               <button
                 onClick={() => navigate(`/tasks?source=series&source_id=${id}&source_label=来自专题：${series?.name || ''}`)}
                 className={embedded ? 'series-header-action series-header-task-action' : 'px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-500/20 text-sky-400 hover:bg-sky-500/30 border border-sky-500/30 transition-colors flex items-center gap-1.5'}
+                aria-label="添加待办"
+                title="添加待办"
               >
-                <Plus size={14} />
-                <span className="hidden sm:inline">添加待办</span>
+                {embedded ? <ListPlus size={15} /> : <Plus size={14} />}
+                {!embedded && <span className="hidden sm:inline">添加待办</span>}
               </button>
               {embedded ? (
-                <div ref={moreMenuRef} className="series-more-actions">
-                  <button type="button" className="series-header-action" aria-label="更多专题操作" title="更多专题操作" aria-expanded={moreMenuOpen} onClick={() => setMoreMenuOpen((open) => !open)}>
-                    <Ellipsis size={16} />
-                  </button>
-                  {moreMenuOpen && (
-                    <div className="series-more-menu">
-                      <button type="button" onClick={() => { setMoreMenuOpen(false); setConfirmDelete(true); }}>
-                        <Trash2 size={13} />删除专题
-                      </button>
-                    </div>
-                  )}
-                </div>
+                <button
+                  type="button"
+                  className="series-header-action series-header-delete-action"
+                  aria-label="删除专题"
+                  title="删除专题"
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  <Trash2 size={15} />
+                </button>
               ) : (
                 <button onClick={() => setConfirmDelete(true)}
                   className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium text-red-400 bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 transition-colors flex items-center gap-1.5">
@@ -651,7 +651,7 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
                       if (n > 0) handleRefClick(n);
                     }
                   }}
-                  dangerouslySetInnerHTML={{ __html: summaryToHtml(series.summary) }}
+                  dangerouslySetInnerHTML={{ __html: summaryHtml }}
                 />
               </div>
             ) : (
@@ -692,7 +692,7 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
                       if (n > 0) handleRefClick(n);
                     }
                   }}
-                  dangerouslySetInnerHTML={{ __html: summaryToHtml(series.paper, 'paper') }}
+                  dangerouslySetInnerHTML={{ __html: paperHtml }}
                 />
               </div>
             ) : (
@@ -904,35 +904,43 @@ function SeriesKnowledgeNetwork({ seriesId }: { seriesId: string }) {
 
   React.useEffect(() => {
     if (!containerRef.current || !data || data.nodes.length === 0) return;
-    const { Network: VisNetwork } = require('vis-network/standalone');
-    const { DataSet } = require('vis-data/standalone');
+    let disposed = false;
+    let network: { destroy: () => void } | null = null;
 
-    const TYPE_COLORS: Record<string, string> = {
-      person: '#a855f7', organization: '#3b82f6', location: '#10b981',
-      concept: '#f59e0b', event: '#ef4444', theory: '#ec4899', book: '#6366f1', metric: '#06b6d4',
+    void Promise.all([
+      import('vis-network/standalone'),
+      import('vis-data/standalone'),
+    ]).then(([networkModule, dataModule]) => {
+      if (disposed || !containerRef.current) return;
+      const NetworkConstructor = networkModule.Network as any;
+      const DataSetConstructor = dataModule.DataSet as any;
+      const TYPE_COLORS: Record<string, string> = {
+        person: '#a855f7', organization: '#3b82f6', location: '#10b981',
+        concept: '#f59e0b', event: '#ef4444', theory: '#ec4899', book: '#6366f1', metric: '#06b6d4',
+      };
+      const dsNodes = new DataSetConstructor(data.nodes.map((node: any) => ({
+        id: node.id, label: node.name,
+        color: { background: TYPE_COLORS[node.type] || '#6b7280', border: '#1a1b20' },
+        font: { color: '#e5e7eb', size: 12 },
+        size: 15, borderWidth: 2, shape: 'dot',
+      })));
+      const dsEdges = new DataSetConstructor(data.edges.map((edge: any) => ({
+        id: edge.id, from: edge.source, to: edge.target,
+        color: { color: '#4b5563', highlight: '#a855f7' },
+        width: Math.max(1, Math.min(3, edge.weight * 2)),
+        smooth: { type: 'continuous' },
+      })));
+      network = new NetworkConstructor(containerRef.current, { nodes: dsNodes, edges: dsEdges }, {
+        physics: { solver: 'forceAtlas2Based', forceAtlas2Based: { gravitationalConstant: -30, centralGravity: 0.005, springLength: 120, springConstant: 0.05 }, stabilization: { iterations: 60 } },
+        interaction: { hover: true, zoomView: true, dragView: true },
+        nodes: { font: { face: 'system-ui, sans-serif' } },
+      });
+    }).catch(() => {});
+
+    return () => {
+      disposed = true;
+      network?.destroy();
     };
-
-    const dsNodes = new DataSet(data.nodes.map((n: any) => ({
-      id: n.id, label: n.name,
-      color: { background: TYPE_COLORS[n.type] || '#6b7280', border: '#1a1b20' },
-      font: { color: '#e5e7eb', size: 12 },
-      size: 15, borderWidth: 2, shape: 'dot',
-    })));
-
-    const dsEdges = new DataSet(data.edges.map((e: any) => ({
-      id: e.id, from: e.source, to: e.target,
-      color: { color: '#4b5563', highlight: '#a855f7' },
-      width: Math.max(1, Math.min(3, e.weight * 2)),
-      smooth: { type: 'continuous' },
-    })));
-
-    const network = new VisNetwork(containerRef.current, { nodes: dsNodes, edges: dsEdges }, {
-      physics: { solver: 'forceAtlas2Based', forceAtlas2Based: { gravitationalConstant: -30, centralGravity: 0.005, springLength: 120, springConstant: 0.05 }, stabilization: { iterations: 60 } },
-      interaction: { hover: true, zoomView: true, dragView: true },
-      nodes: { font: { face: 'system-ui, sans-serif' } },
-    });
-
-    return () => network.destroy();
   }, [data]);
 
   if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="animate-spin text-purple-400" size={24} /></div>;

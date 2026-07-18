@@ -25,10 +25,10 @@
 .series-detail-legacy-embedded .series-header-action:hover,.series-detail-legacy-embedded .series-context-action:hover { border-color: rgba(207,158,255,.9); color: rgba(255,252,242,.98); filter: drop-shadow(0 0 9px rgba(167,139,250,.24)); }
 .series-detail-legacy-embedded .series-header-action:focus-visible,.series-detail-legacy-embedded .series-context-action:focus-visible { outline: none; border-color: rgba(207,158,255,.96); color: rgba(255,252,242,.98); filter: drop-shadow(0 0 10px rgba(167,139,250,.3)); }
 .series-detail-legacy-embedded .series-header-action:disabled,.series-detail-legacy-embedded .series-context-action:disabled { cursor: default; opacity: .36; filter: none; }
-.series-detail-legacy-embedded .series-more-actions { position: relative; }
-.series-detail-legacy-embedded .series-more-actions > .series-header-action { width: 27px; justify-content: center; }
-.series-detail-legacy-embedded .series-more-menu { position: absolute; z-index: 30; top: calc(100% + 7px); right: 0; min-width: 124px; border: 1px solid rgba(167,139,250,.2); border-radius: 4px; background: rgba(8,7,13,.96); box-shadow: 0 18px 46px rgba(0,0,0,.46),0 0 22px rgba(167,139,250,.08); padding: 5px 8px; }
-.series-detail-legacy-embedded .series-more-menu button { display: flex; width: 100%; align-items: center; gap: 7px; border: 0; border-bottom: 1px solid rgba(251,113,133,.18); background: transparent; color: rgba(251,113,133,.78); padding: 7px 1px; font-size: 10px; text-align: left; }
+.series-detail-legacy-embedded .series-header-delete-action { width: 28px; height: 28px; min-height: 28px; flex: 0 0 28px; justify-content: center; border-color: rgba(251,113,133,.34); color: rgba(251,113,133,.72); padding: 0; }
+.series-detail-legacy-embedded .series-header-delete-action:hover,.series-detail-legacy-embedded .series-header-delete-action:focus-visible { border-color: rgba(251,113,133,.82); color: rgba(253,164,175,.98); filter: drop-shadow(0 0 9px rgba(251,113,133,.28)); }
+.series-detail-legacy-embedded .series-header-task-action { width: 28px; height: 28px; min-height: 28px; flex: 0 0 28px; justify-content: center; border-color: rgba(125,211,252,.34); color: rgba(125,211,252,.72); padding: 0; }
+.series-detail-legacy-embedded .series-header-task-action:hover,.series-detail-legacy-embedded .series-header-task-action:focus-visible { border-color: rgba(167,139,250,.86); color: rgba(221,214,254,.98); filter: drop-shadow(0 0 9px rgba(125,211,252,.26)); }
 .series-detail-legacy-embedded .series-context-heading { justify-content: flex-start; }
 .series-detail-legacy-embedded .series-context-heading .series-context-action { margin-left: auto; }
 .series-detail-legacy-embedded .series-context-empty { margin: 0; color: rgba(255,255,255,.34); font-size: 11px; }

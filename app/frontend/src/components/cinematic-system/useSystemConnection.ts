@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { getApiToken, getBackendUrl, setApiToken, setBackendUrl } from '../../api';
 import type { SetHealthState } from './systemTypes';
 
@@ -6,7 +6,6 @@ const LOCAL_BACKEND_URL = 'http://127.0.0.1:9120';
 
 export function useSystemConnection(setHealth: SetHealthState) {
   const initialBackendUrl = getBackendUrl();
-  const [backendUrl, setBackendUrlState] = useState(initialBackendUrl);
   const [urlMode, setUrlMode] = useState<'auto' | 'manual'>(initialBackendUrl === LOCAL_BACKEND_URL ? 'auto' : 'manual');
   const [urlInput, setUrlInput] = useState(initialBackendUrl === LOCAL_BACKEND_URL ? '' : initialBackendUrl);
   const [apiTokenInput, setApiTokenInput] = useState(getApiToken());
@@ -16,7 +15,7 @@ export function useSystemConnection(setHealth: SetHealthState) {
 
   useEffect(() => () => window.clearTimeout(savedTimerRef.current), []);
 
-  const testConnection = async () => {
+  const testConnection = useCallback(async () => {
     const target = urlMode === 'auto' ? LOCAL_BACKEND_URL : urlInput.trim().replace(/\/+$/, '');
     const token = apiTokenInput.trim();
     setTesting(true);
@@ -38,20 +37,18 @@ export function useSystemConnection(setHealth: SetHealthState) {
     } finally {
       setTesting(false);
     }
-  };
+  }, [apiTokenInput, setHealth, urlInput, urlMode]);
 
-  const saveConnection = () => {
+  const saveConnection = useCallback(() => {
     const target = urlMode === 'auto' ? '' : urlInput.trim();
     setBackendUrl(target);
     setApiToken(apiTokenInput);
-    setBackendUrlState(getBackendUrl());
     setConnSaved(true);
     window.clearTimeout(savedTimerRef.current);
     savedTimerRef.current = window.setTimeout(() => setConnSaved(false), 3000);
-  };
+  }, [apiTokenInput, urlInput, urlMode]);
 
   return {
-    backendUrl,
     urlMode,
     urlInput,
     apiTokenInput,

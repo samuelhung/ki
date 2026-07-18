@@ -6,6 +6,7 @@ const app = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8');
 const curtain = readFileSync(new URL('../../CurtainContext.tsx', import.meta.url), 'utf8');
 const page = readFileSync(new URL('../../pages/CinematicSeries.tsx', import.meta.url), 'utf8');
 const detail = readFileSync(new URL('../../pages/SeriesDetail.tsx', import.meta.url), 'utf8');
+const viteConfig = readFileSync(new URL('../../../vite.config.ts', import.meta.url), 'utf8');
 const css = `${readFileSync(new URL('./cinematic-series.css', import.meta.url), 'utf8')}\n${readFileSync(new URL('./cinematic-series-detail.css', import.meta.url), 'utf8')}`;
 
 test('series keeps legacy comparison routes while primary list and detail routes share the migrated page', () => {
@@ -73,11 +74,16 @@ test('series AI generation actions live beside the content they update', () => {
   assert.match(detail, /生成深度分析/);
 });
 
-test('series header keeps task creation and moves deletion into an accessible overflow menu', () => {
-  assert.match(detail, />添加待办</);
-  assert.match(detail, /aria-label="更多专题操作"/);
-  assert.match(detail, /moreMenuOpen/);
-  assert.match(detail, /className="series-more-menu"[\s\S]*setConfirmDelete\(true\)/);
+test('series header exposes task creation and deletion as compact icon actions', () => {
+  assert.match(detail, /className=\{embedded \? 'series-header-action series-header-task-action'/);
+  assert.match(detail, /aria-label="添加待办"/);
+  assert.match(detail, /title="添加待办"/);
+  assert.match(detail, /<ListPlus size=\{15\}/);
+  assert.match(detail, /className="series-header-action series-header-delete-action"/);
+  assert.match(detail, /aria-label="删除专题"/);
+  assert.match(detail, /title="删除专题"/);
+  assert.match(detail, /<Trash2 size=\{15\}/);
+  assert.doesNotMatch(detail, /moreMenuOpen|series-more-menu|更多专题操作|<Ellipsis/);
 });
 
 test('valid series route ids drive selection while only invalid routes are replaced', () => {
@@ -95,13 +101,40 @@ test('series operation failures stay inline instead of replacing the loaded deta
   assert.match(detail, /series-operation-state\$\{operationError \? ' is-error' : ''\}/);
 });
 
-test('series overflow uses action popover semantics without an incomplete ARIA menu model', () => {
-  assert.doesNotMatch(detail, /aria-haspopup="menu"/);
-  assert.doesNotMatch(detail, /role="menu(?:item)?"/);
-  assert.match(detail, /aria-expanded=\{moreMenuOpen\}/);
+test('series delete action keeps a fixed compact footprint in the embedded header', () => {
+  assert.match(css, /\.series-detail-legacy-embedded \.series-header-delete-action\s*\{[^}]*width:\s*28px[^}]*height:\s*28px[^}]*padding:\s*0/s);
+  assert.match(css, /\.series-detail-legacy-embedded \.series-header-task-action\s*\{[^}]*width:\s*28px[^}]*height:\s*28px[^}]*padding:\s*0/s);
 });
 
 test('embedded legacy detail wraps long generated content inside compact screens', () => {
   assert.match(css, /\.ki-shell-series \.series-detail-legacy-content\s*\{[^}]*overflow-wrap:\s*anywhere/s);
   assert.match(css, /\.ki-shell-series \.series-detail-legacy-content \*\s*\{[^}]*min-width:\s*0/s);
+});
+
+test('series cancels stale detail and manual-search requests', () => {
+  assert.match(page, /import \{ RequestLifecycle \} from/);
+  assert.match(page, /detailRequestLifecycleRef = useRef\(new RequestLifecycle\(\)\)/);
+  assert.match(page, /eventRequestLifecycleRef = useRef\(new RequestLifecycle\(\)\)/);
+  assert.match(page, /signal: request\.signal/);
+  assert.match(page, /detailRequestLifecycleRef\.current\.abort\(\)/);
+  assert.match(page, /eventRequestLifecycleRef\.current\.abort\(\)/);
+});
+
+test('series memoizes generated long-form html and coalesces scroll state writes', () => {
+  assert.match(detail, /const summaryHtml = useMemo\(/);
+  assert.match(detail, /const paperHtml = useMemo\(/);
+  assert.match(detail, /__html: summaryHtml/);
+  assert.match(detail, /__html: paperHtml/);
+  assert.match(detail, /scrollFrameRef = useRef\(0\)/);
+  assert.match(detail, /requestAnimationFrame\(commitScrollState\)/);
+  assert.doesNotMatch(detail, /onScroll=\{\(\) => \{ if \(id\) viewStateRef\.current\.set/);
+});
+
+test('series knowledge graph loads graph libraries only after opening its tab', () => {
+  assert.match(detail, /import\('vis-network\/standalone'\)/);
+  assert.match(detail, /import\('vis-data\/standalone'\)/);
+  assert.doesNotMatch(detail, /require\('vis-(?:network|data)\/standalone'\)/);
+  assert.match(viteConfig, /id\.includes\('@xyflow'\)[^\n]*return 'xyflow-vendor'/);
+  assert.match(viteConfig, /id\.includes\('vis-network'\)[^\n]*id\.includes\('vis-data'\)[^\n]*return 'vis-vendor'/);
+  assert.doesNotMatch(viteConfig, /@xyflow[^\n]*vis-network[^\n]*graph-vendor/);
 });

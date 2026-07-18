@@ -1,5 +1,14 @@
 import { useEffect, useState } from 'react';
+import { ChevronRight } from 'lucide-react';
 import { apiFetch } from '../api';
+import { createSystemPromptCache } from './cinematic-system/systemPromptCache';
+
+const SYSTEM_PROMPT_CACHE = createSystemPromptCache(async () => {
+  const response = await apiFetch('/api/system/prompts');
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const data = await response.json();
+  return data.modules || {};
+});
 
 export interface TaskConfig {
   temperature: number;
@@ -93,19 +102,26 @@ export function PromptSection({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
-    apiFetch('/api/system/prompts')
-      .then(r => r.json())
-      .then(d => setPrompts(d.modules?.[moduleKey] || {}))
+    SYSTEM_PROMPT_CACHE.load()
+      .then((modules) => {
+        if (!cancelled) setPrompts(modules[moduleKey] || {});
+      })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [moduleKey]);
 
   const entries = Object.entries(prompts);
   const promptCount = entries.reduce((c, [, tasks]) => c + Object.keys(tasks).length, 0);
 
   return (
-    <div className="bg-[#141518] border border-[#2A2B30] rounded-xl mt-4 overflow-hidden">
+    <div className="system-prompt-section bg-[#141518] border border-[#2A2B30] rounded-xl mt-4 overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center justify-between px-5 py-3 text-left hover:bg-[#1A1B20] transition-colors"
@@ -121,7 +137,7 @@ export function PromptSection({
         <span className="text-gray-500 text-xs">{expanded ? '收起 ▲' : '展开 ▼'}</span>
       </button>
       {expanded && (
-        <div className="px-5 pb-4 border-t border-[#2A2B30]">
+        <div className="system-prompt-body px-5 pb-4 border-t border-[#2A2B30]">
           {loading ? (
             <div className="py-8 flex items-center justify-center">
               <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-purple-500" />
@@ -131,20 +147,11 @@ export function PromptSection({
           ) : (
             <div className="space-y-4 pt-4">
               {entries.map(([task, promptMap]) => (
-                <div key={task}>
+                <div key={task} className="system-prompt-task">
                   <h4 className="text-xs font-medium text-purple-400 mb-2">
                     {taskNames[task] || task}
                   </h4>
-                  {Object.entries(promptMap).map(([name, content]) => (
-                    <details key={name} className="mb-2 group">
-                      <summary className="cursor-pointer text-xs text-gray-400 hover:text-gray-300 py-1 select-none">
-                        {name}
-                      </summary>
-                      <pre className="mt-2 p-3 bg-[#0B0C10] border border-[#2A2B30] rounded-lg text-[11px] text-gray-300 whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto custom-scrollbar font-mono leading-relaxed">
-                        {content}
-                      </pre>
-                    </details>
-                  ))}
+                  {Object.entries(promptMap).map(([name, content]) => <PromptTemplate key={name} name={name} content={content} />)}
                 </div>
               ))}
             </div>
@@ -152,5 +159,23 @@ export function PromptSection({
         </div>
       )}
     </div>
+  );
+}
+
+function PromptTemplate({ name, content }: { name: string; content: string }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <details className="system-prompt-template mb-2 group" onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary className="system-prompt-summary cursor-pointer text-xs text-gray-400 hover:text-gray-300 py-1 select-none">
+        <span>{name}</span>
+        <ChevronRight size={12} aria-hidden="true" />
+      </summary>
+      {open && (
+        <pre className="system-prompt-content mt-2 p-3 bg-[#0B0C10] border border-[#2A2B30] rounded-lg text-[11px] text-gray-300 whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto custom-scrollbar font-mono leading-relaxed">
+          {content}
+        </pre>
+      )}
+    </details>
   );
 }

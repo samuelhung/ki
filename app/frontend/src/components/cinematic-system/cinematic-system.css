@@ -361,6 +361,55 @@
   white-space: nowrap;
 }
 
+.cinematic-system .system-asset-item,
+.ki-shell-system .system-assets-summary-item {
+  --asset-item-tone: rgba(207, 158, 255, 0.82);
+}
+
+.cinematic-system .system-asset-item.is-cyan,
+.ki-shell-system .system-assets-summary-item.is-cyan {
+  --asset-item-tone: rgba(123, 238, 226, 0.88);
+}
+
+.cinematic-system .system-asset-item.is-gold,
+.ki-shell-system .system-assets-summary-item.is-gold {
+  --asset-item-tone: rgba(255, 216, 144, 0.9);
+}
+
+.cinematic-system .system-asset-item.is-blue,
+.ki-shell-system .system-assets-summary-item.is-blue {
+  --asset-item-tone: rgba(150, 188, 255, 0.88);
+}
+
+.cinematic-system .system-asset-item.is-violet,
+.ki-shell-system .system-assets-summary-item.is-violet {
+  --asset-item-tone: rgba(207, 158, 255, 0.88);
+}
+
+.cinematic-system .system-asset-item.is-rose,
+.ki-shell-system .system-assets-summary-item.is-rose {
+  --asset-item-tone: rgba(255, 142, 174, 0.88);
+}
+
+.cinematic-system .system-asset-group .system-asset-item {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.cinematic-system .system-asset-item svg,
+.ki-shell-system .system-assets-summary-item svg {
+  color: var(--asset-item-tone);
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--asset-item-tone) 42%, transparent));
+}
+
+.cinematic-system .system-asset-item b,
+.ki-shell-system .system-assets-summary-item b {
+  text-shadow: 0 0 12px color-mix(in srgb, var(--asset-item-tone) 18%, transparent);
+}
+
 .cinematic-system .system-detail-scroll-shell {
   min-height: 0;
 }
@@ -469,32 +518,6 @@
   color: rgba(255, 252, 242, 0.94);
   font-size: 12px;
   font-weight: 560;
-}
-
-.system-module-constellation {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 9px 14px;
-}
-
-.system-module-constellation article {
-  min-height: 58px;
-  padding: 9px 0 8px 12px;
-  border-left: 1px solid rgba(207, 158, 255, 0.16);
-  background: linear-gradient(90deg, rgba(207, 158, 255, 0.045), transparent 86%);
-}
-
-.system-module-constellation article b {
-  display: block;
-  color: rgba(255, 252, 242, 0.94);
-  font-size: 12px;
-}
-
-.system-module-constellation article p {
-  margin: 4px 0 0;
-  color: rgba(224, 218, 238, 0.62);
-  font-size: 11px;
-  line-height: 1.5;
 }
 
 .system-table-flow {
@@ -717,6 +740,7 @@
   }
 
   .cinematic-system .system-asset-group header small {
+    grid-column: 2;
     font-size: 7px !important;
   }
 
@@ -726,8 +750,284 @@
 
   .system-card-grid,
   .system-form-grid,
-  .system-chip-grid,
-  .system-module-constellation {
+  .system-chip-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Final KI shell migration: system center follows the ingest workspace geometry. */
+.ki-shell-system .ki-ingest-split-stage {
+  grid-template-columns: minmax(320px, 38%) minmax(0, 1fr);
+  column-gap: 72px;
+}
+
+.ki-shell-system .ki-ingest-list-pane {
+  --ki-list-width: 70%;
+}
+
+.ki-shell-system .system-group-tabs {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  width: var(--ki-list-width) !important;
+  margin-left: auto !important;
+}
+
+.ki-shell-system .system-function-list {
+  padding-top: 8px;
+}
+
+.ki-shell-system .system-function-row {
+  cursor: pointer;
+}
+
+.ki-shell-system .system-detail-reader {
+  position: relative !important;
+  inset: auto !important;
+  display: flex !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  flex-direction: column !important;
+  transform: none !important;
+  transform-origin: initial !important;
+}
+
+.ki-shell-system .system-detail-reader > .system-detail-header {
+  position: relative;
+  flex: 0 0 auto;
+  min-height: 76px;
+  margin: 0 0 12px;
+  padding: 0 164px 12px 0;
+}
+
+.ki-shell-system .system-detail-header a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.ki-shell-system .system-detail-header a:hover {
+  color: rgba(255, 255, 255, .72);
+}
+
+.ki-shell-system .system-detail-actions {
+  position: absolute;
+  top: 4px;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ki-shell-system .system-detail-actions button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 0;
+  border-bottom: 1px solid rgba(207, 158, 255, .24);
+  background: transparent;
+  color: rgba(218, 205, 244, .58);
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, filter 160ms ease, transform 160ms ease;
+}
+
+.ki-shell-system .system-detail-actions button:hover,
+.ki-shell-system .system-detail-actions button:focus-visible {
+  border-color: rgba(207, 158, 255, .7);
+  color: rgba(255, 252, 242, .98);
+  filter: drop-shadow(0 0 10px rgba(207, 158, 255, .45));
+  transform: translateY(-1px);
+}
+
+.ki-shell-system .system-detail-actions button:disabled {
+  cursor: wait;
+  opacity: .42;
+}
+
+.ki-shell-system .system-operation-message {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: -4px 0 10px;
+  color: rgba(226, 218, 244, .58);
+  font: 9px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.ki-shell-system .system-operation-message .is-ok {
+  color: rgba(125, 255, 207, .78);
+}
+
+.ki-shell-system .system-detail-scroll-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ki-shell-system .system-detail-body {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 0 42px !important;
+}
+
+.ki-shell-system .system-assets-panel {
+  display: grid;
+  gap: 24px;
+}
+
+.ki-shell-system .system-assets-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px 22px;
+  padding: 4px 0 18px;
+  border-bottom: 1px solid rgba(207, 158, 255, .1);
+}
+
+.ki-shell-system .system-assets-summary > span {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 2px 7px;
+  min-width: 0;
+  padding-bottom: 7px;
+  border-bottom: 1px solid color-mix(in srgb, var(--asset-item-tone) 18%, transparent);
+}
+
+.ki-shell-system .system-assets-summary svg {
+  grid-row: 1 / span 2;
+  color: var(--asset-item-tone);
+}
+
+.ki-shell-system .system-assets-summary small {
+  overflow: hidden;
+  color: rgba(222, 214, 244, .48);
+  font: 9px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ki-shell-system .system-assets-summary b {
+  overflow: hidden;
+  color: rgba(255, 255, 255, .94);
+  font-size: 14px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ki-shell-system .system-assets-panel .system-asset-groups {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px 34px;
+}
+
+.ki-shell-system .system-assets-panel .system-asset-group {
+  align-content: start;
+  gap: 10px;
+  padding: 0 0 16px;
+  border-bottom: 1px solid rgba(207, 158, 255, .075);
+}
+
+.ki-shell-system .system-assets-panel .system-asset-group > div {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+.ki-shell-system .system-assets-panel .system-asset-item {
+  grid-template-columns: 18px minmax(76px, 1fr) auto;
+  gap: 8px;
+  min-height: 32px;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(207, 158, 255, 0.045);
+}
+
+.ki-shell-system .system-assets-panel .system-asset-item:last-child {
+  border-bottom: 0;
+}
+
+.ki-shell-system .system-assets-panel .system-asset-item small {
+  color: rgba(230, 224, 244, 0.64);
+  font-size: 9.5px;
+}
+
+.ki-shell-system .system-assets-panel .system-asset-item b {
+  color: rgba(255, 255, 255, 0.96);
+  font-size: 13px;
+  text-align: right;
+}
+
+.ki-shell-system .system-shell-status,
+.system-shell-status {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  justify-content: end;
+  gap: 4px 12px;
+  color: rgba(232, 226, 244, .52);
+  font: 9px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}
+
+.system-shell-status span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.system-shell-status .is-online,
+.system-shell-status .is-database {
+  color: rgba(125, 255, 207, .74);
+}
+
+.system-shell-status .is-error {
+  color: rgba(255, 122, 144, .82);
+}
+
+.system-shell-status i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
+
+@media (max-width: 1280px) {
+  .ki-shell-system .ki-ingest-split-stage {
+    grid-template-columns: minmax(260px, 34%) minmax(0, 1fr);
+    column-gap: 58px;
+  }
+
+  .ki-shell-system .ki-ingest-list-pane {
+    --ki-list-width: 74%;
+  }
+
+  .ki-shell-system .system-detail-reader > .system-detail-header {
+    min-height: 66px;
+    padding-right: 132px;
+  }
+
+  .ki-shell-system .system-detail-actions button {
+    width: 29px;
+    height: 29px;
+  }
+
+  .ki-shell-system .system-assets-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .ki-shell-system .system-assets-panel .system-asset-groups {
+    gap: 16px 24px;
+  }
+
+  .system-shell-status {
+    grid-template-columns: repeat(2, auto);
+    gap: 3px 10px;
+  }
+}
+
+@media (max-width: 1180px) {
+  .ki-shell-system .system-assets-panel .system-asset-groups {
     grid-template-columns: 1fr;
   }
 }
@@ -881,104 +1181,6 @@
     0 0 24px rgba(207, 158, 255, 0.22);
 }
 
-.cinematic-system .system-module-constellation {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 34px;
-}
-
-.cinematic-system .system-module-constellation article {
-  position: relative;
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  align-items: start;
-  gap: 10px;
-  min-height: 62px;
-  padding: 8px 0 10px;
-  border: 0;
-  border-bottom: 1px solid rgba(207, 158, 255, 0.07);
-  background: transparent;
-}
-
-.cinematic-system .system-module-constellation article::after {
-  display: none;
-}
-
-.cinematic-system .system-module-constellation article i {
-  display: grid;
-  width: 26px;
-  height: 26px;
-  place-items: center;
-  margin-top: 1px;
-  border-radius: 999px;
-  color: rgba(207, 158, 255, 0.8);
-  background:
-    radial-gradient(circle, rgba(207, 158, 255, 0.15), rgba(207, 158, 255, 0.03) 62%, transparent 72%);
-  box-shadow:
-    inset 0 0 0 1px rgba(207, 158, 255, 0.11),
-    0 0 14px rgba(207, 158, 255, 0.16);
-}
-
-.cinematic-system .system-module-constellation article.is-gold i {
-  color: rgba(214, 163, 76, 0.84);
-  background: radial-gradient(circle, rgba(214, 163, 76, 0.16), rgba(214, 163, 76, 0.03) 62%, transparent 72%);
-}
-
-.cinematic-system .system-module-constellation article.is-blue i,
-.cinematic-system .system-module-constellation article.is-cyan i {
-  color: rgba(125, 211, 252, 0.82);
-  background: radial-gradient(circle, rgba(125, 211, 252, 0.14), rgba(125, 211, 252, 0.025) 62%, transparent 72%);
-}
-
-.cinematic-system .system-module-constellation article header {
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.cinematic-system .system-module-constellation article b {
-  color: rgba(255, 255, 255, 0.96);
-  font-weight: 430;
-}
-
-.cinematic-system .system-module-constellation article em {
-  color: rgba(205, 198, 224, 0.42);
-  font: 9px/1 Monaco, Consolas, "PingFang SC", monospace;
-  letter-spacing: 0.12em;
-}
-
-.cinematic-system .system-module-constellation article small {
-  display: block;
-  margin-top: 5px;
-  overflow: hidden;
-  color: rgba(207, 158, 255, 0.62);
-  font: 9px/1.3 Monaco, Consolas, "PingFang SC", monospace;
-  letter-spacing: 0.08em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cinematic-system .system-module-constellation article p {
-  display: -webkit-box;
-  margin-top: 5px;
-  overflow: hidden;
-  color: rgba(226, 218, 244, 0.68);
-  line-height: 1.44;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.cinematic-system .system-runtime-layers {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px 32px;
-  margin-bottom: 24px;
-}
-
-.cinematic-system .system-runtime-layers article,
-.cinematic-system .system-flow-line article,
-.cinematic-system .system-data-landing span,
 .cinematic-system .system-boundary-group header,
 .cinematic-system .system-guardrail-list span {
   position: relative;
@@ -986,38 +1188,23 @@
   border-bottom: 1px solid rgba(207, 158, 255, 0.065);
 }
 
-.cinematic-system .system-runtime-layers article {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  gap: 10px;
-  padding: 4px 0 14px;
-}
-
-.cinematic-system .system-runtime-layers svg,
-.cinematic-system .system-flow-line svg,
-.cinematic-system .system-data-landing svg,
 .cinematic-system .system-boundary-group header svg {
   color: rgba(207, 158, 255, 0.78);
   filter: drop-shadow(0 0 9px rgba(207, 158, 255, 0.24));
 }
 
-.cinematic-system .system-runtime-layers header,
 .cinematic-system .system-boundary-group header {
   display: flex;
   align-items: baseline;
   gap: 8px;
 }
 
-.cinematic-system .system-runtime-layers b,
-.cinematic-system .system-flow-line b,
-.cinematic-system .system-data-landing b,
 .cinematic-system .system-boundary-group header b {
   color: rgba(255, 255, 255, 0.96);
   font-weight: 430;
   text-shadow: 0 0 14px rgba(207, 158, 255, 0.14);
 }
 
-.cinematic-system .system-runtime-layers em,
 .cinematic-system .system-boundary-group header em {
   margin-left: auto;
   color: rgba(205, 198, 224, 0.42);
@@ -1025,8 +1212,6 @@
   letter-spacing: 0.14em;
 }
 
-.cinematic-system .system-runtime-layers p,
-.cinematic-system .system-flow-line p,
 .cinematic-system .system-param-notes p {
   margin: 5px 0 0;
   color: rgba(226, 218, 244, 0.68);
@@ -1034,272 +1219,38 @@
   line-height: 1.55;
 }
 
-.cinematic-system .system-flow-line {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px 28px;
-  margin-bottom: 4px;
-  padding-top: 4px;
-}
-
-.cinematic-system .system-flow-line article {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  grid-template-rows: auto auto auto;
-  gap: 4px 8px;
-  padding: 0 0 14px;
-  border-bottom-color: rgba(207, 158, 255, 0.045);
-}
-
-.cinematic-system .system-flow-line article::after {
-  display: none;
-}
-
-.cinematic-system .system-flow-line article:last-child::after {
-  display: none;
-}
-
-.cinematic-system .system-flow-line article:nth-child(3)::after {
-  display: none;
-}
-
-.cinematic-system .system-flow-line article:nth-child(n + 4)::before {
-  display: none;
-}
-
-.cinematic-system .system-flow-line svg {
-  grid-row: 1 / span 2;
-}
-
-.cinematic-system .system-flow-line span {
-  color: rgba(205, 198, 224, 0.4);
-  font: 8.5px/1 Monaco, Consolas, "PingFang SC", monospace;
-  letter-spacing: 0.14em;
-}
-
-.cinematic-system .system-flow-line p {
-  grid-column: 1 / -1;
-}
-
-.cinematic-system .system-data-landing {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px 18px;
-}
-
-.cinematic-system .system-data-landing span {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  gap: 4px 8px;
-  padding: 0 0 10px;
-}
-
-.cinematic-system .system-data-landing svg {
-  grid-row: 1 / span 2;
-}
-
-.cinematic-system .system-data-landing em {
-  overflow: hidden;
-  color: rgba(205, 198, 224, 0.48);
-  font: 9px/1.25 Monaco, Consolas, "PingFang SC", monospace;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cinematic-system .system-runtime-surface {
-  display: grid;
-  gap: 18px;
-}
-
-.cinematic-system .system-runtime-map {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-items: stretch;
-  gap: 14px 26px;
-}
-
-.cinematic-system .system-runtime-map article {
-  position: relative;
-  display: grid;
-  grid-template-columns: 26px minmax(0, 1fr);
-  min-width: 0;
-  gap: 10px;
-  padding: 0 0 15px;
-  border-bottom: 1px solid rgba(207, 158, 255, 0.08);
-}
-
-.cinematic-system .system-runtime-map article::after {
-  content: "";
-  position: absolute;
-  right: -20px;
-  top: 12px;
-  width: 14px;
-  height: 1px;
-  background: linear-gradient(90deg, rgba(207, 158, 255, 0.32), transparent);
-}
-
-.cinematic-system .system-runtime-map article:last-child::after {
-  display: none;
-}
-
-.cinematic-system .system-runtime-map i,
-.cinematic-system .system-runtime-pipeline i,
-.cinematic-system .system-runtime-landing svg,
 .cinematic-system .system-boundary-specs svg,
-.cinematic-system .system-feature-ribbon i {
+.cinematic-system .system-engineering-contracts svg {
   color: rgba(207, 158, 255, 0.82);
   filter: drop-shadow(0 0 10px rgba(207, 158, 255, 0.26));
 }
 
-.cinematic-system .system-runtime-map article.is-core i,
-.cinematic-system .system-runtime-pipeline article:nth-child(4n) i,
-.cinematic-system .system-runtime-landing .is-gold svg,
-.cinematic-system .system-boundary-specs .is-gold svg {
+.cinematic-system .system-boundary-specs .is-gold svg,
+.cinematic-system .system-engineering-contracts .is-gold svg {
   color: rgba(214, 163, 76, 0.9);
   filter: drop-shadow(0 0 10px rgba(214, 163, 76, 0.26));
 }
 
-.cinematic-system .system-runtime-map article.is-shell i,
-.cinematic-system .system-runtime-pipeline article:nth-child(1) i,
-.cinematic-system .system-runtime-landing .is-cyan svg,
 .cinematic-system .system-boundary-specs .is-cyan svg,
-.cinematic-system .system-boundary-specs .is-blue svg {
+.cinematic-system .system-boundary-specs .is-blue svg,
+.cinematic-system .system-engineering-contracts .is-cyan svg,
+.cinematic-system .system-engineering-contracts .is-blue svg {
   color: rgba(125, 211, 252, 0.88);
   filter: drop-shadow(0 0 10px rgba(125, 211, 252, 0.24));
 }
 
-.cinematic-system .system-runtime-map header {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: baseline;
-  gap: 10px;
-}
-
-.cinematic-system .system-runtime-map b,
-.cinematic-system .system-runtime-pipeline b,
-.cinematic-system .system-runtime-landing b,
-.cinematic-system .system-boundary-specs b {
+.cinematic-system .system-boundary-specs b,
+.cinematic-system .system-engineering-contracts b {
   color: rgba(255, 255, 255, 0.96);
   font-weight: 430;
   text-shadow: 0 0 14px rgba(207, 158, 255, 0.16);
 }
 
-.cinematic-system .system-runtime-map em,
-.cinematic-system .system-runtime-pipeline span,
-.cinematic-system .system-runtime-landing em,
-.cinematic-system .system-boundary-specs em {
+.cinematic-system .system-boundary-specs em,
+.cinematic-system .system-engineering-contracts em {
   color: rgba(205, 198, 224, 0.48);
   font: 9px/1.25 Monaco, Consolas, "PingFang SC", monospace;
   letter-spacing: 0.1em;
-}
-
-.cinematic-system .system-runtime-map p {
-  display: -webkit-box;
-  margin: 6px 0 0;
-  overflow: hidden;
-  color: rgba(226, 218, 244, 0.68);
-  font-size: 11.5px;
-  line-height: 1.46;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.cinematic-system .system-runtime-pipeline {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 0;
-  padding: 16px 0 6px;
-}
-
-.cinematic-system .system-runtime-pipeline::before {
-  content: "";
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  top: 28px;
-  height: 1px;
-  background: linear-gradient(90deg, rgba(125, 211, 252, 0.08), rgba(207, 158, 255, 0.34), rgba(214, 163, 76, 0.22), transparent);
-  box-shadow: 0 0 18px rgba(207, 158, 255, 0.16);
-}
-
-.cinematic-system .system-runtime-pipeline article {
-  position: relative;
-  display: grid;
-  min-width: 0;
-  grid-template-columns: 22px minmax(0, 1fr);
-  gap: 5px 9px;
-  padding: 0 16px 8px 0;
-}
-
-.cinematic-system .system-runtime-pipeline i {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  width: 22px;
-  height: 22px;
-  place-items: center;
-  background: rgba(6, 0, 16, 0.9);
-}
-
-.cinematic-system .system-runtime-pipeline span {
-  align-self: center;
-  color: rgba(207, 158, 255, 0.5);
-}
-
-.cinematic-system .system-runtime-pipeline b {
-  grid-column: 1 / -1;
-  margin-top: 5px;
-  font-size: 13px;
-  line-height: 1.12;
-  white-space: nowrap;
-}
-
-.cinematic-system .system-runtime-pipeline p {
-  display: -webkit-box;
-  grid-column: 1 / -1;
-  margin: 5px 0 0;
-  overflow: hidden;
-  color: rgba(226, 218, 244, 0.64);
-  font-size: 11px;
-  line-height: 1.42;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.cinematic-system .system-runtime-landing {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px 28px;
-  padding-top: 4px;
-}
-
-.cinematic-system .system-runtime-landing span {
-  display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
-  grid-template-areas:
-    "icon label"
-    "icon value";
-  align-items: center;
-  min-width: 0;
-  gap: 3px 9px;
-  padding-bottom: 11px;
-  border-bottom: 1px solid rgba(207, 158, 255, 0.06);
-}
-
-.cinematic-system .system-runtime-landing svg {
-  grid-area: icon;
-}
-
-.cinematic-system .system-runtime-landing b {
-  grid-area: label;
-}
-
-.cinematic-system .system-runtime-landing em {
-  grid-area: value;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .cinematic-system .system-boundary-grid {
@@ -1350,16 +1301,6 @@
 
 .cinematic-system .system-param-notes {
   padding-top: 10px;
-}
-
-.cinematic-system .system-boundary-copy {
-  margin: 16px 0 0;
-  max-width: none;
-  padding: 0 0 13px;
-  border-bottom: 1px solid rgba(207, 158, 255, 0.06);
-  color: rgba(226, 218, 244, 0.68);
-  font-size: 12px;
-  line-height: 1.65;
 }
 
 .cinematic-system .system-boundary-specs {
@@ -1429,6 +1370,54 @@
   line-height: 1.42;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+.cinematic-system .system-engineering-contracts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0 20px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(207, 158, 255, 0.08);
+}
+
+.cinematic-system .system-engineering-contracts span {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-areas:
+    "icon label"
+    "icon value";
+  min-width: 0;
+  gap: 3px 8px;
+  padding: 5px 0 9px;
+}
+
+.cinematic-system .system-engineering-contracts svg {
+  grid-area: icon;
+}
+
+.cinematic-system .system-engineering-contracts b {
+  grid-area: label;
+  font-size: 11px;
+}
+
+.cinematic-system .system-engineering-contracts em {
+  grid-area: value;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1280px) {
+  .cinematic-system .system-engineering-contracts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .cinematic-system .system-engineering-contracts {
+    grid-template-columns: 1fr;
+  }
 }
 
 .cinematic-system .system-param-notes p b {
@@ -1532,61 +1521,6 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px 24px;
-}
-
-.cinematic-system .system-feature-ribbon {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px 28px;
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1px solid rgba(207, 158, 255, 0.07);
-}
-
-.cinematic-system .system-feature-ribbon article {
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr);
-  gap: 9px;
-  min-width: 0;
-}
-
-.cinematic-system .system-feature-ribbon i {
-  display: grid;
-  width: 22px;
-  height: 22px;
-  place-items: center;
-  color: rgba(207, 158, 255, 0.82);
-  filter: drop-shadow(0 0 9px rgba(207, 158, 255, 0.24));
-}
-
-.cinematic-system .system-feature-ribbon article.is-gold i {
-  color: rgba(214, 163, 76, 0.84);
-}
-
-.cinematic-system .system-feature-ribbon article.is-cyan i,
-.cinematic-system .system-feature-ribbon article.is-blue i {
-  color: rgba(125, 211, 252, 0.82);
-}
-
-.cinematic-system .system-feature-ribbon b {
-  display: block;
-  overflow: hidden;
-  color: rgba(255, 255, 255, 0.94);
-  font-size: 12px;
-  font-weight: 430;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cinematic-system .system-feature-ribbon p {
-  display: -webkit-box;
-  margin: 6px 0 0;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  color: rgba(226, 218, 244, 0.6);
-  font-size: 10.5px;
-  line-height: 1.45;
 }
 
 .cinematic-system .system-feature-grid article {
@@ -1777,6 +1711,8 @@
 }
 
 .cinematic-system .system-task-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0;
 }
 
@@ -1791,8 +1727,54 @@
 }
 
 .cinematic-system .system-task-grid > div {
-  padding: 12px 0 !important;
+  display: grid !important;
+  grid-template-columns: minmax(128px, 1.15fr) repeat(3, minmax(122px, 1fr));
+  align-items: center;
+  gap: 6px 14px;
+  padding: 8px 0 !important;
   border-bottom: 1px solid rgba(207, 158, 255, 0.07) !important;
+}
+
+.cinematic-system .system-task-grid > div > div:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cinematic-system .system-task-grid > div > label {
+  min-width: 0;
+  gap: 8px;
+  padding-block: 0 !important;
+}
+
+.cinematic-system .system-task-grid > div > label > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cinematic-system .system-task-grid input {
+  width: 62px !important;
+  padding-block: 3px !important;
+}
+
+.cinematic-system .system-ai-module-stack {
+  display: grid;
+  min-width: 0;
+  gap: 18px;
+  container-type: inline-size;
+}
+
+@container (max-width: 660px) {
+  .cinematic-system .system-task-grid > div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px 16px;
+  }
+
+  .cinematic-system .system-task-grid > div > div:first-child {
+    grid-column: 1 / -1;
+  }
 }
 
 .cinematic-system .system-task-grid .text-gray-300,
@@ -1832,97 +1814,10 @@
   border-radius: 0 !important;
 }
 
-.cinematic-system .system-module-switcher {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px 14px;
-  padding: 0 0 14px;
-  border-bottom: 1px solid rgba(207, 158, 255, 0.085);
-}
-
-.cinematic-system .system-doc-pane-tabs {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: clamp(3px, 0.35vw, 6px);
-  width: 100%;
-  min-width: 0;
-  overflow: hidden;
-  padding: 0 0 13px;
-  border-bottom: 1px solid rgba(167, 139, 250, 0.16);
-}
-
-.cinematic-system .system-doc-pane-tabs button {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  grid-template-rows: auto auto;
-  align-items: center;
-  gap: 1px 8px;
-  min-width: 0;
-  min-height: 44px;
-  padding: 4px 0 9px;
-  border: 0;
-  border-bottom: 1px solid rgba(207, 158, 255, 0.12);
-  background: transparent;
-  color: rgba(230, 222, 244, 0.7);
-  font: 12px/1.1 Monaco, Consolas, "PingFang SC", monospace;
-  text-align: left;
-  cursor: pointer;
-  opacity: 0.84;
-  transition: color 160ms ease, border-color 160ms ease, filter 160ms ease, opacity 160ms ease, transform 160ms ease;
-}
-
 .cinematic-system .system-docs-surface,
 .cinematic-system .system-composite-view {
   min-width: 0;
   overflow-x: hidden;
-}
-
-.cinematic-system .system-doc-pane-tabs button svg {
-  grid-row: 1 / span 2;
-  color: rgba(207, 158, 255, 0.7);
-  filter: drop-shadow(0 0 9px rgba(207, 158, 255, 0.2));
-}
-
-.cinematic-system .system-doc-pane-tabs button.is-gold svg {
-  color: rgba(214, 163, 76, 0.86);
-  filter: drop-shadow(0 0 10px rgba(214, 163, 76, 0.26));
-}
-
-.cinematic-system .system-doc-pane-tabs button.is-cyan svg {
-  color: rgba(125, 211, 252, 0.86);
-  filter: drop-shadow(0 0 10px rgba(125, 211, 252, 0.24));
-}
-
-.cinematic-system .system-doc-pane-tabs button b {
-  overflow: hidden;
-  color: rgba(242, 238, 230, 0.78);
-  font-size: 13px;
-  font-weight: 430;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cinematic-system .system-doc-pane-tabs button span {
-  overflow: hidden;
-  color: rgba(220, 211, 240, 0.42);
-  font-size: 8.5px;
-  letter-spacing: 0.12em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cinematic-system .system-doc-pane-tabs button:hover,
-.cinematic-system .system-doc-pane-tabs button.is-active {
-  border-color: rgba(207, 158, 255, 0.68);
-  color: rgba(255, 255, 255, 0.98);
-  opacity: 1;
-  filter: brightness(1.12) drop-shadow(0 0 12px rgba(207, 158, 255, 0.12));
-  transform: translateY(-1px);
-}
-
-.cinematic-system .system-doc-pane-tabs button.is-active b {
-  color: rgba(255, 255, 255, 0.98);
-  text-shadow: 0 0 16px rgba(207, 158, 255, 0.3);
 }
 
 @media (max-width: 1500px) {
@@ -1941,144 +1836,11 @@
     transform-origin: right center !important;
   }
 
-  .cinematic-system .system-doc-pane-tabs {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 3px;
-    padding-bottom: 10px;
-  }
-
-  .cinematic-system .system-doc-pane-tabs button {
-    grid-template-columns: 15px minmax(0, 1fr);
-    gap: 1px 5px;
-    min-height: 36px;
-    padding-bottom: 7px;
-  }
-
-  .cinematic-system .system-doc-pane-tabs button svg {
-    width: 12px;
-    height: 12px;
-  }
-
-  .cinematic-system .system-doc-pane-tabs button b {
-    font-size: 11.5px;
-  }
-
-  .cinematic-system .system-doc-pane-tabs button span {
-    font-size: 7.5px;
-    letter-spacing: 0.08em;
-  }
-
   .cinematic-system > .cinematic-ingest-shell > .ingest-command-launcher {
     opacity: 1 !important;
     animation: none !important;
     transform: translateY(-50%) scale(calc(var(--cinematic-ui-scale, 1) * 0.88)) !important;
   }
-}
-
-.cinematic-system .system-module-switcher button {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  align-items: center;
-  gap: 7px;
-  min-height: 34px;
-  padding: 0 0 7px;
-  border: 0;
-  border-bottom: 1px solid rgba(207, 158, 255, 0.14);
-  background: transparent;
-  color: rgba(230, 222, 244, 0.68);
-  font: 12px/1.1 Monaco, Consolas, "PingFang SC", monospace;
-  text-align: left;
-  cursor: pointer;
-  transition: color 160ms ease, border-color 160ms ease, text-shadow 160ms ease, transform 160ms ease;
-}
-
-.cinematic-system .system-module-switcher button svg {
-  color: rgba(207, 158, 255, 0.6);
-  filter: drop-shadow(0 0 8px rgba(207, 158, 255, 0.18));
-}
-
-.cinematic-system .system-module-switcher button:hover,
-.cinematic-system .system-module-switcher button.is-active {
-  color: rgba(255, 255, 255, 0.98);
-  border-color: rgba(207, 158, 255, 0.68);
-  text-shadow: 0 0 18px rgba(207, 158, 255, 0.3);
-  transform: translateY(-1px);
-}
-
-.cinematic-system .system-module-switcher button.is-gold svg {
-  color: rgba(214, 163, 76, 0.82);
-}
-
-.cinematic-system .system-module-switcher button.is-blue svg,
-.cinematic-system .system-module-switcher button.is-cyan svg {
-  color: rgba(125, 211, 252, 0.8);
-}
-
-.cinematic-system .system-module-switcher button.is-rose svg {
-  color: rgba(255, 122, 144, 0.78);
-}
-
-.cinematic-system .system-ai-pane-switcher {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: clamp(2px, 0.2vw, 4px);
-  padding: 0 0 12px;
-  border-bottom: 1px solid rgba(207, 158, 255, 0.085);
-}
-
-.cinematic-system .system-ai-pane-switcher button {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
-  grid-template-rows: auto auto;
-  align-items: center;
-  gap: 1px 8px;
-  min-height: 42px;
-  padding: 4px 0 8px;
-  border: 0;
-  border-bottom: 1px solid rgba(207, 158, 255, 0.14);
-  background: transparent;
-  color: rgba(230, 222, 244, 0.7);
-  font: 12px/1.1 Monaco, Consolas, "PingFang SC", monospace;
-  text-align: left;
-  cursor: pointer;
-  transition: color 160ms ease, border-color 160ms ease, filter 160ms ease, transform 160ms ease;
-}
-
-.cinematic-system .system-ai-pane-switcher button svg {
-  grid-row: 1 / span 2;
-  color: rgba(207, 158, 255, 0.68);
-  filter: drop-shadow(0 0 9px rgba(207, 158, 255, 0.2));
-}
-
-.cinematic-system .system-ai-pane-switcher button b {
-  overflow: hidden;
-  color: rgba(242, 238, 230, 0.78);
-  font-size: 13px;
-  font-weight: 430;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cinematic-system .system-ai-pane-switcher button span {
-  overflow: hidden;
-  color: rgba(220, 211, 240, 0.42);
-  font-size: 8.5px;
-  letter-spacing: 0.12em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cinematic-system .system-ai-pane-switcher button:hover,
-.cinematic-system .system-ai-pane-switcher button.is-active {
-  border-color: rgba(207, 158, 255, 0.68);
-  color: rgba(255, 255, 255, 0.98);
-  filter: brightness(1.12) drop-shadow(0 0 12px rgba(207, 158, 255, 0.12));
-  transform: translateY(-1px);
-}
-
-.cinematic-system .system-ai-pane-switcher button.is-active b {
-  color: rgba(255, 255, 255, 0.98);
-  text-shadow: 0 0 16px rgba(207, 158, 255, 0.3);
 }
 
 .cinematic-system .system-detail-body > .bg-\[\#141518\],
@@ -2108,24 +1870,126 @@
   background: rgba(6, 0, 16, 0.18) !important;
 }
 
+.cinematic-system .system-prompt-body {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  border-top-color: rgba(207, 158, 255, 0.07) !important;
+}
+
+.cinematic-system .system-prompt-task {
+  margin-left: 0;
+  padding-left: 0;
+}
+
+.cinematic-system .system-prompt-task > h4,
+.cinematic-system .system-prompt-template,
+.cinematic-system .system-prompt-template > summary {
+  margin-left: 0;
+  padding-left: 0;
+}
+
+.cinematic-system .system-prompt-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 8px;
+  list-style: none;
+}
+
+.cinematic-system .system-prompt-summary::-webkit-details-marker {
+  display: none;
+}
+
+.cinematic-system .system-prompt-summary svg {
+  justify-self: end;
+  color: rgba(207, 158, 255, 0.56);
+  transition: transform 160ms ease, color 160ms ease;
+}
+
+.cinematic-system .system-prompt-template[open] .system-prompt-summary svg {
+  color: rgba(207, 158, 255, 0.9);
+  transform: rotate(90deg);
+}
+
+.cinematic-system .system-prompt-content {
+  margin-left: 0 !important;
+  padding-left: 0 !important;
+  width: 100%;
+}
+
 @media (max-width: 1180px) {
-  .cinematic-system .system-runtime-layers,
-  .cinematic-system .system-flow-line,
-  .cinematic-system .system-data-landing,
   .cinematic-system .system-boundary-grid {
     grid-template-columns: 1fr;
   }
+}
 
-  .cinematic-system .system-flow-line article::after {
-    left: 8px;
-    top: 22px;
-    bottom: -12px;
-    width: 1px;
-    height: auto;
-    background: linear-gradient(180deg, rgba(207, 158, 255, 0.22), transparent);
+/* Keep migrated system geometry authoritative after legacy system rules. */
+.ki-shell-system .cinematic-system .system-detail-reader {
+  position: relative !important;
+  inset: auto !important;
+  left: auto !important;
+  right: auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  transform: none !important;
+  transform-origin: initial !important;
+}
+
+.ki-shell-system .cinematic-ingest.cinematic-system .system-function-list {
+  height: auto !important;
+  align-content: start !important;
+  gap: 4px !important;
+  overflow: auto !important;
+  padding: 8px 18px 18px 4px !important;
+  pointer-events: auto !important;
+  transform: none !important;
+}
+
+.ki-shell-system .system-function-list .ki-spotlight-row,
+.ki-shell-system .system-function-row {
+  min-height: 66px;
+}
+
+.ki-shell-system .system-function-row {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.ki-shell-system .system-function-list[data-group="control"] .ki-spotlight-row,
+.ki-shell-system .system-function-list[data-group="control"] .system-function-row {
+  min-height: 56px;
+}
+
+.ki-shell-system .system-function-list[data-group="control"] .system-function-row {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+@media (max-width: 1280px) {
+  .ki-shell-system .system-function-list[data-group="control"] .ki-spotlight-row,
+  .ki-shell-system .system-function-list[data-group="control"] .system-function-row {
+    min-height: 46px;
   }
 
-  .cinematic-system .system-module-switcher {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .ki-shell-system .system-function-list[data-group="control"] .ki-ingest-list-meta {
+    display: none;
+  }
+
+  .ki-shell-system .system-function-list[data-group="control"] .system-function-row {
+    grid-template-rows: auto auto;
+    gap: 2px;
+    padding-top: 3px;
+    padding-bottom: 3px;
+  }
+}
+
+.ki-shell-system .cinematic-system .system-detail-reader > .system-detail-header {
+  margin: 0 0 12px !important;
+  padding: 0 164px 12px 0 !important;
+}
+
+@media (max-width: 1280px) {
+  .ki-shell-system .cinematic-system .system-detail-reader > .system-detail-header {
+    padding-right: 132px !important;
   }
 }

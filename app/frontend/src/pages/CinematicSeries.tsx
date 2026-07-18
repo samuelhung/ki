@@ -3,6 +3,7 @@ import { Check, ExternalLink, Layers, Lightbulb, Loader2, PenTool, Plus, Search,
 import { useNavigate, useParams } from 'react-router-dom';
 import { apiFetch } from '../api';
 import { buildStage2Payload, filterSeriesItems, getSeriesMemberCount, mergeEventPage, removeSeriesItem, syncSeriesItem } from '../components/cinematic-series/seriesWorkspace.mjs';
+import { RequestLifecycle } from '../components/ingest/requestLifecycle';
 import SpotlightListRow from '../components/react-bits/SpotlightListRow';
 import type { DualNavigationActionItem } from './DualNavigationActionMenu';
 import KiNavigationShell from './KiNavigationShell';
@@ -48,6 +49,8 @@ export default function CinematicSeries() {
   const [createdName, setCreatedName] = useState('');
   const [suggestion, setSuggestion] = useState<{ name: string; description: string } | null>(null);
   const detailCacheRef = useRef(new Map<string, SeriesDetailData>());
+  const detailRequestLifecycleRef = useRef(new RequestLifecycle());
+  const eventRequestLifecycleRef = useRef(new RequestLifecycle());
 
   async function loadSeries() {
     setLoading(true);
@@ -80,20 +83,28 @@ export default function CinematicSeries() {
   }, [items, navigate, routeId, selectedId]);
 
   useEffect(() => {
-    if (!selectedId) { setSelectedDetail(null); return; }
+    if (!selectedId) {
+      detailRequestLifecycleRef.current.abort();
+      setSelectedDetail(null);
+      return;
+    }
     const cached = detailCacheRef.current.get(selectedId);
-    if (cached) { setSelectedDetail(cached); return; }
+    if (cached) {
+      detailRequestLifecycleRef.current.abort();
+      setSelectedDetail(cached);
+      return;
+    }
     setSelectedDetail(null);
-    let active = true;
-    apiFetch(`/api/ingest/series/${selectedId}`)
+    const request = detailRequestLifecycleRef.current.start();
+    apiFetch(`/api/ingest/series/${selectedId}`, { signal: request.signal })
       .then((response) => response.ok ? response.json() : null)
       .then((detail) => {
-        if (!active || !detail) return;
+        if (!detailRequestLifecycleRef.current.isCurrent(request.sequence) || !detail) return;
         detailCacheRef.current.set(selectedId, detail);
         setSelectedDetail(detail);
       })
       .catch(() => {});
-    return () => { active = false; };
+    return () => detailRequestLifecycleRef.current.abort();
   }, [selectedId]);
 
   const handleSeriesChange = useCallback((detail: SeriesDetailData) => {
@@ -118,7 +129,11 @@ export default function CinematicSeries() {
   function open(modeToOpen: Mode = 'choose') {
     setDialog(true); setMode(modeToOpen); setMessage(''); setCandidates([]); setDuplicates([]);
   }
-  function close() { setDialog(false); loadSeries(); }
+  function close() {
+    eventRequestLifecycleRef.current.abort();
+    setDialog(false);
+    loadSeries();
+  }
 
   async function globalStage1() {
     setDialog(true); setMode('global1'); setBusy(true); setGroups([]); setMessage('');
@@ -168,23 +183,36 @@ export default function CinematicSeries() {
   }
   async function loadEvents(reset = true, query = eventQuery) {
     const offset = reset ? 0 : events.length;
+    const request = eventRequestLifecycleRef.current.start();
     reset ? setBusy(true) : setEventsLoadingMore(true);
     try {
       const params = new URLSearchParams({ limit: '40', offset: String(offset), content_type: 'event' });
       if (query.trim()) params.set('search', query.trim());
-      const response = await apiFetch(`/api/events?${params}`);
+      const response = await apiFetch(`/api/events?${params}`, { signal: request.signal });
       const data = await response.json();
+      if (!eventRequestLifecycleRef.current.isCurrent(request.sequence)) return;
       const page = Array.isArray(data) ? data : data.items || [];
       setEvents((current) => mergeEventPage(current, page, reset));
       setEventsHasMore(page.length === 40);
-    } catch { if (reset) setEvents([]); setEventsHasMore(false); }
-    setBusy(false); setEventsLoadingMore(false);
+    } catch (reason: any) {
+      if (!eventRequestLifecycleRef.current.isCurrent(request.sequence) || reason?.name === 'AbortError') return;
+      if (reset) setEvents([]);
+      setEventsHasMore(false);
+    } finally {
+      if (eventRequestLifecycleRef.current.isCurrent(request.sequence)) {
+        setBusy(false);
+        setEventsLoadingMore(false);
+      }
+    }
   }
 
   useEffect(() => {
     if (!dialog || mode !== 'manual') return;
     const timer = window.setTimeout(() => loadEvents(true, eventQuery), 280);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      eventRequestLifecycleRef.current.abort();
+    };
   }, [dialog, mode, eventQuery]);
   async function manualCreate() {
     const ids = [...selectedEvents]; if (!manualTitle.trim() || ids.length < 2) return;

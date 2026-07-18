@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events';
 
 import {
   buildCinematicVisitSequence,
+  buildInteractionScenarioNames,
   selectCinematicPages,
   summarizeDocumentNavigation,
   stopChildProcess,
@@ -39,6 +40,44 @@ test('series performance baseline follows the migrated single-canvas shell', () 
     'series-list',
     'series-detail-legacy-content',
   ]);
+});
+
+test('series performance baseline covers switching scrolling and lazy knowledge graph work', () => {
+  assert.deepEqual(buildInteractionScenarioNames('series'), [
+    'idle',
+    'series-switch',
+    'series-scroll',
+    'series-knowledge',
+  ]);
+});
+
+test('system performance baseline follows the migrated shell and exercises controls', () => {
+  const [system] = selectCinematicPages(['system']);
+  assert.equal(system.expectedCanvasCount, 1);
+  assert.deepEqual(system.markers, [
+    'ki-shell-system',
+    'ki-ingest-split-stage',
+    'system-detail-reader',
+    'system-function-list',
+  ]);
+  assert.deepEqual(buildInteractionScenarioNames('system'), [
+    'idle',
+    'system-switch',
+    'system-scroll',
+  ]);
+});
+
+test('system performance interactions fail closed when selectors or scrolling break', async () => {
+  const source = await import('node:fs/promises').then(({ readFile }) => readFile(
+    new URL('./qa-cinematic-pages-core.mjs', import.meta.url),
+    'utf8',
+  ));
+
+  assert.match(source, /if \(!groupFound\) throw new Error\('System performance interaction failed: control group not found'\)/);
+  assert.match(source, /if \(!moduleFound\) throw new Error\('System performance interaction failed: ingest module not found'\)/);
+  assert.match(source, /waitFor\(cdp, 'system ingest module selection'/);
+  assert.match(source, /scrolledTop <= initialScrollTop/);
+  assert.match(source, /detail scroller did not move/);
 });
 
 test('production visits capture cold route and warm-revisit phases in one browser session', () => {

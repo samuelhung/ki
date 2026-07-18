@@ -299,10 +299,11 @@ test('performance qa records browser frame long-task resource and renderer metri
 
 test('performance qa records named interaction samples for the primary cinematic pages', () => {
   assert.match(qaCore, /collectInteractionPerformance/);
-  assert.match(qaCore, /name: 'idle'/);
-  assert.match(qaCore, /name: 'pointer'/);
-  assert.match(qaCore, /name: 'scroll'/);
-  assert.match(qaCore, /name: 'modal'/);
+  assert.match(qaCore, /buildInteractionScenarioNames/);
+  assert.match(qaCore, /const names = \['idle'\]/);
+  assert.match(qaCore, /names\.push\('pointer'\)/);
+  assert.match(qaCore, /names\.push\('scroll', 'modal'\)/);
+  assert.match(qaCore, /names\.push\('series-switch', 'series-scroll', 'series-knowledge'\)/);
   assert.match(qaCore, /interactionPerformance/);
   assert.match(qaCore, /performanceSettleMs = 5000/);
   assert.match(qaCore, /await wait\(performanceSettleMs\)/);

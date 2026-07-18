@@ -54,6 +54,8 @@ function CurtainOverlay() {
   const location = useLocation();
   const { curtainPhase, onAnimationComplete } = useCurtain();
   const skipInitialCurtain = location.pathname === '/' || location.pathname === '/ingest'
+    || location.pathname === '/system'
+    || location.pathname === '/settings'
     || location.pathname === '/toolbox'
     || location.pathname === '/tools'
     || location.pathname === '/series'

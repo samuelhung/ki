@@ -28,7 +28,8 @@ export default defineConfig({
         assetFileNames: `assets/[name]-${appVersion}-[hash][extname]`,
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined;
-          if (id.includes('@xyflow') || id.includes('vis-network') || id.includes('vis-data')) return 'graph-vendor';
+          if (id.includes('@xyflow')) return 'xyflow-vendor';
+          if (id.includes('vis-network') || id.includes('vis-data')) return 'vis-vendor';
           if (id.includes('react-markdown') || id.includes('remark-gfm')) return 'markdown-vendor';
           if (id.includes('framer-motion')) return 'motion-vendor';
           if (id.includes('lucide-react')) return 'icons-vendor';
