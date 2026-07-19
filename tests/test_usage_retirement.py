@@ -51,3 +51,37 @@ def test_retired_digest_endpoints_return_explicit_404():
     assert post_response.status_code == 404
     assert get_response.json() == {"detail": "Not Found"}
     assert post_response.json() == {"detail": "Not Found"}
+
+
+def test_usage_retirement_preserves_nulls_and_non_briefing_digest_tasks(tmp_path, monkeypatch):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    init_db()
+    with connect() as conn:
+        conn.executemany(
+            """
+            INSERT INTO ai_usage (module, task, total_tokens, status)
+            VALUES (?, ?, ?, 'success')
+            """,
+            [
+                (None, None, 10),
+                ("digest_briefing", None, 20),
+                ("series", "digest", 30),
+                ("digest_briefing", "digest", 999),
+            ],
+        )
+
+    response = TestClient(app).get("/api/usage/dashboard")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["today"]["total_calls"] == 3
+    assert payload["today"]["total_tokens"] == 60
+    modules = {row["module"]: row for row in payload["modules"]}
+    assert modules[None]["tokens"] == 10
+    assert modules["digest_briefing"]["tokens"] == 20
+    assert modules["series"]["tokens"] == 30
+    tasks = {(row["module"], row["task"]) for row in payload["tasks"]}
+    assert (None, None) in tasks
+    assert ("digest_briefing", None) in tasks
+    assert ("series", "digest") in tasks
+    assert ("digest_briefing", "digest") not in tasks

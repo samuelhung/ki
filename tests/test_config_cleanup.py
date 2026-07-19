@@ -1,5 +1,6 @@
 import json
 import os
+import threading
 from pathlib import Path
 
 import pytest
@@ -245,13 +246,29 @@ def test_write_config_uses_same_directory_temp_fsync_and_atomic_replace(tmp_path
 
     config_manager._write_config({"briefing": {"briefing_quick": {"max_tokens": 4444}}})
 
-    assert len(fsync_calls) == 1
+    assert len(fsync_calls) == 2
     assert len(replace_calls) == 1
     source, destination = replace_calls[0]
     assert source.parent == config_path.parent
     assert destination == config_path
     assert not source.exists()
     assert json.loads(config_path.read_text(encoding="utf-8"))["briefing"]["briefing_quick"]["max_tokens"] == 4444
+
+
+def test_parent_directory_fsync_closes_fd_when_sync_is_unsupported(tmp_path, monkeypatch):
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", tmp_path / "system_config.json")
+    closed: list[int] = []
+    monkeypatch.setattr(config_manager.os, "open", lambda *_: 73)
+    monkeypatch.setattr(
+        config_manager.os,
+        "fsync",
+        lambda *_: (_ for _ in ()).throw(OSError("directory fsync unsupported")),
+    )
+    monkeypatch.setattr(config_manager.os, "close", closed.append)
+
+    config_manager._fsync_parent_directory()
+
+    assert closed == [73]
 
 
 def test_atomic_write_failure_preserves_existing_file_and_cleans_temp(tmp_path, monkeypatch):
@@ -289,6 +306,96 @@ def test_save_failure_does_not_replace_active_in_memory_config(tmp_path, monkeyp
 
     assert config_manager.get_config() is before
     assert config_manager.get_config()["briefing"]["briefing_quick"]["max_tokens"] == 4300
+
+
+def test_overlapping_saves_are_serialized_without_losing_merges(tmp_path, monkeypatch):
+    config_path = tmp_path / "system_config.json"
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
+    _set_active_config()
+    real_write = config_manager._write_config
+    first_in_writer = threading.Event()
+    release_first = threading.Event()
+    second_entered_writer = threading.Event()
+    second_attempted_lock = threading.Event()
+    second_done = threading.Event()
+    write_count = 0
+    count_lock = threading.Lock()
+    errors: list[BaseException] = []
+
+    class TrackingRLock:
+        def __init__(self):
+            self._lock = threading.RLock()
+            self._attempts = 0
+            self._attempts_lock = threading.Lock()
+
+        def __enter__(self):
+            with self._attempts_lock:
+                attempt = self._attempts
+                self._attempts += 1
+            if attempt == 1:
+                second_attempted_lock.set()
+            self._lock.acquire()
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            self._lock.release()
+
+    monkeypatch.setattr(config_manager, "_config_lock", TrackingRLock())
+
+    def overlapping_write(config):
+        nonlocal write_count
+        with count_lock:
+            write_index = write_count
+            write_count += 1
+        if write_index == 0:
+            first_in_writer.set()
+            assert release_first.wait(2)
+        else:
+            second_entered_writer.set()
+        real_write(config)
+
+    monkeypatch.setattr(config_manager, "_write_config", overlapping_write)
+
+    def run_save(payload, *, done=None):
+        try:
+            config_manager.save_config(payload)
+        except BaseException as exc:
+            errors.append(exc)
+        finally:
+            if done:
+                done.set()
+
+    first = threading.Thread(
+        target=run_save,
+        args=({"briefing": {"briefing_quick": {"max_tokens": 4800}}},),
+    )
+    second = threading.Thread(
+        target=run_save,
+        args=({"series": {"paper": {"max_tokens": 18000}}},),
+        kwargs={"done": second_done},
+    )
+
+    first.start()
+    assert first_in_writer.wait(2)
+    second.start()
+    assert second_attempted_lock.wait(2)
+    try:
+        second_reached_writer_while_first_blocked = second_entered_writer.is_set()
+    finally:
+        release_first.set()
+        first.join(2)
+        second.join(2)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert errors == []
+    assert second_done.is_set()
+    assert second_reached_writer_while_first_blocked is False
+    active = config_manager.get_config()
+    persisted = json.loads(config_path.read_text(encoding="utf-8"))
+    assert persisted == active
+    assert active["briefing"]["briefing_quick"]["max_tokens"] == 4800
+    assert active["series"]["paper"]["max_tokens"] == 18000
 
 
 def test_load_keeps_normalized_config_when_migration_persistence_fails(

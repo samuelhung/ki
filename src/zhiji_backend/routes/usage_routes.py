@@ -19,7 +19,10 @@ WITH active_usage AS (
            ELSE module
          END AS active_module
   FROM ai_usage
-  WHERE task <> 'digest'
+  WHERE NOT (
+    COALESCE(module, '') = 'digest_briefing'
+    AND COALESCE(task, '') = 'digest'
+  )
 )
 """
 

@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,7 @@ DEFAULT_AI_BASE_URL = "http://10.8.0.13:3000/v1"
 
 from .paths import CONFIG_PATH
 _config: dict[str, Any] = {}
+_config_lock = threading.RLock()
 
 
 def _defaults() -> dict:
@@ -74,6 +76,11 @@ def _defaults() -> dict:
 
 def load_config() -> dict[str, Any]:
     """Load config from disk, falling back to defaults if missing/corrupt."""
+    with _config_lock:
+        return _load_config_unlocked()
+
+
+def _load_config_unlocked() -> dict[str, Any]:
     global _config
     if CONFIG_PATH.exists():
         try:
@@ -108,6 +115,11 @@ def get_config() -> dict[str, Any]:
 
 def save_config(config: dict | None = None) -> None:
     """Persist config to disk. If config is None, saves the current in-memory copy."""
+    with _config_lock:
+        _save_config_unlocked(config)
+
+
+def _save_config_unlocked(config: dict | None = None) -> None:
     global _config
     current, _ = _normalize_persisted_config(_config)
     active = _deep_merge(_defaults(), current)
@@ -137,10 +149,28 @@ def _write_config(config: dict) -> None:
             os.fsync(temp_file.fileno())
         os.replace(temp_path, CONFIG_PATH)
         temp_path = None
+        _fsync_parent_directory()
         logger.info("Saved system config to %s", CONFIG_PATH)
     finally:
         if temp_path is not None:
             temp_path.unlink(missing_ok=True)
+
+
+def _fsync_parent_directory() -> None:
+    """Durably record the atomic rename on filesystems that support directory fsync."""
+    directory_fd: int | None = None
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        directory_fd = os.open(CONFIG_PATH.parent, flags)
+        os.fsync(directory_fd)
+    except OSError:
+        logger.debug("Parent directory fsync is unavailable for %s", CONFIG_PATH.parent, exc_info=True)
+    finally:
+        if directory_fd is not None:
+            try:
+                os.close(directory_fd)
+            except OSError:
+                logger.debug("Failed to close config directory fd", exc_info=True)
 
 
 def get_module_config(module: str, task: str) -> dict:
