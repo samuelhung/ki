@@ -278,7 +278,7 @@ export function useIngestDetailActions({
   }, []);
 
   useEffect(() => {
-    if (!activeEventId || historyTab === 'briefing') {
+    if (!activeEventId) {
       setDetail(null);
       return;
     }

@@ -26,6 +26,7 @@ const productionQaUrl = new URL('../../../scripts/qa-cinematic-pages-production.
 const productionQa = existsSync(productionQaUrl) ? readFileSync(productionQaUrl, 'utf8') : '';
 const spotlightRow = readFileSync(new URL('./SpotlightListRow.tsx', import.meta.url), 'utf8');
 const contentDetail = readFileSync(new URL('../cinematic-ingest/ContentDetailPanel.tsx', import.meta.url), 'utf8');
+const detailActions = readFileSync(new URL('../cinematic-ingest/useIngestDetailActions.ts', import.meta.url), 'utf8');
 const embeddedWorkspace = readFileSync(new URL('../ingest/EmbeddedIngestWorkspace.tsx', import.meta.url), 'utf8');
 const embeddedTabs = readFileSync(new URL('../ingest/EmbeddedIngestTopicTabs.tsx', import.meta.url), 'utf8');
 const embeddedRow = readFileSync(new URL('../ingest/EmbeddedIngestRow.tsx', import.meta.url), 'utf8');
@@ -193,8 +194,10 @@ test('topic tabs sit above the list with icon-over-label layout and no dots', ()
     ['格局', '财富', '认知', '前瞻'],
   );
   assert.match(ingestTypes, /export type TopicKey = '格局' \| '财富' \| '认知' \| '前瞻';/);
-  assert.doesNotMatch(ingest, /briefing|Briefing|即时快报|\/api\/briefing\/latest/);
-  assert.doesNotMatch(embeddedTabs, /briefing|Briefing|即时快报/);
+  for (const productionSource of [ingest, detailActions, contentDetail, embeddedWorkspace, embeddedTabs, embeddedRow, embeddedConfig]) {
+    assert.doesNotMatch(productionSource, /briefing|Briefing|即时快报|\/api\/briefing\/latest/);
+  }
+  assert.match(detailActions, /if \(!activeEventId\) \{\s*setDetail\(null\);\s*return;\s*\}/s);
   assert.match(embeddedWorkspace, /<section className="ki-ingest-list-pane"[^>]*>[\s\S]*?<EmbeddedIngestTopicTabs[\s\S]*?\{list\}[\s\S]*?<\/section>/);
   assert.match(shellCss, /\.ki-ingest-list-pane\s*\{[^}]*--ki-list-width:\s*62%/s);
   assert.match(shellCss, /\.legacy-ingest-root\.is-shell-embedded\.cinematic-ingest \.ki-ingest-topic-orbit\s*\{[^}]*width:\s*var\(--ki-list-width\)[^}]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)[^}]*border-bottom:/s);
