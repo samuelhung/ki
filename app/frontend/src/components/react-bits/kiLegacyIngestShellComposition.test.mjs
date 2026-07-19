@@ -117,12 +117,17 @@ test('top navigation follows the current route and performs real router navigati
   assert.match(shell, /useNavigate/);
   assert.match(shell, /activeIndex=\{activeTopIndex\}/);
   assert.match(shell, /onNavigate=\{handleNavigate\}/);
-  for (const label of ['内容采集', '专题系列', '产业链', '工具箱', '系统中枢']) {
+  for (const label of ['内容采集', '即时快报', '专题系列', '头脑风暴', '产业链', '工具箱', '系统中枢']) {
     assert.match(shell, new RegExp(`label: '${label}'`));
   }
   assert.doesNotMatch(shell.match(/const TOP_ITEMS:[\s\S]*?\n\];/)?.[0] || '', /事件列表|信息源/);
   assert.doesNotMatch(shell, /label: '首页'/);
-  assert.match(shell, /pathname\.startsWith\('\/series'\)\) return 1/);
+  assert.match(shell, /pathname\.startsWith\('\/briefings'\)\) return 1/);
+  assert.match(shell, /pathname\.startsWith\('\/series'\)\) return 2/);
+  assert.match(shell, /pathname\.startsWith\('\/brainstorm'\)\) return 3/);
+  assert.match(shell, /pathname\.startsWith\('\/industry'\)[^\n]*return 4/);
+  assert.match(shell, /pathname\.startsWith\('\/toolbox'\)[^\n]*return 5/);
+  assert.match(shell, /pathname\.startsWith\('\/system'\)[^\n]*return 6/);
   assert.match(gooey, /activeIndex\?: number/);
   assert.match(gooey, /onNavigate\?: \(item: GooeyNavItem, index: number\) => void/);
 });

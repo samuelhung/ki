@@ -12,6 +12,7 @@ import './DualNavigationDemo.css';
 
 const TOP_ITEMS: GooeyNavItem[] = [
   { label: '内容采集', href: '/ingest' },
+  { label: '即时快报', href: '/briefings' },
   { label: '专题系列', href: '/series' },
   { label: '头脑风暴', href: '/brainstorm' },
   { label: '产业链', href: '/industry-chains' },
@@ -36,11 +37,12 @@ interface KiNavigationShellProps {
 
 function resolveTopIndex(pathname: string) {
   if (pathname === '/demo/ki-ingest' || pathname.startsWith('/ingest')) return 0;
-  if (pathname.startsWith('/series')) return 1;
-  if (pathname.startsWith('/brainstorm')) return 2;
-  if (pathname.startsWith('/industry') || pathname.startsWith('/chains')) return 3;
-  if (pathname.startsWith('/toolbox') || pathname.startsWith('/tools')) return 4;
-  if (pathname.startsWith('/system') || pathname.startsWith('/settings')) return 5;
+  if (pathname.startsWith('/briefings')) return 1;
+  if (pathname.startsWith('/series')) return 2;
+  if (pathname.startsWith('/brainstorm')) return 3;
+  if (pathname.startsWith('/industry') || pathname.startsWith('/chains')) return 4;
+  if (pathname.startsWith('/toolbox') || pathname.startsWith('/tools')) return 5;
+  if (pathname.startsWith('/system') || pathname.startsWith('/settings')) return 6;
   return -1;
 }
 

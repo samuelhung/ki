@@ -15,6 +15,7 @@ const Dashboard = lazy(() => import('./pages/Dashboard'));
 const CinematicHome = lazy(() => import('./pages/CinematicHome'));
 const CinematicIngest = lazy(() => import('./pages/CinematicIngest'));
 const Ingest = lazy(() => import('./pages/Ingest'));
+const CinematicBriefings = lazy(() => import('./pages/CinematicBriefings'));
 const Events = lazy(() => import('./pages/Events'));
 const Sources = lazy(() => import('./pages/Sources'));
 const CinematicLibrary = lazy(() => import('./pages/CinematicLibrary'));
@@ -53,6 +54,7 @@ function CurtainOverlay() {
   const location = useLocation();
   const { curtainPhase, onAnimationComplete } = useCurtain();
   const skipInitialCurtain = location.pathname === '/' || location.pathname === '/ingest'
+    || location.pathname === '/briefings'
     || location.pathname === '/events'
     || location.pathname.startsWith('/events/')
     || location.pathname === '/system'
@@ -131,7 +133,7 @@ function Layout() {
   const location = useLocation();
   const isDashboardHome = location.pathname === '/';
   const isStandaloneDemo = location.pathname === '/demo/circular-gallery' || location.pathname === '/demo/dual-nav' || location.pathname === '/demo/brand-lockups' || location.pathname === '/demo/brand-depth' || location.pathname === '/demo/dock-popup-visuals';
-  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/today-old' || location.pathname === '/ingest' || location.pathname === '/ingest-previous' || location.pathname === '/events' || location.pathname.startsWith('/events/') || location.pathname === '/sources' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series' || location.pathname.startsWith('/series/') || location.pathname === '/study' || location.pathname.startsWith('/study/') || location.pathname === '/study-mistakes' || location.pathname === '/industry-chains' || location.pathname === '/chains' || location.pathname === '/brainstorm' || location.pathname.startsWith('/brainstorm/') || location.pathname === '/tasks' || isStandaloneDemo;
+  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/today-old' || location.pathname === '/ingest' || location.pathname === '/briefings' || location.pathname === '/ingest-previous' || location.pathname === '/events' || location.pathname.startsWith('/events/') || location.pathname === '/sources' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series' || location.pathname.startsWith('/series/') || location.pathname === '/study' || location.pathname.startsWith('/study/') || location.pathname === '/study-mistakes' || location.pathname === '/industry-chains' || location.pathname === '/chains' || location.pathname === '/brainstorm' || location.pathname.startsWith('/brainstorm/') || location.pathname === '/tasks' || isStandaloneDemo;
 
   // ---- Offline detection ----
   const [isOnline, setIsOnline] = useState(true);
@@ -334,6 +336,7 @@ export default function App() {
           <Route index element={<CinematicHome />} />
           <Route path="today-old" element={<Dashboard />} />
           <Route path="ingest" element={<LegacyIngestShellPreview />} />
+          <Route path="briefings" element={<CinematicBriefings />} />
           <Route path="ingest-previous" element={<CinematicIngest />} />
           <Route path="ingest-old" element={<Ingest />} />
           <Route path="events" element={<CinematicLibrary />} />
