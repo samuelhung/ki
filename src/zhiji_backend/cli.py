@@ -5,6 +5,7 @@
   zhiji serve [--port 9120]            启动服务
   zhiji version                         显示版本
   zhiji update [--check]                检查并安装更新（GitHub Releases）
+  zhiji backup-db --output-dir DIR      创建并验证 SQLite 备份
 """
 import argparse
 import json
@@ -231,6 +232,20 @@ def cmd_version(_args: argparse.Namespace) -> None:
     print(f"zhiji-backend {__version__}")
 
 
+def cmd_backup_db(args: argparse.Namespace) -> None:
+    """Create a verified backup of the configured SQLite database."""
+    from zhiji_backend.database_backup import backup_database
+    from zhiji_backend.db import get_db_path
+
+    try:
+        backup = backup_database(get_db_path(), Path(args.output_dir))
+    except Exception as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(1) from exc
+
+    print(backup)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="知几 —— 个人情报中心后端")
     sub = parser.add_subparsers(dest="command")
@@ -255,6 +270,11 @@ def main() -> None:
     up_p = sub.add_parser("update", help="检查并安装更新（从 GitHub Releases）")
     up_p.add_argument("--check", action="store_true", help="仅检查，不安装")
     up_p.set_defaults(func=cmd_update)
+
+    # zhiji backup-db
+    backup_p = sub.add_parser("backup-db", help="创建并验证 SQLite 数据库备份")
+    backup_p.add_argument("--output-dir", required=True, help="备份输出目录")
+    backup_p.set_defaults(func=cmd_backup_db)
 
     args = parser.parse_args()
 

@@ -160,24 +160,6 @@ def init_db() -> None:
               FOREIGN KEY(source_id) REFERENCES sources(id)
             );
 
-            CREATE TABLE IF NOT EXISTS digests (
-              date TEXT PRIMARY KEY,
-              markdown TEXT NOT NULL,
-              events_used INTEGER NOT NULL DEFAULT 0,
-              action_candidates_created INTEGER NOT NULL DEFAULT 0,
-              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-              updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
-
-            CREATE TABLE IF NOT EXISTS topics (
-              id TEXT PRIMARY KEY,
-              name TEXT NOT NULL,
-              event_count INTEGER NOT NULL DEFAULT 0,
-              last_event_at TEXT,
-              summary TEXT,
-              updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
-
             CREATE TABLE IF NOT EXISTS briefings (
               id TEXT PRIMARY KEY,
               type TEXT NOT NULL DEFAULT 'quick',
@@ -300,47 +282,6 @@ def init_db() -> None:
               scanned_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
-            -- ============================================================
-            -- Knowledge Graph tables
-            -- ============================================================
-
-            -- Entities extracted from content: people, orgs, locations, concepts, etc.
-            CREATE TABLE IF NOT EXISTS entities (
-              id TEXT PRIMARY KEY,
-              name TEXT NOT NULL,
-              type TEXT NOT NULL CHECK(type IN ('person','organization','location','concept','event','theory','book','metric')),
-              aliases_json TEXT NOT NULL DEFAULT '[]',
-              summary TEXT,
-              category TEXT,
-              first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-              updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
-
-            -- Event-to-entity mention links (many-to-many)
-            CREATE TABLE IF NOT EXISTS event_entities (
-              event_id TEXT NOT NULL,
-              entity_id TEXT NOT NULL,
-              relevance TEXT NOT NULL DEFAULT 'medium',
-              context_quote TEXT,
-              confidence REAL NOT NULL DEFAULT 1.0,
-              PRIMARY KEY (event_id, entity_id),
-              FOREIGN KEY (event_id) REFERENCES events(id),
-              FOREIGN KEY (entity_id) REFERENCES entities(id)
-            );
-
-            -- Semantic relations between entities, with evidence from content
-            CREATE TABLE IF NOT EXISTS entity_relations (
-              id INTEGER PRIMARY KEY AUTOINCREMENT,
-              source_entity_id TEXT NOT NULL,
-              target_entity_id TEXT NOT NULL,
-              relation_type TEXT NOT NULL CHECK(relation_type IN ('claims','refutes','extends','causes','belongs_to','contrasts','cites','synergizes')),
-              evidence_json TEXT NOT NULL DEFAULT '[]',
-              weight REAL NOT NULL DEFAULT 1.0,
-              first_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-              FOREIGN KEY (source_entity_id) REFERENCES entities(id),
-              FOREIGN KEY (target_entity_id) REFERENCES entities(id)
-            );
-
             -- 辅导中心 — 学习资料（独立模块，与 events 无关）
             CREATE TABLE IF NOT EXISTS study_materials (
               id              TEXT PRIMARY KEY,
@@ -405,12 +346,6 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
             CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
             CREATE INDEX IF NOT EXISTS idx_tasks_source ON tasks(source);
-            CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(type);
-            CREATE INDEX IF NOT EXISTS idx_entities_name ON entities(name);
-            CREATE INDEX IF NOT EXISTS idx_event_entities_event ON event_entities(event_id);
-            CREATE INDEX IF NOT EXISTS idx_event_entities_entity ON event_entities(entity_id);
-            CREATE INDEX IF NOT EXISTS idx_entity_relations_src ON entity_relations(source_entity_id);
-            CREATE INDEX IF NOT EXISTS idx_entity_relations_tgt ON entity_relations(target_entity_id);
             CREATE INDEX IF NOT EXISTS idx_study_subject ON study_materials(subject);
             CREATE INDEX IF NOT EXISTS idx_study_type ON study_materials(study_type);
             CREATE INDEX IF NOT EXISTS idx_study_status ON study_materials(status);

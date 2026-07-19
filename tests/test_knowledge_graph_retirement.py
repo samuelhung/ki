@@ -10,7 +10,7 @@ from zhiji_backend.main import app
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND_ROOT = ROOT / "src" / "zhiji_backend"
-DB_SCHEMA_PATH = Path("db.py")
+MIGRATION_PATH = Path("migrations.py")
 GRAPH_PERSISTENCE_PATTERNS = {
     "entities": re.compile(
         r'''["']entities["']|\b(?:FROM|JOIN|INTO|UPDATE|REFERENCES|TABLE(?:\s+IF\s+NOT\s+EXISTS)?)\s+entities\b|\bidx_entities\b''',
@@ -39,7 +39,7 @@ def test_active_backend_has_no_knowledge_graph_feature_surface():
 
     assert {
         path for path, source in backend_sources.items() if "knowledge_graph" in source
-    } == {Path("config_manager.py")}
+    } == {Path("config_manager.py"), MIGRATION_PATH}
 
     assert not any(
         getattr(route, "path", "").startswith("/api/entities")
@@ -59,8 +59,8 @@ def test_graph_persistence_tables_are_not_referenced_by_active_code():
             for path, source in backend_sources.items()
             if pattern.search(source)
         }
-        assert reference_paths == {DB_SCHEMA_PATH}, (
-            f"{table_name} references must remain isolated to {DB_SCHEMA_PATH}: "
+        assert reference_paths == {MIGRATION_PATH}, (
+            f"{table_name} references must remain isolated to {MIGRATION_PATH}: "
             f"{sorted(str(path) for path in reference_paths)}"
         )
 
