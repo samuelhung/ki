@@ -2,8 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
-from ..db import connect
-from ..briefing import generate_briefing, latest_briefing
+from ..briefing import generate_briefing, get_briefing, latest_briefing, list_briefings
 from ..models import BriefingRequest
 
 router = APIRouter()
@@ -36,7 +35,21 @@ def get_latest_briefing(briefing_type: str = "quick") -> dict[str, object]:
     return result
 
 
+@router.get("/api/briefing")
+def get_briefing_history(limit: int = 30, offset: int = 0) -> dict[str, object]:
+    """List briefings without returning their full topics payloads."""
+    return list_briefings(limit=limit, offset=offset)
+
+
+@router.get("/api/briefing/{briefing_id}")
+def get_briefing_detail(briefing_id: str) -> dict[str, object]:
+    """Get one briefing with its parsed topics payload."""
+    result = get_briefing(briefing_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Briefing not found")
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Tagging endpoints
 # ---------------------------------------------------------------------------
-

@@ -200,6 +200,57 @@ def latest_briefing(briefing_type: str = "quick") -> dict[str, Any] | None:
     return d
 
 
+def list_briefings(limit: int = 30, offset: int = 0) -> dict[str, Any]:
+    """Return compact briefing history metadata and the total row count."""
+    limit = max(1, min(limit, 100))
+    offset = max(offset, 0)
+
+    init_db()
+    with connect() as conn:
+        total = conn.execute("SELECT COUNT(*) FROM briefings").fetchone()[0]
+        rows = conn.execute(
+            """
+            SELECT id, type, events_used, json_array_length(topics_json) AS topic_count,
+                   created_at
+            FROM briefings
+            ORDER BY created_at DESC, id DESC
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
+        ).fetchall()
+
+    return {
+        "items": [dict(row) for row in rows],
+        "total": total,
+    }
+
+
+def get_briefing(briefing_id: str) -> dict[str, Any] | None:
+    """Return one parsed briefing, including topics, or None."""
+    init_db()
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT id, type, topics_json, events_used, created_at
+            FROM briefings
+            WHERE id = ?
+            """,
+            (briefing_id,),
+        ).fetchone()
+
+    if row is None:
+        return None
+
+    briefing = dict(row)
+    try:
+        briefing["topics"] = json.loads(briefing.pop("topics_json"))
+    except json.JSONDecodeError:
+        briefing["topics"] = []
+
+    _enrich_briefing_relevance(briefing["topics"])
+    return briefing
+
+
 def _enrich_briefing_relevance(topics: list[dict[str, Any]]) -> None:
     """Add brainstorm relevance labels to briefing events from cache."""
     # Collect all event_ids in this briefing
