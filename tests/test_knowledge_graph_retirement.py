@@ -22,20 +22,24 @@ GRAPH_PERSISTENCE_PATTERNS = {
 
 
 def test_active_backend_has_no_knowledge_graph_feature_surface():
-    active_source = "\n".join(
-        path.read_text(encoding="utf-8")
+    backend_sources = {
+        path.relative_to(BACKEND_ROOT): path.read_text(encoding="utf-8")
         for path in BACKEND_ROOT.rglob("*.py")
-    )
+    }
+    active_source = "\n".join(backend_sources.values())
 
     assert not (BACKEND_ROOT / "routes" / "entity_routes.py").exists()
     for retired_symbol in (
         "entity_routes",
         "/api/entities",
-        "knowledge_graph",
         "_extract_entities",
         "_store_entities",
     ):
         assert retired_symbol not in active_source
+
+    assert {
+        path for path, source in backend_sources.items() if "knowledge_graph" in source
+    } == {Path("config_manager.py")}
 
     assert not any(
         getattr(route, "path", "").startswith("/api/entities")

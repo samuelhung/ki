@@ -43,7 +43,7 @@ SOURCE_LABELS: dict[str, str] = {
 
 
 def _call_ai(system_prompt: str, user_prompt: str, max_tokens: int = 4096, timeout: int = 120,
-                   module: str = "digest_briefing", task: str = "briefing_quick") -> str:
+                   module: str = "briefing", task: str = "briefing_quick") -> str:
     """Call the configured AI API and return the content string."""
     messages = [
         {"role": "system", "content": system_prompt},

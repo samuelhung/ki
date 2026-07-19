@@ -51,8 +51,7 @@ def _defaults() -> dict:
             "contemplate":     {"temperature": 0.3, "max_tokens": 800,   "thinking": False},
             "concept_extract": {"temperature": 0.1, "max_tokens": 2048,  "thinking": False},
         },
-        "digest_briefing": {
-            "digest":         {"temperature": 0.3, "max_tokens": 8192,  "thinking": False},
+        "briefing": {
             "briefing_quick": {"temperature": 0.3, "max_tokens": 3072,  "thinking": False},
             "briefing_daily": {"temperature": 0.3, "max_tokens": 8192,  "thinking": False},
         },
@@ -77,8 +76,11 @@ def load_config() -> dict[str, Any]:
     try:
         if CONFIG_PATH.exists():
             raw = json.loads(CONFIG_PATH.read_text("utf-8"))
+            raw, structure_changed = _normalize_persisted_config(raw)
             defaults = _defaults()
             _config = _deep_merge(defaults, raw)
+            if structure_changed:
+                _write_config(raw)
             logger.info("Loaded system config from %s", CONFIG_PATH)
         else:
             _config = _defaults()
@@ -100,8 +102,13 @@ def save_config(config: dict | None = None) -> None:
     global _config
     if config is not None:
         _config = config
+    _write_config(_config)
+
+
+def _write_config(config: dict) -> None:
+    """Write a config payload without changing the active in-memory config."""
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG_PATH.write_text(json.dumps(_config, ensure_ascii=False, indent=2), "utf-8")
+    CONFIG_PATH.write_text(json.dumps(config, ensure_ascii=False, indent=2), "utf-8")
     logger.info("Saved system config to %s", CONFIG_PATH)
 
 
@@ -135,6 +142,35 @@ def _deep_merge(base: dict, override: dict) -> dict:
         else:
             result[k] = v
     return result
+
+
+def _normalize_persisted_config(raw: dict) -> tuple[dict, bool]:
+    """Migrate retired module keys while preserving sparse user overrides."""
+    normalized = dict(raw)
+    legacy = normalized.pop("digest_briefing", None)
+    normalized.pop("knowledge_graph", None)
+
+    current = normalized.get("briefing")
+    legacy_tasks = legacy if isinstance(legacy, dict) else {}
+    current_tasks = current if isinstance(current, dict) else {}
+    briefing: dict[str, Any] = {}
+
+    for task in ("briefing_quick", "briefing_daily"):
+        legacy_override = legacy_tasks.get(task)
+        current_override = current_tasks.get(task)
+        if isinstance(legacy_override, dict) and isinstance(current_override, dict):
+            briefing[task] = _deep_merge(legacy_override, current_override)
+        elif isinstance(current_override, dict):
+            briefing[task] = dict(current_override)
+        elif isinstance(legacy_override, dict):
+            briefing[task] = dict(legacy_override)
+
+    if briefing:
+        normalized["briefing"] = briefing
+    elif "briefing" in normalized:
+        normalized.pop("briefing")
+
+    return normalized, normalized != raw
 
 
 # Auto-load at import time

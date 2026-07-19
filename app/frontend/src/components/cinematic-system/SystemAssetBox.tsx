@@ -7,7 +7,6 @@ import {
   HardDrive,
   Lightbulb,
   MessageSquareText,
-  Newspaper,
   RefreshCw,
   ScrollText,
   Sparkles,
@@ -63,7 +62,6 @@ function buildAssetGroups(dbInfo: DbInfo | null, health: HealthState) {
       items: [
         { label: '总结', value: fileCount('summaries').toLocaleString(), icon: Sparkles, tone: 'gold' },
         { label: '脑暴', value: fileCount('brainstorm').toLocaleString(), icon: MessageSquareText, tone: 'violet' },
-        { label: '摘要', value: fileCount('digests').toLocaleString(), icon: Newspaper, tone: 'cyan' },
         { label: '概念', value: fileCount('concepts').toLocaleString(), icon: Lightbulb, tone: 'gold' },
       ],
     },

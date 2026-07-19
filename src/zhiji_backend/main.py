@@ -74,7 +74,6 @@ from .task_queue import start_worker, stop_worker
 from .routes.dashboard_routes import router as dashboard_router
 from .routes.source_routes import router as source_router
 from .routes.event_routes import router as event_router
-from .routes.digest_routes import router as digest_router
 from .routes.translate_routes import router as translate_router
 from .routes.brainstorm_routes import router as brainstorm_router
 from .routes.briefing_routes import router as briefing_router
@@ -225,7 +224,6 @@ async def spa_fallback(request: Request, call_next):
 app.include_router(dashboard_router)
 app.include_router(source_router)
 app.include_router(event_router)
-app.include_router(digest_router)
 app.include_router(translate_router)
 app.include_router(brainstorm_router)
 app.include_router(briefing_router)

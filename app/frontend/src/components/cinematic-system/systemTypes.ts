@@ -43,7 +43,7 @@ export interface SystemConfig {
   ingest_pipeline: ModuleConfig;
   series: ModuleConfig;
   brainstorm: ModuleConfig;
-  digest_briefing: ModuleConfig;
+  briefing: ModuleConfig;
   tasks: ModuleConfig;
   concept: ModuleConfig;
 }

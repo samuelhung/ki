@@ -7,6 +7,7 @@ import { createSystemPromptCache } from './systemPromptCache.ts';
 const pageUrl = new URL('../../pages/CinematicSystemCenter.tsx', import.meta.url);
 const panelsUrl = new URL('./SystemCenterPanels.tsx', import.meta.url);
 const assetsUrl = new URL('./SystemAssetBox.tsx', import.meta.url);
+const usageUrl = new URL('../UsageWidget.tsx', import.meta.url);
 const cssUrl = new URL('./cinematic-system.css', import.meta.url);
 const appUrl = new URL('../../App.tsx', import.meta.url);
 const curtainUrl = new URL('../../CurtainContext.tsx', import.meta.url);
@@ -107,10 +108,10 @@ test('system center exposes four observation entries and seven direct control en
   for (const key of ['boundary', 'changelog', 'logs', 'assets', 'base_config']) {
     assert.match(page, new RegExp(`key: '${key}'`));
   }
-  for (const key of ['ingest_pipeline', 'series', 'brainstorm', 'digest_briefing', 'tasks', 'concept']) {
+  for (const key of ['ingest_pipeline', 'series', 'brainstorm', 'briefing', 'tasks', 'concept']) {
     assert.match(panels, new RegExp(`key: '${key}'`));
   }
-  assert.doesNotMatch(panels, /knowledge_graph|知识图谱|实体深度分析/);
+  assert.doesNotMatch(panels, /digest_briefing|knowledge_graph|知识图谱|实体深度分析|每日摘要/);
   assert.doesNotMatch(page, /key: 'portrait'/);
   assert.doesNotMatch(page, /key: 'flow'/);
   assert.doesNotMatch(page, /key: 'ai_modules'/);
@@ -201,7 +202,8 @@ test('asset inventory uses semantic icons and tones for every metric', async () 
   assert.match(assets, /<ItemIcon size=\{13\}/);
   assert.match(assets, /system-assets-summary-item is-/);
   const assetGroupSource = assets.match(/function buildAssetGroups[\s\S]*?\n\}\n\nfunction AssetGroups/)?.[0] || '';
-  assert.equal(assetGroupSource.match(/icon:\s*\w+,\s*tone:\s*'/g)?.length, 16);
+  assert.equal(assetGroupSource.match(/icon:\s*\w+,\s*tone:\s*'/g)?.length, 15);
+  assert.doesNotMatch(assetGroupSource, /digests|每日摘要|label:\s*'摘要'/);
   assert.match(css, /\.system-asset-group \.system-asset-item\s*\{[^}]*display:\s*grid/s);
   assert.match(css, /\.system-asset-item\.is-cyan/);
   assert.match(css, /\.system-asset-item\.is-gold/);
@@ -209,6 +211,21 @@ test('asset inventory uses semantic icons and tones for every metric', async () 
   assert.match(css, /\.system-asset-item\.is-violet/);
   assert.match(css, /\.system-asset-item\.is-rose/);
   assert.match(css, /@media \(max-width:\s*1180px\)[\s\S]*\.system-asset-group header small\s*\{[^}]*grid-column:\s*2/s);
+});
+
+test('active briefing config is renamed while usage keeps historical compatibility', async () => {
+  const [panels, types, usage] = await Promise.all([
+    readFile(panelsUrl, 'utf8'),
+    readFile(new URL('./systemTypes.ts', import.meta.url), 'utf8'),
+    readFile(usageUrl, 'utf8'),
+  ]);
+
+  assert.match(panels, /briefing:\s*\{\s*briefing_quick:[\s\S]*briefing_daily:/);
+  assert.doesNotMatch(panels, /digest_briefing|\bdigest:\s*\{|每日摘要/);
+  assert.match(types, /briefing:\s*ModuleConfig/);
+  assert.doesNotMatch(types, /digest_briefing/);
+  assert.match(usage, /briefing:\s*'即时快报'/);
+  assert.match(usage, /digest_briefing:\s*'摘要快报'/);
 });
 
 test('system Prompt content shares one left alignment axis', async () => {

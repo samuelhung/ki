@@ -21,7 +21,6 @@ TABLE_DESCRIPTIONS: dict[str, str] = {
     "series": "专题系列",
     "tasks": "待办事务",
     "briefings": "情报快报",
-    "digests": "每日摘要",
     "ingest_tasks": "摄入任务队列",
     "ai_usage": "AI 调用记录",
     "sources": "信息源",
@@ -35,9 +34,10 @@ FILE_LABELS: dict[str, str] = {
     "audio": "音频",
     "documents": "文档",
     "brainstorm": "脑暴问答",
-    "digests": "每日摘要",
     "concepts": "概念文档",
 }
+
+RETIRED_TABLES = {"digests"}
 
 
 def _count_files(subdir: str) -> int:
@@ -79,7 +79,7 @@ async def database_info():
             cur = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '%_fts%' ORDER BY name"
             )
-            table_names = [r[0] for r in cur.fetchall()]
+            table_names = [r[0] for r in cur.fetchall() if r[0] not in RETIRED_TABLES]
             for t in table_names:
                 try:
                     cur = conn.execute(f'SELECT COUNT(*) FROM "{t}"')
@@ -116,7 +116,6 @@ async def database_info():
             "audio":       {"count": _count_files("ingest/audio"),       "label": FILE_LABELS["audio"]},
             "documents":   {"count": _count_files("ingest/documents"),   "label": FILE_LABELS["documents"]},
             "brainstorm":  {"count": _count_files("brainstorm"),         "label": FILE_LABELS["brainstorm"]},
-            "digests":     {"count": _count_files("digests"),            "label": FILE_LABELS["digests"]},
             "concepts":    {"count": _count_files("concepts"),           "label": FILE_LABELS["concepts"]},
         },
     }

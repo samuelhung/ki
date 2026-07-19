@@ -34,8 +34,7 @@ MODULE_MAP: dict[str, dict[str, tuple[str, list[str]]]] = {
         "contemplate": ("routes/brainstorm_routes.py", ["_contemplate_question_to_events", "_contemplate_event_to_questions"]),
         "concept_extract": ("routes/brainstorm_routes.py", ["precipitate_concept"]),
     },
-    "digest_briefing": {
-        "digest": ("digest_ai.py", ["generate_ai_digest"]),
+    "briefing": {
         "briefing_quick": ("briefing.py", ["generate_briefing"]),
         "briefing_daily": ("briefing.py", ["generate_briefing"]),
     },
