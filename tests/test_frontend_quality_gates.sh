@@ -5,13 +5,13 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 WORKFLOW="$ROOT/.github/workflows/zhiji-check.yml"
 VITE_CONFIG="$ROOT/app/frontend/vite.config.ts"
-SYSTEM_DOC="$ROOT/app/frontend/src/pages/SystemDoc.tsx"
 SYSTEM_DOC_DATA="$ROOT/app/frontend/src/systemDocData.ts"
+SYSTEM_CENTER_PANELS="$ROOT/app/frontend/src/components/cinematic-system/SystemCenterPanels.tsx"
 APP_TSX="$ROOT/app/frontend/src/App.tsx"
 INGEST_TSX="$ROOT/app/frontend/src/pages/Ingest.tsx"
 INSTALL_SH="$ROOT/scripts/install.sh"
 
-for path in "$WORKFLOW" "$VITE_CONFIG" "$SYSTEM_DOC" "$SYSTEM_DOC_DATA" "$APP_TSX" "$INGEST_TSX" "$INSTALL_SH"; do
+for path in "$WORKFLOW" "$VITE_CONFIG" "$SYSTEM_DOC_DATA" "$SYSTEM_CENTER_PANELS" "$APP_TSX" "$INGEST_TSX" "$INSTALL_SH"; do
   if [[ ! -f "$path" ]]; then
     echo "missing frontend quality gate file: $path" >&2
     exit 1
@@ -71,11 +71,16 @@ for export_name in SYSTEM_DOC_TABS RUNTIME_ARCHITECTURE DATA_DIRECTORY_TREE CORE
   fi
 done
 
-for inline_text in "version: '1.3.8'" "name: '仪表盘'" "label: '后端'" "WebView 缓存刷新"; do
-  if grep -q "$inline_text" "$SYSTEM_DOC"; then
-    echo "SystemDoc should render structured data, not inline: $inline_text" >&2
+for export_name in TECH_STACK CHANGELOG_ENTRIES RELEASE_GUARDRAILS; do
+  if ! grep -q "$export_name" "$SYSTEM_CENTER_PANELS"; then
+    echo "SystemCenterPanels must render structured system data: $export_name" >&2
     exit 1
   fi
 done
+
+if [[ -e "$ROOT/app/frontend/src/pages/SystemDoc.tsx" ]]; then
+  echo "retired standalone SystemDoc page must stay removed" >&2
+  exit 1
+fi
 
 echo "frontend quality gates ok"

@@ -36,6 +36,15 @@ RETIRED_TABLES = "event_entities|entity_relations|entities|digests|topics"
 RETIRED_TABLE_SET = {"event_entities", "entity_relations", "entities", "digests", "topics"}
 RETIRED_IDENTIFIER_PATTERN = re.compile(rf"\b(?:{RETIRED_TABLES})\b")
 FRONTEND_PREFIXES = ("app/frontend/src/", "app/frontend/scripts/")
+PRODUCTION_INGEST_PREFIXES = (
+    "app/frontend/src/components/cinematic-ingest/",
+    "app/frontend/src/components/ingest/",
+)
+PRODUCTION_INGEST_FILES = {
+    "app/frontend/src/pages/Ingest.tsx",
+    "app/frontend/src/pages/LegacyIngestShellPreview.tsx",
+}
+PRODUCTION_INGEST_BRIEFING = re.compile(r"\bbriefing\b|快报", re.IGNORECASE)
 STRING_LITERAL = re.compile(r"(?P<quote>['\"`])(?P<value>[^'\"`\n]*)(?P=quote)")
 OLD_ROUTE_SEGMENT = re.compile(r"(?:^|/)[^/?#]*-old(?:$|[/?#])", re.IGNORECASE)
 ROUTE_CONTEXT = re.compile(r"(?:\b(?:path|route|href|url)\s*[:=]\s*|\bpath\s*=\s*)$", re.IGNORECASE)
@@ -291,6 +300,15 @@ def is_exact_usage_cleanup(sql: str) -> bool:
     expected = {
         "deletefromai_usagewheremodule='knowledge_graph'or(modulein('digest_briefing','briefing')andtask='digest')",
         "deletefromai_usagewheremodule='knowledge_graph'or(modulein('briefing','digest_briefing')andtask='digest')",
+    }
+    return compact in expected
+
+
+def is_exact_usage_precheck(sql: str) -> bool:
+    compact = re.sub(r"\s+", "", sql.strip().rstrip(";")).lower().replace('"', "'")
+    expected = {
+        "select1fromai_usagewheremodule='knowledge_graph'or(modulein('digest_briefing','briefing')andtask='digest')limit1",
+        "select1fromai_usagewheremodule='knowledge_graph'or(modulein('briefing','digest_briefing')andtask='digest')limit1",
     }
     return compact in expected
 
@@ -558,6 +576,74 @@ def validate_named_compatibility(
         violations.extend(errors)
         if tree is not None:
             module_assignments = assignment_map(tree.body)
+            config_preflight = next(
+                (
+                    node for node in tree.body
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and node.name == "_config_requires_cleanup"
+                ),
+                None,
+            )
+            if config_preflight is not None:
+                graph_constants = [
+                    node for node in ast.walk(config_preflight)
+                    if isinstance(node, ast.Constant) and node.value == "knowledge_graph"
+                ]
+                digest_constants = [
+                    node for node in ast.walk(config_preflight)
+                    if isinstance(node, ast.Constant) and node.value == "digest_briefing"
+                ]
+                mutates_payload = any(
+                    (
+                        isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Attribute)
+                        and node.func.attr in {"clear", "pop", "popitem", "setdefault", "update"}
+                    )
+                    or (
+                        isinstance(node, ast.Subscript)
+                        and isinstance(node.value, ast.Name)
+                        and node.value.id == "payload"
+                        and isinstance(node.ctx, (ast.Store, ast.Del))
+                    )
+                    for node in ast.walk(config_preflight)
+                )
+                if len(graph_constants) == 1 and len(digest_constants) == 1 and not mutates_payload:
+                    key = ("src/zhiji_backend/migrations.py", "retired knowledge graph")
+                    allowed_ranges.setdefault(key, []).extend(node_range(node) for node in graph_constants)
+                else:
+                    violations.append(
+                        "src/zhiji_backend/migrations.py: config cleanup preflight must be read-only and check only legacy module keys"
+                    )
+
+            backup_preflight = next(
+                (
+                    node for node in tree.body
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and node.name == "_cleanup_requires_backup"
+                ),
+                None,
+            )
+            if backup_preflight is not None:
+                function_assignments = assignment_map(backup_preflight.body)
+                precheck_sql = []
+                precheck_graph_nodes = []
+                for call in (
+                    node for node in ast.walk(backup_preflight)
+                    if isinstance(node, ast.Call) and call_name(node.func) == "execute" and node.args
+                ):
+                    sql, sql_nodes = resolve_string(call.args[0], function_assignments, module_assignments)
+                    if sql and re.match(r"\s*SELECT\s+1\s+FROM\s+ai_usage\b", sql, re.IGNORECASE):
+                        precheck_sql.append(sql)
+                        if is_exact_usage_precheck(sql):
+                            precheck_graph_nodes.extend(node for node in sql_nodes if "knowledge_graph" in node.value)
+                if len(precheck_sql) == 1 and is_exact_usage_precheck(precheck_sql[0]):
+                    key = ("src/zhiji_backend/migrations.py", "retired knowledge graph")
+                    allowed_ranges.setdefault(key, []).extend(node_range(node) for node in precheck_graph_nodes)
+                else:
+                    violations.append(
+                        "src/zhiji_backend/migrations.py: backup preflight must use the exact retired ai_usage existence query"
+                    )
+
             migration = next(
                 (
                     node for node in tree.body
@@ -625,7 +711,7 @@ def validate_named_compatibility(
                 violations.append("src/zhiji_backend/migrations.py: knowledge_graph is allowed only in ai_usage cleanup")
             if graph_cleanup:
                 key = ("src/zhiji_backend/migrations.py", "retired knowledge graph")
-                allowed_ranges[key] = [node_range(node) for node in graph_nodes]
+                allowed_ranges.setdefault(key, []).extend(node_range(node) for node in graph_nodes)
             if table_names == RETIRED_TABLE_SET and drops_loop_table:
                 key = ("src/zhiji_backend/migrations.py", "retired persistence identifier")
                 allowed_ranges[key] = [node_range(node) for node in table_constants]
@@ -653,6 +739,12 @@ def scan(root: Path) -> list[str]:
         if relative_name in retired_files:
             violations.append(f"{relative_name}: retired business module must not exist")
         source = path.read_text(encoding="utf-8")
+        if relative_name.startswith(PRODUCTION_INGEST_PREFIXES) or relative_name in PRODUCTION_INGEST_FILES:
+            for match in PRODUCTION_INGEST_BRIEFING.finditer(source):
+                line = source.count("\n", 0, match.start()) + 1
+                violations.append(
+                    f"{relative_name}:{line}: production ingestion briefing residue: {match.group(0)!r}"
+                )
         for match in retired_frontend_route_matches(relative, source):
             line = source.count("\n", 0, match.start()) + 1
             violations.append(f"{relative_name}:{line}: retired frontend route or demo import: {match.group(0)!r}")
@@ -703,6 +795,26 @@ def self_test() -> None:
         missing = sorted(label for label in expected if not any(label in item for item in violations))
         if missing:
             raise SystemExit(f"FAIL retired feature scan self-test missed: {', '.join(missing)}")
+
+    with tempfile.TemporaryDirectory(prefix="zhiji-ingest-briefing-residue-") as temp_dir:
+        root = Path(temp_dir)
+        write(
+            root,
+            "app/frontend/src/components/cinematic-ingest/ingestCopy.ts",
+            "export const briefing = '快报';\n",
+        )
+        if not any("production ingestion briefing residue" in item for item in scan(root)):
+            raise SystemExit("FAIL retired feature scan missed production ingestion briefing residue")
+
+    with tempfile.TemporaryDirectory(prefix="zhiji-independent-briefing-") as temp_dir:
+        root = Path(temp_dir)
+        write(
+            root,
+            "app/frontend/src/pages/CinematicBriefings.tsx",
+            "export const route = '/briefings';\nexport const title = '即时快报';\n",
+        )
+        if any("production ingestion briefing residue" in item for item in scan(root)):
+            raise SystemExit("FAIL retired feature scan rejected independent briefing page")
 
     retired_route_cases = {
         "app/frontend/src/LegacyRoute.jsx": 'const path = "/reports-old";\n',
@@ -1217,6 +1329,11 @@ if grep -R "patch_.*\.bsdiff\|bsdiff .*zhiji\|bspatch .*zhiji\|manifest.json.*gh
   exit 1
 fi
 run_retired_feature_scan
+
+echo "== Shell tests =="
+for shell_test in tests/*.sh; do
+  bash "$shell_test"
+done
 
 echo "== Frontend build =="
 (cd app/frontend && npm run build)

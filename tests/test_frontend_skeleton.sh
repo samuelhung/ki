@@ -2,14 +2,21 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+APP="$ROOT/app/frontend/src/App.tsx"
+SHELL="$ROOT/app/frontend/src/pages/KiNavigationShell.tsx"
+INGEST_SHELL="$ROOT/app/frontend/src/pages/LegacyIngestShellPreview.tsx"
+LIBRARY="$ROOT/app/frontend/src/pages/CinematicLibrary.tsx"
 
 for path in \
   "$ROOT/app/frontend/package.json" \
-  "$ROOT/app/frontend/src/App.tsx" \
+  "$APP" \
+  "$SHELL" \
+  "$INGEST_SHELL" \
+  "$LIBRARY" \
   "$ROOT/src/zhiji_backend/main.py" \
   "$ROOT/scripts/check.sh"; do
   if [[ ! -f "$path" ]]; then
-    echo "missing: $path" >&2
+    echo "missing production skeleton file: $path" >&2
     exit 1
   fi
 done
@@ -24,28 +31,46 @@ if ! grep -q "version=__version__" "$ROOT/src/zhiji_backend/main.py"; then
   exit 1
 fi
 
-for text in "今日知几" "万象资料" "深度研究" "静观思辨" "见微行动" "启蒙辅导" "系统总览"; do
-  if ! grep -q "$text" "$ROOT/app/frontend/src"/*.tsx "$ROOT/app/frontend/src/components"/*.tsx 2>/dev/null; then
-    echo "frontend Chinese text missing: $text" >&2
+for route in \
+  'path="ingest" element={<LegacyIngestShellPreview />}' \
+  'path="briefings" element={<CinematicBriefings />}' \
+  'path="events" element={<CinematicLibrary />}' \
+  'path="sources" element={<CinematicLibrary />}'; do
+  if ! grep -F -q "$route" "$APP"; then
+    echo "missing production route: $route" >&2
     exit 1
   fi
 done
 
-if [[ ! -f "$ROOT/app/frontend/src/components/ModuleHeroTabs.tsx" ]]; then
-  echo "missing shared ModuleHeroTabs component" >&2
-  exit 1
-fi
-
-for page in Ingest Events Sources; do
-  if ! grep -q "ModuleHeroTabs" "$ROOT/app/frontend/src/pages/$page.tsx"; then
-    echo "$page must use shared ModuleHeroTabs" >&2
+for retired_page in Events.tsx Sources.tsx; do
+  if [[ -e "$ROOT/app/frontend/src/pages/$retired_page" ]]; then
+    echo "retired page must stay removed: $retired_page" >&2
     exit 1
   fi
 done
 
-for tab in "内容采集" "事件列表" "信息源"; do
-  if ! grep -q "$tab" "$ROOT/app/frontend/src/components/ModuleHeroTabs.tsx"; then
-    echo "ModuleHeroTabs missing Wanxiang data tab: $tab" >&2
+for label in "内容采集" "即时快报" "专题系列" "头脑风暴" "产业链" "工具箱" "系统中枢"; do
+  if ! grep -q "$label" "$SHELL"; then
+    echo "production navigation missing: $label" >&2
+    exit 1
+  fi
+done
+
+for contract in \
+  "<KiNavigationShell" \
+  "<Ingest embedded"; do
+  if ! grep -F -q "$contract" "$INGEST_SHELL"; then
+    echo "ingestion shell missing production contract: $contract" >&2
+    exit 1
+  fi
+done
+
+for contract in \
+  "mode === 'events'" \
+  "mode === 'sources'" \
+  "资料与信息源索引"; do
+  if ! grep -F -q "$contract" "$LIBRARY"; then
+    echo "unified library missing production contract: $contract" >&2
     exit 1
   fi
 done

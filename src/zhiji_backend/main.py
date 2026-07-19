@@ -67,6 +67,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from . import __version__
 from .db import get_db_path, init_db, seed_default_sources
+from .config_manager import load_config
 from .migrations import ensure_migrations
 from .task_queue import start_worker, stop_worker
 
@@ -95,6 +96,7 @@ async def lifespan(app: FastAPI):
     Shutdown: gracefully stop worker."""
     logging.getLogger("main").info("KI server starting — init DB + worker")
     ensure_migrations(get_db_path())
+    load_config()
     init_db()
     seed_default_sources()
     start_worker()

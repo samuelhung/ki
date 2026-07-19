@@ -1292,8 +1292,7 @@
   color: inherit;
 }
 
-.stream-title b,
-.briefing-topic button b {
+.stream-title b {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1384,52 +1383,6 @@
 .stream-error button {
   color: rgba(255, 220, 220, 0.92);
   text-decoration: underline;
-}
-
-.briefing-stream {
-  display: grid;
-  gap: 12px;
-  max-height: calc(100% - 58px);
-  overflow: auto;
-}
-
-.briefing-topic {
-  border-top: 1px solid rgba(214, 163, 76, 0.12);
-  padding: 13px 0 3px;
-}
-
-.briefing-topic h3 {
-  color: rgba(255, 245, 218, 0.9);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.briefing-topic h3 span {
-  margin-left: 10px;
-  color: var(--ingest-accent);
-  font-size: 11px;
-}
-
-.briefing-topic p {
-  margin: 6px 0 10px;
-  color: rgba(244, 236, 218, 0.55);
-  font-size: 12px;
-  line-height: 1.7;
-}
-
-.briefing-topic button {
-  width: 100%;
-  display: grid;
-  gap: 3px;
-  padding: 8px 0;
-  text-align: left;
-  color: rgba(244, 236, 218, 0.75);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-}
-
-.briefing-topic button span {
-  color: rgba(244, 236, 218, 0.38);
-  font-size: 10px;
 }
 
 .ingest-toast {
@@ -1592,8 +1545,7 @@
   }
 
   .queue-groups,
-  .stream-table,
-  .briefing-stream {
+  .stream-table {
     max-height: none;
   }
 }

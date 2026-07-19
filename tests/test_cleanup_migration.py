@@ -170,10 +170,22 @@ def _create_populated_legacy_database(db_path, monkeypatch) -> dict[str, int]:
             ("topic-1", "Retired topic"),
         )
 
-        return {
+        active_counts = {
             table: conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
             for table in ACTIVE_TABLES
         }
+
+    from zhiji_backend.database_backup import create_rollback_backup
+
+    config_path = db_path.parent / "system_config.json"
+    config_path.write_text('{"digest_briefing": {}}', encoding="utf-8")
+    create_rollback_backup(
+        db_path,
+        config_path,
+        db_path.parent / "backups",
+        migration_name="20260719_remove_retired_features",
+    )
+    return active_counts
 
 
 def test_cleanup_migration_is_registered_on_import():
@@ -284,10 +296,11 @@ def test_each_migration_and_marker_roll_back_together(tmp_path, monkeypatch):
 
     with sqlite3.connect(db_path) as conn:
         assert "should_roll_back" not in _schema_names(conn, "table")
-        assert conn.execute(
-            "SELECT COUNT(*) FROM _migrations WHERE name = ?",
-            ("test_injected_failure",),
-        ).fetchone()[0] == 0
+        if "_migrations" in _schema_names(conn, "table"):
+            assert conn.execute(
+                "SELECT COUNT(*) FROM _migrations WHERE name = ?",
+                ("test_injected_failure",),
+            ).fetchone()[0] == 0
 
 
 def test_concurrent_migration_runners_retry_lock_and_execute_body_once(

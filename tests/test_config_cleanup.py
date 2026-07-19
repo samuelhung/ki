@@ -68,6 +68,41 @@ def test_load_config_normalizes_retired_modules_without_losing_overrides(tmp_pat
     assert "knowledge_graph" not in persisted
 
 
+def test_preflight_config_load_does_not_persist_normalization_before_backup_gate(
+    tmp_path, monkeypatch
+):
+    config_path = tmp_path / "system_config.json"
+    original = json.dumps(
+        {
+            "digest_briefing": {
+                "briefing_quick": {"max_tokens": 4096},
+                "digest": {"max_tokens": 9999},
+            },
+            "knowledge_graph": {"entity_insight": {"max_tokens": 2048}},
+        }
+    )
+    config_path.write_text(original, encoding="utf-8")
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
+    config_manager._config = {}
+
+    loaded = config_manager.load_config(persist_normalization=False)
+
+    assert loaded["briefing"]["briefing_quick"]["max_tokens"] == 4096
+    assert config_path.read_text(encoding="utf-8") == original
+
+
+def test_main_loads_and_persists_config_only_after_migration_gate():
+    main_source = (ROOT / "src/zhiji_backend/main.py").read_text(encoding="utf-8")
+    config_source = (ROOT / "src/zhiji_backend/config_manager.py").read_text(
+        encoding="utf-8"
+    )
+
+    migration_index = main_source.index("ensure_migrations(get_db_path())")
+    config_index = main_source.index("load_config()", migration_index)
+    assert migration_index < config_index
+    assert "load_config(persist_normalization=False)" in config_source
+
+
 def test_new_briefing_overrides_take_precedence_over_legacy_values(tmp_path, monkeypatch):
     config_path = tmp_path / "system_config.json"
     config_path.write_text(

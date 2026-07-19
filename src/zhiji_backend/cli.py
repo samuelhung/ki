@@ -5,7 +5,7 @@
   zhiji serve [--port 9120]            启动服务
   zhiji version                         显示版本
   zhiji update [--check]                检查并安装更新（GitHub Releases）
-  zhiji backup-db --output-dir DIR      创建并验证 SQLite 备份
+  zhiji backup-db --output-dir DIR      创建迁移回滚清单、数据库与配置备份
 """
 import argparse
 import json
@@ -233,17 +233,26 @@ def cmd_version(_args: argparse.Namespace) -> None:
 
 
 def cmd_backup_db(args: argparse.Namespace) -> None:
-    """Create a verified backup of the configured SQLite database."""
-    from zhiji_backend.database_backup import backup_database
+    """Create a verified rollback bundle for the pending destructive migration."""
+    from zhiji_backend.database_backup import (
+        DEFAULT_DESTRUCTIVE_MIGRATION,
+        create_rollback_backup,
+    )
     from zhiji_backend.db import get_db_path
 
     try:
-        backup = backup_database(get_db_path(), Path(args.output_dir))
+        database_path = get_db_path()
+        manifest = create_rollback_backup(
+            database_path,
+            database_path.parent / "system_config.json",
+            Path(args.output_dir),
+            migration_name=DEFAULT_DESTRUCTIVE_MIGRATION,
+        )
     except Exception as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(1) from exc
 
-    print(backup)
+    print(manifest)
 
 
 def main() -> None:
@@ -272,7 +281,7 @@ def main() -> None:
     up_p.set_defaults(func=cmd_update)
 
     # zhiji backup-db
-    backup_p = sub.add_parser("backup-db", help="创建并验证 SQLite 数据库备份")
+    backup_p = sub.add_parser("backup-db", help="创建迁移回滚清单、数据库与配置备份")
     backup_p.add_argument("--output-dir", required=True, help="备份输出目录")
     backup_p.set_defaults(func=cmd_backup_db)
 

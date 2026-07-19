@@ -74,13 +74,13 @@ def _defaults() -> dict:
     }
 
 
-def load_config() -> dict[str, Any]:
+def load_config(*, persist_normalization: bool = True) -> dict[str, Any]:
     """Load config from disk, falling back to defaults if missing/corrupt."""
     with _config_lock:
-        return _load_config_unlocked()
+        return _load_config_unlocked(persist_normalization=persist_normalization)
 
 
-def _load_config_unlocked() -> dict[str, Any]:
+def _load_config_unlocked(*, persist_normalization: bool = True) -> dict[str, Any]:
     global _config
     if CONFIG_PATH.exists():
         try:
@@ -92,7 +92,7 @@ def _load_config_unlocked() -> dict[str, Any]:
             return _config
 
         _config = _deep_merge(_defaults(), raw)
-        if structure_changed:
+        if structure_changed and persist_normalization:
             try:
                 _write_config(raw)
             except Exception:
@@ -100,11 +100,12 @@ def _load_config_unlocked() -> dict[str, Any]:
         logger.info("Loaded system config from %s", CONFIG_PATH)
     else:
         _config = _defaults()
-        try:
-            _write_config(_config)
-            logger.info("Created default system config at %s", CONFIG_PATH)
-        except Exception:
-            logger.exception("Failed to create default system config at %s", CONFIG_PATH)
+        if persist_normalization:
+            try:
+                _write_config(_config)
+                logger.info("Created default system config at %s", CONFIG_PATH)
+            except Exception:
+                logger.exception("Failed to create default system config at %s", CONFIG_PATH)
     return _config
 
 
@@ -236,5 +237,5 @@ def _normalize_persisted_config(raw: dict) -> tuple[dict, bool]:
     return normalized, normalized != raw
 
 
-# Auto-load at import time
-load_config()
+# Import-time consumers get active in-memory defaults without mutating legacy files.
+load_config(persist_normalization=False)

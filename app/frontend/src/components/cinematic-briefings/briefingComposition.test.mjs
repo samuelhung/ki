@@ -88,6 +88,14 @@ test('list, detail, and generation errors stay retryable and metrics stay in the
   assert.match(page, /metrics\.eventCount/);
 });
 
+test('history, detail, and bottom status timestamps use the shared Beijing formatter', () => {
+  assert.match(page, /import \{ formatTimeBeijing \} from '\.\.\/utils'/);
+  assert.doesNotMatch(page, /function formatTime\(/);
+  assert.match(page, /formatTimeBeijing\(item\.created_at\)/);
+  assert.match(page, /formatTimeBeijing\(detail\.created_at \|\| selectedItem\?\.created_at \|\| ''\)/);
+  assert.match(page, /formatTimeBeijing\(metrics\.generatedAt\)/);
+});
+
 test('briefing workspace has responsive stable panes and no duplicate independent scene', () => {
   assert.equal(existsSync(cssUrl), true, 'CinematicBriefings.css should exist');
   assert.match(css, /\.briefing-split-stage\s*\{[^}]*grid-template-columns:/s);

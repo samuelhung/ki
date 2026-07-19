@@ -46,7 +46,7 @@ test('buildEventListPath encodes the active topic and search without stale param
   assert.equal(url.searchParams.get('search'), '人工 智能');
   assert.equal(url.searchParams.get('offset'), '20');
   assert.equal(url.searchParams.get('limit'), String(utils.EVENT_BATCH_SIZE));
-  assert.equal(utils.buildEventListPath('briefing', '', 0).includes('topic='), false);
+  assert.equal(utils.buildEventListPath('全部', '', 0).includes('topic='), false);
 });
 
 test('visibleProgressStages returns previous current and next two stages', () => {

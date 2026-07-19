@@ -108,6 +108,37 @@ ssh zhiji-prod "sleep 2; curl -fsS http://127.0.0.1:9120/api/health"
 curl -fsS http://10.8.0.105:9120/api/health
 ```
 
+### 破坏性清理迁移备份与回滚
+
+`20260719_remove_retired_features` 不能使用上面的“安装后立即重启”步骤。生产服务目录为
+`/Users/mrh/Documents/KI`，数据库和配置分别为
+`/Users/mrh/Documents/KI/data/intelligence.sqlite` 与
+`/Users/mrh/Documents/KI/data/system_config.json`。`/Users/mrh/.zhiji/data` 可以是同一目录的符号链接；回滚清单始终记录解析后的绝对路径。
+
+```bash
+# 1. 停止后端和 worker
+ssh zhiji-prod 'launchctl bootout gui/$(id -u)/com.zhiji.backend || true'
+
+# 2. 安装新 wheel，但不要启动服务
+ssh zhiji-prod '/Users/mrh/Documents/KI/runtime/venv/bin/python -m pip install --force-reinstall --no-deps /Users/mrh/Documents/KI/packages/zhiji_backend-1.3.14-py3-none-any.whl'
+
+# 3. 创建数据库、system_config.json 和回滚清单；命令输出清单绝对路径
+ssh zhiji-prod '/Users/mrh/Documents/KI/runtime/venv/bin/zhiji backup-db --output-dir /Users/mrh/Documents/KI/backups'
+
+# 4. 记录输出的 rollback-manifest-*.json 路径后再启动服务
+ssh zhiji-prod 'launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.zhiji.backend.plist || launchctl kickstart -k gui/$(id -u)/com.zhiji.backend'
+```
+
+启动时会在同一个 `BEGIN IMMEDIATE` 迁移锁内验证清单、备份校验和、SQLite 完整性、时间窗口、迁移名和数据库/配置源身份。任一条件不满足都会在删表或删数据前中止。迁移提交后，ready marker 会被原子标记为 consumed。
+
+回滚时保持服务停止，使用清单同时恢复数据库和配置，再安装上一版 wheel：
+
+```bash
+ssh zhiji-prod "/Users/mrh/Documents/KI/runtime/venv/bin/python -c \"from pathlib import Path; from zhiji_backend.database_backup import restore_rollback_backup; print(restore_rollback_backup(Path('/Users/mrh/Documents/KI/backups/rollback-manifest-YYYYMMDD-HHMMSS.json')))\""
+ssh zhiji-prod '/Users/mrh/Documents/KI/runtime/venv/bin/python -m pip install --force-reinstall --no-deps /Users/mrh/Documents/KI/packages/PREVIOUS.whl'
+ssh zhiji-prod 'launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.zhiji.backend.plist || launchctl kickstart -k gui/$(id -u)/com.zhiji.backend'
+```
+
 内容采集页的标准 QA 视口是 `2560×1440`。视觉 QA 输出在 `app/frontend/tmp/`，性能基线输出在 `app/frontend/tmp/perf-*` 或调用时指定的临时目录；这些目录不进入 git。
 
 性能基线脚本会记录：

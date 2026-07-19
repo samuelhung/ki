@@ -6,6 +6,7 @@ Usage:
 """
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 import time
@@ -22,6 +23,25 @@ MIGRATION_LOCK_RETRY_INITIAL_DELAY_SECONDS = 0.05
 MIGRATION_LOCK_RETRY_MAX_DELAY_SECONDS = 1.0
 _monotonic = time.monotonic
 _sleep = time.sleep
+DESTRUCTIVE_CLEANUP_MIGRATION = "20260719_remove_retired_features"
+RETIRED_TABLE_NAMES = (
+    "event_entities",
+    "entity_relations",
+    "entities",
+    "digests",
+    "topics",
+)
+RETIRED_USAGE_PRECHECK = """
+    SELECT 1 FROM ai_usage
+    WHERE module = 'knowledge_graph'
+       OR (module IN ('digest_briefing', 'briefing') AND task = 'digest')
+    LIMIT 1
+"""
+RETIRED_USAGE_CLEANUP = """
+    DELETE FROM ai_usage
+    WHERE module = 'knowledge_graph'
+       OR (module IN ('digest_briefing', 'briefing') AND task = 'digest')
+"""
 
 
 def register(name: str) -> Callable[[MigrationFn], MigrationFn]:
@@ -66,36 +86,80 @@ def _begin_immediate_with_retry(conn: sqlite3.Connection) -> None:
             delay = min(delay * 2, MIGRATION_LOCK_RETRY_MAX_DELAY_SECONDS)
 
 
+def _config_requires_cleanup(config_path: Path) -> bool:
+    try:
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return False
+    return isinstance(payload, dict) and bool(
+        {"digest_briefing", "knowledge_graph"} & payload.keys()
+    )
+
+
+def _cleanup_requires_backup(conn: sqlite3.Connection, config_path: Path) -> bool:
+    existing_tables = {
+        row[0]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        )
+    }
+    if set(RETIRED_TABLE_NAMES) & existing_tables:
+        return True
+    if "ai_usage" in existing_tables and conn.execute(RETIRED_USAGE_PRECHECK).fetchone():
+        return True
+    return _config_requires_cleanup(config_path)
+
+
 def ensure_migrations(db_path: Path) -> None:
     """Apply any pending migrations to the database."""
+    db_path = Path(db_path).expanduser().absolute().resolve(strict=False)
+    config_path = db_path.parent / "system_config.json"
     conn = sqlite3.connect(str(db_path))
     try:
         conn.execute(f"PRAGMA busy_timeout={MIGRATION_BUSY_TIMEOUT_MS}")
-        conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
 
-        conn.execute(
-            """CREATE TABLE IF NOT EXISTS _migrations (
-                name TEXT PRIMARY KEY,
-                applied_at TEXT NOT NULL DEFAULT (datetime('now'))
-            )"""
+        applied = (
+            {row[0] for row in conn.execute("SELECT name FROM _migrations")}
+            if _table_exists(conn, "_migrations")
+            else set()
         )
-        conn.commit()
-
-        applied = {row[0] for row in conn.execute("SELECT name FROM _migrations")}
 
         for name, fn in _registry:
             if name in applied:
+                if name == DESTRUCTIVE_CLEANUP_MIGRATION:
+                    from .database_backup import consume_backup_prerequisite
+
+                    consume_backup_prerequisite(db_path, name)
                 continue
             logger.info("Applying migration: %s", name)
+            prerequisite = None
             try:
                 _begin_immediate_with_retry(conn)
-                if conn.execute(
+                if _table_exists(conn, "_migrations") and conn.execute(
                     "SELECT 1 FROM _migrations WHERE name = ?", (name,)
                 ).fetchone():
                     conn.commit()
                     applied.add(name)
+                    if name == DESTRUCTIVE_CLEANUP_MIGRATION:
+                        from .database_backup import consume_backup_prerequisite
+
+                        consume_backup_prerequisite(db_path, name)
                     continue
+                if name == DESTRUCTIVE_CLEANUP_MIGRATION and _cleanup_requires_backup(
+                    conn, config_path
+                ):
+                    from .database_backup import validate_backup_prerequisite
+
+                    prerequisite = validate_backup_prerequisite(
+                        db_path, config_path, name
+                    )
+                conn.execute(
+                    """CREATE TABLE IF NOT EXISTS _migrations (
+                        name TEXT PRIMARY KEY,
+                        applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+                    )"""
+                )
                 fn(conn)
                 conn.execute("INSERT INTO _migrations (name) VALUES (?)", (name,))
                 conn.commit()
@@ -103,7 +167,20 @@ def ensure_migrations(db_path: Path) -> None:
             except Exception:
                 conn.rollback()
                 raise
+            if prerequisite is not None:
+                from .database_backup import consume_backup_prerequisite
+
+                consume_backup_prerequisite(db_path, name, prerequisite)
             logger.info("Migration applied: %s", name)
+
+        if not _table_exists(conn, "_migrations"):
+            conn.execute(
+                """CREATE TABLE _migrations (
+                    name TEXT PRIMARY KEY,
+                    applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+                )"""
+            )
+            conn.commit()
     finally:
         conn.close()
 
@@ -131,23 +208,11 @@ def remove_retired_features(conn: sqlite3.Connection) -> None:
     ):
         conn.execute(f"DROP INDEX IF EXISTS {index_name}")
 
-    for table_name in (
-        "event_entities",
-        "entity_relations",
-        "entities",
-        "digests",
-        "topics",
-    ):
+    for table_name in RETIRED_TABLE_NAMES:
         conn.execute(f"DROP TABLE IF EXISTS {table_name}")
 
     if _table_exists(conn, "ai_usage"):
-        conn.execute(
-            """
-            DELETE FROM ai_usage
-            WHERE module = 'knowledge_graph'
-               OR (module IN ('digest_briefing', 'briefing') AND task = 'digest')
-            """
-        )
+        conn.execute(RETIRED_USAGE_CLEANUP)
         conn.execute(
             """
             UPDATE ai_usage

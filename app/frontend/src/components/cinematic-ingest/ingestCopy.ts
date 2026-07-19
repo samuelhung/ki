@@ -1,9 +1,4 @@
 export const ingestCopy = {
-  briefing: {
-    loadError: '快报链路暂未响应',
-    loading: '正在生成快报',
-    empty: '暂无新闻快报，先启动信息源扫描。',
-  },
   commands: {
     douyinSubmitFallback: '抖音信号接入失败',
     fileSubmitFallback: '文件接入失败',

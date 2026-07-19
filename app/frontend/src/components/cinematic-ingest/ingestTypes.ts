@@ -76,19 +76,6 @@ export interface DeletedQueueTask {
   status: QueueItem['status'];
 }
 
-export interface BriefingTopic {
-  topic: string;
-  topic_label?: string;
-  summary?: string;
-  events: Array<{
-    event_id: string;
-    title_cn?: string;
-    title?: string;
-    source_name?: string;
-    created_at?: string;
-  }>;
-}
-
 export type TopicKey = '格局' | '财富' | '认知' | '前瞻';
 export type DetailTab = 'body' | 'summary' | 'questions' | 'chain';
 export type IngestCommandMode = 'douyin' | 'file' | 'concept' | 'scan';

@@ -6,6 +6,7 @@ import { fetchBriefingDetail, fetchBriefingHistory, generateQuickBriefing } from
 import { briefingMetrics, resolveBriefingLoadSelection } from '../components/cinematic-briefings/briefingWorkspace.mjs';
 import { RequestLifecycle } from '../components/ingest/requestLifecycle';
 import SpotlightListRow from '../components/react-bits/SpotlightListRow';
+import { formatTimeBeijing } from '../utils';
 import KiNavigationShell from './KiNavigationShell';
 import '../components/cinematic-ingest/cinematic-ingest.css';
 import './CinematicBriefings.css';
@@ -43,11 +44,6 @@ type BriefingDetail = {
 
 function typeLabel(type: BriefingListItem['type']) {
   return type === 'daily' ? '深度日报' : '即时快报';
-}
-
-function formatTime(value: string) {
-  if (!value) return '时间未知';
-  return value.replace('T', ' ').slice(0, 16);
 }
 
 export default function CinematicBriefings() {
@@ -208,7 +204,7 @@ export default function CinematicBriefings() {
                               <span className="ki-ingest-list-type-icon">{item.type === 'daily' ? <FileText size={14} /> : <Zap size={14} />}</span>
                               <em>{typeLabel(item.type)}</em>
                             </span>
-                            <strong>{formatTime(item.created_at)}</strong>
+                            <strong>{formatTimeBeijing(item.created_at)}</strong>
                             <small className="ki-ingest-list-meta">{item.events_used} 条事件 · {item.topic_count} 个主题</small>
                           </button>
                         </SpotlightListRow>
@@ -236,7 +232,7 @@ export default function CinematicBriefings() {
                               <span>{detail.type === 'daily' ? 'DAILY INTELLIGENCE' : 'INSTANT INTELLIGENCE'}</span>
                               <h1>{typeLabel(detail.type)}</h1>
                             </div>
-                            <time><Clock3 size={13} />{formatTime(detail.created_at || selectedItem?.created_at || '')}</time>
+                            <time><Clock3 size={13} />{formatTimeBeijing(detail.created_at || selectedItem?.created_at || '')}</time>
                           </header>
 
                           <div className="briefing-topic-stream">
@@ -266,7 +262,7 @@ export default function CinematicBriefings() {
 
                           <footer className="briefing-status-box" aria-label="快报状态">
                             <span><b>{metrics.typeLabel}</b><small>类型</small></span>
-                            <span><b>{formatTime(metrics.generatedAt)}</b><small>生成时间</small></span>
+                            <span><b>{formatTimeBeijing(metrics.generatedAt)}</b><small>生成时间</small></span>
                             <span><b>{metrics.topicCount}</b><small>主题</small></span>
                             <span><b>{metrics.eventCount}</b><small>事件</small></span>
                           </footer>
