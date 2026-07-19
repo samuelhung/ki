@@ -130,4 +130,5 @@ test('briefing QA waits for loaded history and detail terminal states', () => {
   }
   assert.match(qaCore, /readyState:\s*'briefings'/);
   assert.match(qaJourney, /briefing_workspace_ready/);
+  assert.match(qaJourney, /waitFor\(cdp, 'briefing generation',[\s\S]*await waitForBriefingTerminalState\(cdp, 120000\)/);
 });

@@ -55,8 +55,8 @@ RULES = (
     (
         "retired entity or digest API/module",
         re.compile(
-            r"/api/entities(?:/[A-Za-z0-9._~-]+)*(?![A-Za-z0-9._~-])|"
-            r"/api/digest(?:/[A-Za-z0-9._~-]+)*(?![A-Za-z0-9._~-])|"
+            r"/api/entities(?:/[A-Za-z0-9._~-]+)*/?(?=$|[?#'\"`\s])|"
+            r"/api/digest(?:/[A-Za-z0-9._~-]+)*/?(?=$|[?#'\"`\s])|"
             r"\b(?:entity_routes|digest_routes)\b|"
             r"(?:from|import)\s+(?:zhiji_backend\.)?(?:entity|entities|digest|digest_ai)\b"
         ),
@@ -126,9 +126,6 @@ def allowed_match(
     allowed_ranges: dict[tuple[str, str], list[tuple[int, int, int, int]]],
 ) -> bool:
     path = relative.as_posix()
-    if label == "retired knowledge graph":
-        if path == "src/zhiji_backend/config_manager.py":
-            return True
     if label == "retired entity or digest API/module" and path == "src/zhiji_backend/main.py":
         return match.group(0) in {"/api/digest/latest", "/api/digest/generate"}
     return any(position_in_span(line, column, span) for span in allowed_ranges.get((path, label), []))
@@ -239,34 +236,63 @@ def resolve_string_set(
     return None, []
 
 
-def is_drop_template(
+def drop_template_shape(
     node: ast.AST,
     loop_variable: str,
     function_assignments: dict[str, ast.AST],
     module_assignments: dict[str, ast.AST],
-) -> bool:
+) -> str | None:
     resolved = resolve_reference(node, function_assignments, module_assignments)
+    template_shape = None
     if isinstance(resolved, ast.JoinedStr):
-        static = "".join(
-            value.value for value in resolved.values
-            if isinstance(value, ast.Constant) and isinstance(value.value, str)
-        ).upper()
-        return "DROP TABLE IF EXISTS" in static and any(
-            isinstance(value, ast.FormattedValue)
-            and isinstance(value.value, ast.Name)
-            and value.value.id == loop_variable
-            for value in resolved.values
-        )
-    if isinstance(resolved, ast.Call) and isinstance(resolved.func, ast.Attribute) and resolved.func.attr == "format":
+        pieces = []
+        formatted_count = 0
+        for value in resolved.values:
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                pieces.append(value.value)
+                continue
+            if (
+                isinstance(value, ast.FormattedValue)
+                and isinstance(value.value, ast.Name)
+                and value.value.id == loop_variable
+                and value.conversion == -1
+                and value.format_spec is None
+            ):
+                formatted_count += 1
+                pieces.append("{table}")
+                continue
+            return None
+        if formatted_count == 1:
+            template_shape = "".join(pieces)
+    elif isinstance(resolved, ast.Call) and isinstance(resolved.func, ast.Attribute) and resolved.func.attr == "format":
         template, _constants = resolve_string(resolved.func.value, function_assignments, module_assignments)
-        return bool(
+        placeholders = re.findall(r"\{(?:0)?\}", template or "")
+        if (
             template
-            and "DROP TABLE IF EXISTS" in template.upper()
-            and resolved.args
+            and len(placeholders) == 1
+            and len(resolved.args) == 1
+            and not resolved.keywords
             and isinstance(resolved.args[0], ast.Name)
             and resolved.args[0].id == loop_variable
-        )
-    return False
+        ):
+            template_shape = re.sub(r"\{(?:0)?\}", "{table}", template, count=1)
+    if template_shape is None:
+        return None
+    return re.sub(r"\s+", " ", template_shape.strip().rstrip(";"))
+
+
+def is_exact_drop_template(template_shape: str) -> bool:
+    identifier = r"(?:\{table\}|[\"'`]\{table\}[\"'`]|\[\{table\}\])"
+    return bool(re.fullmatch(rf"DROP TABLE IF EXISTS (?:MAIN\s*\.\s*)?{identifier}", template_shape, re.IGNORECASE))
+
+
+def is_exact_usage_cleanup(sql: str) -> bool:
+    compact = re.sub(r"\s+", "", sql.strip().rstrip(";")).lower().replace('"', "'")
+    expected = {
+        "deletefromai_usagewheremodule='knowledge_graph'or(modulein('digest_briefing','briefing')andtask='digest')",
+        "deletefromai_usagewheremodule='knowledge_graph'or(modulein('briefing','digest_briefing')andtask='digest')",
+    }
+    return compact in expected
 
 
 def is_retired_api_path(value: str, base: str) -> bool:
@@ -354,9 +380,9 @@ def validate_named_compatibility(
         if tree is not None:
             constants = [node for node in ast.walk(tree) if isinstance(node, ast.Constant) and node.value == "knowledge_graph"]
             parent = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
-            valid = len(constants) == 1
-            if valid:
-                call = parent.get(constants[0])
+            valid_constants = []
+            for constant in constants:
+                call = parent.get(constant)
                 valid = (
                     isinstance(call, ast.Call)
                     and isinstance(call.func, ast.Attribute)
@@ -367,8 +393,13 @@ def validate_named_compatibility(
                     and isinstance(call.args[1], ast.Constant)
                     and call.args[1].value is None
                 )
-            if not valid:
+                if valid:
+                    valid_constants.append(constant)
+            if not valid_constants:
                 violations.append("src/zhiji_backend/config_manager.py: knowledge_graph is allowed only in normalized.pop cleanup")
+            else:
+                key = ("src/zhiji_backend/config_manager.py", "retired knowledge graph")
+                allowed_ranges[key] = [node_range(node) for node in valid_constants]
 
     migration_path = root / "src/zhiji_backend/migrations.py"
     if migration_path.exists():
@@ -409,24 +440,24 @@ def validate_named_compatibility(
                         table_names = candidate_names
                         table_constants = candidate_constants
                         break
-            drops_loop_table = bool(
-                table_loop
-                and any(
-                    isinstance(node, ast.Call)
-                    and call_name(node.func) == "execute"
-                    and node.args
-                    and is_drop_template(
-                        node.args[0],
+            drop_templates = []
+            if table_loop is not None:
+                for call in (
+                    node for node in ast.walk(table_loop)
+                    if isinstance(node, ast.Call) and call_name(node.func) == "execute" and node.args
+                ):
+                    shape = drop_template_shape(
+                        call.args[0],
                         table_loop.target.id,
                         function_assignments,
                         module_assignments,
                     )
-                    for node in ast.walk(table_loop)
-                )
-            )
+                    if shape and shape.upper().startswith("DROP TABLE"):
+                        drop_templates.append(shape)
+            drops_loop_table = len(drop_templates) == 1 and is_exact_drop_template(drop_templates[0])
             if table_names != RETIRED_TABLE_SET or not drops_loop_table:
                 violations.append("src/zhiji_backend/migrations.py: named migration must drop the exact retired tables")
-            graph_cleanup = False
+            usage_deletes = []
             graph_nodes = []
             if migration is not None:
                 for call in (
@@ -434,13 +465,11 @@ def validate_named_compatibility(
                     if isinstance(node, ast.Call) and call_name(node.func) == "execute" and node.args
                 ):
                     sql, sql_nodes = resolve_string(call.args[0], function_assignments, module_assignments)
-                    if sql and re.search(
-                        r"DELETE\s+FROM\s+ai_usage\b[\s\S]*\bmodule\s*=\s*['\"]knowledge_graph['\"](?![A-Za-z0-9_])",
-                        sql,
-                        re.IGNORECASE,
-                    ):
-                        graph_cleanup = True
-                        graph_nodes.extend(node for node in sql_nodes if "knowledge_graph" in node.value)
+                    if sql and re.match(r"\s*DELETE\s+FROM\s+ai_usage\b", sql, re.IGNORECASE):
+                        usage_deletes.append(sql)
+                        if is_exact_usage_cleanup(sql):
+                            graph_nodes.extend(node for node in sql_nodes if "knowledge_graph" in node.value)
+            graph_cleanup = len(usage_deletes) == 1 and is_exact_usage_cleanup(usage_deletes[0])
             if not graph_cleanup:
                 violations.append("src/zhiji_backend/migrations.py: knowledge_graph is allowed only in ai_usage cleanup")
             if graph_cleanup:
@@ -555,18 +584,37 @@ def self_test() -> None:
         write(
             root,
             "src/zhiji_backend/api_names.py",
-            'NEW_DIGEST = "/api/digests-v2"\nNEW_ENTITY = "/api/entities-v2"\n',
+            '''NEW_DIGEST = "/api/digests-v2"
+NEW_ENTITY = "/api/entities-v2"
+COLON_DIGEST = "/api/digest:v2"
+AT_ENTITY = "/api/entities@v2"
+ENCODED_DIGEST = "/api/digest%2Flatest"
+''',
         )
         if any("retired entity or digest API" in item for item in scan(root)):
             raise SystemExit("FAIL retired feature scan rejected non-retired API prefixes")
         write(
             root,
             "src/zhiji_backend/retired_api_names.py",
-            'OLD_DIGEST = "/api/digest"\nOLD_ENTITY = "/api/entities/by-id"\n',
+            '''OLD_DIGEST = "/api/digest"
+OLD_ENTITY = "/api/entities/by-id"
+QUERY_DIGEST = "/api/digest?limit=1"
+FRAGMENT_ENTITY = "/api/entities#legacy"
+''',
         )
         findings = scan(root)
-        if sum("retired entity or digest API" in item for item in findings) < 2:
+        if sum("retired entity or digest API" in item for item in findings) < 4:
             raise SystemExit("FAIL retired feature scan missed exact or subpath retired APIs")
+
+    with tempfile.TemporaryDirectory(prefix="zhiji-retired-config-scope-") as temp_dir:
+        root = Path(temp_dir)
+        write(
+            root,
+            "src/zhiji_backend/config_manager.py",
+            'normalized.pop("knowledge_graph", None)\nACTIVE_MODULE = "knowledge_graph"\n',
+        )
+        if not any("retired knowledge graph" in item for item in scan(root)):
+            raise SystemExit("FAIL config path blanket-allowed unrelated knowledge_graph")
 
     with tempfile.TemporaryDirectory(prefix="zhiji-retired-allowlist-") as temp_dir:
         root = Path(temp_dir)
@@ -582,7 +630,7 @@ def self_test() -> None:
 def remove_retired_features(conn) -> None:
     for table_name in ('event_entities', 'entity_relations', 'entities', 'digests', 'topics'):
         conn.execute(f'DROP TABLE IF EXISTS {table_name}')
-    conn.execute("DELETE FROM ai_usage WHERE module = 'knowledge_graph'")
+    conn.execute("DELETE FROM ai_usage WHERE module = 'knowledge_graph' OR (module IN ('digest_briefing', 'briefing') AND task = 'digest')")
 ''',
         )
         write(root, "app/frontend/src/pages/KiNavigationShell.tsx", "import './DualNavigationDemo.css';\n")
@@ -644,7 +692,7 @@ def remove_retired_features(conn):
             "src/zhiji_backend/migrations.py",
             '''RETIRED_TABLE_NAMES = ("event_entities", "entity_relations", "entities", "digests", "topics")
 DROP_RETIRED_TABLE = "DROP TABLE IF EXISTS {}"
-RETIRED_USAGE_CLEANUP = "DELETE FROM ai_usage WHERE module = 'knowledge_graph'"
+RETIRED_USAGE_CLEANUP = "DELETE FROM ai_usage WHERE module = 'knowledge_graph' OR (module IN ('digest_briefing', 'briefing') AND task = 'digest')"
 
 @register("20260719_remove_retired_features")
 def remove_retired_features(conn):
@@ -663,7 +711,7 @@ def remove_retired_features(conn):
             root,
             "src/zhiji_backend/migrations.py",
             '''RETIRED_TABLE_NAMES = ("event_entities", "entity_relations", "entities", "digests", "topics")
-RETIRED_USAGE_CLEANUP = "DELETE FROM ai_usage WHERE module = 'knowledge_graph'"
+RETIRED_USAGE_CLEANUP = "DELETE FROM ai_usage WHERE module = 'knowledge_graph' OR (module IN ('digest_briefing', 'briefing') AND task = 'digest')"
 ACTIVE_MODULE = "knowledge_graph"
 ACTIVE_TABLE = "entities"
 
@@ -678,6 +726,42 @@ def remove_retired_features(conn):
             raise SystemExit("FAIL migration path blanket-allowed unrelated knowledge_graph")
         if not any("retired persistence identifier" in item for item in scan(root)):
             raise SystemExit("FAIL migration path blanket-allowed unrelated retired table identifier")
+
+    with tempfile.TemporaryDirectory(prefix="zhiji-retired-drop-prefix-bypass-") as temp_dir:
+        root = Path(temp_dir)
+        write(
+            root,
+            "src/zhiji_backend/migrations.py",
+            '''RETIRED_TABLE_NAMES = ("event_entities", "entity_relations", "entities", "digests", "topics")
+RETIRED_USAGE_CLEANUP = "DELETE FROM ai_usage WHERE module = 'knowledge_graph' OR (module IN ('digest_briefing', 'briefing') AND task = 'digest')"
+
+@register("20260719_remove_retired_features")
+def remove_retired_features(conn):
+    for table_name in RETIRED_TABLE_NAMES:
+        conn.execute(f"DROP TABLE IF EXISTS archived_{table_name}")
+    conn.execute(RETIRED_USAGE_CLEANUP)
+''',
+        )
+        if not any("drop the exact retired tables" in item for item in scan(root)):
+            raise SystemExit("FAIL migration scanner allowed prefixed DROP target")
+
+    with tempfile.TemporaryDirectory(prefix="zhiji-retired-usage-tautology-") as temp_dir:
+        root = Path(temp_dir)
+        write(
+            root,
+            "src/zhiji_backend/migrations.py",
+            '''RETIRED_TABLE_NAMES = ("event_entities", "entity_relations", "entities", "digests", "topics")
+RETIRED_USAGE_CLEANUP = "DELETE FROM ai_usage WHERE module = 'knowledge_graph' OR 1=1"
+
+@register("20260719_remove_retired_features")
+def remove_retired_features(conn):
+    for table_name in RETIRED_TABLE_NAMES:
+        conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+    conn.execute(RETIRED_USAGE_CLEANUP)
+''',
+        )
+        if not any("ai_usage cleanup" in item for item in scan(root)):
+            raise SystemExit("FAIL migration scanner allowed broadened usage DELETE")
 
     with tempfile.TemporaryDirectory(prefix="zhiji-retired-migration-equivalent-drift-") as temp_dir:
         root = Path(temp_dir)

@@ -294,7 +294,11 @@ async function runJourneyQa(baseUrl, outDir) {
     if (generateBriefing) {
       const initialBriefingState = await evaluate(cdp, `
         const rows = [...document.querySelectorAll('.briefing-history-row')];
-        return { count: rows.length, first: rows[0]?.textContent || '' };
+        return {
+          count: rows.length,
+          first: rows[0]?.textContent || '',
+          detail: document.querySelector('.briefing-detail-header')?.textContent || '',
+        };
       `);
       const generationStarted = await evaluate(cdp, `
         const button = document.querySelector('.briefing-generate-button');
@@ -308,8 +312,13 @@ async function runJourneyQa(baseUrl, outDir) {
         const rows = [...document.querySelectorAll('.briefing-history-row')];
         const first = rows[0]?.textContent || '';
         const changed = rows.length > ${initialBriefingState.count} || first !== ${JSON.stringify(initialBriefingState.first)};
-        return Boolean(button && !button.disabled && !document.querySelector('.briefing-generate-error') && changed);
+        const firstSelected = rows[0]?.getAttribute('aria-pressed') === 'true';
+        const detailText = document.querySelector('.briefing-detail-header')?.textContent || '';
+        const detailAdvanced = detailText !== ${JSON.stringify(initialBriefingState.detail)} ||
+          Boolean(document.querySelector('.briefing-detail-state'));
+        return Boolean(button && !button.disabled && !document.querySelector('.briefing-generate-error') && changed && firstSelected && detailAdvanced);
       `, 120000);
+      await waitForBriefingTerminalState(cdp, 120000);
       assertions.push('briefing_generation_succeeds');
     } else {
       assertions.push('briefing_generation_skipped');
