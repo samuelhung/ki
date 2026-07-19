@@ -131,10 +131,12 @@ ssh zhiji-prod 'launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.zhij
 
 启动时会在同一个 `BEGIN IMMEDIATE` 迁移锁内验证清单、备份校验和、SQLite 完整性、时间窗口、迁移名和数据库/配置源身份。任一条件不满足都会在删表或删数据前中止。迁移提交后，ready marker 会被原子标记为 consumed。
 
-回滚时保持服务停止，使用清单同时恢复数据库和配置，再安装上一版 wheel：
+回滚时保持服务停止，使用清单同时恢复数据库和配置，再安装上一版 wheel。恢复会先把两个文件完整暂存并写入持久化 journal，之后才替换目标文件；如果命令中断或报错，必须先用同一清单重跑恢复，或显式恢复 journal，确认 journal 已删除后再安装上一版 wheel：
 
 ```bash
 ssh zhiji-prod "/Users/mrh/Documents/KI/runtime/venv/bin/python -c \"from pathlib import Path; from zhiji_backend.database_backup import restore_rollback_backup; print(restore_rollback_backup(Path('/Users/mrh/Documents/KI/backups/rollback-manifest-YYYYMMDD-HHMMSS.json')))\""
+# 中断/失败时，也可显式恢复已暂存的 journal
+ssh zhiji-prod "/Users/mrh/Documents/KI/runtime/venv/bin/python -c \"from pathlib import Path; from zhiji_backend.database_backup import recover_rollback_restore; print(recover_rollback_restore(Path('/Users/mrh/Documents/KI/data/.intelligence.sqlite.rollback-restore.json')))\""
 ssh zhiji-prod '/Users/mrh/Documents/KI/runtime/venv/bin/python -m pip install --force-reinstall --no-deps /Users/mrh/Documents/KI/packages/PREVIOUS.whl'
 ssh zhiji-prod 'launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.zhiji.backend.plist || launchctl kickstart -k gui/$(id -u)/com.zhiji.backend'
 ```

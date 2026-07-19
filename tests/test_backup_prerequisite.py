@@ -273,7 +273,7 @@ def test_backup_command_refuses_migration_that_is_not_pending(tmp_path):
         )
 
 
-def test_rollback_backup_refuses_live_database_change_during_bundle_creation(
+def test_rollback_backup_blocks_live_database_change_during_bundle_creation(
     tmp_path, monkeypatch
 ):
     data_dir = tmp_path / "data"
@@ -285,13 +285,13 @@ def test_rollback_backup_refuses_live_database_change_during_bundle_creation(
     real_copy = database_backup._copy_regular_file
 
     def mutate_database_then_copy(source, target):
-        with sqlite3.connect(db_path) as conn:
+        with sqlite3.connect(db_path, timeout=0) as conn:
             conn.execute("INSERT INTO entities VALUES ('late-change')")
         real_copy(source, target)
 
     monkeypatch.setattr(database_backup, "_copy_regular_file", mutate_database_then_copy)
 
-    with pytest.raises(RuntimeError, match="changed during rollback backup"):
+    with pytest.raises(sqlite3.OperationalError, match="database is locked"):
         database_backup.create_rollback_backup(
             db_path,
             config_path,
@@ -427,3 +427,212 @@ def test_applied_migration_refuses_mismatched_ready_marker_during_recovery(
     assert not database_backup.consumed_backup_marker_path(
         db_path, MIGRATION_NAME
     ).exists()
+
+
+def test_post_backup_committed_wal_write_invalidates_migration_prerequisite(
+    tmp_path,
+):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    db_path = data_dir / "intelligence.sqlite"
+    config_path = data_dir / "system_config.json"
+    writer = sqlite3.connect(db_path)
+    try:
+        writer.execute("PRAGMA journal_mode=WAL")
+        writer.executescript(
+            """
+            CREATE TABLE entities (id TEXT PRIMARY KEY);
+            CREATE TABLE ai_usage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                module TEXT,
+                task TEXT
+            );
+            INSERT INTO entities VALUES ('before-backup');
+            """
+        )
+        writer.commit()
+        _write_legacy_config(config_path)
+        manifest_path = database_backup.create_rollback_backup(
+            db_path,
+            config_path,
+            tmp_path / "backups",
+            migration_name=MIGRATION_NAME,
+        )
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        recorded_identity = manifest["source"]["database_identity"]
+
+        writer.execute("INSERT INTO entities VALUES ('after-backup')")
+        writer.commit()
+
+        current_stat = db_path.stat()
+        assert {
+            "device": current_stat.st_dev,
+            "inode": current_stat.st_ino,
+            "size": current_stat.st_size,
+            "mtime_ns": current_stat.st_mtime_ns,
+        } == recorded_identity
+        with pytest.raises(RuntimeError, match="live SQLite snapshot mismatch"):
+            migrations.ensure_migrations(db_path)
+    finally:
+        writer.close()
+
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM entities").fetchone()[0] == 2
+
+
+def test_config_artifact_same_size_replacement_during_hash_is_rejected(
+    tmp_path, monkeypatch
+):
+    db_path, config_path, manifest_path = _bundle(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    config_backup = Path(manifest["artifacts"]["config"]["path"])
+    replacement = config_backup.with_name("replacement.json")
+    replacement.write_bytes(b"x" * config_backup.stat().st_size)
+    config_identity = (config_backup.stat().st_dev, config_backup.stat().st_ino)
+    real_hash_fd = database_backup._hash_fd
+    replaced = False
+
+    def replace_after_hash(fd):
+        nonlocal replaced
+        digest = real_hash_fd(fd)
+        file_stat = os.fstat(fd)
+        if (file_stat.st_dev, file_stat.st_ino) == config_identity and not replaced:
+            os.replace(replacement, config_backup)
+            replaced = True
+        return digest
+
+    monkeypatch.setattr(database_backup, "_hash_fd", replace_after_hash)
+
+    with pytest.raises(RuntimeError, match="changed during verification"):
+        database_backup.validate_backup_prerequisite(
+            db_path, config_path, MIGRATION_NAME
+        )
+
+    assert replaced
+
+
+def test_config_artifact_replacement_during_final_migration_hash_is_rejected(
+    tmp_path, monkeypatch
+):
+    db_path, _config_path, manifest_path = _bundle(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    config_backup = Path(manifest["artifacts"]["config"]["path"])
+    replacement = config_backup.with_name("replacement.json")
+    replacement.write_bytes(b"x" * config_backup.stat().st_size)
+    config_identity = (config_backup.stat().st_dev, config_backup.stat().st_ino)
+    real_hash_fd = database_backup._hash_fd
+    config_hashes = 0
+
+    def replace_during_second_hash(fd):
+        nonlocal config_hashes
+        digest = real_hash_fd(fd)
+        file_stat = os.fstat(fd)
+        if (file_stat.st_dev, file_stat.st_ino) == config_identity:
+            config_hashes += 1
+            if config_hashes == 2:
+                os.replace(replacement, config_backup)
+        return digest
+
+    monkeypatch.setattr(database_backup, "_hash_fd", replace_during_second_hash)
+
+    with pytest.raises(RuntimeError, match="changed during migration"):
+        migrations.ensure_migrations(db_path)
+
+    assert config_hashes == 2
+    _assert_cleanup_not_started(db_path)
+
+
+def test_pending_destructive_migration_requires_manifest_for_clean_existing_database(
+    tmp_path,
+):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    db_path = data_dir / "intelligence.sqlite"
+    config_path = data_dir / "system_config.json"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE active_records (id TEXT PRIMARY KEY)")
+    config_path.write_text('{"briefing": {}}', encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="backup prerequisite marker is missing"):
+        migrations.ensure_migrations(db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_migrations'"
+        ).fetchone() is None
+
+
+@pytest.mark.parametrize("invalid_field", ["schema", "migration", "stale"])
+def test_restore_validates_manifest_before_changing_destinations(
+    tmp_path, invalid_field
+):
+    db_path, config_path, manifest_path = _bundle(tmp_path)
+    original_database = db_path.read_bytes()
+    original_config = config_path.read_bytes()
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if invalid_field == "schema":
+        manifest["schema_version"] = 999
+    elif invalid_field == "migration":
+        manifest["migration_name"] = "20260720_wrong_migration"
+    else:
+        manifest["created_at"] = (
+            datetime.now(timezone.utc) - timedelta(days=2)
+        ).isoformat()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="rollback manifest"):
+        database_backup.restore_rollback_backup(manifest_path)
+
+    assert db_path.read_bytes() == original_database
+    assert config_path.read_bytes() == original_config
+    assert not database_backup.restore_journal_path(db_path).exists()
+
+
+@pytest.mark.parametrize("recovery_entrypoint", ["restore", "journal"])
+def test_restore_failure_is_journaled_and_recovery_completes_both_artifacts(
+    tmp_path, monkeypatch, recovery_entrypoint
+):
+    db_path, config_path, manifest_path = _bundle(tmp_path)
+    original_config = config_path.read_text(encoding="utf-8")
+    migrations.ensure_migrations(db_path)
+    config_path.write_text('{"briefing": {}}', encoding="utf-8")
+    real_replace = database_backup._replace_staged_restore
+    failed_once = False
+
+    def fail_database_replace(stage, destination):
+        nonlocal failed_once
+        if Path(destination) == db_path and not failed_once:
+            failed_once = True
+            raise OSError("injected database restore failure")
+        real_replace(stage, destination)
+
+    monkeypatch.setattr(
+        database_backup, "_replace_staged_restore", fail_database_replace
+    )
+
+    with pytest.raises(RuntimeError, match="restore is incomplete"):
+        database_backup.restore_rollback_backup(manifest_path)
+
+    journal = database_backup.restore_journal_path(db_path)
+    assert journal.exists()
+    assert config_path.read_text(encoding="utf-8") == original_config
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'entities'"
+        ).fetchone() is None
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    Path(manifest["artifacts"]["database"]["path"]).unlink()
+    Path(manifest["artifacts"]["config"]["path"]).unlink()
+
+    monkeypatch.setattr(database_backup, "_replace_staged_restore", real_replace)
+    if recovery_entrypoint == "restore":
+        restored = database_backup.restore_rollback_backup(manifest_path)
+    else:
+        restored = database_backup.recover_rollback_restore(journal)
+
+    assert restored == {"database": db_path.resolve(), "config": config_path.resolve()}
+    assert not journal.exists()
+    assert config_path.read_text(encoding="utf-8") == original_config
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT id FROM entities").fetchall() == [("entity-1",)]

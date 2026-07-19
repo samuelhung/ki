@@ -7,6 +7,7 @@ import shutil
 import sqlite3
 import stat
 import tempfile
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,21 @@ BACKUP_TEMP_PREFIX = ".intelligence-backup-"
 DEFAULT_DESTRUCTIVE_MIGRATION = "20260719_remove_retired_features"
 BACKUP_MANIFEST_SCHEMA_VERSION = 1
 BACKUP_MAX_AGE_SECONDS = 24 * 60 * 60
+RESTORE_JOURNAL_SCHEMA_VERSION = 1
+
+
+@dataclass
+class PinnedArtifact:
+    path: Path
+    fd: int
+    signature: tuple[int, int, int, int, int, int]
+    sha256: str
+    size: int
+
+    def close(self) -> None:
+        if self.fd >= 0:
+            os.close(self.fd)
+            self.fd = -1
 
 
 def _read_only_uri(path: Path) -> str:
@@ -110,6 +126,125 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _stat_signature(file_stat: os.stat_result) -> tuple[int, int, int, int, int, int]:
+    return (
+        file_stat.st_dev,
+        file_stat.st_ino,
+        file_stat.st_mode,
+        file_stat.st_size,
+        file_stat.st_mtime_ns,
+        file_stat.st_ctime_ns,
+    )
+
+
+def _hash_fd(fd: int) -> str:
+    digest = hashlib.sha256()
+    os.lseek(fd, 0, os.SEEK_SET)
+    while chunk := os.read(fd, 1024 * 1024):
+        digest.update(chunk)
+    os.lseek(fd, 0, os.SEEK_SET)
+    return digest.hexdigest()
+
+
+def _pin_artifact(
+    metadata: object, label: str, *, sqlite_backup: bool = False
+) -> PinnedArtifact:
+    if not isinstance(metadata, dict):
+        raise RuntimeError(f"backup prerequisite {label} metadata is invalid")
+    path = _canonical_manifest_path(metadata.get("path"), label)
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise RuntimeError(f"backup prerequisite {label} is invalid") from exc
+    try:
+        before = os.fstat(fd)
+        if not stat.S_ISREG(before.st_mode):
+            raise RuntimeError(f"backup prerequisite {label} is not a regular file")
+        signature = _stat_signature(before)
+        digest = _hash_fd(fd)
+        after = os.fstat(fd)
+        published = os.lstat(path)
+        if (
+            _stat_signature(after) != signature
+            or (published.st_dev, published.st_ino) != (after.st_dev, after.st_ino)
+        ):
+            raise RuntimeError(
+                f"backup prerequisite {label} changed during verification"
+            )
+        if metadata.get("size") != after.st_size:
+            raise RuntimeError(f"backup prerequisite {label} size mismatch")
+        expected_checksum = metadata.get("sha256")
+        if not isinstance(expected_checksum, str) or digest != expected_checksum:
+            raise RuntimeError(f"backup prerequisite {label} checksum mismatch")
+        if sqlite_backup:
+            try:
+                with tempfile.TemporaryDirectory(
+                    prefix=BACKUP_TEMP_PREFIX
+                ) as temp_dir:
+                    verification_copy = Path(temp_dir) / "verification.sqlite"
+                    with verification_copy.open("xb") as handle:
+                        os.lseek(fd, 0, os.SEEK_SET)
+                        while chunk := os.read(fd, 1024 * 1024):
+                            handle.write(chunk)
+                        os.lseek(fd, 0, os.SEEK_SET)
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                    with sqlite3.connect(
+                        _read_only_uri(verification_copy), uri=True
+                    ) as conn:
+                        result = [
+                            row[0] for row in conn.execute("PRAGMA integrity_check")
+                        ]
+            except sqlite3.DatabaseError as exc:
+                raise RuntimeError(
+                    "backup prerequisite database backup failed integrity check"
+                ) from exc
+            if result != ["ok"] or metadata.get("integrity_check") != "ok":
+                raise RuntimeError(
+                    "backup prerequisite database backup failed integrity check"
+                )
+        return PinnedArtifact(path, fd, signature, digest, after.st_size)
+    except Exception:
+        os.close(fd)
+        raise
+
+
+def _assert_pinned_artifact(pinned: PinnedArtifact, label: str) -> None:
+    if pinned.fd < 0:
+        raise RuntimeError(f"backup prerequisite {label} is no longer pinned")
+    before = os.fstat(pinned.fd)
+    try:
+        published_before = os.lstat(pinned.path)
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            f"backup prerequisite {label} changed during migration"
+        ) from exc
+    digest = _hash_fd(pinned.fd)
+    after = os.fstat(pinned.fd)
+    try:
+        published_after = os.lstat(pinned.path)
+    except FileNotFoundError as exc:
+        raise RuntimeError(
+            f"backup prerequisite {label} changed during migration"
+        ) from exc
+    if (
+        _stat_signature(before) != pinned.signature
+        or _stat_signature(after) != pinned.signature
+        or (published_before.st_dev, published_before.st_ino)
+        != (before.st_dev, before.st_ino)
+        or (published_after.st_dev, published_after.st_ino)
+        != (after.st_dev, after.st_ino)
+        or digest != pinned.sha256
+    ):
+        raise RuntimeError(f"backup prerequisite {label} changed during migration")
+
+
+def _sqlite_snapshot_sha256(path: Path) -> str:
+    with sqlite3.connect(_read_only_uri(path), uri=True) as conn:
+        return hashlib.sha256(conn.serialize()).hexdigest()
 
 
 def _source_metadata(path: Path) -> dict[str, int]:
@@ -251,8 +386,6 @@ def create_rollback_backup(
     )
     initial_source_metadata = _source_metadata(source)
     initial_config_metadata = _source_metadata(config_path)
-    if not _migration_is_pending(source, migration_name):
-        raise RuntimeError(f"migration {migration_name} is not pending")
 
     output_dir = Path(output_dir).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -262,13 +395,20 @@ def create_rollback_backup(
     manifest_path = output_dir / f"rollback-manifest-{timestamp}.json"
     marker_path = backup_marker_path(source, migration_name)
     database_backup: Path | None = None
+    lock_conn = sqlite3.connect(str(source))
 
     try:
+        lock_conn.execute("PRAGMA busy_timeout=5000")
+        lock_conn.execute("BEGIN IMMEDIATE")
+        if not _migration_is_pending(source, migration_name):
+            raise RuntimeError(f"migration {migration_name} is not pending")
+        sqlite_snapshot_sha256 = _sqlite_snapshot_sha256(source)
         database_backup = backup_database(source, output_dir)
         _copy_regular_file(config_path, config_backup)
         if (
             _source_metadata(source) != initial_source_metadata
             or _source_metadata(config_path) != initial_config_metadata
+            or _sqlite_snapshot_sha256(source) != sqlite_snapshot_sha256
         ):
             raise RuntimeError("database or config source changed during rollback backup")
         created_at = datetime.now(timezone.utc).isoformat()
@@ -282,6 +422,7 @@ def create_rollback_backup(
                 "config_path": str(config_path),
                 "database_identity": initial_source_metadata,
                 "config_identity": initial_config_metadata,
+                "sqlite_snapshot_sha256": sqlite_snapshot_sha256,
             },
             "artifacts": {
                 "database": _artifact_metadata(
@@ -309,6 +450,9 @@ def create_rollback_backup(
         if database_backup is not None:
             database_backup.unlink(missing_ok=True)
         raise
+    finally:
+        lock_conn.rollback()
+        lock_conn.close()
 
     return manifest_path
 
@@ -367,22 +511,11 @@ def _require_current_source(
 
 
 def _verify_artifact(metadata: object, label: str, *, sqlite_backup: bool = False) -> Path:
-    if not isinstance(metadata, dict):
-        raise RuntimeError(f"backup prerequisite {label} metadata is invalid")
-    path = _canonical_manifest_path(metadata.get("path"), label)
-    expected_checksum = metadata.get("sha256")
-    if not isinstance(expected_checksum, str) or _sha256(path) != expected_checksum:
-        raise RuntimeError(f"backup prerequisite {label} checksum mismatch")
-    if metadata.get("size") != path.stat().st_size:
-        raise RuntimeError(f"backup prerequisite {label} size mismatch")
-    if sqlite_backup:
-        try:
-            _verify_backup(path)
-        except RuntimeError as exc:
-            raise RuntimeError("backup prerequisite database backup failed integrity check") from exc
-        if metadata.get("integrity_check") != "ok":
-            raise RuntimeError("backup prerequisite database integrity metadata is invalid")
-    return path
+    pinned = _pin_artifact(metadata, label, sqlite_backup=sqlite_backup)
+    try:
+        return pinned.path
+    finally:
+        pinned.close()
 
 
 def validate_backup_prerequisite(
@@ -391,6 +524,7 @@ def validate_backup_prerequisite(
     migration_name: str,
     *,
     allow_stale: bool = False,
+    pin_artifacts: bool = False,
 ) -> dict[str, Any]:
     marker_path = backup_marker_path(source, migration_name)
     if not marker_path.exists():
@@ -438,17 +572,57 @@ def validate_backup_prerequisite(
         source_metadata.get("config_identity"),
         "config",
     )
+    expected_snapshot = source_metadata.get("sqlite_snapshot_sha256")
+    if (
+        not isinstance(expected_snapshot, str)
+        or _sqlite_snapshot_sha256(Path(str(source_metadata.get("database_path"))))
+        != expected_snapshot
+    ):
+        raise RuntimeError("backup prerequisite live SQLite snapshot mismatch")
     artifacts = manifest.get("artifacts")
     if not isinstance(artifacts, dict):
         raise RuntimeError("backup prerequisite artifact metadata is invalid")
-    _verify_artifact(artifacts.get("database"), "database backup", sqlite_backup=True)
-    _verify_artifact(artifacts.get("config"), "config backup")
-    return {
+    pinned: list[PinnedArtifact] = []
+    try:
+        pinned.append(
+            _pin_artifact(
+                artifacts.get("database"),
+                "database backup",
+                sqlite_backup=True,
+            )
+        )
+        pinned.append(_pin_artifact(artifacts.get("config"), "config backup"))
+    except Exception:
+        for artifact in pinned:
+            artifact.close()
+        raise
+    result = {
         "marker_path": marker_path,
         "manifest_path": manifest_path,
         "marker": marker,
         "manifest": manifest,
+        "pinned_artifacts": pinned if pin_artifacts else [],
     }
+    if not pin_artifacts:
+        for artifact in pinned:
+            artifact.close()
+    return result
+
+
+def assert_backup_prerequisite_published(prerequisite: dict[str, Any]) -> None:
+    pinned = prerequisite.get("pinned_artifacts", [])
+    if len(pinned) != 2:
+        raise RuntimeError("backup prerequisite artifacts are not pinned")
+    _assert_pinned_artifact(pinned[0], "database backup")
+    _assert_pinned_artifact(pinned[1], "config backup")
+
+
+def release_backup_prerequisite(prerequisite: dict[str, Any] | None) -> None:
+    if prerequisite is None:
+        return
+    for artifact in prerequisite.get("pinned_artifacts", []):
+        artifact.close()
+    prerequisite["pinned_artifacts"] = []
 
 
 def consume_backup_prerequisite(
@@ -530,58 +704,229 @@ def _validate_marker_for_consumption(
     _verify_artifact(artifacts.get("config"), "config backup")
 
 
-def _replace_from_artifact(artifact: Path, destination: Path) -> None:
+def restore_journal_path(database_path: Path) -> Path:
+    database_path = Path(database_path).expanduser().absolute().resolve(strict=False)
+    return database_path.parent / f".{database_path.name}.rollback-restore.json"
+
+
+def _validate_rollback_manifest(
+    manifest_path: Path,
+    *,
+    allow_stale: bool = False,
+    pin_artifacts: bool = True,
+) -> tuple[dict[str, Any], list[PinnedArtifact], dict[str, Path]]:
+    manifest_path = _canonical_manifest_path(
+        str(Path(manifest_path).expanduser().absolute().resolve(strict=True)),
+        "rollback manifest",
+    )
+    manifest = _load_json_regular(manifest_path, "rollback manifest")
+    if manifest.get("schema_version") != BACKUP_MANIFEST_SCHEMA_VERSION:
+        raise RuntimeError("rollback manifest schema is invalid")
+    if manifest.get("migration_name") != DEFAULT_DESTRUCTIVE_MIGRATION:
+        raise RuntimeError("rollback manifest migration is invalid")
+    try:
+        created_at = _parse_created_at(manifest.get("created_at"))
+    except RuntimeError as exc:
+        raise RuntimeError("rollback manifest timestamp is invalid") from exc
+    age = (datetime.now(timezone.utc) - created_at).total_seconds()
+    if not allow_stale and (age < -300 or age > BACKUP_MAX_AGE_SECONDS):
+        raise RuntimeError("rollback manifest is stale")
+    source = manifest.get("source")
+    artifacts = manifest.get("artifacts")
+    if not isinstance(source, dict) or not isinstance(artifacts, dict):
+        raise RuntimeError("rollback manifest structure is invalid")
+    database_destination = Path(str(source.get("database_path")))
+    config_destination = Path(str(source.get("config_path")))
+    if not database_destination.is_absolute() or not config_destination.is_absolute():
+        raise RuntimeError("rollback manifest restore destination is invalid")
+    if (
+        database_destination.resolve(strict=False) != database_destination
+        or config_destination.resolve(strict=False) != config_destination
+    ):
+        raise RuntimeError("rollback manifest restore destination is not canonical")
+    pinned: list[PinnedArtifact] = []
+    if pin_artifacts:
+        try:
+            pinned.append(
+                _pin_artifact(
+                    artifacts.get("database"),
+                    "database backup",
+                    sqlite_backup=True,
+                )
+            )
+            pinned.append(_pin_artifact(artifacts.get("config"), "config backup"))
+        except Exception:
+            for artifact in pinned:
+                artifact.close()
+            raise
+    return manifest, pinned, {
+        "database": database_destination,
+        "config": config_destination,
+    }
+
+
+def _stage_pinned_restore(pinned: PinnedArtifact, destination: Path) -> Path:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    temp_path: Path | None = None
+    stage: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
             mode="wb",
             dir=destination.parent,
             prefix=f".{destination.name}.",
-            suffix=".restore",
+            suffix=".restore-stage",
             delete=False,
         ) as handle:
-            temp_path = Path(handle.name)
-            with artifact.open("rb") as source_handle:
-                shutil.copyfileobj(source_handle, handle)
+            stage = Path(handle.name)
+            os.lseek(pinned.fd, 0, os.SEEK_SET)
+            while chunk := os.read(pinned.fd, 1024 * 1024):
+                handle.write(chunk)
+            os.lseek(pinned.fd, 0, os.SEEK_SET)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temp_path, destination)
-        temp_path = None
-        _fsync_parent(destination)
-    finally:
-        if temp_path is not None:
-            temp_path.unlink(missing_ok=True)
+        if stage.stat().st_size != pinned.size or _sha256(stage) != pinned.sha256:
+            raise RuntimeError("rollback restore staging verification failed")
+        return stage.resolve(strict=True)
+    except Exception:
+        if stage is not None:
+            stage.unlink(missing_ok=True)
+        raise
+
+
+def _replace_staged_restore(stage: Path, destination: Path) -> None:
+    os.replace(stage, destination)
+    _fsync_parent(destination)
+
+
+def _restore_path_matches(path: Path, metadata: dict[str, Any]) -> bool:
+    if not path.exists():
+        return False
+    candidate = dict(metadata)
+    candidate["path"] = str(path)
+    try:
+        pinned = _pin_artifact(candidate, "restore destination")
+    except RuntimeError:
+        return False
+    pinned.close()
+    return True
+
+
+def recover_rollback_restore(journal_path: Path) -> dict[str, Path]:
+    journal_path = _canonical_manifest_path(
+        str(Path(journal_path).expanduser().absolute().resolve(strict=True)),
+        "restore journal",
+    )
+    journal = _load_json_regular(journal_path, "restore journal")
+    if (
+        journal.get("schema_version") != RESTORE_JOURNAL_SCHEMA_VERSION
+        or journal.get("state") != "staged"
+    ):
+        raise RuntimeError("rollback restore journal is invalid")
+    manifest_path = _canonical_manifest_path(
+        journal.get("manifest_path"), "rollback manifest"
+    )
+    if journal.get("manifest_sha256") != _sha256(manifest_path):
+        raise RuntimeError("rollback restore journal manifest checksum mismatch")
+    manifest, pinned, destinations = _validate_rollback_manifest(
+        manifest_path, allow_stale=True, pin_artifacts=False
+    )
+    for artifact in pinned:
+        artifact.close()
+    artifacts = manifest["artifacts"]
+    entries = journal.get("entries")
+    if not isinstance(entries, dict):
+        raise RuntimeError("rollback restore journal entries are invalid")
+
+    expected_entries = {
+        "config": (destinations["config"], artifacts["config"]),
+        "database": (destinations["database"], artifacts["database"]),
+    }
+    try:
+        for key in ("config", "database"):
+            destination, metadata = expected_entries[key]
+            entry = entries.get(key)
+            if (
+                not isinstance(entry, dict)
+                or entry.get("destination") != str(destination)
+                or entry.get("sha256") != metadata.get("sha256")
+                or entry.get("size") != metadata.get("size")
+            ):
+                raise RuntimeError("rollback restore journal entry mismatch")
+            stage = Path(str(entry.get("stage_path")))
+            if _restore_path_matches(destination, metadata):
+                stage.unlink(missing_ok=True)
+                continue
+            stage_metadata = dict(metadata)
+            stage_metadata["path"] = str(stage)
+            staged = _pin_artifact(
+                stage_metadata,
+                f"{key} restore stage",
+                sqlite_backup=key == "database",
+            )
+            staged.close()
+            if key == "database":
+                for suffix in ("-wal", "-shm"):
+                    Path(f"{destination}{suffix}").unlink(missing_ok=True)
+            _replace_staged_restore(stage, destination)
+            if not _restore_path_matches(destination, metadata):
+                raise RuntimeError(f"rollback restore {key} verification failed")
+        for suffix in ("-wal", "-shm"):
+            Path(f"{destinations['database']}{suffix}").unlink(missing_ok=True)
+        journal_path.unlink()
+        _fsync_parent(journal_path)
+    except Exception as exc:
+        raise RuntimeError(
+            f"rollback restore is incomplete; recover from {journal_path}"
+        ) from exc
+    return {
+        "database": destinations["database"].resolve(strict=True),
+        "config": destinations["config"].resolve(strict=True),
+    }
 
 
 def restore_rollback_backup(manifest_path: Path) -> dict[str, Path]:
-    """Restore the database and config artifacts recorded in a rollback manifest."""
-    manifest_path = _canonical_manifest_path(
-        str(Path(manifest_path).expanduser().absolute().resolve(strict=True)),
-        "manifest",
+    """Stage and journal both rollback artifacts before replacing either target."""
+    manifest_path = Path(manifest_path).expanduser().absolute().resolve(strict=True)
+    _, _, candidate_destinations = _validate_rollback_manifest(
+        manifest_path, allow_stale=True, pin_artifacts=False
     )
-    manifest = _load_json_regular(manifest_path, "manifest")
-    source = manifest.get("source")
-    artifacts = manifest.get("artifacts")
-    if not isinstance(source, dict) or not isinstance(artifacts, dict):
-        raise RuntimeError("backup prerequisite manifest structure is invalid")
-    database_artifact = _verify_artifact(
-        artifacts.get("database"), "database backup", sqlite_backup=True
-    )
-    config_artifact = _verify_artifact(artifacts.get("config"), "config backup")
-    database_destination = Path(str(source.get("database_path")))
-    config_destination = Path(str(source.get("config_path")))
-    if not database_destination.is_absolute() or not config_destination.is_absolute():
-        raise RuntimeError("backup prerequisite restore destination is invalid")
+    journal_path = restore_journal_path(candidate_destinations["database"])
+    if journal_path.exists():
+        return recover_rollback_restore(journal_path)
 
-    for suffix in ("-wal", "-shm"):
-        Path(f"{database_destination}{suffix}").unlink(missing_ok=True)
-    _replace_from_artifact(database_artifact, database_destination)
-    _replace_from_artifact(config_artifact, config_destination)
-    return {
-        "database": database_destination.resolve(strict=True),
-        "config": config_destination.resolve(strict=True),
-    }
+    manifest, pinned, destinations = _validate_rollback_manifest(manifest_path)
+    stages: dict[str, Path] = {}
+    journal_written = False
+    try:
+        stages["database"] = _stage_pinned_restore(
+            pinned[0], destinations["database"]
+        )
+        stages["config"] = _stage_pinned_restore(pinned[1], destinations["config"])
+        journal = {
+            "schema_version": RESTORE_JOURNAL_SCHEMA_VERSION,
+            "state": "staged",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "manifest_path": str(manifest_path),
+            "manifest_sha256": _sha256(manifest_path),
+            "entries": {
+                key: {
+                    "destination": str(destinations[key]),
+                    "stage_path": str(stages[key]),
+                    "sha256": manifest["artifacts"][key]["sha256"],
+                    "size": manifest["artifacts"][key]["size"],
+                }
+                for key in ("database", "config")
+            },
+        }
+        _write_json_exclusive(journal_path, journal)
+        journal_written = True
+    finally:
+        for artifact in pinned:
+            artifact.close()
+        if not journal_written:
+            for stage in stages.values():
+                stage.unlink(missing_ok=True)
+
+    return recover_rollback_restore(journal_path)
 
 
 def backup_database(source: Path, output_dir: Path) -> Path:

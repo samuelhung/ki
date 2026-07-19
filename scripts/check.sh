@@ -304,15 +304,6 @@ def is_exact_usage_cleanup(sql: str) -> bool:
     return compact in expected
 
 
-def is_exact_usage_precheck(sql: str) -> bool:
-    compact = re.sub(r"\s+", "", sql.strip().rstrip(";")).lower().replace('"', "'")
-    expected = {
-        "select1fromai_usagewheremodule='knowledge_graph'or(modulein('digest_briefing','briefing')andtask='digest')limit1",
-        "select1fromai_usagewheremodule='knowledge_graph'or(modulein('briefing','digest_briefing')andtask='digest')limit1",
-    }
-    return compact in expected
-
-
 def is_retired_api_path(value: str, base: str) -> bool:
     return value == base or value.startswith(f"{base}/")
 
@@ -576,74 +567,6 @@ def validate_named_compatibility(
         violations.extend(errors)
         if tree is not None:
             module_assignments = assignment_map(tree.body)
-            config_preflight = next(
-                (
-                    node for node in tree.body
-                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-                    and node.name == "_config_requires_cleanup"
-                ),
-                None,
-            )
-            if config_preflight is not None:
-                graph_constants = [
-                    node for node in ast.walk(config_preflight)
-                    if isinstance(node, ast.Constant) and node.value == "knowledge_graph"
-                ]
-                digest_constants = [
-                    node for node in ast.walk(config_preflight)
-                    if isinstance(node, ast.Constant) and node.value == "digest_briefing"
-                ]
-                mutates_payload = any(
-                    (
-                        isinstance(node, ast.Call)
-                        and isinstance(node.func, ast.Attribute)
-                        and node.func.attr in {"clear", "pop", "popitem", "setdefault", "update"}
-                    )
-                    or (
-                        isinstance(node, ast.Subscript)
-                        and isinstance(node.value, ast.Name)
-                        and node.value.id == "payload"
-                        and isinstance(node.ctx, (ast.Store, ast.Del))
-                    )
-                    for node in ast.walk(config_preflight)
-                )
-                if len(graph_constants) == 1 and len(digest_constants) == 1 and not mutates_payload:
-                    key = ("src/zhiji_backend/migrations.py", "retired knowledge graph")
-                    allowed_ranges.setdefault(key, []).extend(node_range(node) for node in graph_constants)
-                else:
-                    violations.append(
-                        "src/zhiji_backend/migrations.py: config cleanup preflight must be read-only and check only legacy module keys"
-                    )
-
-            backup_preflight = next(
-                (
-                    node for node in tree.body
-                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-                    and node.name == "_cleanup_requires_backup"
-                ),
-                None,
-            )
-            if backup_preflight is not None:
-                function_assignments = assignment_map(backup_preflight.body)
-                precheck_sql = []
-                precheck_graph_nodes = []
-                for call in (
-                    node for node in ast.walk(backup_preflight)
-                    if isinstance(node, ast.Call) and call_name(node.func) == "execute" and node.args
-                ):
-                    sql, sql_nodes = resolve_string(call.args[0], function_assignments, module_assignments)
-                    if sql and re.match(r"\s*SELECT\s+1\s+FROM\s+ai_usage\b", sql, re.IGNORECASE):
-                        precheck_sql.append(sql)
-                        if is_exact_usage_precheck(sql):
-                            precheck_graph_nodes.extend(node for node in sql_nodes if "knowledge_graph" in node.value)
-                if len(precheck_sql) == 1 and is_exact_usage_precheck(precheck_sql[0]):
-                    key = ("src/zhiji_backend/migrations.py", "retired knowledge graph")
-                    allowed_ranges.setdefault(key, []).extend(node_range(node) for node in precheck_graph_nodes)
-                else:
-                    violations.append(
-                        "src/zhiji_backend/migrations.py: backup preflight must use the exact retired ai_usage existence query"
-                    )
-
             migration = next(
                 (
                     node for node in tree.body

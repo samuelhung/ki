@@ -6,7 +6,6 @@ Usage:
 """
 from __future__ import annotations
 
-import json
 import logging
 import sqlite3
 import time
@@ -31,12 +30,6 @@ RETIRED_TABLE_NAMES = (
     "digests",
     "topics",
 )
-RETIRED_USAGE_PRECHECK = """
-    SELECT 1 FROM ai_usage
-    WHERE module = 'knowledge_graph'
-       OR (module IN ('digest_briefing', 'briefing') AND task = 'digest')
-    LIMIT 1
-"""
 RETIRED_USAGE_CLEANUP = """
     DELETE FROM ai_usage
     WHERE module = 'knowledge_graph'
@@ -86,33 +79,11 @@ def _begin_immediate_with_retry(conn: sqlite3.Connection) -> None:
             delay = min(delay * 2, MIGRATION_LOCK_RETRY_MAX_DELAY_SECONDS)
 
 
-def _config_requires_cleanup(config_path: Path) -> bool:
-    try:
-        payload = json.loads(config_path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return False
-    return isinstance(payload, dict) and bool(
-        {"digest_briefing", "knowledge_graph"} & payload.keys()
-    )
-
-
-def _cleanup_requires_backup(conn: sqlite3.Connection, config_path: Path) -> bool:
-    existing_tables = {
-        row[0]
-        for row in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table'"
-        )
-    }
-    if set(RETIRED_TABLE_NAMES) & existing_tables:
-        return True
-    if "ai_usage" in existing_tables and conn.execute(RETIRED_USAGE_PRECHECK).fetchone():
-        return True
-    return _config_requires_cleanup(config_path)
-
-
 def ensure_migrations(db_path: Path) -> None:
     """Apply any pending migrations to the database."""
-    db_path = Path(db_path).expanduser().absolute().resolve(strict=False)
+    requested_db_path = Path(db_path).expanduser().absolute()
+    database_existed = requested_db_path.exists()
+    db_path = requested_db_path.resolve(strict=False)
     config_path = db_path.parent / "system_config.json"
     conn = sqlite3.connect(str(db_path))
     try:
@@ -135,42 +106,59 @@ def ensure_migrations(db_path: Path) -> None:
             logger.info("Applying migration: %s", name)
             prerequisite = None
             try:
-                _begin_immediate_with_retry(conn)
-                if _table_exists(conn, "_migrations") and conn.execute(
-                    "SELECT 1 FROM _migrations WHERE name = ?", (name,)
-                ).fetchone():
+                try:
+                    _begin_immediate_with_retry(conn)
+                    if _table_exists(conn, "_migrations") and conn.execute(
+                        "SELECT 1 FROM _migrations WHERE name = ?", (name,)
+                    ).fetchone():
+                        conn.commit()
+                        applied.add(name)
+                        if name == DESTRUCTIVE_CLEANUP_MIGRATION:
+                            from .database_backup import consume_backup_prerequisite
+
+                            consume_backup_prerequisite(db_path, name)
+                        continue
+                    bootstrap_new_database = (
+                        name == DESTRUCTIVE_CLEANUP_MIGRATION
+                        and not database_existed
+                        and not config_path.exists()
+                    )
+                    if name == DESTRUCTIVE_CLEANUP_MIGRATION and not bootstrap_new_database:
+                        from .database_backup import validate_backup_prerequisite
+
+                        prerequisite = validate_backup_prerequisite(
+                            db_path,
+                            config_path,
+                            name,
+                            pin_artifacts=True,
+                        )
+                    conn.execute(
+                        """CREATE TABLE IF NOT EXISTS _migrations (
+                            name TEXT PRIMARY KEY,
+                            applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+                        )"""
+                    )
+                    if not bootstrap_new_database:
+                        fn(conn)
+                    if prerequisite is not None:
+                        from .database_backup import assert_backup_prerequisite_published
+
+                        assert_backup_prerequisite_published(prerequisite)
+                    conn.execute("INSERT INTO _migrations (name) VALUES (?)", (name,))
                     conn.commit()
                     applied.add(name)
-                    if name == DESTRUCTIVE_CLEANUP_MIGRATION:
-                        from .database_backup import consume_backup_prerequisite
+                except Exception:
+                    conn.rollback()
+                    raise
+                if prerequisite is not None:
+                    from .database_backup import consume_backup_prerequisite
 
-                        consume_backup_prerequisite(db_path, name)
-                    continue
-                if name == DESTRUCTIVE_CLEANUP_MIGRATION and _cleanup_requires_backup(
-                    conn, config_path
-                ):
-                    from .database_backup import validate_backup_prerequisite
+                    consume_backup_prerequisite(db_path, name, prerequisite)
+            finally:
+                if prerequisite is not None:
+                    from .database_backup import release_backup_prerequisite
 
-                    prerequisite = validate_backup_prerequisite(
-                        db_path, config_path, name
-                    )
-                conn.execute(
-                    """CREATE TABLE IF NOT EXISTS _migrations (
-                        name TEXT PRIMARY KEY,
-                        applied_at TEXT NOT NULL DEFAULT (datetime('now'))
-                    )"""
-                )
-                fn(conn)
-                conn.execute("INSERT INTO _migrations (name) VALUES (?)", (name,))
-                conn.commit()
-                applied.add(name)
-            except Exception:
-                conn.rollback()
-                raise
-            if prerequisite is not None:
-                from .database_backup import consume_backup_prerequisite
-
-                consume_backup_prerequisite(db_path, name, prerequisite)
+                    release_backup_prerequisite(prerequisite)
             logger.info("Migration applied: %s", name)
 
         if not _table_exists(conn, "_migrations"):
