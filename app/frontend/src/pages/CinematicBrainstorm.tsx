@@ -1,83 +1,199 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { Brain, Coins, Globe, Lightbulb, Loader2, Plus, RefreshCw, Search, Telescope, Trash2, X } from 'lucide-react';
-import { useParams } from 'react-router-dom';
-import { useCurtain } from '../CurtainContext';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { Brain, Coins, Globe, Lightbulb, Loader2, RefreshCw, Search, Telescope, Trash2 } from 'lucide-react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { apiFetch } from '../api';
-import CinematicLaserWorkspace from '../components/cinematic/CinematicLaserWorkspace';
-import CinematicTemplatePage from '../components/cinematic/CinematicTemplatePage';
-import { CINEMATIC_LASER_PRESET } from '../components/cinematic/cinematicLaserPreset';
-import { useCinematicTemplateLayout } from '../components/cinematic/useCinematicTemplateLayout';
-import { useLaserRenderProfile } from '../components/cinematic-ingest/useLaserRenderProfile';
-import { filterBrainstormQuestions, getBrainstormStats, linkedEventCount, removeBrainstormQuestion } from '../components/cinematic-brainstorm/brainstormWorkspace.mjs';
-import LaserFlow from '../components/react-bits/LaserFlow';
-import LegacyBrainstormDetail, { type BrainstormQuestion } from './BrainstormDetailPage';
-import '../components/cinematic/cinematic.css';
+import {
+  filterBrainstormQuestions,
+  getBrainstormStats,
+  linkedEventCount,
+  removeBrainstormQuestion,
+  resolveBrainstormSelection,
+} from '../components/cinematic-brainstorm/brainstormWorkspace.mjs';
+import SpotlightListRow from '../components/react-bits/SpotlightListRow';
+import type { BrainstormQuestion } from './BrainstormDetailPage';
+import KiNavigationShell from './KiNavigationShell';
 import '../components/cinematic-ingest/cinematic-ingest.css';
-import '../components/cinematic-ingest/cinematic-ingest-performance.css';
 import '../components/cinematic-brainstorm/cinematic-brainstorm.css';
 
+const LegacyBrainstormDetail = lazy(() => import('./BrainstormDetailPage'));
+
 const TOPICS = [
-  { key: '格局', icon: Globe }, { key: '财富', icon: Coins }, { key: '认知', icon: Brain }, { key: '前瞻', icon: Telescope },
-];
+  { key: '全部', icon: Lightbulb, accent: 'gold' },
+  { key: '格局', icon: Globe, accent: 'blue' },
+  { key: '财富', icon: Coins, accent: 'gold' },
+  { key: '认知', icon: Brain, accent: 'violet' },
+  { key: '前瞻', icon: Telescope, accent: 'cyan' },
+] as const;
+
+type TopicKey = (typeof TOPICS)[number]['key'];
+
+function topicAccent(topic?: string) {
+  return TOPICS.find((item) => item.key === topic)?.accent || 'violet';
+}
 
 export default function CinematicBrainstorm() {
-  const { id: routeId } = useParams<{ id: string }>();
-  const { navigateWithCurtain } = useCurtain();
-  const { profile, style } = useCinematicTemplateLayout('system');
-  const { viewportHeight, laserRenderProfile } = useLaserRenderProfile();
-  const [activeHub, setActiveHub] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const { id: routeId = '' } = useParams<{ id?: string }>();
   const [items, setItems] = useState<BrainstormQuestion[]>([]);
-  const [selectedId, setSelectedId] = useState(routeId || '');
-  const [topic, setTopic] = useState('全部');
+  const [selectedId, setSelectedId] = useState(routeId);
+  const [topic, setTopic] = useState<TopicKey>('全部');
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [dialog, setDialog] = useState(false);
-  const [newQuestion, setNewQuestion] = useState('');
-  const [creating, setCreating] = useState(false);
 
-  async function loadData() {
+  const loadData = useCallback(async (preferredId = '') => {
     setLoading(true);
     try {
       const response = await apiFetch('/api/brainstorm?limit=200');
       if (!response.ok) throw new Error('脑暴问题加载失败');
-      const data = await response.json(); const next = data.questions || [];
-      setItems(next); setSelectedId((current) => current && next.some((item: BrainstormQuestion) => item.id === current) ? current : next[0]?.id || ''); setError('');
-    } catch (reason: any) { setError(reason.message || '脑暴问题加载失败'); }
-    setLoading(false);
-  }
+      const data = await response.json();
+      const next = data.questions || [];
+      setItems(next);
+      setSelectedId((current) => resolveBrainstormSelection(next, preferredId, current));
+      setError('');
+    } catch (reason: any) {
+      setError(reason?.message || '脑暴问题加载失败');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  useEffect(() => { loadData(); }, []);
-  useEffect(() => { if (routeId) setSelectedId(routeId); }, [routeId]);
-  const filtered = useMemo(() => filterBrainstormQuestions(items, topic, query), [items, topic, query]);
-  const selected = items.find((item) => item.id === selectedId) || filtered[0];
+  useEffect(() => { void loadData(routeId); }, [loadData]);
+
+  useEffect(() => {
+    if (items.length === 0) return;
+    const resolvedId = resolveBrainstormSelection(items, routeId, selectedId);
+    if (resolvedId !== selectedId) setSelectedId(resolvedId);
+    if (resolvedId && routeId !== resolvedId) {
+      navigate(`/brainstorm/${resolvedId}`, { replace: !routeId });
+    }
+  }, [items, navigate, routeId, selectedId]);
+
+  const filtered = useMemo(
+    () => filterBrainstormQuestions(items, topic, query),
+    [items, query, topic],
+  );
+  const selected = useMemo(
+    () => items.find((item) => item.id === selectedId) || null,
+    [items, selectedId],
+  );
   const stats = useMemo(() => getBrainstormStats(items), [items]);
-  const coreBoxHeight = Math.min(Math.max(viewportHeight * 0.158, 126), 178);
-  const beamVerticalOffset = (coreBoxHeight - 6) / Math.max(viewportHeight, 1) - 0.5;
 
-  const handleQuestionChange = useCallback((detail: BrainstormQuestion) => setItems((current) => current.map((item) => item.id === detail.id ? { ...item, ...detail } : item)), []);
+  const handleSelect = useCallback((questionId: string) => {
+    setSelectedId(questionId);
+    navigate(`/brainstorm/${questionId}`);
+  }, [navigate]);
 
-  async function createQuestion() {
-    if (!newQuestion.trim()) return;
-    setCreating(true);
-    try {
-      const response = await apiFetch('/api/brainstorm', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: newQuestion.trim() }) });
-      const data = await response.json(); if (!response.ok) throw new Error(data.detail || '创建失败');
-      setDialog(false); setNewQuestion(''); await loadData(); setSelectedId(data.id);
-    } catch (reason: any) { setError(reason.message || '创建失败'); }
-    setCreating(false);
-  }
+  const handleTopicChange = useCallback((nextTopic: TopicKey) => {
+    setTopic(nextTopic);
+    const next = filterBrainstormQuestions(items, nextTopic, query)[0];
+    if (next) handleSelect(next.id);
+  }, [handleSelect, items, query]);
 
-  async function deleteSelected() {
+  const handleQuestionChange = useCallback((detail: BrainstormQuestion) => {
+    setItems((current) => current.map((item) => item.id === detail.id ? { ...item, ...detail } : item));
+  }, []);
+
+  const deleteSelected = useCallback(async () => {
     if (!selected || !window.confirm(`确定删除「${selected.question}」？`)) return;
     const response = await apiFetch(`/api/brainstorm/${selected.id}`, { method: 'DELETE' });
     if (!response.ok) return;
-    setItems((current) => { const next = removeBrainstormQuestion(current, selected.id); setSelectedId(next.selectedId); return next.items; });
-  }
+    const next = removeBrainstormQuestion(items, selected.id);
+    setItems(next.items);
+    setSelectedId(next.selectedId);
+    navigate(next.selectedId ? `/brainstorm/${next.selectedId}` : '/brainstorm', { replace: true });
+  }, [items, navigate, selected]);
 
-  const status = <section className="ingest-observation cinematic-observation brainstorm-status"><div className="panel-status"><i className="signal-dot" /><span>脑暴问答</span></div><span>问题、参考资料、多轮对话与概念沉淀统一编排</span><div className="system-status-summary"><span className="is-good">问题 {stats.total}</span><span className="is-cyan">进行中 {stats.open}</span><span className="is-warn">已完成 {stats.done}</span></div><div className="panel-detail-grid"><span>当前<b>{selected?.question || '--'}</b></span><span>关联<b>{selected ? linkedEventCount(selected) : 0} 条</b></span></div></section>;
-  const commands = <section className="ingest-command-launcher brainstorm-command-launcher"><div className="launcher-actions"><button className="launcher-action ingest-command-metric is-douyin" onClick={() => setDialog(true)}><Plus size={15} /><b>新建问题</b><span>开始探索</span><small>CREATE</small></button><button className="launcher-action ingest-command-metric is-file" onClick={() => setTopic('全部')}><Lightbulb size={15} /><b>全部问题</b><span>{stats.total} 条</span><small>QUESTIONS</small></button><button className="launcher-action ingest-command-metric is-concept" onClick={deleteSelected} disabled={!selected}><Trash2 size={15} /><b>删除当前</b><span>移除问题</span><small>DELETE</small></button><button className="launcher-action ingest-command-metric is-source" onClick={loadData}><RefreshCw size={15} /><b>刷新脑暴</b><span>{stats.linked} 次关联</span><small>REFRESH</small></button></div></section>;
-  const index = <><div className="ingest-topic-orbit brainstorm-topic-orbit"><button className={topic === '全部' ? 'is-active is-gold' : ''} onClick={() => setTopic('全部')}><Lightbulb size={14} /><span>全部</span></button>{TOPICS.map(({ key, icon: Icon }) => <button key={key} className={topic === key ? 'is-active is-cyan' : ''} onClick={() => setTopic(key)}><Icon size={14} /><span>{key}</span></button>)}</div><label className="brainstorm-index-search"><Search size={13} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索问题" /></label><div className="ingest-index-list brainstorm-index-list">{filtered.map((item, index) => <button key={item.id} className={`ingest-index-item${selected?.id === item.id ? ' is-active' : ''}`} style={{ '--index-depth-scale': 1 - Math.min(index, 10) * .026, '--index-depth-z': `${-Math.min(index, 10) * 3}px`, '--index-depth-opacity': 1 - Math.min(index, 10) * .035 } as CSSProperties} onClick={() => setSelectedId(item.id)}><div className="index-title"><b>{item.question}</b><span><em className="is-cyan">{item.topic || '认知'}</em></span></div><small>{linkedEventCount(item)} 条资料 · {item.status === 'done' ? '已完成' : '进行中'}</small></button>)}</div></>;
+  return (
+    <KiNavigationShell
+      className="ki-shell-ingest-preview ki-shell-brainstorm"
+      sceneVariant="ingest"
+      laserPrimary
+      topAccessory={(
+        <label className="ki-ingest-list-search" aria-label="搜索头脑风暴问题">
+          <Search size={14} />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索问题" />
+        </label>
+      )}
+    >
+      <section className="ki-shell-content" aria-label="头脑风暴工作区">
+        <div className="ki-shell-legacy-ingest">
+          <div className="legacy-ingest-root is-shell-embedded cinematic-ingest ki-brainstorm-embedded-root flex-1 bg-[#0B0C10] text-white flex flex-col h-full overflow-hidden">
+            <div className="flex-1 overflow-hidden px-4 md:px-8 pb-4 md:pb-8">
+              <div className="max-w-[1500px] mx-auto pt-4 h-full">
+                <div className="ki-ingest-split-stage">
+                  <section className="ki-ingest-list-pane" aria-label="脑暴问题列表">
+                    <nav className="ingest-topic-orbit ki-ingest-topic-orbit brainstorm-topic-tabs" aria-label="脑暴问题分类">
+                      {TOPICS.map(({ key, icon: Icon, accent }) => (
+                        <button
+                          key={key}
+                          type="button"
+                          className={`${topic === key ? 'is-active ' : ''}is-${accent}`}
+                          onClick={() => handleTopicChange(key)}
+                        >
+                          <Icon size={17} />
+                          <span>{key}</span>
+                        </button>
+                      ))}
+                    </nav>
 
-  return <CinematicTemplatePage className="cinematic-brainstorm" profile={profile} topic="violet" style={style} variant="system" status={status} commands={commands} workspace={<CinematicLaserWorkspace ariaLabel="脑暴工作舱" indexAriaLabel="问题索引" index={index} stageAriaLabel="脑暴详情" stage={<><LaserFlow {...CINEMATIC_LASER_PRESET} color="#B891FF" verticalBeamOffset={beamVerticalOffset} dpr={laserRenderProfile.dpr} maxFps={laserRenderProfile.maxFps} />{selected ? <LegacyBrainstormDetail embedded questionId={selected.id} onQuestionChange={handleQuestionChange} /> : <div className="brainstorm-cinematic-loading">{loading ? <Loader2 className="animate-spin" /> : error || '暂无脑暴问题'}</div>}<div className="laser-media-box brainstorm-core-box"><span>BRAINSTORM THREAD</span><b>{selected?.question || '等待问题'}</b><div><em>分类<strong>{selected?.topic || '--'}</strong></em><em>资料<strong>{selected ? linkedEventCount(selected) : 0}</strong></em><em>状态<strong>{selected?.status === 'done' ? 'done' : 'open'}</strong></em></div></div></>} />} overlays={dialog ? <div className="brainstorm-dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setDialog(false)}><section className="brainstorm-dialog"><button onClick={() => setDialog(false)}><X /></button><header><span>NEW QUESTION</span><h2>新建脑暴问题</h2></header><div><textarea autoFocus value={newQuestion} onChange={(event) => setNewQuestion(event.target.value)} placeholder="输入你想持续探索的问题..." /><button onClick={createQuestion} disabled={creating || !newQuestion.trim()}>{creating ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}创建问题</button></div></section></div> : null} activeHub={activeHub} onActiveHubChange={setActiveHub} onNavigate={(path) => navigateWithCurtain(path)} />;
+                    <div className="ki-ingest-event-list brainstorm-question-list" aria-live="polite">
+                      {loading ? (
+                        <div className="ki-ingest-pane-state"><Loader2 size={16} className="animate-spin" />加载问题</div>
+                      ) : error ? (
+                        <div className="ki-ingest-pane-state is-error"><span>{error}</span><button type="button" onClick={() => void loadData(routeId)}>重试</button></div>
+                      ) : filtered.length === 0 ? (
+                        <div className="ki-ingest-pane-state">{query ? '没有匹配的问题' : '暂无脑暴问题'}</div>
+                      ) : filtered.map((item) => {
+                        const accent = topicAccent(item.topic);
+                        const Icon = TOPICS.find((entry) => entry.key === item.topic)?.icon || Brain;
+                        return (
+                          <SpotlightListRow
+                            key={item.id}
+                            active={selectedId === item.id}
+                            spotlightColor="rgba(184, 145, 255, 0.2)"
+                          >
+                            <button type="button" className="ki-ingest-list-row brainstorm-question-row" onClick={() => handleSelect(item.id)}>
+                              <span className={`ki-ingest-list-topic is-${accent}`}>
+                                <span className="ki-ingest-list-type-icon"><Icon size={14} /></span>
+                                <em>{item.topic || '认知'}</em>
+                              </span>
+                              <strong>{item.question}</strong>
+                              <small className="ki-ingest-list-meta">{linkedEventCount(item)} 条资料 · {item.status === 'done' ? '已完成' : '进行中'}</small>
+                            </button>
+                          </SpotlightListRow>
+                        );
+                      })}
+                    </div>
+                  </section>
+
+                  <section className="ki-ingest-detail-pane brainstorm-detail-pane" aria-label="脑暴问题详情">
+                    <div className="brainstorm-detail-host">
+                      {selected ? (
+                        <Suspense fallback={<div className="ki-ingest-pane-state"><Loader2 size={16} className="animate-spin" />加载详情</div>}>
+                          <LegacyBrainstormDetail
+                            embedded
+                            questionId={selected.id}
+                            onQuestionChange={handleQuestionChange}
+                            embeddedActions={(
+                              <>
+                                <button className="brainstorm-shell-action" type="button" onClick={() => void loadData(selectedId)} title="刷新问题" aria-label="刷新问题"><RefreshCw size={15} /></button>
+                                <button className="brainstorm-shell-action is-delete" type="button" onClick={() => void deleteSelected()} title="删除当前问题" aria-label="删除当前问题"><Trash2 size={15} /></button>
+                              </>
+                            )}
+                          />
+                        </Suspense>
+                      ) : (
+                        <div className="ki-ingest-pane-state">选择一个问题开始思考</div>
+                      )}
+                    </div>
+                  </section>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </KiNavigationShell>
+  );
 }

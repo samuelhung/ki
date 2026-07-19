@@ -1,0 +1,67 @@
+.global-dock-sources-workspace { display: grid; height: 100%; min-height: 0; grid-template-columns: minmax(250px, 35%) minmax(0, 1fr); gap: 30px; }
+.global-dock-sources-list,
+.global-dock-source-detail { min-width: 0; min-height: 0; }
+.global-dock-sources-list { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.global-dock-sources-section-head { display: flex; min-height: 32px; align-items: flex-start; justify-content: space-between; border-bottom: 1px solid rgba(255, 255, 255, .055); }
+.global-dock-sources-section-head > span,
+.global-dock-source-title > span { color: rgba(84, 216, 232, .52); font: var(--dock-font-micro)/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.global-dock-sources-section-head button { display: grid; width: 22px; height: 22px; place-items: center; padding: 0; border: 0; outline: 0; background: transparent; color: rgba(255, 255, 255, .3); cursor: pointer; }
+.global-dock-sources-section-head button:hover,
+.global-dock-sources-section-head button:focus-visible { color: #76dce8; }
+.global-dock-sources-section-head svg { width: 12px; }
+.global-dock-sources-list > div:last-child { min-height: 0; overflow-y: auto; scrollbar-width: none; }
+.global-dock-sources-list > div:last-child::-webkit-scrollbar { display: none; }
+.global-dock-sources-list > div:last-child > button { display: grid; width: 100%; min-height: 56px; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 2px; border: 0; border-bottom: 1px solid rgba(255, 255, 255, .055); outline: 0; background: transparent; color: rgba(255, 255, 255, .4); text-align: left; cursor: pointer; }
+.global-dock-sources-list > div:last-child > button:hover,
+.global-dock-sources-list > div:last-child > button:focus-visible { background: linear-gradient(90deg, rgba(84, 216, 232, .035), transparent 78%); color: rgba(255, 255, 255, .72); }
+.global-dock-sources-list > div:last-child > button.is-active { color: rgba(255, 255, 255, .9); }
+.global-dock-sources-signal { display: grid; width: 14px; height: 14px; place-items: center; color: rgba(255, 255, 255, .2); }
+.global-dock-sources-signal svg { width: 11px; }
+.global-dock-sources-list button.is-online .global-dock-sources-signal { color: #76e6b7; filter: drop-shadow(0 0 6px rgba(118, 230, 183, .4)); }
+.global-dock-sources-list button.is-error .global-dock-sources-signal { color: #fb7185; }
+.global-dock-sources-list button > span:nth-child(2) { display: grid; min-width: 0; gap: 4px; }
+.global-dock-sources-list b,
+.global-dock-sources-list small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.global-dock-sources-list b { font-size: var(--dock-font-body); font-weight: 500; }
+.global-dock-sources-list small,
+.global-dock-sources-list em { color: rgba(255, 255, 255, .28); font-size: var(--dock-font-micro); font-style: normal; }
+.global-dock-sources-list button.is-online em { color: rgba(118, 230, 183, .62); }
+.global-dock-sources-list button.is-error em { color: rgba(251, 113, 133, .72); }
+
+.global-dock-source-detail { display: grid; align-content: start; grid-template-rows: auto auto auto minmax(0, 1fr) auto; padding: 4px 2px 0 0; }
+.global-dock-source-title h3 { margin: 9px 0 7px; color: rgba(255, 255, 255, .88); font: 500 22px/1.2 "Songti SC", serif; }
+.global-dock-source-title p { min-height: 30px; margin: 0; color: rgba(255, 255, 255, .36); font-size: var(--dock-font-meta); line-height: 1.6; }
+.global-dock-source-status { display: flex; min-height: 60px; align-items: center; gap: 11px; margin-top: 18px; border-top: 1px solid rgba(255, 255, 255, .055); border-bottom: 1px solid rgba(255, 255, 255, .055); }
+.global-dock-source-status > svg { width: 15px; color: rgba(255, 255, 255, .3); }
+.global-dock-source-status > span { display: grid; gap: 4px; }
+.global-dock-source-status small { color: rgba(255, 255, 255, .28); font-size: var(--dock-font-micro); }
+.global-dock-source-status b { color: rgba(255, 255, 255, .72); font-size: var(--dock-font-body); font-weight: 500; }
+.global-dock-source-status.is-online > svg,
+.global-dock-source-status.is-online b { color: #76e6b7; }
+.global-dock-source-status.is-error > svg,
+.global-dock-source-status.is-error b { color: #fb7185; }
+.global-dock-source-status.is-paused > svg,
+.global-dock-source-status.is-paused b { color: #ffd269; }
+.global-dock-source-detail dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 18px 0 0; }
+.global-dock-source-detail dl div { display: grid; gap: 6px; border-right: 1px solid rgba(255, 255, 255, .05); padding: 0 16px; }
+.global-dock-source-detail dl div:first-child { padding-left: 0; }
+.global-dock-source-detail dl div:last-child { border-right: 0; }
+.global-dock-source-detail dt { color: rgba(255, 255, 255, .28); font-size: var(--dock-font-micro); }
+.global-dock-source-detail dd { margin: 0; color: rgba(255, 255, 255, .72); font-size: var(--dock-font-body); }
+.global-dock-source-detail footer { display: flex; align-self: end; gap: 20px; border-top: 1px solid rgba(255, 255, 255, .055); padding-top: 12px; }
+.global-dock-source-detail footer button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 0; border: 0; outline: 0; background: transparent; color: rgba(255, 255, 255, .46); font-size: var(--dock-font-micro); cursor: pointer; }
+.global-dock-source-detail footer button:hover,
+.global-dock-source-detail footer button:focus-visible { color: #8ee8f1; }
+.global-dock-source-detail footer button:disabled { cursor: not-allowed; opacity: .35; }
+.global-dock-source-detail footer svg { width: 12px; }
+.global-dock-sources-notice { align-self: end; margin: 8px 0 0; color: rgba(251, 113, 133, .88); font-size: var(--dock-font-meta); }
+.global-dock-sources-empty { display: grid; height: 100%; place-items: center; align-content: center; gap: 8px; color: rgba(255, 255, 255, .3); }
+.global-dock-sources-empty svg { width: 22px; color: rgba(84, 216, 232, .5); }
+.global-dock-sources-empty b { font-size: var(--dock-font-body); font-weight: 500; }
+
+@media (max-width: 760px) {
+  .global-dock-sources-workspace { grid-template-columns: minmax(180px, 42%) minmax(0, 1fr); gap: 18px; }
+  .global-dock-source-detail dl { grid-template-columns: 1fr; gap: 8px; }
+  .global-dock-source-detail dl div { border-right: 0; padding: 0; }
+  .global-dock-source-detail footer { flex-wrap: wrap; gap: 12px; }
+}

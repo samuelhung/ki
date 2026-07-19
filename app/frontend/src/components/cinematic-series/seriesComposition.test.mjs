@@ -7,6 +7,7 @@ const curtain = readFileSync(new URL('../../CurtainContext.tsx', import.meta.url
 const page = readFileSync(new URL('../../pages/CinematicSeries.tsx', import.meta.url), 'utf8');
 const detail = readFileSync(new URL('../../pages/SeriesDetail.tsx', import.meta.url), 'utf8');
 const viteConfig = readFileSync(new URL('../../../vite.config.ts', import.meta.url), 'utf8');
+const packageJson = readFileSync(new URL('../../../package.json', import.meta.url), 'utf8');
 const css = `${readFileSync(new URL('./cinematic-series.css', import.meta.url), 'utf8')}\n${readFileSync(new URL('./cinematic-series-detail.css', import.meta.url), 'utf8')}`;
 
 test('series keeps legacy comparison routes while primary list and detail routes share the migrated page', () => {
@@ -130,11 +131,15 @@ test('series memoizes generated long-form html and coalesces scroll state writes
   assert.doesNotMatch(detail, /onScroll=\{\(\) => \{ if \(id\) viewStateRef\.current\.set/);
 });
 
-test('series knowledge graph loads graph libraries only after opening its tab', () => {
-  assert.match(detail, /import\('vis-network\/standalone'\)/);
-  assert.match(detail, /import\('vis-data\/standalone'\)/);
-  assert.doesNotMatch(detail, /require\('vis-(?:network|data)\/standalone'\)/);
+test('series no longer ships the retired knowledge graph surface or graph libraries', () => {
+  assert.doesNotMatch(detail, /SeriesKnowledgeNetwork|vis-network|vis-data|知识网络/);
+  assert.doesNotMatch(packageJson, /"vis-network"|"vis-data"/);
   assert.match(viteConfig, /id\.includes\('@xyflow'\)[^\n]*return 'xyflow-vendor'/);
-  assert.match(viteConfig, /id\.includes\('vis-network'\)[^\n]*id\.includes\('vis-data'\)[^\n]*return 'vis-vendor'/);
-  assert.doesNotMatch(viteConfig, /@xyflow[^\n]*vis-network[^\n]*graph-vendor/);
+  assert.doesNotMatch(viteConfig, /vis-network|vis-data|vis-vendor/);
+});
+
+test('series member expansion does not nest the open-detail button inside another button', () => {
+  assert.match(detail, /<div role="button" tabIndex=\{0\} onClick=\{\(\) => togglePanel\(m\.id\)\}/);
+  assert.match(detail, /onKeyDown=\{\(event\) => \{ if \(event\.key === 'Enter' \|\| event\.key === ' '\) togglePanel\(m\.id\); \}\}/);
+  assert.doesNotMatch(detail, /<button onClick=\{\(\) => togglePanel\(m\.id\)\}[\s\S]{0,900}<button onClick=/);
 });

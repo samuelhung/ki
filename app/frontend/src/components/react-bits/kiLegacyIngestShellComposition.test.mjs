@@ -8,6 +8,9 @@ const homeUrl = new URL('../../pages/CinematicHome.tsx', import.meta.url);
 const home = existsSync(homeUrl) ? readFileSync(homeUrl, 'utf8') : '';
 const homeCss = readFileSync(new URL('../../pages/CinematicHome.css', import.meta.url), 'utf8');
 const shell = readFileSync(new URL('../../pages/KiNavigationShell.tsx', import.meta.url), 'utf8');
+const dockItems = readFileSync(new URL('../../pages/globalDockItems.ts', import.meta.url), 'utf8');
+const dockOverlay = readFileSync(new URL('../../pages/GlobalDockOverlay.tsx', import.meta.url), 'utf8');
+const dockAccessOverlay = readFileSync(new URL('../../pages/GlobalDockAccessOverlay.tsx', import.meta.url), 'utf8');
 const demo = readFileSync(new URL('../../pages/DualNavigationDemo.tsx', import.meta.url), 'utf8');
 const preview = readFileSync(new URL('../../pages/LegacyIngestShellPreview.tsx', import.meta.url), 'utf8');
 const ingest = readFileSync(new URL('../../pages/Ingest.tsx', import.meta.url), 'utf8');
@@ -90,7 +93,7 @@ test('the demo and preview share one global navigation shell', () => {
 });
 
 test('legacy ingest preserves its implementation and only adds an embedded mode', () => {
-  assert.match(preview, /<Ingest embedded actionRequest=\{actionRequest\} \/>/);
+  assert.match(preview, /<Ingest embedded \/>/);
   assert.match(ingest, /interface IngestProps/);
   assert.match(ingest, /embedded\?: boolean/);
   assert.match(ingest, /export default function Ingest\(\{ embedded = false, actionRequest = null \}: IngestProps\)/);
@@ -114,28 +117,27 @@ test('top navigation follows the current route and performs real router navigati
   assert.match(shell, /useNavigate/);
   assert.match(shell, /activeIndex=\{activeTopIndex\}/);
   assert.match(shell, /onNavigate=\{handleNavigate\}/);
-  for (const label of ['内容采集', '事件列表', '信息源', '专题系列', '产业链', '工具箱', '系统中枢']) {
+  for (const label of ['内容采集', '专题系列', '产业链', '工具箱', '系统中枢']) {
     assert.match(shell, new RegExp(`label: '${label}'`));
   }
+  assert.doesNotMatch(shell.match(/const TOP_ITEMS:[\s\S]*?\n\];/)?.[0] || '', /事件列表|信息源/);
   assert.doesNotMatch(shell, /label: '首页'/);
-  assert.match(shell, /pathname\.startsWith\('\/events'\)\) return 1/);
-  assert.match(shell, /pathname\.startsWith\('\/sources'\)\) return 2/);
+  assert.match(shell, /pathname\.startsWith\('\/series'\)\) return 1/);
   assert.match(gooey, /activeIndex\?: number/);
   assert.match(gooey, /onNavigate\?: \(item: GooeyNavItem, index: number\) => void/);
 });
 
-test('the global dock opens the legacy ingest real dialogs on the preview page', () => {
-  assert.match(shell, /onGlobalAction\?:/);
-  assert.match(shell, /key: 'douyin'/);
-  assert.match(preview, /handleGlobalAction/);
-  assert.match(preview, /type: 'douyin'/);
-  assert.match(preview, /type: 'file'/);
-  assert.match(preview, /type: 'concept'/);
-  assert.match(preview, /type: 'queue'/);
-  assert.match(preview, /actionRequest=\{actionRequest\}/);
-  assert.match(ingest, /actionRequest\?: IngestActionRequest/);
-  assert.match(ingest, /type: 'douyin' \| 'file' \| 'concept' \| 'queue'/);
-  assert.match(ingest, /openModal\(actionRequest\.type\)/);
+test('the global dock opens the same real workspaces on every shell page', () => {
+  assert.match(shell, /GLOBAL_DOCK_ITEMS/);
+  assert.match(shell, /GlobalDockOverlay/);
+  assert.match(dockItems, /key: 'access'/);
+  assert.match(dockItems, /key: 'events'/);
+  assert.match(dockItems, /key: 'sources'/);
+  assert.match(dockItems, /key: 'queue'/);
+  assert.match(dockOverlay, /GlobalDockAccessOverlay/);
+  assert.match(dockAccessOverlay, /apiFetch\('\/api\/ingest\/douyin'/);
+  assert.match(dockAccessOverlay, /apiFetch\('\/api\/ingest\/file'/);
+  assert.doesNotMatch(preview, /handleGlobalAction|actionRequest/);
 });
 
 test('embedded ingest removes the legacy hero and moves search beside category tabs', () => {
@@ -186,7 +188,13 @@ test('topic tabs sit above the list with icon-over-label layout and no dots', ()
   assert.match(shellCss, /\.legacy-ingest-root\.is-shell-embedded\.cinematic-ingest \.ki-ingest-topic-orbit\s*\{[^}]*overflow:\s*visible\s*!important[^}]*scrollbar-width:\s*none/s);
   assert.match(shellCss, /\.ki-spotlight-row\s*\{[^}]*width:\s*var\(--ki-list-width\)/s);
   assert.match(shellCss, /\.legacy-ingest-root\.is-shell-embedded \.ki-ingest-topic-orbit button span\s*\{[^}]*writing-mode:\s*horizontal-tb/s);
-  assert.match(shellCss, /\.legacy-ingest-root\.is-shell-embedded \.ki-ingest-topic-orbit button\.is-active:after\s*\{[^}]*content:\s*none/s);
+  assert.match(shellCss, /\.legacy-ingest-root\.is-shell-embedded \.ki-ingest-topic-orbit button\s*\{[^}]*border-bottom:\s*0\s*!important/s);
+  assert.match(shellCss, /\.legacy-ingest-root\.is-shell-embedded \.ki-ingest-topic-orbit button\.is-active:after\s*\{[^}]*bottom:\s*-11px\s*!important/s);
+  assert.match(shellCss, /\.legacy-ingest-root\.is-shell-embedded \.ki-ingest-topic-orbit button\.is-active:after\s*\{[^}]*height:\s*3px\s*!important/s);
+  assert.match(shellCss, /\.legacy-ingest-root\.is-shell-embedded \.ki-ingest-topic-orbit button\.is-active:after\s*\{[^}]*background:\s*rgb\(167 139 250\)\s*!important/s);
+  assert.match(shellCss, /\.legacy-ingest-root\.is-shell-embedded \.ki-ingest-topic-orbit button\.is-active:after\s*\{[^}]*content:\s*""\s*!important/s);
+  assert.match(shellCss, /\.legacy-ingest-root\.is-shell-embedded \.ki-ingest-topic-orbit button\.is-active:after\s*\{[^}]*transform:\s*none\s*!important/s);
+  assert.match(shellCss, /\.legacy-ingest-root\.is-shell-embedded \.ki-ingest-topic-orbit button\.is-active:after\s*\{[^}]*top:\s*auto\s*!important/s);
   assert.match(shellCss, /\.ki-ingest-list-pane\s*\{[^}]*padding:\s*18px[^}]*\}[\s\S]*\.ki-ingest-detail-pane\s*\{[^}]*padding:\s*18px/s);
 });
 

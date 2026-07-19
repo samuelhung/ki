@@ -702,11 +702,12 @@
 .legacy-ingest-root.is-shell-embedded.cinematic-ingest .ki-ingest-topic-orbit::-webkit-scrollbar { display: none; }
 
 .legacy-ingest-root.is-shell-embedded .ki-ingest-topic-orbit button {
+  position: relative !important;
   width: 100% !important;
   min-height: 58px !important;
   padding: 6px 0 8px !important;
   gap: 6px !important;
-  border-bottom: 1px solid rgba(207, 158, 255, .1) !important;
+  border-bottom: 0 !important;
   font-size: 10px !important;
   transform: none !important;
 }
@@ -724,11 +725,23 @@
 }
 
 .legacy-ingest-root.is-shell-embedded .ki-ingest-topic-orbit button.is-active {
-  transform: scale(1.045) !important;
+  transform: none !important;
 }
 
 .legacy-ingest-root.is-shell-embedded .ki-ingest-topic-orbit button.is-active:after {
-  content: none !important;
+  position: absolute !important;
+  top: auto !important;
+  right: 0 !important;
+  bottom: -11px !important;
+  left: 0 !important;
+  width: auto !important;
+  height: 3px !important;
+  border-radius: 2px !important;
+  background: rgb(167 139 250) !important;
+  box-shadow: 0 0 8px rgba(167, 139, 250, .72) !important;
+  content: "" !important;
+  pointer-events: none !important;
+  transform: none !important;
 }
 
 .ki-ingest-detail-pane {
@@ -836,7 +849,7 @@
   z-index: 1;
   inset: 0 clamp(24px, 4vw, 68px);
   display: grid;
-  grid-template-columns: repeat(10, minmax(0, 1fr));
+  grid-template-columns: repeat(9, minmax(0, 1fr));
   align-items: center;
   gap: clamp(4px, .65vw, 14px);
 }
@@ -956,6 +969,13 @@
   place-items: center;
   background: rgba(0, 0, 0, .58);
   backdrop-filter: blur(8px);
+}
+
+.global-dock-backdrop {
+  --dock-font-micro: 11px;
+  --dock-font-meta: 12px;
+  --dock-font-body: 13px;
+  --dock-font-emphasis: 14px;
 }
 
 .dual-nav-action-dialog {

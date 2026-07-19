@@ -762,7 +762,7 @@
 }
 
 .ki-shell-system .ki-ingest-list-pane {
-  --ki-list-width: 70%;
+  --ki-list-width: 62%;
 }
 
 .ki-shell-system .system-group-tabs {
@@ -772,7 +772,7 @@
 }
 
 .ki-shell-system .system-function-list {
-  padding-top: 8px;
+  padding-top: 0;
 }
 
 .ki-shell-system .system-function-row {
@@ -999,7 +999,7 @@
   }
 
   .ki-shell-system .ki-ingest-list-pane {
-    --ki-list-width: 74%;
+    --ki-list-width: 68%;
   }
 
   .ki-shell-system .system-detail-reader > .system-detail-header {
@@ -1940,7 +1940,7 @@
   align-content: start !important;
   gap: 4px !important;
   overflow: auto !important;
-  padding: 8px 18px 18px 4px !important;
+  padding: 0 18px 18px 4px !important;
   pointer-events: auto !important;
   transform: none !important;
 }

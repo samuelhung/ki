@@ -1,0 +1,11 @@
+.cinematic-event-detail .event-detail-index .ingest-index-item { cursor: default; }
+.cinematic-event-detail .event-detail-index .ingest-index-item:hover { transform: none; }
+.cinematic-event-detail .event-detail-embedded { position: relative; z-index: 3; width: 100%; height: 100%; padding: clamp(20px, 2.4vw, 34px) clamp(18px, 2.8vw, 42px) clamp(154px, 19vh, 198px); background: transparent; }
+.cinematic-event-detail .event-detail-embedded__inner { width: min(100%, 920px); margin: 0; }
+.cinematic-event-detail .event-detail-embedded-state { position: relative; z-index: 3; min-height: 240px; background: transparent; }
+.cinematic-event-detail .event-detail-embedded h1 { font-family: "Songti SC", "STSong", serif; font-size: clamp(18px, 1.35vw, 24px); font-weight: 500; }
+.cinematic-event-detail .event-detail-embedded .bg-\[\#141518\] { background: rgba(8, 8, 14, .28); }
+.cinematic-event-detail .event-detail-embedded .border-\[\#2A2B30\] { border-color: rgba(255,255,255,.08); }
+.cinematic-event-detail .event-detail-embedded video { max-height: min(32vh, 360px); }
+.cinematic-event-detail .event-detail-core-box b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-height: 760px) { .cinematic-event-detail .event-detail-embedded { padding-top: 18px; padding-bottom: 132px; }.cinematic-event-detail .event-detail-embedded .mb-6 { margin-bottom: 14px; } }

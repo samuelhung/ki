@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { escapeHtml, sanitizeHtml } from '../safeHtml';
 
 export function chainReportToHtml(markdown: string): string {
@@ -30,10 +30,11 @@ export function chainReportToHtml(markdown: string): string {
 }
 
 export function ChainReport({ report }: { report: string }) {
+  const html = useMemo(() => chainReportToHtml(report), [report]);
   return (
     <div
       className="text-xs leading-relaxed"
-      dangerouslySetInnerHTML={{ __html: chainReportToHtml(report) }}
+      dangerouslySetInnerHTML={{ __html: html }}
     />
   );
 }

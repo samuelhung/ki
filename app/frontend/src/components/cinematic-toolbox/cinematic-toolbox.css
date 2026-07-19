@@ -15,8 +15,15 @@
 }
 
 .ki-shell-toolbox .toolbox-detail-reader {
-  width: 100% !important;
+  width: auto !important;
+  left: 12px !important;
+  right: 0 !important;
   height: 100% !important;
+}
+
+@media (max-width: 1280px) {
+  .ki-shell-toolbox .ki-ingest-list-pane { --ki-list-width: 68%; }
+  .ki-shell-toolbox .toolbox-detail-reader { left: 6px !important; }
 }
 
 .toolbox-detail-header {

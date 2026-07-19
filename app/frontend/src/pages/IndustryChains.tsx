@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Loader2, ChevronDown, ChevronRight, Globe, GitBranch, GitMerge, Zap, Cpu, Sun, Factory, ShoppingCart, Edit3, Trash2, Plus, Save, X, Sparkles, Database, Link2, Bell, Check, Trash, Search, Wheat, Flame, Hammer, Shirt, Truck, Heart, Building, Cloud, DollarSign, Leaf, Anchor, Microscope, Droplets, Ship, Plane, Shield, Radio, MessageCircle, Send, Eraser } from 'lucide-react';
-import { ChainReport } from '../components/ChainReport';
+import { Loader2, ChevronDown, ChevronRight, Globe, GitBranch, GitMerge, Zap, Cpu, Sun, Factory, ShoppingCart, Edit3, Trash2, Plus, Save, X, Sparkles, Database, Link2, Bell, Check, Trash, Search, Wheat, Flame, Hammer, Shirt, Truck, Heart, Building, Cloud, DollarSign, Leaf, Anchor, Microscope, Droplets, Ship, Plane, Shield, Radio } from 'lucide-react';
+import { ChainChatPanel, ChainReportPanel } from '../components/cinematic-chains/ChainDetailPanels';
+import { createChainDetailCache } from '../components/cinematic-chains/chainDetailCache.mjs';
 import { apiFetch } from '../api';
 
 interface GlobalShare {
@@ -252,6 +253,8 @@ export function EditModal({ node, allNodes, defaultChain, onClose, onSaved }: { 
   const [aiText, setAiText] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [deleteArmed, setDeleteArmed] = useState(false);
 
   const isNew = !node;
   const [form, setForm] = useState<ChainNode>(node || {
@@ -262,25 +265,39 @@ export function EditModal({ node, allNodes, defaultChain, onClose, onSaved }: { 
   // Build name→id map for upstream multi-select
   const sameChainNodes = allNodes.filter(n => n.chain === form.chain && n.id !== form.id);
 
-  function save() {
+  async function save() {
     setSaving(true);
+    setActionError('');
     const url = isNew ? '/api/chains/nodes' : `/api/chains/nodes/${form.id}`;
     const method = isNew ? 'POST' : 'PUT';
     const body: any = { ...form, upstream_names: sameChainNodes.filter(n => form.upstream_ids.includes(n.id)).map(n => n.name) };
     if (!isNew) delete body.id;
-    fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      .then(r => r.json())
-      .then(d => { if (d.ok || d.id) onSaved(); else alert('保存失败'); })
-      .catch(e => alert(e.message))
-      .finally(() => setSaving(false));
+    try {
+      const response = await apiFetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || (!data.ok && !data.id)) throw new Error(data.error || `保存失败：HTTP ${response.status}`);
+      onSaved();
+    } catch (reason: any) {
+      setActionError(reason?.message || '保存失败');
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function del() {
-    if (!confirm(`确认删除「${form.name}」？此操作不可撤销。`)) return;
-    apiFetch(`/api/chains/nodes/${form.id}`, { method: 'DELETE' })
-      .then(r => r.json())
-      .then(d => { if (d.ok) onSaved(); else alert('删除失败'); })
-      .catch(e => alert(e.message));
+  async function del() {
+    setSaving(true);
+    setActionError('');
+    try {
+      const response = await apiFetch(`/api/chains/nodes/${form.id}`, { method: 'DELETE' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok) throw new Error(data.error || `删除失败：HTTP ${response.status}`);
+      onSaved();
+    } catch (reason: any) {
+      setActionError(reason?.message || '删除失败');
+      setDeleteArmed(false);
+    } finally {
+      setSaving(false);
+    }
   }
 
   function aiUpdate() {
@@ -459,15 +476,25 @@ export function EditModal({ node, allNodes, defaultChain, onClose, onSaved }: { 
 
         {/* Footer */}
         <div className="flex items-center justify-between px-5 py-3 border-t border-[#2A2B30]">
-          <div>
-            {!isNew && <button onClick={del} className="flex items-center gap-1 px-2 py-1.5 rounded text-xs text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 size={12} />删除</button>}
-          </div>
-          <div className="flex gap-2">
-            <button onClick={onClose} className="px-3 py-1.5 rounded text-xs text-gray-400 hover:text-white transition-colors">取消</button>
-            <button onClick={save} disabled={saving} className="flex items-center gap-1.5 px-4 py-1.5 rounded text-xs font-medium bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 border border-purple-500/30 disabled:opacity-50 transition-colors">
-              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} 保存
-            </button>
-          </div>
+          {deleteArmed ? (
+            <div className="flex w-full items-center gap-3">
+              <span className="text-[10px] text-red-300">确认删除「{form.name}」？此操作不可撤销。</span>
+              <div className="flex-1" />
+              <button onClick={() => setDeleteArmed(false)} disabled={saving} className="px-3 py-1.5 text-xs text-gray-400 hover:text-white">取消</button>
+              <button onClick={() => void del()} disabled={saving} className="flex items-center gap-1 px-3 py-1.5 text-xs text-red-400 border-b border-red-500/40 disabled:opacity-50">{saving ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}确认删除</button>
+            </div>
+          ) : (
+            <>
+              <div>{!isNew && <button onClick={() => { setActionError(''); setDeleteArmed(true); }} className="flex items-center gap-1 px-2 py-1.5 rounded text-xs text-red-400 hover:bg-red-500/10 transition-colors"><Trash2 size={12} />删除</button>}</div>
+              <div className="flex items-center gap-3">
+                {actionError && <span className="text-[10px] text-red-400">{actionError}</span>}
+                <button onClick={onClose} className="px-3 py-1.5 rounded text-xs text-gray-400 hover:text-white transition-colors">取消</button>
+                <button onClick={() => void save()} disabled={saving} className="flex items-center gap-1.5 px-4 py-1.5 rounded text-xs font-medium bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 border border-purple-500/30 disabled:opacity-50 transition-colors">
+                  {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} 保存
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -480,23 +507,32 @@ export function HintsReviewModal({ hints, onClose, onResolved }: { hints: ChainH
   const [idx, setIdx] = useState(0);
   const [resolving, setResolving] = useState(false);
   const [editedValue, setEditedValue] = useState('');
+  const [actionError, setActionError] = useState('');
 
   const hint = hints[idx];
   if (!hint) return null;
 
-  function resolve(action: 'accept' | 'reject') {
+  async function resolve(action: 'accept' | 'reject') {
     setResolving(true);
-    apiFetch(`/api/chains/hints/${hint.id}/resolve`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, edited_value: action === 'accept' ? editedValue : '' })
-    }).then(r => r.json()).then(() => {
+    setActionError('');
+    try {
+      const response = await apiFetch(`/api/chains/hints/${hint.id}/resolve`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, edited_value: action === 'accept' ? editedValue : '' })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok) throw new Error(data.error || `审核失败：HTTP ${response.status}`);
       if (idx + 1 < hints.length) {
         setIdx(idx + 1);
         setEditedValue('');
       } else {
         onResolved();
       }
-    }).catch(e => alert(e.message)).finally(() => setResolving(false));
+    } catch (reason: any) {
+      setActionError(reason?.message || '审核失败');
+    } finally {
+      setResolving(false);
+    }
   }
 
   const confidenceColor = hint.confidence >= 0.8 ? 'text-emerald-400' : hint.confidence >= 0.5 ? 'text-amber-400' : 'text-red-400';
@@ -558,12 +594,13 @@ export function HintsReviewModal({ hints, onClose, onResolved }: { hints: ChainH
 
         {/* Footer */}
         <div className="flex items-center justify-between px-5 py-3 border-t border-[#2A2B30]">
-          <button onClick={() => resolve('reject')} disabled={resolving} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium text-red-400 hover:bg-red-500/10 border border-red-500/20 disabled:opacity-50 transition-colors">
+          <button onClick={() => void resolve('reject')} disabled={resolving} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium text-red-400 hover:bg-red-500/10 border border-red-500/20 disabled:opacity-50 transition-colors">
             <Trash size={12} /> 拒绝
           </button>
+          {actionError && <span className="text-[10px] text-red-400">{actionError}</span>}
           <div className="flex gap-2">
             {idx > 0 && <button onClick={() => { setIdx(idx - 1); setEditedValue(''); }} className="px-3 py-2 rounded-lg text-xs text-gray-400 hover:text-white transition-colors">上一条</button>}
-            <button onClick={() => resolve('accept')} disabled={resolving} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 border border-emerald-500/20 disabled:opacity-50 transition-colors">
+            <button onClick={() => void resolve('accept')} disabled={resolving} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 border border-emerald-500/20 disabled:opacity-50 transition-colors">
               {resolving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} 接受
             </button>
           </div>
@@ -586,34 +623,35 @@ function getTransitionLabel(prevType: string, nextType: string): string {
 
 // ── Chain Detail Modal ──
 
-export function ChainDetailModal({ chainName, chainIcon, chainFlowSummary, nodes, allNodes, onClose, onCollectNode, onCollectChain, onEditNode, onSaved, embedded = false }: {
+export function ChainDetailModal({ chainName, chainIcon, chainFlowSummary, nodes, allNodes, onClose, onCollectNode, onCollectChain, onEditNode, onSaved, embedded = false, embeddedActions, detailCache }: {
   chainName: string;
   chainIcon?: string;
   chainFlowSummary?: string;
   nodes: ChainNode[];
   allNodes: ChainNode[];
   onClose?: () => void;
-  onCollectNode: (id: string) => void;
-  onCollectChain: (name: string) => void;
+  onCollectNode: (id: string) => void | Promise<void>;
+  onCollectChain: (name: string) => void | Promise<void>;
   onEditNode: (n: ChainNode) => void;
   onSaved: () => void;
   embedded?: boolean;
+  embeddedActions?: React.ReactNode;
+  detailCache?: ReturnType<typeof createChainDetailCache>;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [sourcesExpanded, setSourcesExpanded] = useState<Set<string>>(new Set());
   const [collectingNode, setCollectingNode] = useState<string | null>(null);
   const [collectingChain, setCollectingChain] = useState(false);
-  const [report, setReport] = useState<string | null>(null);
-  const [reportLoading, setReportLoading] = useState(false);
-  const [reportError, setReportError] = useState('');
-  const [reportFromCache, setReportFromCache] = useState(false);
-
-  // Chat state
-  const [chatMessages, setChatMessages] = useState<{ role: string; content: string }[]>([]);
-  const [chatInput, setChatInput] = useState('');
-  const [chatLoading, setChatLoading] = useState(false);
   const [flowSummary, setFlowSummary] = useState(chainFlowSummary || '');
   const flowSummaryCache = React.useRef<Map<string, string>>(new Map());
+  const localDetailCacheRef = React.useRef(createChainDetailCache());
+  const sharedDetailCache = detailCache || localDetailCacheRef.current;
+  const sorted = React.useMemo(() => [...nodes].sort((a, b) => a.sort_order - b.sort_order), [nodes]);
+
+  useEffect(() => {
+    setExpanded(new Set());
+    setSourcesExpanded(new Set());
+  }, [chainName]);
 
   // Generate flow summary when chain changes (prefer DB value, fallback to AI)
   useEffect(() => {
@@ -625,6 +663,7 @@ export function ChainDetailModal({ chainName, chainIcon, chainFlowSummary, nodes
     // 2. Check session cache (mem across chain switches)
     const cached = flowSummaryCache.current.get(chainName);
     if (cached) { setFlowSummary(cached); return; }
+    if (embedded) { setFlowSummary(''); return; }
     // 3. AI generate
     setFlowSummary('');
     const nodeInfo = sorted.map(n => `[${n.node_type}]${n.name}`).join(' → ');
@@ -649,58 +688,7 @@ export function ChainDetailModal({ chainName, chainIcon, chainFlowSummary, nodes
       }
     }).catch(() => {});
   }, [chainName, chainFlowSummary]);
-  const chatEndRef = React.useRef<HTMLDivElement>(null);
-
-  function sendMessage() {
-    const msg = chatInput.trim();
-    if (!msg || chatLoading) return;
-    const userMsg = { role: 'user', content: msg };
-    const updated = [...chatMessages, userMsg];
-    setChatMessages(updated);
-    setChatInput('');
-    setChatLoading(true);
-    apiFetch('/api/chains/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chain_name: chainName, message: msg, history: chatMessages }),
-    }).then(r => r.json()).then(d => {
-      if (d.reply) setChatMessages([...updated, { role: 'assistant', content: d.reply }]);
-      else if (d.error) setChatMessages([...updated, { role: 'assistant', content: `❌ ${d.error}` }]);
-    }).catch(() => {
-      setChatMessages([...updated, { role: 'assistant', content: '❌ 请求失败，请重试' }]);
-    }).finally(() => setChatLoading(false));
-  }
-
-  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chatMessages]);
-
   function toggle(id: string) { setExpanded(p => p.has(id) ? new Set() : new Set([id])); }
-
-  const sorted = [...nodes].sort((a, b) => a.sort_order - b.sort_order);
-
-  function loadReport(force = false) {
-    setReportLoading(true);
-    setReportError('');
-    apiFetch('/api/chains/report', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chain_name: chainName, force, cache_only: embedded && !force }),
-    })
-      .then(r => r.json())
-      .then(d => {
-        if (d.report) {
-          setReport(d.report);
-          setReportFromCache(!!d.cached);
-        } else if (d.missing) { setReport(null); setReportError(''); }
-        else setReportError(d.error || '分析失败');
-      })
-      .catch(e => setReportError(e.message))
-      .finally(() => setReportLoading(false));
-  }
-
-  function reanalyze() { loadReport(true); }
-
-  // Load report on mount
-  useEffect(() => { loadReport(false); }, [chainName]);
 
   return (
     <div className={embedded ? 'chain-detail-embedded' : 'fixed inset-0 z-50 flex items-center justify-center bg-black/60'} onClick={embedded ? undefined : onClose}>
@@ -711,8 +699,13 @@ export function ChainDetailModal({ chainName, chainIcon, chainFlowSummary, nodes
           <span className="text-sm font-semibold">{chainName}</span>
           <span className="text-[10px] text-gray-600">{nodes.length}节点</span>
           <div className="flex-1" />
-          <button onClick={() => { setCollectingChain(true); onCollectChain(chainName); setTimeout(() => setCollectingChain(false), 30000); }}
-            disabled={collectingChain}
+          {embedded && embeddedActions && <div className="chain-detail-embedded-actions">{embeddedActions}</div>}
+          <button onClick={async () => {
+            setCollectingChain(true);
+            try { await onCollectChain(chainName); }
+            finally { setCollectingChain(false); }
+          }}
+            disabled={collectingChain || Boolean(collectingNode)}
             className="shrink-0 px-2 py-1 rounded text-[10px] font-medium bg-sky-500/15 text-sky-400 hover:bg-sky-500/25 border border-sky-500/20 disabled:opacity-50 flex items-center gap-1 transition-colors"
           >
             {collectingChain ? <Loader2 size={10} className="animate-spin" /> : <Search size={10} />} 联网采集
@@ -785,8 +778,13 @@ export function ChainDetailModal({ chainName, chainIcon, chainFlowSummary, nodes
                     <span className={`text-[9px] px-1.5 py-0.5 rounded border ${TYPE_COLORS[node.node_type] || ''}`}>{node.node_type}</span>
                     <span className="text-xs font-medium text-gray-200">{node.name}</span>
                     <div className="flex-1" />
-                    <button onClick={(e) => { e.stopPropagation(); setCollectingNode(node.id); onCollectNode(node.id); setTimeout(() => setCollectingNode(null), 30000); }}
-                      disabled={collectingNode === node.id}
+                    <button onClick={async (e) => {
+                      e.stopPropagation();
+                      setCollectingNode(node.id);
+                      try { await onCollectNode(node.id); }
+                      finally { setCollectingNode(null); }
+                    }}
+                      disabled={Boolean(collectingNode) || collectingChain}
                       className="px-1.5 py-0.5 text-gray-500 hover:text-sky-400 transition-colors"
                       title="联网采集"
                     >
@@ -845,88 +843,8 @@ export function ChainDetailModal({ chainName, chainIcon, chainFlowSummary, nodes
           {/* ── BOTTOM: AI analysis (left) + Q&A chat (right) ── */}
           <div className="flex-1 flex min-h-0">
             {/* ── LEFT: AI 分析报告 ── */}
-            <div className="w-1/2 border-r border-[#2A2B30] overflow-y-auto custom-scrollbar p-5 min-h-0">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <span className="w-1 h-3 rounded-full bg-emerald-400" />
-                <span className="text-[11px] text-emerald-400 font-medium">AI 产业链分析</span>
-                {reportFromCache && <span className="text-[9px] text-gray-600">（缓存）</span>}
-              </div>
-              <button
-                onClick={reanalyze}
-                disabled={reportLoading}
-                className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium text-gray-500 hover:text-purple-400 hover:bg-purple-500/10 border border-transparent hover:border-purple-500/20 transition-colors disabled:opacity-50"
-              >
-                {reportLoading ? <Loader2 size={10} className="animate-spin" /> : <Sparkles size={10} />}
-                重新分析
-              </button>
-            </div>
-            {reportLoading && (
-              <div className="flex items-center gap-2 text-gray-500 text-sm py-8">
-                <Loader2 size={16} className="animate-spin" /> 正在生成分析报告...
-              </div>
-            )}
-            {reportError && (
-              <div className="text-red-400 text-sm py-4">{reportError}</div>
-            )}
-            {report && !reportLoading && <ChainReport report={report} />}
-            {!report && !reportLoading && !reportError && <button onClick={() => loadReport(true)} className="flex items-center gap-2 py-8 text-xs text-gray-500 hover:text-emerald-400"><Sparkles size={14} />生成产业链分析报告</button>}
-          </div>
-
-            {/* ── RIGHT: 智能答疑 ── */}
-            <div className="w-1/2 flex flex-col min-h-0">
-              <div className="flex items-center justify-between px-5 py-2 border-b border-[#2A2B30] shrink-0">
-                <div className="flex items-center gap-2">
-                  <MessageCircle size={14} className="text-purple-400" />
-                  <span className="text-[11px] text-purple-400 font-medium">智能答疑</span>
-                </div>
-                {chatMessages.length > 0 && (
-                  <button onClick={() => setChatMessages([])} className="text-[9px] text-gray-500 hover:text-gray-300 flex items-center gap-1">
-                    <Eraser size={11} />清空
-                  </button>
-                )}
-              </div>
-              <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-2 space-y-2 min-h-0">
-                {chatMessages.length === 0 && (
-                  <div className="text-[10px] text-gray-600 text-center py-4">
-                    我是产业链分析助手，可以问我关于{chainName}的全球格局、供应链风险、替代方案等问题
-                  </div>
-                )}
-                {chatMessages.map((m, i) => (
-                  <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[85%] rounded-lg px-3 py-1.5 text-[11px] leading-relaxed ${
-                      m.role === 'user' ? 'bg-blue-500/15 text-blue-200 border border-blue-500/20' : 'bg-[#1A1B20] text-gray-300 border border-[#2A2B30]'
-                    }`}>
-                      {m.content}
-                    </div>
-                  </div>
-                ))}
-                {chatLoading && (
-                  <div className="flex justify-start">
-                    <div className="bg-[#1A1B20] border border-[#2A2B30] rounded-lg px-3 py-1.5">
-                      <Loader2 size={12} className="animate-spin text-gray-500" />
-                    </div>
-                  </div>
-                )}
-                <div ref={chatEndRef} />
-              </div>
-              <div className="px-4 py-2 border-t border-[#2A2B30] shrink-0 flex items-center gap-2">
-                <input
-                  value={chatInput}
-                  onChange={e => setChatInput(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && sendMessage()}
-                  placeholder="问一个关于这条产业链的问题..."
-                  className="flex-1 bg-[#0B0C10] border border-[#2A2B30] rounded-lg px-3 py-1.5 text-[11px] text-gray-200 placeholder-gray-600 outline-none focus:border-purple-500/30"
-                />
-                <button
-                  onClick={sendMessage}
-                  disabled={chatLoading || !chatInput.trim()}
-                  className="shrink-0 p-1.5 rounded-lg bg-purple-500/15 text-purple-400 hover:bg-purple-500/25 border border-purple-500/20 disabled:opacity-30 transition-colors"
-                >
-                  <Send size={12} />
-                </button>
-              </div>
-            </div>
+            <ChainReportPanel chainName={chainName} embedded={embedded} cache={sharedDetailCache} />
+            <ChainChatPanel chainName={chainName} cache={sharedDetailCache} />
           </div>
         </div>
       </div>

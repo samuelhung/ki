@@ -16,12 +16,18 @@ function shouldBypassCurtain(to: string | number) {
   if (typeof to !== 'string') return false;
   const pathname = to.split(/[?#]/, 1)[0];
   return pathname === '/ingest'
+    || pathname === '/events'
+    || pathname.startsWith('/events/')
     || pathname === '/system'
     || pathname === '/settings'
     || pathname === '/toolbox'
     || pathname === '/tools'
     || pathname === '/series'
-    || pathname.startsWith('/series/');
+    || pathname.startsWith('/series/')
+    || pathname === '/brainstorm'
+    || pathname.startsWith('/brainstorm/')
+    || pathname === '/industry-chains'
+    || pathname === '/chains';
 }
 
 export function useCurtain() {

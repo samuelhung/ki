@@ -51,6 +51,53 @@ test('series performance baseline covers switching scrolling and lazy knowledge 
   ]);
 });
 
+test('industry chain performance baseline follows the migrated shell and exercises detail work', () => {
+  const [chains] = selectCinematicPages(['chains']);
+  assert.equal(chains.expectedCanvasCount, 1);
+  assert.deepEqual(chains.markers, [
+    'ki-shell-chains',
+    'chain-index-list',
+    'chain-detail-embedded',
+    'chain-list-summary',
+  ]);
+  assert.deepEqual(buildInteractionScenarioNames('chains'), [
+    'idle',
+    'chain-switch',
+    'chain-expand',
+    'chain-scroll',
+    'chain-report',
+  ]);
+});
+
+test('industry chain performance interactions fail closed when detail work breaks', async () => {
+  const source = await import('node:fs/promises').then(({ readFile }) => readFile(
+    new URL('./qa-cinematic-pages-core.mjs', import.meta.url),
+    'utf8',
+  ));
+
+  assert.match(source, /Chain performance interaction failed: second chain not found/);
+  assert.match(source, /waitFor\(cdp, 'industry chain selection'/);
+  assert.match(source, /Chain performance interaction failed: detail scroller did not move/);
+  assert.match(source, /Chain performance interaction failed: expandable node not found/);
+  assert.match(source, /Chain performance interaction failed: report action not found/);
+  assert.match(source, /globalThis\.__chainQaOriginalFetch/);
+  assert.match(source, /button\.click\(\)/);
+  assert.match(source, /industry chain report request/);
+  assert.match(source, /collectPageLayoutGeometry/);
+  assert.match(source, /detailHeaderVisible/);
+  assert.match(source, /detailHeaderClearsNavigation/);
+  assert.match(source, /detailHeaderContentFits/);
+  assert.match(source, /workspaceScrollStable/);
+  assert.match(source, /workspace\.scrollTop === 0/);
+  assert.match(source, /stageInsideViewport/);
+  assert.match(source, /listDoesNotCrossDetail/);
+  assert.match(source, /detailClearsDock/);
+  assert.match(source, /list\.left >= stage\.left/);
+  assert.match(source, /detail\.right <= stage\.right/);
+  assert.match(source, /dock\.left >= gallery\.left/);
+  assert.match(source, /dock\.right <= gallery\.right/);
+});
+
 test('system performance baseline follows the migrated shell and exercises controls', () => {
   const [system] = selectCinematicPages(['system']);
   assert.equal(system.expectedCanvasCount, 1);

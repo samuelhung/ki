@@ -25,12 +25,11 @@ const CinematicTasks = lazy(() => import('./pages/CinematicTasks'));
 const Series = lazy(() => import('./pages/Series'));
 const CinematicSeries = lazy(() => import('./pages/CinematicSeries'));
 const SeriesDetail = lazy(() => import('./pages/SeriesDetail'));
-const EventDetailPage = lazy(() => import('./pages/EventDetailPage'));
+const CinematicEventDetail = lazy(() => import('./pages/CinematicEventDetail'));
 const BrainstormDetailPage = lazy(() => import('./pages/BrainstormDetailPage'));
 const CinematicSystemCenter = lazy(() => import('./pages/CinematicSystemCenter'));
 const SystemDoc = lazy(() => import('./pages/SystemDoc'));
 const SystemSettings = lazy(() => import('./pages/SystemSettings'));
-const KnowledgeGraph = lazy(() => import('./pages/KnowledgeGraph'));
 const Study = lazy(() => import('./pages/Study'));
 const StudyDetail = lazy(() => import('./pages/StudyDetail'));
 const StudyMistakes = lazy(() => import('./pages/StudyMistakes'));
@@ -39,11 +38,11 @@ const Toolbox = lazy(() => import('./pages/Toolbox'));
 const CinematicToolbox = lazy(() => import('./pages/CinematicToolbox'));
 const IndustryChains = lazy(() => import('./pages/IndustryChains'));
 const CinematicIndustryChains = lazy(() => import('./pages/CinematicIndustryChains'));
-const IndustryFlow = lazy(() => import('./pages/IndustryFlow'));
 const CircularGalleryDemo = lazy(() => import('./pages/CircularGalleryDemo'));
 const DualNavigationDemo = lazy(() => import('./pages/DualNavigationDemo'));
 const BrandLockupDemo = lazy(() => import('./pages/BrandLockupDemo'));
 const BrandDepthDemo = lazy(() => import('./pages/BrandDepthDemo'));
+const DockPopupVisualDemo = lazy(() => import('./pages/DockPopupVisualDemo'));
 const LegacyIngestShellPreview = lazy(() => import('./pages/LegacyIngestShellPreview'));
 
 function PageLoading() {
@@ -54,12 +53,18 @@ function CurtainOverlay() {
   const location = useLocation();
   const { curtainPhase, onAnimationComplete } = useCurtain();
   const skipInitialCurtain = location.pathname === '/' || location.pathname === '/ingest'
+    || location.pathname === '/events'
+    || location.pathname.startsWith('/events/')
     || location.pathname === '/system'
     || location.pathname === '/settings'
     || location.pathname === '/toolbox'
     || location.pathname === '/tools'
     || location.pathname === '/series'
-    || location.pathname.startsWith('/series/');
+    || location.pathname.startsWith('/series/')
+    || location.pathname === '/brainstorm'
+    || location.pathname.startsWith('/brainstorm/')
+    || location.pathname === '/industry-chains'
+    || location.pathname === '/chains';
   const [pageEntering, setPageEntering] = useState(() => !skipInitialCurtain);
   const active = curtainPhase !== 'idle' || pageEntering;
   const leftTarget = curtainPhase === 'covering' ? 0 : '-104%';
@@ -125,8 +130,8 @@ function CurtainOverlay() {
 function Layout() {
   const location = useLocation();
   const isDashboardHome = location.pathname === '/';
-  const isStandaloneDemo = location.pathname === '/demo/circular-gallery' || location.pathname === '/demo/dual-nav' || location.pathname === '/demo/brand-lockups' || location.pathname === '/demo/brand-depth';
-  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/today-old' || location.pathname === '/ingest' || location.pathname === '/ingest-previous' || location.pathname === '/events' || location.pathname === '/sources' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series' || location.pathname.startsWith('/series/') || location.pathname === '/study' || location.pathname.startsWith('/study/') || location.pathname === '/study-mistakes' || location.pathname === '/industry-chains' || location.pathname === '/chains' || location.pathname === '/brainstorm' || location.pathname.startsWith('/brainstorm/') || location.pathname === '/tasks' || isStandaloneDemo;
+  const isStandaloneDemo = location.pathname === '/demo/circular-gallery' || location.pathname === '/demo/dual-nav' || location.pathname === '/demo/brand-lockups' || location.pathname === '/demo/brand-depth' || location.pathname === '/demo/dock-popup-visuals';
+  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/today-old' || location.pathname === '/ingest' || location.pathname === '/ingest-previous' || location.pathname === '/events' || location.pathname.startsWith('/events/') || location.pathname === '/sources' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series' || location.pathname.startsWith('/series/') || location.pathname === '/study' || location.pathname.startsWith('/study/') || location.pathname === '/study-mistakes' || location.pathname === '/industry-chains' || location.pathname === '/chains' || location.pathname === '/brainstorm' || location.pathname.startsWith('/brainstorm/') || location.pathname === '/tasks' || isStandaloneDemo;
 
   // ---- Offline detection ----
   const [isOnline, setIsOnline] = useState(true);
@@ -339,12 +344,11 @@ export default function App() {
           <Route path="brainstorm/:id" element={<CinematicBrainstorm />} />
           <Route path="brainstorm-old" element={<Brainstorm />} />
           <Route path="brainstorm-old/:id" element={<BrainstormDetailPage />} />
-          <Route path="events/:id" element={<EventDetailPage />} />
+          <Route path="events/:id" element={<CinematicEventDetail />} />
           <Route path="system" element={<CinematicSystemCenter />} />
           <Route path="settings" element={<CinematicSystemCenter />} />
           <Route path="system-old" element={<SystemDoc />} />
           <Route path="settings-old" element={<SystemSettings />} />
-          <Route path="knowledge-graph" element={<KnowledgeGraph />} />
           <Route path="tasks" element={<CinematicTasks />} />
           <Route path="tasks-old" element={<Tasks />} />
           <Route path="series" element={<CinematicSeries />} />
@@ -361,7 +365,6 @@ export default function App() {
           <Route path="toolbox-old" element={<Toolbox />} />
           <Route path="industry-chains" element={<CinematicIndustryChains />} />
           <Route path="industry-chains-old" element={<IndustryChains />} />
-          <Route path="industry-flow" element={<IndustryFlow />} />
           <Route path="chains" element={<CinematicIndustryChains />} />
           <Route path="chains-old" element={<IndustryChains />} />
           <Route path="tools" element={<CinematicToolbox />} />
@@ -369,6 +372,7 @@ export default function App() {
           <Route path="demo/dual-nav" element={<DualNavigationDemo />} />
           <Route path="demo/brand-lockups" element={<BrandLockupDemo />} />
           <Route path="demo/brand-depth" element={<BrandDepthDemo />} />
+          <Route path="demo/dock-popup-visuals" element={<DockPopupVisualDemo />} />
           <Route path="demo/ki-ingest" element={<Navigate to="/ingest" replace />} />
         </Route>
       </Routes>

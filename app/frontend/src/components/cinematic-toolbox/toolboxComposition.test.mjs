@@ -73,7 +73,7 @@ test('toolbox detail uses a continuous reading hierarchy', () => {
 test('toolbox delegates stage geometry and responsive scaling to content ingest', () => {
   assert.doesNotMatch(css, /\.ki-toolbox-workspace|\.ki-toolbox-index-pane|\.ki-toolbox-detail-pane/);
   assert.match(css, /\.ki-shell-toolbox \.ki-ingest-list-pane\s*\{[^}]*--ki-list-width:/s);
-  assert.match(css, /\.ki-shell-toolbox \.toolbox-detail-reader\s*\{[^}]*width:\s*100%/s);
+  assert.match(css, /\.ki-shell-toolbox \.toolbox-detail-reader\s*\{[^}]*width:\s*auto/s);
 });
 
 test('calculator state is isolated from the shared navigation shell', () => {

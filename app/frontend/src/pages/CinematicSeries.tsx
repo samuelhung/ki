@@ -266,6 +266,9 @@ export default function CinematicSeries() {
               <div className="max-w-[1500px] mx-auto pt-4 h-full">
                 <div className="ki-ingest-split-stage">
                   <section className="ki-ingest-list-pane" aria-label="专题列表">
+                    <nav className="ingest-topic-orbit ki-ingest-topic-orbit series-category-tabs" aria-label="专题分类">
+                      <button type="button" className="is-active is-gold"><Layers size={17} /><span>专题</span></button>
+                    </nav>
                     <div className="ki-ingest-event-list series-list" aria-live="polite">
                       {filteredItems.map((item) => (
                         <SpotlightListRow key={item.id} active={selected?.id === item.id} spotlightColor="rgba(167, 139, 250, 0.2)">

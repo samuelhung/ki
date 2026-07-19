@@ -1,7 +1,64 @@
-.cinematic-brainstorm .brainstorm-index-list,.cinematic-brainstorm .brainstorm-index-search { width: min(100%,340px) !important; }
-.brainstorm-detail-embedded { position: absolute; z-index: 8; top: var(--template-detail-top,60px); right: var(--template-detail-right,max(clamp(42px,4.6vw,84px),var(--media-edge-x))); bottom: calc(var(--media-h) + var(--template-detail-bottom-gap,clamp(28px,4vh,52px))); left: calc(var(--beam-center-x) + var(--template-detail-gutter,clamp(16px,1.55vw,28px)) - var(--template-detail-pull,clamp(78px,4.8vw,116px))); overflow: auto; color: #fff; padding: 0 6px 150px 0; scrollbar-width: none; background: transparent !important; }
-.brainstorm-detail-embedded::-webkit-scrollbar { display: none; }.brainstorm-detail-embedded > div { max-width: none !important; }.brainstorm-detail-embedded .brainstorm-detail-back { display: none; }.brainstorm-detail-embedded h1 { font-size: 20px; font-weight: 600; }.brainstorm-detail-embedded .bg-\[\#141518\],.brainstorm-detail-embedded .bg-\[\#0B0C10\],.brainstorm-detail-embedded .bg-\[\#1A1B20\] { background: rgba(7,6,14,.24) !important; }.brainstorm-detail-embedded .border-\[\#2A2B30\] { border-color: rgba(255,255,255,.07) !important; }.brainstorm-detail-embedded .rounded-xl,.brainstorm-detail-embedded .rounded-lg { border-radius: 4px; }
-.brainstorm-core-box { display: grid; grid-template-columns: 160px minmax(260px,1fr) minmax(300px,.7fr); align-items: center; padding: 20px 34px; }.brainstorm-core-box > span { color: rgba(255,255,255,.34); font: 10px ui-monospace,monospace; }.brainstorm-core-box > b { overflow: hidden; color: #fff; font-size: 19px; text-overflow: ellipsis; white-space: nowrap; }.brainstorm-core-box > div { display: grid; grid-template-columns: repeat(3,1fr); gap: 22px; }.brainstorm-core-box em { display: grid; gap: 4px; color: rgba(255,255,255,.34); font-size: 9px; }.brainstorm-core-box strong { color: #fff; font: 500 14px ui-monospace,monospace; }
-.brainstorm-cinematic-loading { position: absolute; inset: 0; display: grid; place-items: center; color: rgba(255,255,255,.45); }.brainstorm-dialog-backdrop { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; background: rgba(0,0,0,.7); backdrop-filter: blur(10px); }.brainstorm-dialog { position: relative; width: min(620px,82vw); border: 1px solid rgba(184,145,255,.45); border-radius: 7px; background: #090712; box-shadow: 0 28px 100px rgba(0,0,0,.7),0 0 34px rgba(184,145,255,.12); }.brainstorm-dialog > button { position: absolute; right: 20px; top: 18px; border: 0; background: transparent; color: rgba(255,255,255,.45); }.brainstorm-dialog header { padding: 24px 28px 17px; border-bottom: 1px solid rgba(255,255,255,.07); }.brainstorm-dialog header span { color: rgba(184,145,255,.75); font: 9px ui-monospace,monospace; }.brainstorm-dialog h2 { margin: 5px 0 0; font-size: 21px; }.brainstorm-dialog > div { display: grid; gap: 20px; padding: 24px 28px 28px; }.brainstorm-dialog textarea { min-height: 120px; resize: vertical; border: 0; border-bottom: 1px solid rgba(184,145,255,.4); outline: 0; background: transparent; color: #fff; padding: 10px 2px; font-size: 14px; }.brainstorm-dialog > div button { display: inline-flex; align-items: center; gap: 7px; justify-self: end; border: 0; border-bottom: 1px solid rgba(184,145,255,.75); background: transparent; color: #fff; padding: 8px 2px; }
-@media (max-width:1440px) { .brainstorm-detail-embedded { right: var(--template-detail-right-compact,5px); bottom: calc(var(--media-h) + var(--template-detail-bottom-gap-compact,clamp(14px,2vh,26px))); left: calc(var(--beam-center-x) + var(--template-detail-gutter) - var(--template-detail-pull-compact)); }.brainstorm-core-box { grid-template-columns: 120px minmax(230px,1fr) minmax(260px,.7fr); padding: 16px 24px; } }
-@media (max-width:1180px) { .cinematic-brainstorm .brainstorm-index-list,.cinematic-brainstorm .brainstorm-index-search { width: min(100%,294px) !important; }.brainstorm-detail-embedded { left: calc(var(--beam-center-x) + 18px); }.brainstorm-core-box { grid-template-columns: 100px minmax(200px,1fr) minmax(230px,.7fr); }.brainstorm-detail-embedded h1 { font-size: 17px; }.brainstorm-detail-embedded .brainstorm-detail-header { flex-direction: column !important; }.brainstorm-detail-embedded .brainstorm-detail-actions { width: 100%; justify-content: flex-end; } }
+.ki-shell-brainstorm .ki-shell-content { overflow: hidden; }
+
+.ki-brainstorm-embedded-root .ki-ingest-list-pane { --ki-list-width: 62%; }
+.ki-brainstorm-embedded-root .brainstorm-topic-tabs { margin-bottom: 14px !important; }
+.ki-brainstorm-embedded-root .brainstorm-question-list { gap: 5px; }
+.ki-brainstorm-embedded-root .brainstorm-question-row strong { font-size: 12px; }
+.ki-brainstorm-embedded-root .brainstorm-question-row .ki-ingest-list-meta { font-size: 10px; }
+
+.brainstorm-detail-pane {
+  display: block;
+  min-height: 0;
+}
+
+.brainstorm-shell-action {
+  display: grid !important;
+  width: 28px;
+  height: 28px;
+  min-height: 28px !important;
+  flex: 0 0 28px;
+  place-items: center;
+  padding: 0 !important;
+  border-radius: 4px !important;
+  background: rgba(167, 139, 250, .08) !important;
+  color: rgba(216, 193, 255, .72) !important;
+  cursor: pointer;
+  transition: color 160ms ease, filter 160ms ease;
+}
+.brainstorm-shell-action:hover,.brainstorm-shell-action:focus-visible { color: #f2eaff !important; filter: drop-shadow(0 0 8px rgba(184, 145, 255, .45)); }
+.brainstorm-shell-action.is-delete { background: rgba(251, 113, 133, .07) !important; color: rgba(251, 113, 133, .72) !important; }
+.brainstorm-shell-action.is-delete:hover,.brainstorm-shell-action.is-delete:focus-visible { color: #fda4af !important; filter: drop-shadow(0 0 8px rgba(251, 113, 133, .32)); }
+
+.brainstorm-detail-host { width: 100%; height: 100%; min-height: 0; overflow: hidden; }
+
+.brainstorm-detail-embedded {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  padding: 18px 14px 120px 4px;
+  background: transparent !important;
+  color: #fff;
+  scrollbar-width: none;
+}
+.brainstorm-detail-embedded::-webkit-scrollbar { display: none; }
+.brainstorm-detail-embedded > div { max-width: none !important; }
+.brainstorm-detail-embedded .brainstorm-detail-back { display: none; }
+.brainstorm-detail-embedded .brainstorm-detail-header { gap: 14px; }
+.brainstorm-detail-embedded .brainstorm-detail-header h1 { font-size: 20px; font-weight: 600; letter-spacing: 0; }
+.brainstorm-detail-embedded .brainstorm-detail-actions { gap: 6px; }
+.brainstorm-detail-embedded .brainstorm-detail-actions button { border-radius: 4px; }
+.brainstorm-detail-embedded .bg-\[\#141518\],
+.brainstorm-detail-embedded .bg-\[\#0B0C10\],
+.brainstorm-detail-embedded .bg-\[\#1A1B20\] { background: rgba(7, 6, 14, .2) !important; }
+.brainstorm-detail-embedded .border-\[\#2A2B30\] { border-color: rgba(255, 255, 255, .07) !important; }
+.brainstorm-detail-embedded .rounded-xl,.brainstorm-detail-embedded .rounded-lg { border-radius: 4px; }
+
+@media (max-width: 1280px) {
+  .ki-brainstorm-embedded-root .ki-ingest-list-pane { --ki-list-width: 68%; }
+  .brainstorm-detail-embedded { padding-top: 14px; padding-right: 8px; }
+  .brainstorm-detail-embedded .brainstorm-detail-header { flex-direction: column !important; }
+  .brainstorm-detail-embedded .brainstorm-detail-actions { width: 100%; justify-content: flex-end; }
+  .brainstorm-detail-embedded .brainstorm-detail-header h1 { font-size: 17px; }
+}

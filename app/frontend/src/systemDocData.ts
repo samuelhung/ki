@@ -69,7 +69,6 @@ export const TECH_STACK = [
   { label: '语音', value: '火山引擎 ASR' },
   { label: '搜索', value: 'FTS5 全文检索' },
   { label: '图标', value: 'lucide-react' },
-  { label: '图谱', value: 'vis-network' },
   { label: '桌面壳', value: 'Flutter + webview_flutter' },
   { label: '更新', value: 'Sparkle 2 + GitHub Release' },
   { label: '构建', value: 'Vite + Rolldown' },
@@ -98,7 +97,6 @@ export const ARCHITECTURE_FEATURES = [
   { name: '综合事务引擎', desc: '纯手工输入 → AI 结构化判断 → 关联内容展示' },
   { name: 'FTS5 全文检索', desc: '事件搜索 + 相似事件预筛选，O(n) → O(log n)' },
   { name: '组件化 + 统一标签', desc: '侧边面板独立组件，sourceLabel/statusLabel 集中管理' },
-  { name: '知识图谱', desc: 'AI 提取人物/组织/概念/事件实体及关系，vis-network 力导向图可视化，实体详情+关联内容弹窗预览，深度 AI 分析' },
   { name: '辅导中心', desc: '独立模块 study_materials 表隔离存储，教材 PDF 上传→PyMuPDF 提取→AI 目录识别→逐课解读，孩子版/家长版/教材解读三种模式' },
 ];
 

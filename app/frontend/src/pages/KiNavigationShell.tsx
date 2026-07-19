@@ -1,20 +1,19 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { ArrowUpRight, BrainCircuit, CircleHelp, FileUp, Lightbulb, ListChecks, ListTodo, Radar, ScanSearch, Sparkles, X, Zap } from 'lucide-react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useCinematicBackdrop } from '../components/cinematic/CinematicBackdropContext';
 import type { CinematicSceneVariant } from '../components/cinematic/cinematicSceneProfile';
 import GooeyNav, { type GooeyNavItem } from '../components/react-bits/GooeyNav';
 import TextType from '../components/react-bits/TextType';
 import DualNavigationActionMenu, { type DualNavigationActionItem } from './DualNavigationActionMenu';
+import { GLOBAL_DOCK_ITEMS } from './globalDockItems';
 import { useCinematicWorkspaceScale } from './useCinematicWorkspaceScale';
 import '../components/cinematic/cinematic.css';
 import './DualNavigationDemo.css';
 
 const TOP_ITEMS: GooeyNavItem[] = [
   { label: '内容采集', href: '/ingest' },
-  { label: '事件列表', href: '/events' },
-  { label: '信息源', href: '/sources' },
   { label: '专题系列', href: '/series' },
+  { label: '头脑风暴', href: '/brainstorm' },
   { label: '产业链', href: '/industry-chains' },
   { label: '工具箱', href: '/toolbox' },
   { label: '系统中枢', href: '/system' },
@@ -22,18 +21,7 @@ const TOP_ITEMS: GooeyNavItem[] = [
 
 const GOOEY_PARTICLE_DISTANCES: [number, number] = [90, 10];
 
-const GLOBAL_ACTIONS: DualNavigationActionItem[] = [
-  { key: 'douyin', text: '抖音分享', meta: '短视频接入', accent: '#ff5f8f', icon: Zap, code: 'DOUYIN SHARE', description: '粘贴分享文本，接入短视频解析与转写链路。', placeholder: '粘贴抖音分享内容', submit: '提交解析' },
-  { key: 'file', text: '文件上传', meta: '本地资料导入', accent: '#ffb35c', icon: FileUp, code: 'FILE UPLINK', description: '投送文档、音频或视频，进入统一内容处理轨道。', placeholder: '选择文件或拖入此处', submit: '选择文件' },
-  { key: 'concept', text: '概念沉淀', meta: '认知片段整理', accent: '#d3a2ff', icon: Lightbulb, code: 'CONCEPT NODE', description: '记录一个概念、判断或认知片段，交给 AI 结构化整理。', placeholder: '输入需要沉淀的概念', submit: '创建概念' },
-  { key: 'scan', text: '信息源扫描', meta: '外部信号巡航', accent: '#54d8e8', icon: Radar, code: 'SOURCE SWEEP', description: '启动全源巡航，检查并采集最新外部信号。', placeholder: '可选：限定扫描主题', submit: '启动扫描' },
-  { key: 'global', text: '全局发现', meta: '跨域聚类发现', accent: '#67a8ff', icon: ScanSearch, code: 'GLOBAL DISCOVERY', description: '扫描全部内容，通过两阶段聚类发现潜在专题。', placeholder: '可选：输入关注领域', submit: '开始发现' },
-  { key: 'topic', text: '主题发现', meta: '定向资料聚合', accent: '#ac8cff', icon: Sparkles, code: 'TOPIC DISCOVERY', description: '围绕关键词定向聚合资料并生成专题候选。', placeholder: '输入主题关键词', submit: '扫描主题' },
-  { key: 'compose', text: '自由组题', meta: '专题快速创建', accent: '#65d6a1', icon: BrainCircuit, code: 'FREE COMPOSE', description: '创建一个自由专题，后续再选择资料和优化命名。', placeholder: '输入专题方向', submit: '创建专题' },
-  { key: 'question', text: '新建问题', meta: '建立持续探索', accent: '#74c7ff', icon: CircleHelp, code: 'NEW QUESTION', description: '建立持续探索的问题，接入资料与多轮脑暴。', placeholder: '输入想持续探索的问题', submit: '创建问题' },
-  { key: 'task', text: '新建任务', meta: '行动事项跟踪', accent: '#ffd269', icon: ListTodo, code: 'NEW TASK', description: '把当前判断收束为可跟踪、可执行的行动事项。', placeholder: '输入任务标题', submit: '创建任务' },
-  { key: 'queue', text: '处理队列', meta: '摄入任务轨道', accent: '#ff8d72', icon: ListChecks, code: 'INGEST QUEUE', description: '查看正在处理、等待执行以及异常的内容摄入任务。', placeholder: '查看实时处理轨道', submit: '打开队列' },
-];
+const GlobalDockOverlay = lazy(() => import('./GlobalDockOverlay'));
 
 interface KiNavigationShellProps {
   children: ReactNode;
@@ -48,12 +36,11 @@ interface KiNavigationShellProps {
 
 function resolveTopIndex(pathname: string) {
   if (pathname === '/demo/ki-ingest' || pathname.startsWith('/ingest')) return 0;
-  if (pathname.startsWith('/events')) return 1;
-  if (pathname.startsWith('/sources')) return 2;
-  if (pathname.startsWith('/series')) return 3;
-  if (pathname.startsWith('/industry') || pathname.startsWith('/chains')) return 4;
-  if (pathname.startsWith('/toolbox') || pathname.startsWith('/tools')) return 5;
-  if (pathname.startsWith('/system') || pathname.startsWith('/settings')) return 6;
+  if (pathname.startsWith('/series')) return 1;
+  if (pathname.startsWith('/brainstorm')) return 2;
+  if (pathname.startsWith('/industry') || pathname.startsWith('/chains')) return 3;
+  if (pathname.startsWith('/toolbox') || pathname.startsWith('/tools')) return 4;
+  if (pathname.startsWith('/system') || pathname.startsWith('/settings')) return 5;
   return -1;
 }
 
@@ -154,21 +141,12 @@ export default function KiNavigationShell({
       {children}
 
       <section className="dual-nav-demo__gallery" aria-label="Global action dock">
-        <DualNavigationActionMenu items={GLOBAL_ACTIONS} onSelect={handleActionSelect} />
+        <DualNavigationActionMenu items={GLOBAL_DOCK_ITEMS} onSelect={handleActionSelect} />
       </section>
 
-      <footer className="dual-nav-demo__footer"><span>GLOBAL / 10</span><span>DOCK / LOCKED</span></footer>
+      <footer className="dual-nav-demo__footer"><span>GLOBAL / 9</span><span>DOCK / LOCKED</span></footer>
 
-      {activeAction && (
-        <div className="dual-nav-action-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setActiveAction(null)}>
-          <section className="dual-nav-action-dialog" role="dialog" aria-modal="true" aria-label={activeAction.text}>
-            <button className="dual-nav-action-close" type="button" aria-label="关闭" onClick={() => setActiveAction(null)}><X size={18} /></button>
-            <header><span>{activeAction.code}</span><h2>{activeAction.text}</h2><p>{activeAction.description}</p></header>
-            <div className="dual-nav-action-field"><label htmlFor="ki-global-action-input">INPUT CHANNEL</label><textarea id="ki-global-action-input" autoFocus placeholder={activeAction.placeholder} /></div>
-            <footer><button type="button" onClick={() => setActiveAction(null)}>{activeAction.submit}<ArrowUpRight size={15} /></button></footer>
-          </section>
-        </div>
-      )}
+      {activeAction && <Suspense fallback={null}><GlobalDockOverlay action={activeAction} onClose={() => setActiveAction(null)} /></Suspense>}
     </main>
   );
 }

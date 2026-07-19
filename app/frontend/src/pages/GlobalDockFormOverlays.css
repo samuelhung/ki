@@ -1,0 +1,68 @@
+.global-dock-form-workspace { display: grid; height: 100%; min-height: 0; grid-template-rows: minmax(0, 1fr) auto; }
+.global-dock-form-workspace form { display: grid; min-height: 0; align-content: start; gap: 14px; }
+.global-dock-form-workspace label { display: grid; min-width: 0; }
+.global-dock-form-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.global-dock-form-label { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; color: rgba(255, 255, 255, .38); font-size: var(--dock-font-micro); }
+.global-dock-form-label svg { width: 11px; color: var(--action-accent, #c596ff); }
+.global-dock-form-workspace input,
+.global-dock-form-workspace textarea,
+.global-dock-form-workspace select {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, .11);
+  outline: 0;
+  background: rgba(255, 255, 255, .018);
+  color: rgba(255, 255, 255, .78);
+  font: var(--dock-font-body)/1.55 inherit;
+  transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
+}
+.global-dock-form-workspace input,
+.global-dock-form-workspace select { height: 38px; padding: 0 10px; }
+.global-dock-form-workspace textarea { height: clamp(104px, 18vh, 156px); padding: 12px; resize: none; }
+.global-dock-form-workspace.is-question textarea { height: clamp(170px, 28vh, 240px); }
+.global-dock-form-workspace input:focus,
+.global-dock-form-workspace textarea:focus,
+.global-dock-form-workspace select:focus { border-color: color-mix(in srgb, var(--action-accent, #c596ff) 58%, transparent); background: color-mix(in srgb, var(--action-accent, #c596ff) 4%, transparent); box-shadow: 0 8px 22px rgba(110, 54, 170, .08); }
+.global-dock-form-workspace input::placeholder,
+.global-dock-form-workspace textarea::placeholder { color: rgba(255, 255, 255, .22); }
+.global-dock-form-workspace select { appearance: none; color-scheme: dark; }
+
+.global-dock-form-submit {
+  position: relative;
+  display: grid;
+  width: 100%;
+  min-height: 46px;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-top: 5px;
+  padding: 0 4px;
+  overflow: hidden;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, .9);
+  text-align: left;
+  cursor: pointer;
+}
+.global-dock-form-submit::before,
+.global-dock-form-submit::after { content: ""; position: absolute; right: 0; bottom: 0; left: 0; height: 1px; pointer-events: none; }
+.global-dock-form-submit::before { background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--action-accent, #c596ff) 36%, transparent) 18%, rgba(239, 222, 255, .74) 50%, rgba(103, 216, 255, .28) 82%, transparent); }
+.global-dock-form-submit::after { right: auto; width: 30%; background: linear-gradient(90deg, transparent, #fff 55%, transparent); box-shadow: 0 0 12px color-mix(in srgb, var(--action-accent, #c596ff) 72%, transparent); opacity: 0; transform: translateX(-120%); transition: transform 520ms cubic-bezier(.16, 1, .3, 1), opacity 140ms ease; }
+.global-dock-form-submit:hover::after,
+.global-dock-form-submit:focus-visible::after { opacity: 1; transform: translateX(335%); }
+.global-dock-form-submit:disabled { cursor: not-allowed; opacity: .34; }
+.global-dock-form-submit svg { width: 16px; color: var(--action-accent, #c596ff); filter: drop-shadow(0 0 7px color-mix(in srgb, var(--action-accent, #c596ff) 48%, transparent)); }
+.global-dock-form-submit > span { font-size: var(--dock-font-body); font-weight: 500; }
+.global-dock-form-submit > small { color: color-mix(in srgb, var(--action-accent, #c596ff) 50%, transparent); font: var(--dock-font-micro)/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.global-dock-form-notice { min-height: 14px; margin: 10px 0 0; color: rgba(118, 230, 183, .82); font-size: var(--dock-font-meta); line-height: 1.45; }
+.global-dock-form-notice.is-error { color: rgba(251, 113, 133, .88); }
+
+@media (max-width: 620px) {
+  .global-dock-form-fields { grid-template-columns: 1fr; gap: 10px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .global-dock-form-submit::after { display: none; }
+}

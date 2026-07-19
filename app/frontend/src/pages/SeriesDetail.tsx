@@ -152,7 +152,7 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [panelId, setPanelId] = useState<string | null>(null);  // expanded card
-  const [tab, setTab] = useState<'overview' | 'paper' | 'content' | 'knowledge'>('overview');
+  const [tab, setTab] = useState<'overview' | 'paper' | 'content'>('overview');
 
   // Suggestions
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -621,10 +621,6 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
               className={`px-3 py-2 rounded text-xs font-medium transition-colors border-b-2 -mb-px ${tab === 'content' ? 'text-purple-400 border-purple-400' : 'text-gray-500 border-transparent hover:text-gray-300'}`}>
               专题内容
             </button>
-            <button onClick={() => selectTab('knowledge')}
-              className={`px-3 py-2 rounded text-xs font-medium transition-colors border-b-2 -mb-px ${tab === 'knowledge' ? 'text-emerald-400 border-emerald-400' : 'text-gray-500 border-transparent hover:text-gray-300'}`}>
-              知识网络
-            </button>
           </div>
         </div>
 
@@ -713,8 +709,9 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
                   <div className="absolute left-6 top-full w-px h-6 bg-gradient-to-b from-[#2A2B30] to-transparent" />
                 )}
                 <div className="bg-[#141518] border border-[#2A2B30] rounded-xl overflow-hidden mb-2">
-                  <button onClick={() => togglePanel(m.id)}
-                    className="w-full flex items-start gap-4 p-4 text-left hover:bg-[#1A1B20] transition-colors group">
+                  <div role="button" tabIndex={0} onClick={() => togglePanel(m.id)}
+                    onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') togglePanel(m.id); }}
+                    className="w-full flex items-start gap-4 p-4 text-left hover:bg-[#1A1B20] transition-colors group cursor-pointer">
                     <div className="shrink-0 w-8 h-8 rounded-full bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-xs font-bold text-purple-400">{idx + 1}</div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
@@ -734,7 +731,7 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
                       )}
                     </div>
                     <ChevronDown size={16} className={`text-gray-600 mt-2 shrink-0 transition-transform ${panelId === m.id ? 'rotate-180' : ''}`} />
-                  </button>
+                  </div>
                   {panelId === m.id && (
                     <div className="border-t border-[#2A2B30] px-4 py-4">
                       {m.overview && (
@@ -756,11 +753,6 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
               <div className="py-16 text-center"><p className="text-sm text-gray-500">暂无内容成员</p></div>
             )}
           </div>
-        )}
-
-        {/* ── Tab: Knowledge Network ── */}
-        {tab === 'knowledge' && (
-          <SeriesKnowledgeNetwork seriesId={id!} />
         )}
 
         {/* Suggestions modal */}
@@ -885,75 +877,6 @@ export default function SeriesDetail({ embedded = false, seriesId, initialSeries
         {/* Delete confirmation modal */}
 
       </div>
-    </div>
-  );
-}
-
-function SeriesKnowledgeNetwork({ seriesId }: { seriesId: string }) {
-  const containerRef = React.useRef<HTMLDivElement>(null);
-  const [data, setData] = React.useState<{ nodes: any[]; edges: any[] } | null>(null);
-  const [loading, setLoading] = React.useState(true);
-
-  React.useEffect(() => {
-    setLoading(true);
-    apiFetch(`/api/entities/graph/series/${seriesId}`)
-      .then(r => r.json())
-      .then(d => { setData(d); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [seriesId]);
-
-  React.useEffect(() => {
-    if (!containerRef.current || !data || data.nodes.length === 0) return;
-    let disposed = false;
-    let network: { destroy: () => void } | null = null;
-
-    void Promise.all([
-      import('vis-network/standalone'),
-      import('vis-data/standalone'),
-    ]).then(([networkModule, dataModule]) => {
-      if (disposed || !containerRef.current) return;
-      const NetworkConstructor = networkModule.Network as any;
-      const DataSetConstructor = dataModule.DataSet as any;
-      const TYPE_COLORS: Record<string, string> = {
-        person: '#a855f7', organization: '#3b82f6', location: '#10b981',
-        concept: '#f59e0b', event: '#ef4444', theory: '#ec4899', book: '#6366f1', metric: '#06b6d4',
-      };
-      const dsNodes = new DataSetConstructor(data.nodes.map((node: any) => ({
-        id: node.id, label: node.name,
-        color: { background: TYPE_COLORS[node.type] || '#6b7280', border: '#1a1b20' },
-        font: { color: '#e5e7eb', size: 12 },
-        size: 15, borderWidth: 2, shape: 'dot',
-      })));
-      const dsEdges = new DataSetConstructor(data.edges.map((edge: any) => ({
-        id: edge.id, from: edge.source, to: edge.target,
-        color: { color: '#4b5563', highlight: '#a855f7' },
-        width: Math.max(1, Math.min(3, edge.weight * 2)),
-        smooth: { type: 'continuous' },
-      })));
-      network = new NetworkConstructor(containerRef.current, { nodes: dsNodes, edges: dsEdges }, {
-        physics: { solver: 'forceAtlas2Based', forceAtlas2Based: { gravitationalConstant: -30, centralGravity: 0.005, springLength: 120, springConstant: 0.05 }, stabilization: { iterations: 60 } },
-        interaction: { hover: true, zoomView: true, dragView: true },
-        nodes: { font: { face: 'system-ui, sans-serif' } },
-      });
-    }).catch(() => {});
-
-    return () => {
-      disposed = true;
-      network?.destroy();
-    };
-  }, [data]);
-
-  if (loading) return <div className="flex items-center justify-center h-64"><Loader2 className="animate-spin text-purple-400" size={24} /></div>;
-  if (!data || data.nodes.length === 0) return <div className="py-16 text-center"><p className="text-sm text-gray-500">该专题暂无知识网络数据<br /><span className="text-xs text-gray-600 mt-1">采集内容后系统将自动提取实体关系</span></p></div>;
-
-  return (
-    <div>
-      <div className="flex items-center gap-2 mb-3">
-        <span className="w-1 h-3 rounded-full bg-emerald-400" />
-        <span className="text-[11px] text-emerald-400 font-medium">知识网络</span>
-        <span className="text-[10px] text-gray-600 ml-1">{data.nodes.length} 实体 · {data.edges.length} 关系</span>
-      </div>
-      <div ref={containerRef} className="w-full rounded-lg bg-[#111318] border border-[#2A2B30]" style={{ height: 400 }} />
     </div>
   );
 }

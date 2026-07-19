@@ -69,10 +69,10 @@ const pages = [
   {
     key: 'chains',
     path: '/#/industry-chains',
-    markers: ['cinematic-ingest-shell', '产业链底座', 'chain-detail-embedded', 'chain-core-box'],
+    markers: ['ki-shell-chains', 'chain-index-list', 'chain-detail-embedded', 'chain-list-summary'],
     maxScreenshotMs: 9000,
     maxDomDumpMs: 6000,
-    expectedCanvasCount: 2,
+    expectedCanvasCount: 1,
     virtualTimeBudgetMs: 16000,
   },
   {
@@ -482,12 +482,109 @@ async function scrollSystemDetail(cdp, sampleMs, viewport) {
   }
 }
 
+async function switchIndustryChain(cdp, sampleMs) {
+  const targetName = await evaluate(cdp, `
+    const buttons = [...document.querySelectorAll('.chain-list-row')];
+    const target = buttons[1];
+    target?.click();
+    return target?.querySelector('strong')?.textContent?.trim() || '';
+  `);
+  if (!targetName) throw new Error('Chain performance interaction failed: second chain not found');
+  await waitFor(cdp, 'industry chain selection', `
+    const header = document.querySelector('.chain-detail-embedded-shell > div:first-child');
+    return Boolean(header?.textContent?.includes(${JSON.stringify(targetName)}));
+  `, Math.max(1000, sampleMs));
+}
+
+async function expandIndustryChainNode(cdp, sampleMs) {
+  const nodeFound = await evaluate(cdp, `
+    const flow = document.querySelector('.chain-detail-embedded-shell > div:nth-child(2) > div:first-child');
+    const button = [...(flow?.querySelectorAll('button') || [])]
+      .find((item) => item.textContent?.trim());
+    button?.click();
+    return Boolean(button);
+  `);
+  if (!nodeFound) throw new Error('Chain performance interaction failed: expandable node not found');
+  await waitFor(cdp, 'industry chain node expansion', `
+    return Boolean(document.querySelector('.chain-detail-embedded-shell .mx-3.mb-3'));
+  `, Math.max(1000, sampleMs));
+}
+
+async function scrollIndustryChainDetail(cdp, sampleMs, viewport) {
+  const selector = '.chain-detail-embedded-shell > div:nth-child(2) > div:first-child';
+  const initialScrollTop = await evaluate(cdp, `
+    return document.querySelector(${JSON.stringify(selector)})?.scrollTop ?? null;
+  `);
+  if (initialScrollTop === null) throw new Error('Chain performance interaction failed: detail scroller not found');
+  const steps = 18;
+  for (let index = 0; index < steps; index += 1) {
+    await cdp.send('Input.dispatchMouseEvent', {
+      type: 'mouseWheel',
+      x: Math.round(viewport.width * 0.72),
+      y: Math.round(viewport.height * 0.36),
+      deltaX: 0,
+      deltaY: index < steps / 2 ? 110 : -110,
+    });
+    await wait(sampleMs / steps);
+    if (index === steps / 2 - 1) {
+      const scrolledTop = await evaluate(cdp, `
+        return document.querySelector(${JSON.stringify(selector)})?.scrollTop ?? null;
+      `);
+      if (scrolledTop === null || scrolledTop <= initialScrollTop) {
+        throw new Error('Chain performance interaction failed: detail scroller did not move');
+      }
+    }
+  }
+}
+
+async function clickIndustryChainReport(cdp, sampleMs) {
+  const qaReport = 'KI QA 产业链报告已生成';
+  const reportFound = await evaluate(cdp, `
+    globalThis.__chainQaOriginalFetch ??= globalThis.fetch;
+    globalThis.__chainQaReportRequested = false;
+    globalThis.fetch = async (input, init) => {
+      const url = typeof input === 'string' ? input : input?.url || String(input);
+      if (url.includes('/api/chains/report')) {
+        globalThis.__chainQaReportRequested = true;
+        return new Response(JSON.stringify({ report: ${JSON.stringify(qaReport)}, cached: false }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return globalThis.__chainQaOriginalFetch(input, init);
+    };
+    const button = [...document.querySelectorAll('.chain-detail-embedded-shell button')]
+      .find((item) => item.textContent?.trim() === '重新分析');
+    if (button) button.click();
+    if (!button) {
+      globalThis.fetch = globalThis.__chainQaOriginalFetch;
+      delete globalThis.__chainQaOriginalFetch;
+    }
+    return Boolean(button);
+  `);
+  if (!reportFound) throw new Error('Chain performance interaction failed: report action not found');
+  try {
+    await waitFor(cdp, 'industry chain report request', `return globalThis.__chainQaReportRequested === true;`, Math.max(1000, sampleMs));
+    await waitFor(cdp, 'industry chain report render', `
+      return document.querySelector('.chain-detail-embedded-shell')?.textContent?.includes(${JSON.stringify(qaReport)}) || false;
+    `, Math.max(1000, sampleMs));
+  } finally {
+    await evaluate(cdp, `
+      if (globalThis.__chainQaOriginalFetch) globalThis.fetch = globalThis.__chainQaOriginalFetch;
+      delete globalThis.__chainQaOriginalFetch;
+      delete globalThis.__chainQaReportRequested;
+      return true;
+    `);
+  }
+}
+
 export function buildInteractionScenarioNames(pageKey) {
   const names = ['idle'];
   if (pageKey === 'today' || pageKey === 'ingest') names.push('pointer');
   if (pageKey === 'ingest') names.push('scroll', 'modal');
   if (pageKey === 'system') names.push('system-switch', 'system-scroll');
   if (pageKey === 'series') names.push('series-switch', 'series-scroll', 'series-knowledge');
+  if (pageKey === 'chains') names.push('chain-switch', 'chain-expand', 'chain-scroll', 'chain-report');
   return names;
 }
 
@@ -501,6 +598,10 @@ async function collectInteractionPerformance(cdp, pageKey, viewport) {
     'series-switch': switchSeries,
     'series-scroll': (client, sampleMs) => scrollSeriesDetail(client, sampleMs, viewport),
     'series-knowledge': openSeriesKnowledge,
+    'chain-switch': switchIndustryChain,
+    'chain-expand': expandIndustryChainNode,
+    'chain-scroll': (client, sampleMs) => scrollIndustryChainDetail(client, sampleMs, viewport),
+    'chain-report': clickIndustryChainReport,
   };
   const scenarios = buildInteractionScenarioNames(pageKey).map((name) => ({
     name,
@@ -597,6 +698,101 @@ async function collectNavigationPerformance(cdp, readyMs, includeDocumentNavigat
     ...summarizeDocumentNavigation(snapshot.navigation, includeDocumentNavigation),
     ...summarizeNavigationResources(snapshot.resources || []),
   };
+}
+
+async function collectPageLayoutGeometry(cdp, pageKey) {
+  if (pageKey !== 'chains') return null;
+  return evaluate(cdp, `
+    const rect = (selector) => {
+      const element = document.querySelector(selector);
+      if (!element) return null;
+      const bounds = element.getBoundingClientRect();
+      return {
+        top: Number(bounds.top.toFixed(2)),
+        right: Number(bounds.right.toFixed(2)),
+        bottom: Number(bounds.bottom.toFixed(2)),
+        left: Number(bounds.left.toFixed(2)),
+        width: Number(bounds.width.toFixed(2)),
+        height: Number(bounds.height.toFixed(2)),
+      };
+    };
+    const stage = rect('.ki-ingest-split-stage');
+    const workspace = document.querySelector('.ki-shell-content');
+    const list = rect('.ki-ingest-list-pane');
+    const detail = rect('.ki-ingest-detail-pane');
+    const detailHeader = rect('.chain-detail-embedded-shell > div:first-child');
+    const navigation = rect('.dual-nav-demo__top');
+    const gallery = rect('.dual-nav-demo__gallery');
+    const dock = rect('.dual-nav-action-menu.is-dock');
+    const detailHeaderElement = document.querySelector('.chain-detail-embedded-shell > div:first-child');
+    const detailHeaderChildren = detailHeaderElement
+      ? [...detailHeaderElement.children].map((element) => {
+          const bounds = element.getBoundingClientRect();
+          return { top: bounds.top, right: bounds.right, bottom: bounds.bottom, left: bounds.left };
+        })
+      : [];
+    const viewport = { width: innerWidth, height: innerHeight };
+    const detailHeaderVisible = Boolean(
+      detailHeader &&
+      detailHeader.width > 0 &&
+      detailHeader.height > 0 &&
+      detailHeader.top >= 0 &&
+      detailHeader.bottom <= viewport.height
+    );
+    const workspaceScrollStable = Boolean(workspace && workspace.scrollTop === 0);
+    const stageInsideViewport = Boolean(
+      stage && stage.left >= 0 && stage.right <= viewport.width
+    );
+    const detailHeaderClearsNavigation = Boolean(navigation && detailHeader && detailHeader.top >= navigation.bottom - 1);
+    const detailHeaderContentFits = Boolean(
+      detail &&
+      detailHeader &&
+      detailHeaderChildren.length > 0 &&
+      detailHeader.left >= detail.left - 1 &&
+      detailHeader.right <= detail.right + 1 &&
+      detailHeaderChildren.every((child) => (
+        child.top >= detailHeader.top - 1 &&
+        child.right <= detailHeader.right + 1 &&
+        child.bottom <= detailHeader.bottom + 1 &&
+        child.left >= detailHeader.left - 1
+      ))
+    );
+    const listDoesNotCrossDetail = Boolean(list && detail && list.right <= detail.left + 1);
+    const detailClearsDock = Boolean(detail && dock && detail.bottom <= dock.top - 4);
+    const stageContainsColumns = Boolean(
+      stage && list && detail &&
+      list.top >= stage.top - 1 && list.right <= stage.right + 1 &&
+      list.bottom <= stage.bottom + 1 && list.left >= stage.left - 1 &&
+      detail.top >= stage.top - 1 && detail.right <= stage.right + 1 &&
+      detail.bottom <= stage.bottom + 1 && detail.left >= stage.left - 1
+    );
+    const dockInsideGallery = Boolean(
+      gallery && dock &&
+      dock.top >= gallery.top - 1 && dock.right <= gallery.right + 1 &&
+      dock.bottom <= gallery.bottom + 1 && dock.left >= gallery.left - 1
+    );
+    return {
+      viewport,
+      stage,
+      list,
+      detail,
+      detailHeader,
+      navigation,
+      gallery,
+      dock,
+      detailHeaderVisible,
+      workspaceScrollStable,
+      stageInsideViewport,
+      detailHeaderClearsNavigation,
+      detailHeaderContentFits,
+      listDoesNotCrossDetail,
+      detailClearsDock,
+      stageContainsColumns,
+      dockInsideGallery,
+      pass: workspaceScrollStable && stageInsideViewport && detailHeaderVisible && detailHeaderClearsNavigation && detailHeaderContentFits &&
+        listDoesNotCrossDetail && detailClearsDock && stageContainsColumns && dockInsideGallery,
+    };
+  `);
 }
 
 function paeth(a, b, c) {
@@ -756,6 +952,7 @@ export async function runCinematicPagesQa({
       await evaluate(cdp, `performance.clearResourceTimings(); return true;`);
       const capture = await capturePageWithCdp({ cdp, url, page, screenshotPath });
       const navigationPerformance = await collectNavigationPerformance(cdp, capture.readyMs, page.visit === 'cold');
+      const layoutGeometry = await collectPageLayoutGeometry(cdp, page.key);
       const screenshotVisual = readPngVisualStats(screenshotPath);
       if (mode === 'performance') await wait(performanceSettleMs);
       const interactionPerformance = mode === 'performance'
@@ -774,11 +971,13 @@ export async function runCinematicPagesQa({
         domDumpMs: true,
         canvasCount: (html.match(/<canvas\b/g) || []).length === page.expectedCanvasCount,
         screenshotVisual: screenshotVisual.ok,
+        layoutGeometry: layoutGeometry?.pass ?? true,
       };
       const renderPass = Boolean(
         Object.values(markerStatus).every(Boolean) &&
         thresholds.canvasCount &&
         thresholds.screenshotVisual &&
+        thresholds.layoutGeometry &&
         !html.includes('加载中...')
       );
 
@@ -801,6 +1000,7 @@ export async function runCinematicPagesQa({
           expectedCanvasCount: page.expectedCanvasCount,
         },
         screenshotVisual,
+        layoutGeometry,
         navigationPerformance,
         runtimePerformance,
         interactionPerformance,

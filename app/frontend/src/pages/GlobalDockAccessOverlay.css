@@ -1,0 +1,161 @@
+.global-dock-access-backdrop { backdrop-filter: blur(8px); }
+
+.global-dock-access-stage {
+  width: min(560px, calc(100vw - 40px));
+  height: min(612px, calc(100svh - 72px));
+  min-height: 500px;
+  perspective: 1000px;
+}
+
+.global-dock-access-dialog {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  padding: clamp(24px, 2.2vw, 32px);
+  overflow: visible;
+  border-radius: inherit;
+  color: #f7f5ff;
+}
+
+.global-dock-access-close {
+  position: absolute;
+  z-index: 8;
+  top: 16px;
+  right: 16px;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, .34);
+  cursor: pointer;
+}
+.global-dock-access-close:hover,
+.global-dock-access-close:focus-visible { color: rgba(255, 255, 255, .86); }
+.global-dock-access-close svg { width: 15px; }
+
+.global-dock-access-header { padding-right: 32px; }
+.global-dock-access-header > span { color: rgba(216, 184, 255, .52); font: var(--dock-font-micro)/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.global-dock-access-header > div { display: flex; align-items: center; gap: 9px; margin: 10px 0 6px; }
+.global-dock-access-header > div > svg { width: 15px; color: #c890ff; filter: drop-shadow(0 0 8px rgba(194, 127, 255, .48)); }
+.global-dock-access-header h2 { margin: 0; color: rgba(255, 255, 255, .9); font: 500 24px/1.1 "Songti SC", serif; }
+.global-dock-access-header p { max-width: 430px; margin: 0; color: rgba(255, 255, 255, .32); font-size: var(--dock-font-meta); line-height: 1.55; }
+
+.global-dock-access-tabs {
+  display: flex;
+  gap: 22px;
+  margin-top: 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, .065);
+}
+.global-dock-access-tabs button {
+  position: relative;
+  display: grid;
+  min-width: 62px;
+  grid-template-rows: 16px auto;
+  justify-items: center;
+  gap: 4px;
+  padding: 0 4px 10px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, .34);
+  font-size: var(--dock-font-meta);
+  cursor: pointer;
+}
+.global-dock-access-tabs button > svg { width: 14px; height: 14px; color: rgba(200, 144, 255, .58); transition: color 180ms ease, filter 180ms ease, transform 180ms ease; }
+.global-dock-access-tabs button:nth-child(2) > svg { color: rgba(103, 216, 255, .55); }
+.global-dock-access-tabs button::after { content: ""; position: absolute; right: 0; bottom: -1px; left: 0; height: 1px; background: #d9b1ff; box-shadow: 0 0 12px rgba(190, 125, 255, .8); opacity: 0; transform: scaleX(.4); transition: opacity 180ms ease, transform 180ms ease; }
+.global-dock-access-tabs button.is-active { color: rgba(255, 255, 255, .86); }
+.global-dock-access-tabs button.is-active > svg { color: #dcb8ff; filter: drop-shadow(0 0 8px rgba(190, 125, 255, .68)); transform: translateY(-1px); }
+.global-dock-access-tabs button:nth-child(2).is-active > svg { color: #8edfff; filter: drop-shadow(0 0 8px rgba(93, 205, 255, .58)); }
+.global-dock-access-tabs button.is-active::after { opacity: 1; transform: scaleX(1); }
+
+.global-dock-access-body { position: relative; min-height: 0; padding-top: clamp(18px, 2.4vh, 28px); }
+.global-dock-access-body form { display: grid; align-content: start; gap: 14px; }
+.global-dock-access-body label { display: grid; min-width: 0; }
+.global-dock-access-label { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; color: rgba(255, 255, 255, .38); font-size: var(--dock-font-micro); }
+.global-dock-access-label svg { width: 11px; height: 11px; }
+.global-dock-access-label.is-violet svg { color: #c58cff; }
+.global-dock-access-label.is-cyan { color: rgba(103, 216, 255, .55); }
+.global-dock-access-label.is-gold svg { color: #e0b96b; }
+
+.global-dock-access-body textarea,
+.global-dock-access-body input:not([type="file"]) {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, .11);
+  outline: 0;
+  background: rgba(255, 255, 255, .018);
+  color: rgba(255, 255, 255, .78);
+  font: var(--dock-font-body)/1.55 inherit;
+  transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
+}
+.global-dock-access-body textarea { height: clamp(82px, 12vh, 116px); resize: none; padding: 12px; }
+.global-dock-access-body input:not([type="file"]) { height: 38px; padding: 0 10px; }
+.global-dock-access-body textarea:focus,
+.global-dock-access-body input:not([type="file"]):focus { border-color: rgba(209, 166, 255, .58); background: rgba(180, 116, 255, .035); box-shadow: 0 8px 22px rgba(110, 54, 170, .08); }
+.global-dock-access-body textarea::placeholder,
+.global-dock-access-body input::placeholder { color: rgba(255, 255, 255, .22); }
+
+.global-dock-access-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.global-dock-access-file-field > input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.global-dock-access-drop { display: grid; height: clamp(82px, 12vh, 116px); place-items: center; align-content: center; gap: 5px; border-bottom: 1px solid rgba(255, 255, 255, .11); background: rgba(255, 255, 255, .018); color: rgba(255, 255, 255, .46); cursor: pointer; }
+.global-dock-access-drop > svg { width: 18px; color: #c692ff; }
+.global-dock-access-drop b { max-width: 90%; overflow: hidden; font-size: var(--dock-font-meta); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.global-dock-access-drop small { color: rgba(255, 255, 255, .22); font-size: var(--dock-font-micro); }
+
+.global-dock-access-submit {
+  position: relative;
+  display: grid;
+  width: 100%;
+  min-height: 46px;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  padding: 0 4px;
+  overflow: hidden;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, .9);
+  text-align: left;
+  cursor: pointer;
+}
+.global-dock-access-submit::before,
+.global-dock-access-submit::after { content: ""; position: absolute; right: 0; bottom: 0; left: 0; height: 1px; pointer-events: none; }
+.global-dock-access-submit::before { background: linear-gradient(90deg, transparent, rgba(188, 117, 255, .34) 18%, rgba(227, 199, 255, .72) 50%, rgba(102, 203, 255, .3) 82%, transparent); opacity: .72; }
+.global-dock-access-submit::after { right: auto; width: 30%; background: linear-gradient(90deg, transparent, #fff 55%, transparent); box-shadow: 0 0 12px rgba(205, 145, 255, .9), 0 0 26px rgba(142, 75, 226, .5); opacity: 0; transform: translateX(-120%); transition: transform 520ms cubic-bezier(.16, 1, .3, 1), opacity 140ms ease; }
+.global-dock-access-submit:hover::after,
+.global-dock-access-submit:focus-visible::after { opacity: 1; transform: translateX(335%); }
+.global-dock-access-submit:disabled { cursor: not-allowed; opacity: .34; }
+.global-dock-access-submit svg { width: 16px; color: #c990ff; filter: drop-shadow(0 0 7px rgba(193, 126, 255, .5)); }
+.global-dock-access-submit > span { font-size: var(--dock-font-body); font-weight: 500; }
+.global-dock-access-submit > small { color: rgba(212, 175, 255, .5); font: var(--dock-font-micro)/1 ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+.global-dock-access-status { margin: 12px 0 0; font-size: var(--dock-font-meta); line-height: 1.5; }
+.global-dock-access-status.is-success { color: rgba(118, 230, 183, .82); }
+.global-dock-access-status.is-error { color: rgba(251, 113, 133, .88); }
+
+@media (max-height: 700px) {
+  .global-dock-access-stage { min-height: 0; }
+  .global-dock-access-dialog { padding: 20px 24px; }
+  .global-dock-access-tabs { margin-top: 15px; }
+  .global-dock-access-body { padding-top: 15px; }
+}
+
+@media (max-width: 620px) {
+  .global-dock-access-stage { width: calc(100vw - 28px); }
+  .global-dock-access-row { grid-template-columns: 1fr; gap: 10px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .global-dock-access-submit::after { display: none; }
+}

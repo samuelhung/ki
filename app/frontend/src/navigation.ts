@@ -5,7 +5,6 @@ import {
   Code2,
   Compass,
   Database,
-  GitBranch,
   GraduationCap,
   LayoutDashboard,
   Layers,
@@ -74,7 +73,6 @@ export const navSections: NavSection[] = [
     color: 'text-purple-400',
     children: [
       { to: '/series', icon: Layers, label: '专题系列' },
-      { to: '/knowledge-graph', icon: GitBranch, label: '知识图谱' },
       { to: '/chains', icon: Network, label: '产业链' },
     ],
   },

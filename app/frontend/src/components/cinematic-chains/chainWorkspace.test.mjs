@@ -1,7 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildChainGroups, filterChainGroups, getChainStats } from './chainWorkspace.mjs';
+import {
+  buildChainGroups,
+  filterChainGroups,
+  getChainStats,
+  getPendingReviewCount,
+  resolveSelectedChain,
+  summarizeChainNodeTypes,
+} from './chainWorkspace.mjs';
 
 const nodes = [
   { id: 'a', chain: '光伏产业链', name: '硅料', node_type: '原材料' },
@@ -27,4 +34,29 @@ test('getChainStats reports chain node and coverage totals', () => {
   assert.deepEqual(getChainStats(buildChainGroups(nodes), 4, 2), {
     chains: 2, nodes: 3, hints: 4, suggestions: 2,
   });
+});
+
+test('getPendingReviewCount normalizes backend review count payloads', () => {
+  assert.equal(getPendingReviewCount({ pending: 7 }), 7);
+  assert.equal(getPendingReviewCount({ pending: '4' }), 4);
+  assert.equal(getPendingReviewCount({ pending: -2 }), 0);
+  assert.equal(getPendingReviewCount(null), 0);
+});
+
+test('resolveSelectedChain preserves valid selection and falls back deterministically', () => {
+  const groups = buildChainGroups(nodes);
+
+  assert.equal(resolveSelectedChain(groups, '芯片产业链'), '芯片产业链');
+  assert.equal(resolveSelectedChain(groups, '已删除产业链'), '光伏产业链');
+  assert.equal(resolveSelectedChain([], '芯片产业链'), '');
+});
+
+test('summarizeChainNodeTypes deduplicates node types in encounter order', () => {
+  assert.equal(summarizeChainNodeTypes([
+    { node_type: '原材料' },
+    { node_type: '中间品' },
+    { node_type: '原材料' },
+    { node_type: '终端' },
+  ]), '原材料 · 中间品 · 终端');
+  assert.equal(summarizeChainNodeTypes([]), '');
 });

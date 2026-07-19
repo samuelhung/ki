@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { filterBrainstormQuestions, getBrainstormStats, linkedEventCount, removeBrainstormQuestion } from './brainstormWorkspace.mjs';
+import { filterBrainstormQuestions, getBrainstormStats, linkedEventCount, removeBrainstormQuestion, resolveBrainstormSelection } from './brainstormWorkspace.mjs';
 
 const items = [
   { id: 'a', question: '全球供应链如何重构', topic: '格局', status: 'open', answered_event_ids: '["1","2"]' },
@@ -19,4 +19,11 @@ test('brainstorm helpers report linked documents and status counts', () => {
 
 test('removeBrainstormQuestion selects the adjacent item', () => {
   assert.deepEqual(removeBrainstormQuestion(items, 'a'), { items: [items[1]], selectedId: 'b' });
+});
+
+test('resolveBrainstormSelection keeps deep links and falls back deterministically', () => {
+  assert.equal(resolveBrainstormSelection(items, 'b', ''), 'b');
+  assert.equal(resolveBrainstormSelection(items, '', 'a'), 'a');
+  assert.equal(resolveBrainstormSelection(items, 'missing', 'b'), 'b');
+  assert.equal(resolveBrainstormSelection([], 'a', 'b'), '');
 });

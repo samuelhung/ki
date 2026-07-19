@@ -52,9 +52,10 @@ interface BrainstormDetailPageProps {
   embedded?: boolean;
   questionId?: string;
   onQuestionChange?: (question: BrainstormQuestion) => void;
+  embeddedActions?: React.ReactNode;
 }
 
-export default function BrainstormDetailPage({ embedded = false, questionId, onQuestionChange }: BrainstormDetailPageProps) {
+export default function BrainstormDetailPage({ embedded = false, questionId, onQuestionChange, embeddedActions }: BrainstormDetailPageProps) {
   const { id: routeId } = useParams<{ id: string }>();
   const id = questionId || routeId;
   const navigate = useNavigate();
@@ -528,6 +529,7 @@ export default function BrainstormDetailPage({ embedded = false, questionId, onQ
               </div>
             </div>
             <div className="brainstorm-detail-actions flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap">
+              {embeddedActions}
               <button onClick={startConversation} disabled={conversationLoading || selectedEventIds.size === 0}
                 className="px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-medium bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 border border-purple-500/30 transition-colors disabled:opacity-50 flex items-center gap-1.5">
                 {conversationLoading ? <Loader2 size={14} className="animate-spin" /> : <MessageSquare size={14} />}

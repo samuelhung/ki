@@ -10,7 +10,7 @@ const API_BASE = '/api/events';
 const STATUS_LABEL: Record<string, string> = { ready: '就绪', processing: '处理中', failed: '失败', done: '已完成', completed: '已完成', digest: '已摘要' };
 const STATUS_COLOR: Record<string, string> = { ready: 'text-gray-400', processing: 'text-amber-400', failed: 'text-red-400', done: 'text-emerald-400', completed: 'text-emerald-400', digest: 'text-purple-400' };
 
-interface Event {
+export interface EventDetailData {
   id: string; source_id: string; title: string; title_cn?: string;
   url: string; topic: string; status: string; created_at: string;
   raw_summary?: string; ai_summary?: string; overview?: string; last_error?: string;
@@ -18,6 +18,12 @@ interface Event {
   transcript_path?: string; summary_path?: string;
   video_path?: string; audio_path?: string; document_path?: string;
   associated_questions?: any[];
+}
+
+interface EventDetailPageProps {
+  embedded?: boolean;
+  eventId?: string;
+  onEventChange?: (event: EventDetailData | null) => void;
 }
 
 function toMediaUrl(absolutePath: string | undefined): string | null {
@@ -36,11 +42,12 @@ function SourceIcon({ sourceId }: { sourceId: string }) {
   }
 }
 
-export default function EventDetailPage() {
-  const { id } = useParams<{ id: string }>();
+export default function EventDetailPage({ embedded = false, eventId, onEventChange }: EventDetailPageProps) {
+  const { id: routeId } = useParams<{ id: string }>();
+  const id = eventId || routeId;
   const navigate = useNavigate();
 
-  const [detail, setDetail] = useState<Event | null>(null);
+  const [detail, setDetail] = useState<EventDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'body' | 'summary' | 'questions' | 'chain'>('body');
   const [summarizingId, setSummarizingId] = useState<string | null>(null);
@@ -68,6 +75,7 @@ export default function EventDetailPage() {
       .then(data => {
         if (data) {
           setDetail(data);
+          onEventChange?.(data);
           setTab(data.source_id === 'user-concept' ? 'summary' : 'body');
           // 加载缓存的产业链分析
           if (data.chain_analysis) { setChainAnalysis(data.chain_analysis); }
@@ -84,7 +92,7 @@ export default function EventDetailPage() {
           .catch(() => {});
         setLoading(false);
       });
-  }, [id]);
+  }, [id, onEventChange]);
 
   useEffect(() => {
     if (tab === 'questions' && detail) {
@@ -109,6 +117,7 @@ export default function EventDetailPage() {
         const d = await dRes.json();
         if (d.ai_summary) {
           setDetail(d);
+          onEventChange?.(d);
           // 总结完成后刷新产业链建议计数
           apiFetch('/api/chains/suggestions/count')
             .then(r => r.ok ? r.json() : { pending: 0 })
@@ -402,7 +411,7 @@ export default function EventDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex-1 bg-[#0B0C10] flex items-center justify-center">
+      <div className={`flex-1 flex items-center justify-center${embedded ? ' event-detail-embedded-state' : ' bg-[#0B0C10]'}`}>
         <Loader2 size={24} className="animate-spin text-gray-600" />
       </div>
     );
@@ -410,7 +419,7 @@ export default function EventDetailPage() {
 
   if (!detail) {
     return (
-      <div className="flex-1 bg-[#0B0C10] text-white p-8">
+      <div className={`flex-1 text-white p-8${embedded ? ' event-detail-embedded-state' : ' bg-[#0B0C10]'}`}>
         <div className="max-w-[1080px] mx-auto py-16 text-center">
           <p className="text-sm text-red-400">内容不存在</p>
           <button onClick={() => navigate(-1)} className="mt-4 px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors">返回</button>
@@ -422,15 +431,15 @@ export default function EventDetailPage() {
   // ── Full page render ──
 
   return (
-    <div className="flex-1 bg-[#0B0C10] text-white p-4 md:p-8 overflow-y-auto custom-scrollbar">
-      <div className="max-w-[1080px] mx-auto">
+    <div className={`flex-1 text-white overflow-y-auto custom-scrollbar ${embedded ? 'event-detail-embedded' : 'bg-[#0B0C10] p-4 md:p-8'}`}>
+      <div className={embedded ? 'event-detail-embedded__inner' : 'max-w-[1080px] mx-auto'}>
 
         {/* Breadcrumb */}
-        <div className="flex items-center mb-6">
+        {!embedded && <div className="flex items-center mb-6">
           <button onClick={() => navigate('/ingest')} className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 transition-colors">
             <ArrowLeft size={14} /> 内容采集
           </button>
-        </div>
+        </div>}
 
         {/* Header */}
         <div className="mb-6">

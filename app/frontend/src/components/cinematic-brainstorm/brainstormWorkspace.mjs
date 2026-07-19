@@ -23,6 +23,13 @@ export function getBrainstormStats(items) {
   };
 }
 
+export function resolveBrainstormSelection(items, routeId = '', currentId = '') {
+  const list = Array.isArray(items) ? items : [];
+  if (routeId && list.some((item) => item.id === routeId)) return routeId;
+  if (currentId && list.some((item) => item.id === currentId)) return currentId;
+  return list[0]?.id || '';
+}
+
 export function removeBrainstormQuestion(items, removedId) {
   const list = Array.isArray(items) ? items : [];
   const index = list.findIndex((item) => item.id === removedId);

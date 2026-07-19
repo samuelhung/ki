@@ -24,3 +24,17 @@ export function getChainStats(groups, hints = 0, suggestions = 0) {
     suggestions,
   };
 }
+
+export function getPendingReviewCount(payload) {
+  const count = Number(payload?.pending);
+  return Number.isFinite(count) ? Math.max(0, count) : 0;
+}
+
+export function resolveSelectedChain(groups, selectedName = '') {
+  if (groups.some((group) => group.name === selectedName)) return selectedName;
+  return groups[0]?.name || '';
+}
+
+export function summarizeChainNodeTypes(nodes) {
+  return [...new Set(nodes.map((node) => node.node_type).filter(Boolean))].join(' · ');
+}
