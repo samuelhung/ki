@@ -368,6 +368,115 @@ def validate_digest_tombstone(root: Path) -> list[str]:
     return []
 
 
+def is_exact_normalized_init(statement: ast.stmt) -> bool:
+    target = None
+    value = None
+    if isinstance(statement, ast.Assign) and len(statement.targets) == 1:
+        target = statement.targets[0]
+        value = statement.value
+    elif isinstance(statement, ast.AnnAssign):
+        target = statement.target
+        value = statement.value
+    return bool(
+        isinstance(target, ast.Name)
+        and target.id == "normalized"
+        and isinstance(value, ast.Call)
+        and isinstance(value.func, ast.Name)
+        and value.func.id == "dict"
+        and len(value.args) == 1
+        and isinstance(value.args[0], ast.Name)
+        and value.args[0].id == "raw"
+        and not value.keywords
+    )
+
+
+def exact_knowledge_graph_pop(statement: ast.stmt) -> ast.Constant | None:
+    if not isinstance(statement, ast.Expr) or not isinstance(statement.value, ast.Call):
+        return None
+    call = statement.value
+    if (
+        isinstance(call.func, ast.Attribute)
+        and call.func.attr == "pop"
+        and isinstance(call.func.value, ast.Name)
+        and call.func.value.id == "normalized"
+        and len(call.args) == 2
+        and not call.keywords
+        and isinstance(call.args[0], ast.Constant)
+        and call.args[0].value == "knowledge_graph"
+        and isinstance(call.args[1], ast.Constant)
+        and call.args[1].value is None
+    ):
+        return call.args[0]
+    return None
+
+
+def static_truth(node: ast.AST) -> bool | None:
+    if isinstance(node, ast.Constant):
+        return bool(node.value)
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+        value = static_truth(node.operand)
+        return None if value is None else not value
+    return None
+
+
+def block_unconditionally_exits(statements: list[ast.stmt]) -> bool:
+    return any(statement_unconditionally_exits(statement) for statement in statements)
+
+
+def statement_unconditionally_exits(statement: ast.stmt) -> bool:
+    if isinstance(statement, (ast.Return, ast.Raise)):
+        return True
+    if isinstance(statement, ast.If):
+        truth = static_truth(statement.test)
+        if truth is True:
+            return block_unconditionally_exits(statement.body)
+        if truth is False:
+            return block_unconditionally_exits(statement.orelse)
+        return bool(
+            statement.orelse
+            and block_unconditionally_exits(statement.body)
+            and block_unconditionally_exits(statement.orelse)
+        )
+    return False
+
+
+def rebinds_or_deletes_normalized(statement: ast.stmt) -> bool:
+    class BindingVisitor(ast.NodeVisitor):
+        found = False
+
+        def visit_Name(self, node: ast.Name) -> None:
+            if node.id == "normalized" and isinstance(node.ctx, (ast.Store, ast.Del)):
+                self.found = True
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+            return
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+            return
+
+        def visit_Lambda(self, node: ast.Lambda) -> None:
+            return
+
+        def visit_ClassDef(self, node: ast.ClassDef) -> None:
+            return
+
+    visitor = BindingVisitor()
+    visitor.visit(statement)
+    return visitor.found
+
+
+def returns_normalized_config(statement: ast.Return) -> bool:
+    value = statement.value
+    if isinstance(value, ast.Name):
+        return value.id == "normalized"
+    return bool(
+        isinstance(value, ast.Tuple)
+        and value.elts
+        and isinstance(value.elts[0], ast.Name)
+        and value.elts[0].id == "normalized"
+    )
+
+
 def validate_named_compatibility(
     root: Path,
 ) -> tuple[list[str], dict[tuple[str, str], list[tuple[int, int, int, int]]]]:
@@ -385,29 +494,34 @@ def validate_named_compatibility(
             ]
             valid_constants = []
             if len(functions) == 1:
-                for statement in functions[0].body:
-                    if isinstance(statement, (ast.Return, ast.Raise)):
-                        break
-                    if not isinstance(statement, ast.Expr) or not isinstance(statement.value, ast.Call):
-                        continue
-                    call = statement.value
-                    if (
-                        isinstance(call.func, ast.Attribute)
-                        and call.func.attr == "pop"
-                        and isinstance(call.func.value, ast.Name)
-                        and call.func.value.id == "normalized"
-                        and len(call.args) == 2
-                        and not call.keywords
-                        and isinstance(call.args[0], ast.Constant)
-                        and call.args[0].value == "knowledge_graph"
-                        and isinstance(call.args[1], ast.Constant)
-                        and call.args[1].value is None
-                    ):
-                        valid_constants.append(call.args[0])
+                statements = functions[0].body
+                init_indexes = [index for index, statement in enumerate(statements) if is_exact_normalized_init(statement)]
+                pop_entries = [
+                    (index, constant)
+                    for index, statement in enumerate(statements)
+                    if (constant := exact_knowledge_graph_pop(statement)) is not None
+                ]
+                exit_index = next(
+                    (index for index, statement in enumerate(statements) if statement_unconditionally_exits(statement)),
+                    None,
+                )
+                if (
+                    len(init_indexes) == 1
+                    and len(pop_entries) == 1
+                    and exit_index is not None
+                    and init_indexes[0] < pop_entries[0][0] < exit_index
+                    and isinstance(statements[exit_index], ast.Return)
+                    and returns_normalized_config(statements[exit_index])
+                    and not any(
+                        rebinds_or_deletes_normalized(statement)
+                        for statement in statements[init_indexes[0] + 1:exit_index]
+                    )
+                ):
+                    valid_constants.append(pop_entries[0][1])
             if len(valid_constants) != 1:
                 violations.append(
-                    "src/zhiji_backend/config_manager.py: knowledge_graph config cleanup requires exactly one "
-                    "reachable normalized.pop('knowledge_graph', None) in _normalize_persisted_config"
+                    "src/zhiji_backend/config_manager.py: knowledge_graph config cleanup requires normalized = dict(raw), "
+                    "one reachable normalized.pop('knowledge_graph', None), and a final return of normalized"
                 )
             else:
                 key = ("src/zhiji_backend/config_manager.py", "retired knowledge graph")
@@ -690,6 +804,67 @@ def _normalize_persisted_config(raw):
         )
         if not any("knowledge_graph config cleanup" in item for item in scan(root)):
             raise SystemExit("FAIL config checker accepted a missing real cleanup pop")
+
+    with tempfile.TemporaryDirectory(prefix="zhiji-retired-config-return-copy-") as temp_dir:
+        root = Path(temp_dir)
+        write(
+            root,
+            "src/zhiji_backend/config_manager.py",
+            '''def _normalize_persisted_config(raw):
+    normalized = dict(raw)
+    normalized.pop("knowledge_graph", None)
+    return dict(raw), False
+''',
+        )
+        if not any("knowledge_graph config cleanup" in item for item in scan(root)):
+            raise SystemExit("FAIL config checker accepted return dict(raw) after cleanup")
+
+    with tempfile.TemporaryDirectory(prefix="zhiji-retired-config-pop-before-init-") as temp_dir:
+        root = Path(temp_dir)
+        write(
+            root,
+            "src/zhiji_backend/config_manager.py",
+            '''def _normalize_persisted_config(raw):
+    normalized.pop("knowledge_graph", None)
+    normalized = dict(raw)
+    return normalized, False
+''',
+        )
+        if not any("knowledge_graph config cleanup" in item for item in scan(root)):
+            raise SystemExit("FAIL config checker accepted cleanup before normalized initialization")
+
+    with tempfile.TemporaryDirectory(prefix="zhiji-retired-config-unconditional-exit-") as temp_dir:
+        root = Path(temp_dir)
+        write(
+            root,
+            "src/zhiji_backend/config_manager.py",
+            '''def _normalize_persisted_config(raw):
+    normalized = dict(raw)
+    if True:
+        return normalized, False
+    normalized.pop("knowledge_graph", None)
+    return normalized, False
+''',
+        )
+        if not any("knowledge_graph config cleanup" in item for item in scan(root)):
+            raise SystemExit("FAIL config checker accepted cleanup after an unconditional exit")
+
+    with tempfile.TemporaryDirectory(prefix="zhiji-retired-config-data-flow-pass-") as temp_dir:
+        root = Path(temp_dir)
+        write(
+            root,
+            "src/zhiji_backend/config_manager.py",
+            '''def _normalize_persisted_config(raw: dict) -> tuple[dict, bool]:
+    if not isinstance(raw, dict):
+        raise ValueError("config root must be an object")
+    normalized = dict(raw)
+    normalized.pop("knowledge_graph", None)
+    normalized["briefing"] = {}
+    return normalized, normalized != raw
+''',
+        )
+        if violations := scan(root):
+            raise SystemExit("FAIL valid config cleanup data flow was rejected:\n" + "\n".join(violations))
 
     with tempfile.TemporaryDirectory(prefix="zhiji-retired-allowlist-") as temp_dir:
         root = Path(temp_dir)
