@@ -542,6 +542,87 @@ def test_config_artifact_replacement_during_final_migration_hash_is_rejected(
     _assert_cleanup_not_started(db_path)
 
 
+def test_manifest_replacement_after_path_hash_rolls_back_destructive_migration(
+    tmp_path, monkeypatch
+):
+    db_path, _config_path, manifest_path = _bundle(tmp_path)
+    replacement = manifest_path.with_name("replacement-manifest.json")
+    replacement_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    replacement_payload["reviewer_swap"] = True
+    replacement.write_text(json.dumps(replacement_payload), encoding="utf-8")
+    manifest_identity = (manifest_path.stat().st_dev, manifest_path.stat().st_ino)
+    real_read_fd_bytes = database_backup._read_fd_bytes
+    replaced = False
+
+    def replace_manifest_after_read(fd):
+        nonlocal replaced
+        payload = real_read_fd_bytes(fd)
+        file_stat = os.fstat(fd)
+        if (file_stat.st_dev, file_stat.st_ino) == manifest_identity and not replaced:
+            os.replace(replacement, manifest_path)
+            replaced = True
+        return payload
+
+    monkeypatch.setattr(database_backup, "_read_fd_bytes", replace_manifest_after_read)
+
+    with pytest.raises(RuntimeError, match="manifest changed during verification"):
+        migrations.ensure_migrations(db_path)
+
+    assert replaced
+    _assert_cleanup_not_started(db_path)
+
+
+def test_artifact_replacement_after_validation_before_commit_rolls_back(
+    tmp_path, monkeypatch
+):
+    db_path, _config_path, manifest_path = _bundle(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    config_backup = Path(manifest["artifacts"]["config"]["path"])
+    replacement = config_backup.with_name("replacement.json")
+    replacement.write_bytes(b"x" * config_backup.stat().st_size)
+    replaced = False
+
+    class ReplacingConnection(sqlite3.Connection):
+        def execute(self, sql, parameters=(), /):
+            nonlocal replaced
+            cursor = super().execute(sql, parameters)
+            if (
+                not replaced
+                and "INSERT INTO _migrations" in sql
+                and parameters == (MIGRATION_NAME,)
+            ):
+                os.replace(replacement, config_backup)
+                replaced = True
+            return cursor
+
+    real_connect = sqlite3.connect
+
+    def connect(database, *args, **kwargs):
+        if Path(str(database)).resolve(strict=False) == db_path.resolve():
+            kwargs["factory"] = ReplacingConnection
+        return real_connect(database, *args, **kwargs)
+
+    SQLiteProxy = type(
+        "SQLiteProxy",
+        (),
+        {
+            "Connection": sqlite3.Connection,
+            "OperationalError": sqlite3.OperationalError,
+            "SQLITE_BUSY": sqlite3.SQLITE_BUSY,
+            "SQLITE_LOCKED": sqlite3.SQLITE_LOCKED,
+            "connect": staticmethod(connect),
+        },
+    )
+
+    monkeypatch.setattr(migrations, "sqlite3", SQLiteProxy)
+
+    with pytest.raises(RuntimeError, match="changed during migration"):
+        migrations.ensure_migrations(db_path)
+
+    assert replaced
+    _assert_cleanup_not_started(db_path)
+
+
 def test_pending_destructive_migration_requires_manifest_for_clean_existing_database(
     tmp_path,
 ):

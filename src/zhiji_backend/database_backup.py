@@ -18,6 +18,7 @@ DEFAULT_DESTRUCTIVE_MIGRATION = "20260719_remove_retired_features"
 BACKUP_MANIFEST_SCHEMA_VERSION = 1
 BACKUP_MAX_AGE_SECONDS = 24 * 60 * 60
 RESTORE_JOURNAL_SCHEMA_VERSION = 1
+_EXPECTED_SHA256_UNSET = object()
 
 
 @dataclass
@@ -32,6 +33,24 @@ class PinnedArtifact:
         if self.fd >= 0:
             os.close(self.fd)
             self.fd = -1
+
+
+@dataclass
+class BackupPrerequisiteLease:
+    marker_path: Path
+    manifest_path: Path
+    marker: dict[str, Any]
+    manifest: dict[str, Any]
+    pinned_files: list[tuple[PinnedArtifact, str]]
+
+    def assert_published(self) -> None:
+        for pinned, label in self.pinned_files:
+            _assert_pinned_artifact(pinned, label)
+
+    def close(self) -> None:
+        for pinned, _label in self.pinned_files:
+            pinned.close()
+        self.pinned_files = []
 
 
 def _read_only_uri(path: Path) -> str:
@@ -146,6 +165,59 @@ def _hash_fd(fd: int) -> str:
         digest.update(chunk)
     os.lseek(fd, 0, os.SEEK_SET)
     return digest.hexdigest()
+
+
+def _read_fd_bytes(fd: int) -> bytes:
+    chunks: list[bytes] = []
+    os.lseek(fd, 0, os.SEEK_SET)
+    while chunk := os.read(fd, 1024 * 1024):
+        chunks.append(chunk)
+    os.lseek(fd, 0, os.SEEK_SET)
+    return b"".join(chunks)
+
+
+def _pin_json_file(
+    path: Path,
+    label: str,
+    *,
+    expected_sha256: object = _EXPECTED_SHA256_UNSET,
+) -> tuple[PinnedArtifact, dict[str, Any]]:
+    path = _canonical_manifest_path(str(path), label)
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise RuntimeError(f"backup prerequisite {label} is invalid") from exc
+    try:
+        before = os.fstat(fd)
+        if not stat.S_ISREG(before.st_mode):
+            raise RuntimeError(f"backup prerequisite {label} is not a regular file")
+        signature = _stat_signature(before)
+        raw = _read_fd_bytes(fd)
+        digest = hashlib.sha256(raw).hexdigest()
+        after = os.fstat(fd)
+        published = os.lstat(path)
+        if (
+            _stat_signature(after) != signature
+            or (published.st_dev, published.st_ino) != (after.st_dev, after.st_ino)
+        ):
+            raise RuntimeError(
+                f"backup prerequisite {label} changed during verification"
+            )
+        if expected_sha256 is not _EXPECTED_SHA256_UNSET and (
+            not isinstance(expected_sha256, str) or digest != expected_sha256
+        ):
+            raise RuntimeError(f"backup prerequisite {label} checksum mismatch")
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"backup prerequisite {label} is invalid") from exc
+        if not isinstance(payload, dict):
+            raise RuntimeError(f"backup prerequisite {label} is invalid")
+        return PinnedArtifact(path, fd, signature, digest, after.st_size), payload
+    except Exception:
+        os.close(fd)
+        raise
 
 
 def _pin_artifact(
@@ -434,13 +506,22 @@ def create_rollback_backup(
         }
         _write_json_exclusive(manifest_path, manifest)
         manifest_path = manifest_path.resolve(strict=True)
+        manifest_pin, published_manifest = _pin_json_file(
+            manifest_path, "manifest"
+        )
+        try:
+            if published_manifest != manifest:
+                raise RuntimeError("backup prerequisite manifest publication mismatch")
+            manifest_sha256 = manifest_pin.sha256
+        finally:
+            manifest_pin.close()
         marker = {
             "schema_version": BACKUP_MANIFEST_SCHEMA_VERSION,
             "state": "ready",
             "migration_name": migration_name,
             "created_at": created_at,
             "manifest_path": str(manifest_path),
-            "manifest_sha256": _sha256(manifest_path),
+            "manifest_sha256": manifest_sha256,
             "source": manifest["source"],
         }
         _write_json_atomic(marker_path, marker)
@@ -458,14 +539,16 @@ def create_rollback_backup(
 
 
 def _load_json_regular(path: Path, label: str) -> dict[str, Any]:
-    try:
-        _regular_file_identity(path)
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError, RuntimeError) as exc:
-        raise RuntimeError(f"backup prerequisite {label} is invalid") from exc
-    if not isinstance(payload, dict):
-        raise RuntimeError(f"backup prerequisite {label} is invalid")
-    return payload
+    for attempt in range(2):
+        try:
+            pinned, payload = _pin_json_file(path, label)
+        except RuntimeError as exc:
+            if attempt == 0 and "changed during verification" in str(exc):
+                continue
+            raise
+        pinned.close()
+        return payload
+    raise RuntimeError(f"backup prerequisite {label} is invalid")
 
 
 def _canonical_manifest_path(value: object, label: str) -> Path:
@@ -525,108 +608,123 @@ def validate_backup_prerequisite(
     *,
     allow_stale: bool = False,
     pin_artifacts: bool = False,
-) -> dict[str, Any]:
+) -> BackupPrerequisiteLease:
     marker_path = backup_marker_path(source, migration_name)
     if not marker_path.exists():
         raise RuntimeError(
             f"backup prerequisite marker is missing for migration {migration_name}"
         )
-    marker = _load_json_regular(marker_path, "marker")
-    if marker.get("state") != "ready" or marker.get("migration_name") != migration_name:
-        raise RuntimeError("backup prerequisite migration mismatch")
-    if marker.get("schema_version") != BACKUP_MANIFEST_SCHEMA_VERSION:
-        raise RuntimeError("backup prerequisite marker schema is invalid")
-
-    manifest_path = _canonical_manifest_path(
-        marker.get("manifest_path"), "manifest"
-    )
-    if marker.get("manifest_sha256") != _sha256(manifest_path):
-        raise RuntimeError("backup prerequisite manifest checksum mismatch")
-    manifest = _load_json_regular(manifest_path, "manifest")
-    if manifest.get("migration_name") != migration_name:
-        raise RuntimeError("backup prerequisite migration mismatch")
-    if manifest.get("schema_version") != BACKUP_MANIFEST_SCHEMA_VERSION:
-        raise RuntimeError("backup prerequisite manifest schema is invalid")
-    if manifest.get("marker_path") != str(marker_path):
-        raise RuntimeError("backup prerequisite marker path mismatch")
-
-    created_at = _parse_created_at(manifest.get("created_at"))
-    age = (datetime.now(timezone.utc) - created_at).total_seconds()
-    if not allow_stale and (age < -300 or age > BACKUP_MAX_AGE_SECONDS):
-        raise RuntimeError("backup prerequisite is stale")
-
-    source_metadata = manifest.get("source")
-    if not isinstance(source_metadata, dict):
-        raise RuntimeError("backup prerequisite source metadata is invalid")
-    if marker.get("source") != source_metadata:
-        raise RuntimeError("backup prerequisite marker source identity mismatch")
-    _require_current_source(
-        source,
-        source_metadata.get("database_path"),
-        source_metadata.get("database_identity"),
-        "database",
-    )
-    _require_current_source(
-        config_path,
-        source_metadata.get("config_path"),
-        source_metadata.get("config_identity"),
-        "config",
-    )
-    expected_snapshot = source_metadata.get("sqlite_snapshot_sha256")
-    if (
-        not isinstance(expected_snapshot, str)
-        or _sqlite_snapshot_sha256(Path(str(source_metadata.get("database_path"))))
-        != expected_snapshot
-    ):
-        raise RuntimeError("backup prerequisite live SQLite snapshot mismatch")
-    artifacts = manifest.get("artifacts")
-    if not isinstance(artifacts, dict):
-        raise RuntimeError("backup prerequisite artifact metadata is invalid")
-    pinned: list[PinnedArtifact] = []
+    pinned: list[tuple[PinnedArtifact, str]] = []
     try:
+        marker_pin, marker = _pin_json_file(marker_path, "marker")
+        pinned.append((marker_pin, "marker"))
+        if (
+            marker.get("state") != "ready"
+            or marker.get("migration_name") != migration_name
+        ):
+            raise RuntimeError("backup prerequisite migration mismatch")
+        if marker.get("schema_version") != BACKUP_MANIFEST_SCHEMA_VERSION:
+            raise RuntimeError("backup prerequisite marker schema is invalid")
+
+        manifest_path = _canonical_manifest_path(
+            marker.get("manifest_path"), "manifest"
+        )
+        manifest_pin, manifest = _pin_json_file(
+            manifest_path,
+            "manifest",
+            expected_sha256=marker.get("manifest_sha256"),
+        )
+        pinned.append((manifest_pin, "manifest"))
+        if manifest.get("migration_name") != migration_name:
+            raise RuntimeError("backup prerequisite migration mismatch")
+        if manifest.get("schema_version") != BACKUP_MANIFEST_SCHEMA_VERSION:
+            raise RuntimeError("backup prerequisite manifest schema is invalid")
+        if manifest.get("marker_path") != str(marker_path):
+            raise RuntimeError("backup prerequisite marker path mismatch")
+
+        created_at = _parse_created_at(manifest.get("created_at"))
+        age = (datetime.now(timezone.utc) - created_at).total_seconds()
+        if not allow_stale and (age < -300 or age > BACKUP_MAX_AGE_SECONDS):
+            raise RuntimeError("backup prerequisite is stale")
+
+        source_metadata = manifest.get("source")
+        if not isinstance(source_metadata, dict):
+            raise RuntimeError("backup prerequisite source metadata is invalid")
+        if marker.get("source") != source_metadata:
+            raise RuntimeError("backup prerequisite marker source identity mismatch")
+        _require_current_source(
+            source,
+            source_metadata.get("database_path"),
+            source_metadata.get("database_identity"),
+            "database",
+        )
+        _require_current_source(
+            config_path,
+            source_metadata.get("config_path"),
+            source_metadata.get("config_identity"),
+            "config",
+        )
+        expected_snapshot = source_metadata.get("sqlite_snapshot_sha256")
+        if (
+            not isinstance(expected_snapshot, str)
+            or _sqlite_snapshot_sha256(
+                Path(str(source_metadata.get("database_path")))
+            )
+            != expected_snapshot
+        ):
+            raise RuntimeError("backup prerequisite live SQLite snapshot mismatch")
+        artifacts = manifest.get("artifacts")
+        if not isinstance(artifacts, dict):
+            raise RuntimeError("backup prerequisite artifact metadata is invalid")
         pinned.append(
-            _pin_artifact(
-                artifacts.get("database"),
+            (
+                _pin_artifact(
+                    artifacts.get("database"),
+                    "database backup",
+                    sqlite_backup=True,
+                ),
                 "database backup",
-                sqlite_backup=True,
             )
         )
-        pinned.append(_pin_artifact(artifacts.get("config"), "config backup"))
+        pinned.append(
+            (_pin_artifact(artifacts.get("config"), "config backup"), "config backup")
+        )
+        lease = BackupPrerequisiteLease(
+            marker_path=marker_path,
+            manifest_path=manifest_path,
+            marker=marker,
+            manifest=manifest,
+            pinned_files=pinned,
+        )
     except Exception:
-        for artifact in pinned:
-            artifact.close()
+        for pinned_file, _label in pinned:
+            pinned_file.close()
         raise
-    result = {
-        "marker_path": marker_path,
-        "manifest_path": manifest_path,
-        "marker": marker,
-        "manifest": manifest,
-        "pinned_artifacts": pinned if pin_artifacts else [],
-    }
     if not pin_artifacts:
-        for artifact in pinned:
-            artifact.close()
-    return result
+        lease.close()
+    return lease
 
 
-def assert_backup_prerequisite_published(prerequisite: dict[str, Any]) -> None:
-    pinned = prerequisite.get("pinned_artifacts", [])
-    if len(pinned) != 2:
-        raise RuntimeError("backup prerequisite artifacts are not pinned")
-    _assert_pinned_artifact(pinned[0], "database backup")
-    _assert_pinned_artifact(pinned[1], "config backup")
+def assert_backup_prerequisite_published(
+    prerequisite: BackupPrerequisiteLease,
+) -> None:
+    if len(prerequisite.pinned_files) != 4:
+        raise RuntimeError("backup prerequisite lease is not pinned")
+    prerequisite.assert_published()
 
 
-def release_backup_prerequisite(prerequisite: dict[str, Any] | None) -> None:
+def release_backup_prerequisite(
+    prerequisite: BackupPrerequisiteLease | None,
+) -> None:
     if prerequisite is None:
         return
-    for artifact in prerequisite.get("pinned_artifacts", []):
-        artifact.close()
-    prerequisite["pinned_artifacts"] = []
+    prerequisite.close()
 
 
 def consume_backup_prerequisite(
-    source: Path, migration_name: str, prerequisite: dict[str, Any] | None = None
+    source: Path,
+    migration_name: str,
+    prerequisite: BackupPrerequisiteLease | None = None,
 ) -> Path | None:
     ready = backup_marker_path(source, migration_name)
     consumed = consumed_backup_marker_path(source, migration_name)
@@ -650,7 +748,7 @@ def consume_backup_prerequisite(
         return consumed
     try:
         marker = (
-            prerequisite["marker"]
+            prerequisite.marker
             if prerequisite is not None
             else _load_json_regular(ready, "marker")
         )
@@ -658,7 +756,12 @@ def consume_backup_prerequisite(
         if consumed.exists() and not ready.exists():
             return consume_backup_prerequisite(source, migration_name)
         raise
-    _validate_marker_for_consumption(source, migration_name, marker)
+    if prerequisite is None:
+        _validate_marker_for_consumption(source, migration_name, marker)
+    else:
+        _validate_loaded_marker_for_consumption(
+            source, migration_name, marker, prerequisite.manifest
+        )
     receipt = dict(marker)
     receipt["state"] = "consumed"
     receipt["consumed_at"] = datetime.now(timezone.utc).isoformat()
@@ -675,16 +778,39 @@ def consume_backup_prerequisite(
 def _validate_marker_for_consumption(
     source: Path, migration_name: str, marker: dict[str, Any]
 ) -> None:
+    manifest_path = _canonical_manifest_path(
+        marker.get("manifest_path"), "manifest"
+    )
+    manifest_pin, manifest = _pin_json_file(
+        manifest_path,
+        "manifest",
+        expected_sha256=marker.get("manifest_sha256"),
+    )
+    try:
+        _validate_loaded_marker_for_consumption(
+            source, migration_name, marker, manifest
+        )
+        artifacts = manifest.get("artifacts")
+        if not isinstance(artifacts, dict):
+            raise RuntimeError("backup prerequisite artifact metadata is invalid")
+        _verify_artifact(
+            artifacts.get("database"), "database backup", sqlite_backup=True
+        )
+        _verify_artifact(artifacts.get("config"), "config backup")
+    finally:
+        manifest_pin.close()
+
+
+def _validate_loaded_marker_for_consumption(
+    source: Path,
+    migration_name: str,
+    marker: dict[str, Any],
+    manifest: dict[str, Any],
+) -> None:
     if marker.get("state") != "ready" or marker.get("migration_name") != migration_name:
         raise RuntimeError("backup prerequisite migration mismatch")
     if marker.get("schema_version") != BACKUP_MANIFEST_SCHEMA_VERSION:
         raise RuntimeError("backup prerequisite marker schema is invalid")
-    manifest_path = _canonical_manifest_path(
-        marker.get("manifest_path"), "manifest"
-    )
-    if marker.get("manifest_sha256") != _sha256(manifest_path):
-        raise RuntimeError("backup prerequisite manifest checksum mismatch")
-    manifest = _load_json_regular(manifest_path, "manifest")
     if manifest.get("migration_name") != migration_name:
         raise RuntimeError("backup prerequisite migration mismatch")
     if manifest.get("schema_version") != BACKUP_MANIFEST_SCHEMA_VERSION:
@@ -697,11 +823,6 @@ def _validate_marker_for_consumption(
     canonical_source = Path(source).expanduser().absolute().resolve(strict=True)
     if source_metadata.get("database_path") != str(canonical_source):
         raise RuntimeError("backup prerequisite database source identity mismatch")
-    artifacts = manifest.get("artifacts")
-    if not isinstance(artifacts, dict):
-        raise RuntimeError("backup prerequisite artifact metadata is invalid")
-    _verify_artifact(artifacts.get("database"), "database backup", sqlite_backup=True)
-    _verify_artifact(artifacts.get("config"), "config backup")
 
 
 def restore_journal_path(database_path: Path) -> Path:
@@ -714,39 +835,47 @@ def _validate_rollback_manifest(
     *,
     allow_stale: bool = False,
     pin_artifacts: bool = True,
-) -> tuple[dict[str, Any], list[PinnedArtifact], dict[str, Path]]:
+    expected_sha256: object = _EXPECTED_SHA256_UNSET,
+) -> tuple[dict[str, Any], list[PinnedArtifact], dict[str, Path], str]:
     manifest_path = _canonical_manifest_path(
         str(Path(manifest_path).expanduser().absolute().resolve(strict=True)),
         "rollback manifest",
     )
-    manifest = _load_json_regular(manifest_path, "rollback manifest")
-    if manifest.get("schema_version") != BACKUP_MANIFEST_SCHEMA_VERSION:
-        raise RuntimeError("rollback manifest schema is invalid")
-    if manifest.get("migration_name") != DEFAULT_DESTRUCTIVE_MIGRATION:
-        raise RuntimeError("rollback manifest migration is invalid")
-    try:
-        created_at = _parse_created_at(manifest.get("created_at"))
-    except RuntimeError as exc:
-        raise RuntimeError("rollback manifest timestamp is invalid") from exc
-    age = (datetime.now(timezone.utc) - created_at).total_seconds()
-    if not allow_stale and (age < -300 or age > BACKUP_MAX_AGE_SECONDS):
-        raise RuntimeError("rollback manifest is stale")
-    source = manifest.get("source")
-    artifacts = manifest.get("artifacts")
-    if not isinstance(source, dict) or not isinstance(artifacts, dict):
-        raise RuntimeError("rollback manifest structure is invalid")
-    database_destination = Path(str(source.get("database_path")))
-    config_destination = Path(str(source.get("config_path")))
-    if not database_destination.is_absolute() or not config_destination.is_absolute():
-        raise RuntimeError("rollback manifest restore destination is invalid")
-    if (
-        database_destination.resolve(strict=False) != database_destination
-        or config_destination.resolve(strict=False) != config_destination
-    ):
-        raise RuntimeError("rollback manifest restore destination is not canonical")
     pinned: list[PinnedArtifact] = []
-    if pin_artifacts:
+    manifest_pin, manifest = _pin_json_file(
+        manifest_path,
+        "rollback manifest",
+        expected_sha256=expected_sha256,
+    )
+    try:
+        if manifest.get("schema_version") != BACKUP_MANIFEST_SCHEMA_VERSION:
+            raise RuntimeError("rollback manifest schema is invalid")
+        if manifest.get("migration_name") != DEFAULT_DESTRUCTIVE_MIGRATION:
+            raise RuntimeError("rollback manifest migration is invalid")
         try:
+            created_at = _parse_created_at(manifest.get("created_at"))
+        except RuntimeError as exc:
+            raise RuntimeError("rollback manifest timestamp is invalid") from exc
+        age = (datetime.now(timezone.utc) - created_at).total_seconds()
+        if not allow_stale and (age < -300 or age > BACKUP_MAX_AGE_SECONDS):
+            raise RuntimeError("rollback manifest is stale")
+        source = manifest.get("source")
+        artifacts = manifest.get("artifacts")
+        if not isinstance(source, dict) or not isinstance(artifacts, dict):
+            raise RuntimeError("rollback manifest structure is invalid")
+        database_destination = Path(str(source.get("database_path")))
+        config_destination = Path(str(source.get("config_path")))
+        if (
+            not database_destination.is_absolute()
+            or not config_destination.is_absolute()
+        ):
+            raise RuntimeError("rollback manifest restore destination is invalid")
+        if (
+            database_destination.resolve(strict=False) != database_destination
+            or config_destination.resolve(strict=False) != config_destination
+        ):
+            raise RuntimeError("rollback manifest restore destination is not canonical")
+        if pin_artifacts:
             pinned.append(
                 _pin_artifact(
                     artifacts.get("database"),
@@ -755,14 +884,18 @@ def _validate_rollback_manifest(
                 )
             )
             pinned.append(_pin_artifact(artifacts.get("config"), "config backup"))
-        except Exception:
-            for artifact in pinned:
-                artifact.close()
-            raise
-    return manifest, pinned, {
-        "database": database_destination,
-        "config": config_destination,
-    }
+            pinned.append(manifest_pin)
+        else:
+            manifest_pin.close()
+        return manifest, pinned, {
+            "database": database_destination,
+            "config": config_destination,
+        }, manifest_pin.sha256
+    except Exception:
+        for artifact in pinned:
+            artifact.close()
+        manifest_pin.close()
+        raise
 
 
 def _stage_pinned_restore(pinned: PinnedArtifact, destination: Path) -> Path:
@@ -824,10 +957,11 @@ def recover_rollback_restore(journal_path: Path) -> dict[str, Path]:
     manifest_path = _canonical_manifest_path(
         journal.get("manifest_path"), "rollback manifest"
     )
-    if journal.get("manifest_sha256") != _sha256(manifest_path):
-        raise RuntimeError("rollback restore journal manifest checksum mismatch")
-    manifest, pinned, destinations = _validate_rollback_manifest(
-        manifest_path, allow_stale=True, pin_artifacts=False
+    manifest, pinned, destinations, _manifest_sha256 = _validate_rollback_manifest(
+        manifest_path,
+        allow_stale=True,
+        pin_artifacts=False,
+        expected_sha256=journal.get("manifest_sha256"),
     )
     for artifact in pinned:
         artifact.close()
@@ -886,14 +1020,16 @@ def recover_rollback_restore(journal_path: Path) -> dict[str, Path]:
 def restore_rollback_backup(manifest_path: Path) -> dict[str, Path]:
     """Stage and journal both rollback artifacts before replacing either target."""
     manifest_path = Path(manifest_path).expanduser().absolute().resolve(strict=True)
-    _, _, candidate_destinations = _validate_rollback_manifest(
+    _, _, candidate_destinations, _ = _validate_rollback_manifest(
         manifest_path, allow_stale=True, pin_artifacts=False
     )
     journal_path = restore_journal_path(candidate_destinations["database"])
     if journal_path.exists():
         return recover_rollback_restore(journal_path)
 
-    manifest, pinned, destinations = _validate_rollback_manifest(manifest_path)
+    manifest, pinned, destinations, manifest_sha256 = _validate_rollback_manifest(
+        manifest_path
+    )
     stages: dict[str, Path] = {}
     journal_written = False
     try:
@@ -901,12 +1037,13 @@ def restore_rollback_backup(manifest_path: Path) -> dict[str, Path]:
             pinned[0], destinations["database"]
         )
         stages["config"] = _stage_pinned_restore(pinned[1], destinations["config"])
+        _assert_pinned_artifact(pinned[2], "rollback manifest")
         journal = {
             "schema_version": RESTORE_JOURNAL_SCHEMA_VERSION,
             "state": "staged",
             "created_at": datetime.now(timezone.utc).isoformat(),
             "manifest_path": str(manifest_path),
-            "manifest_sha256": _sha256(manifest_path),
+            "manifest_sha256": manifest_sha256,
             "entries": {
                 key: {
                     "destination": str(destinations[key]),

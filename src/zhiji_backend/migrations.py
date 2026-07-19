@@ -140,11 +140,11 @@ def ensure_migrations(db_path: Path) -> None:
                     )
                     if not bootstrap_new_database:
                         fn(conn)
+                    conn.execute("INSERT INTO _migrations (name) VALUES (?)", (name,))
                     if prerequisite is not None:
                         from .database_backup import assert_backup_prerequisite_published
 
                         assert_backup_prerequisite_published(prerequisite)
-                    conn.execute("INSERT INTO _migrations (name) VALUES (?)", (name,))
                     conn.commit()
                     applied.add(name)
                 except Exception:
