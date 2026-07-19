@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Clock3, ExternalLink, FileText, Loader2, Sparkles, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { apiFetch } from '../api';
+import { fetchBriefingDetail, fetchBriefingHistory, generateQuickBriefing } from '../components/cinematic-briefings/briefingRequests.mjs';
 import { briefingMetrics, resolveBriefingLoadSelection } from '../components/cinematic-briefings/briefingWorkspace.mjs';
 import { RequestLifecycle } from '../components/ingest/requestLifecycle';
 import SpotlightListRow from '../components/react-bits/SpotlightListRow';
@@ -49,15 +50,6 @@ function formatTime(value: string) {
   return value.replace('T', ' ').slice(0, 16);
 }
 
-async function responseError(response: Response, fallback: string) {
-  try {
-    const payload = await response.json();
-    return payload?.detail || payload?.message || fallback;
-  } catch {
-    return fallback;
-  }
-}
-
 export default function CinematicBriefings() {
   const navigate = useNavigate();
   const [items, setItems] = useState<BriefingListItem[]>([]);
@@ -80,15 +72,8 @@ export default function CinematicBriefings() {
     setListLoading(true);
     setListError('');
     try {
-      const response = await apiFetch('/api/briefing?limit=30&offset=0', { signal });
-      if (!response.ok) throw new Error(await responseError(response, '快报历史加载失败'));
-      const payload = await response.json();
-      const nextItems = (Array.isArray(payload?.items) ? payload.items : [])
-        .filter((item: BriefingListItem | null): item is BriefingListItem => Boolean(item?.id))
-        .sort((left: BriefingListItem, right: BriefingListItem) => {
-          const timeOrder = String(right.created_at || '').localeCompare(String(left.created_at || ''));
-          return timeOrder || right.id.localeCompare(left.id);
-        });
+      const payload = await fetchBriefingHistory({ apiFetch, signal });
+      const nextItems = payload.items as BriefingListItem[];
       if (!listRequestLifecycleRef.current.isCurrent(sequence)) return;
       setItems(nextItems);
       setSelectedId((current) => {
@@ -123,9 +108,7 @@ export default function CinematicBriefings() {
     setDetailError('');
     setDetail(null);
     try {
-      const response = await apiFetch(`/api/briefing/${selectedId}`, { signal });
-      if (!response.ok) throw new Error(await responseError(response, '快报详情加载失败'));
-      const payload = await response.json();
+      const payload = await fetchBriefingDetail({ apiFetch, signal, briefingId });
       if (!detailRequestLifecycleRef.current.isCurrent(sequence) || payload?.id !== briefingId) return;
       setDetail(payload);
     } catch (reason: any) {
@@ -134,7 +117,7 @@ export default function CinematicBriefings() {
     } finally {
       if (detailRequestLifecycleRef.current.isCurrent(sequence)) setDetailLoading(false);
     }
-  }, [selectedId]);
+  }, []);
 
   useEffect(() => {
     void loadBriefings();
@@ -165,15 +148,8 @@ export default function CinematicBriefings() {
     setGenerateError('');
     const { sequence, signal } = generateRequestLifecycleRef.current.start();
     try {
-      const response = await apiFetch('/api/briefing/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'quick' }),
-        signal,
-      });
-      if (!response.ok) throw new Error(await responseError(response, '即时快报生成失败'));
-      const generated = await response.json();
-      if (!generateRequestLifecycleRef.current.isCurrent(sequence) || !generated?.id) return;
+      const generated = await generateQuickBriefing({ apiFetch, signal });
+      if (!generateRequestLifecycleRef.current.isCurrent(sequence)) return;
       pendingPreferredIdRef.current = generated.id;
       await loadBriefings();
     } catch (reason: any) {
@@ -227,7 +203,7 @@ export default function CinematicBriefings() {
                     <div className="ki-ingest-event-list briefing-history-list" aria-live="polite">
                       {items.map((item) => (
                         <SpotlightListRow key={item.id} active={item.id === selectedId} spotlightColor="rgba(251, 113, 133, 0.18)">
-                          <button type="button" className="ki-ingest-list-row briefing-history-row" onClick={() => setSelectedId(item.id)}>
+                          <button type="button" className="ki-ingest-list-row briefing-history-row" aria-pressed={item.id === selectedId} onClick={() => setSelectedId(item.id)}>
                             <span className="ki-ingest-list-topic is-rose">
                               <span className="ki-ingest-list-type-icon">{item.type === 'daily' ? <FileText size={14} /> : <Zap size={14} />}</span>
                               <em>{typeLabel(item.type)}</em>

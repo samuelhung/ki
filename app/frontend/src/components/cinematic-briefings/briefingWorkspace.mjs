@@ -12,14 +12,23 @@ export function resolveBriefingLoadSelection({
   pendingPreferredId,
   succeeded,
 }) {
+  const pendingId = typeof pendingPreferredId === 'string' ? pendingPreferredId : '';
   if (!succeeded) {
     return {
       selectedId: currentId || '',
-      pendingPreferredId: pendingPreferredId || '',
+      pendingPreferredId: pendingId,
+    };
+  }
+  const pendingIsAvailable = Array.isArray(items)
+    && items.some((item) => item && item.id === pendingId);
+  if (pendingId && !pendingIsAvailable) {
+    return {
+      selectedId: selectBriefingId(items, currentId),
+      pendingPreferredId: pendingId,
     };
   }
   return {
-    selectedId: selectBriefingId(items, pendingPreferredId || currentId),
+    selectedId: selectBriefingId(items, pendingId || currentId),
     pendingPreferredId: '',
   };
 }

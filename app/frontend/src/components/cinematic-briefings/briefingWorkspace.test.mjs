@@ -48,6 +48,32 @@ test('pending generated selection survives refresh failure and is consumed by a 
   });
 });
 
+test('successful stale history preserves a pending generated id until it is returned', async () => {
+  const { resolveBriefingLoadSelection } = await import(workspaceUrl);
+
+  const staleSuccess = resolveBriefingLoadSelection({
+    items: [{ id: 'briefing-old' }],
+    currentId: 'briefing-old',
+    pendingPreferredId: 'briefing-generated',
+    succeeded: true,
+  });
+
+  assert.deepEqual(staleSuccess, {
+    selectedId: 'briefing-old',
+    pendingPreferredId: 'briefing-generated',
+  });
+
+  assert.deepEqual(resolveBriefingLoadSelection({
+    items: [{ id: 'briefing-generated-copy' }],
+    currentId: 'briefing-generated-copy',
+    pendingPreferredId: 'briefing-generated',
+    succeeded: true,
+  }), {
+    selectedId: 'briefing-generated-copy',
+    pendingPreferredId: 'briefing-generated',
+  });
+});
+
 test('briefingMetrics reports type, generated time, topic count, and event count', async () => {
   assert.equal(existsSync(workspaceUrl), true, 'briefingWorkspace.mjs should exist');
   const { briefingMetrics } = await import(workspaceUrl);

@@ -37,19 +37,18 @@ test('briefings use full-screen layout and bypass the page entry curtain', () =>
 
 test('history and detail requests use independent abortable request lifecycles', () => {
   assert.match(page, /import \{ RequestLifecycle \} from/);
+  assert.match(page, /import \{ fetchBriefingDetail, fetchBriefingHistory, generateQuickBriefing \} from/);
   assert.match(page, /listRequestLifecycleRef = useRef\(new RequestLifecycle\(\)\)/);
   assert.match(page, /detailRequestLifecycleRef = useRef\(new RequestLifecycle\(\)\)/);
   assert.match(page, /generateRequestLifecycleRef = useRef\(new RequestLifecycle\(\)\)/);
-  assert.match(page, /apiFetch\('\/api\/briefing\?limit=30&offset=0', \{ signal \}\)/);
-  assert.match(page, /apiFetch\(`\/api\/briefing\/\$\{selectedId\}`, \{ signal \}\)/);
+  assert.match(page, /fetchBriefingHistory\(\{ apiFetch, signal \}\)/);
+  assert.match(page, /fetchBriefingDetail\(\{ apiFetch, signal, briefingId \}\)/);
   assert.match(page, /isCurrent\(sequence\)/);
   assert.match(page, /\.current\.abort\(\)/);
 });
 
 test('generation posts quick once, disables duplicates, refreshes history, and selects the returned briefing', () => {
-  assert.match(page, /apiFetch\('\/api\/briefing\/generate', \{/);
-  assert.match(page, /method: 'POST'/);
-  assert.match(page, /body: JSON\.stringify\(\{ type: 'quick' \}\)/);
+  assert.match(page, /generateQuickBriefing\(\{ apiFetch, signal \}\)/);
   assert.match(page, /if \(generating\) return/);
   assert.match(page, /disabled=\{generating\}/);
   assert.match(page, /pendingPreferredIdRef\.current = generated\.id/);
@@ -72,6 +71,7 @@ test('briefing detail groups topic summaries and navigates referenced event butt
   assert.match(page, /topic\.events\.map\(\(event/);
   assert.match(page, /navigate\(`\/events\/\$\{event\.event_id\}`\)/);
   assert.match(page, /event\.highlight/);
+  assert.match(page, /aria-pressed=\{item\.id === selectedId\}/);
 });
 
 test('list, detail, and generation errors stay retryable and metrics stay in the bottom status box', () => {
@@ -96,7 +96,18 @@ test('briefing workspace has responsive stable panes and no duplicate independen
   assert.doesNotMatch(page, /CinematicSceneCanvas|CinematicTemplatePage|CinematicLaserWorkspace|LaserFlow|useLaserRenderProfile|<canvas/);
 });
 
+test('briefing workspace stacks into bounded history and scrollable detail below 760px', () => {
+  const narrowStart = css.indexOf('@media (max-width: 760px)');
+  assert.notEqual(narrowStart, -1);
+  const narrow = css.slice(narrowStart);
+  assert.match(narrow, /\.briefing-split-stage\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)[^}]*grid-template-rows:/s);
+  assert.match(narrow, /\.briefing-history-list\s*\{[^}]*max-height:[^}]*overflow:\s*auto/s);
+  assert.match(narrow, /\.briefing-detail-pane\s*\{[^}]*min-height:\s*0/s);
+  assert.match(narrow, /\.briefing-topic-stream\s*\{[^}]*overflow:\s*auto/s);
+});
+
 test('cinematic scene test script includes briefing helper and composition tests', () => {
+  assert.match(packageJson, /src\/components\/cinematic-briefings\/briefingRequests\.test\.mjs/);
   assert.match(packageJson, /src\/components\/cinematic-briefings\/briefingWorkspace\.test\.mjs/);
   assert.match(packageJson, /src\/components\/cinematic-briefings\/briefingComposition\.test\.mjs/);
 });
