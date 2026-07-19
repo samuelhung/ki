@@ -46,6 +46,7 @@ const MODULE_NAMES: Record<string, string> = {
   ingest_pipeline: '采集 pipeline',
   series: '专题引擎',
   brainstorm: '头脑风暴',
+  briefing: '即时快报',
   digest_briefing: '摘要快报',
   tasks: '待办事务',
   concept: '概念沉淀',

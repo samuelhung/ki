@@ -8,6 +8,7 @@ const pageUrl = new URL('../../pages/CinematicSystemCenter.tsx', import.meta.url
 const panelsUrl = new URL('./SystemCenterPanels.tsx', import.meta.url);
 const assetsUrl = new URL('./SystemAssetBox.tsx', import.meta.url);
 const usageUrl = new URL('../UsageWidget.tsx', import.meta.url);
+const hudUrl = new URL('../cinematic/CinematicHud.tsx', import.meta.url);
 const cssUrl = new URL('./cinematic-system.css', import.meta.url);
 const appUrl = new URL('../../App.tsx', import.meta.url);
 const curtainUrl = new URL('../../CurtainContext.tsx', import.meta.url);
@@ -214,10 +215,11 @@ test('asset inventory uses semantic icons and tones for every metric', async () 
 });
 
 test('active briefing config is renamed while usage keeps historical compatibility', async () => {
-  const [panels, types, usage] = await Promise.all([
+  const [panels, types, usage, hud] = await Promise.all([
     readFile(panelsUrl, 'utf8'),
     readFile(new URL('./systemTypes.ts', import.meta.url), 'utf8'),
     readFile(usageUrl, 'utf8'),
+    readFile(hudUrl, 'utf8'),
   ]);
 
   assert.match(panels, /briefing:\s*\{\s*briefing_quick:[\s\S]*briefing_daily:/);
@@ -226,6 +228,8 @@ test('active briefing config is renamed while usage keeps historical compatibili
   assert.doesNotMatch(types, /digest_briefing/);
   assert.match(usage, /briefing:\s*'即时快报'/);
   assert.match(usage, /digest_briefing:\s*'摘要快报'/);
+  assert.match(hud, /briefing:\s*'即时快报'/);
+  assert.match(hud, /digest_briefing:\s*'摘要快报'/);
 });
 
 test('system Prompt content shares one left alignment axis', async () => {
