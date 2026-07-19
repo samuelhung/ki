@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
 import sqlite3
+import stat
+import threading
 from datetime import datetime
 
 import pytest
@@ -27,6 +30,8 @@ ACTIVE_TABLES = (
     "study_materials",
 )
 
+BACKUP_TEMP_PREFIX = ".intelligence-backup-"
+
 
 def _schema_names(conn: sqlite3.Connection, object_type: str) -> set[str]:
     return {
@@ -37,11 +42,31 @@ def _schema_names(conn: sqlite3.Connection, object_type: str) -> set[str]:
     }
 
 
+def _backup_temp_dirs(output_dir) -> list:
+    if not output_dir.exists():
+        return []
+    return [
+        path
+        for path in output_dir.iterdir()
+        if path.name.startswith(BACKUP_TEMP_PREFIX)
+    ]
+
+
+def _freeze_backup_timestamp(monkeypatch, database_backup) -> None:
+    class FrozenDateTime:
+        @classmethod
+        def now(cls):
+            return datetime(2026, 7, 19, 12, 34, 56)
+
+    monkeypatch.setattr(database_backup, "datetime", FrozenDateTime)
+
+
 def _create_populated_legacy_database(db_path, monkeypatch) -> dict[str, int]:
     monkeypatch.setenv("KI_DB_PATH", str(db_path))
     init_db()
 
     with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA foreign_keys=ON")
         conn.executescript(
             """
             CREATE TABLE entities (
@@ -51,13 +76,17 @@ def _create_populated_legacy_database(db_path, monkeypatch) -> dict[str, int]:
             );
             CREATE TABLE event_entities (
               event_id TEXT NOT NULL,
-              entity_id TEXT NOT NULL
+              entity_id TEXT NOT NULL,
+              FOREIGN KEY (event_id) REFERENCES events(id),
+              FOREIGN KEY (entity_id) REFERENCES entities(id)
             );
             CREATE TABLE entity_relations (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               source_entity_id TEXT NOT NULL,
               target_entity_id TEXT NOT NULL,
-              relation_type TEXT NOT NULL
+              relation_type TEXT NOT NULL,
+              FOREIGN KEY (source_entity_id) REFERENCES entities(id),
+              FOREIGN KEY (target_entity_id) REFERENCES entities(id)
             );
             CREATE TABLE digests (
               date TEXT PRIMARY KEY,
@@ -152,6 +181,56 @@ def test_cleanup_migration_is_registered_on_import():
     }
 
 
+def test_register_rejects_duplicate_migration_names(monkeypatch):
+    def migration(_conn: sqlite3.Connection) -> None:
+        pass
+
+    monkeypatch.setattr(
+        migrations,
+        "_registry",
+        [("20260719_existing", migration)],
+    )
+
+    with pytest.raises(ValueError, match="duplicate migration name"):
+        migrations.register("20260719_existing")(migration)
+
+    assert migrations._registry == [("20260719_existing", migration)]
+
+
+def test_register_rejects_non_increasing_migration_names(monkeypatch):
+    def migration(_conn: sqlite3.Connection) -> None:
+        pass
+
+    monkeypatch.setattr(
+        migrations,
+        "_registry",
+        [("20260719_existing", migration)],
+    )
+
+    with pytest.raises(ValueError, match="chronological order"):
+        migrations.register("20260718_older")(migration)
+
+    assert migrations._registry == [("20260719_existing", migration)]
+
+
+def test_register_accepts_strictly_increasing_migration_names(monkeypatch):
+    def migration(_conn: sqlite3.Connection) -> None:
+        pass
+
+    monkeypatch.setattr(
+        migrations,
+        "_registry",
+        [("20260718_existing", migration)],
+    )
+
+    migrations.register("20260719_newer")(migration)
+
+    assert migrations._registry == [
+        ("20260718_existing", migration),
+        ("20260719_newer", migration),
+    ]
+
+
 def test_cleanup_migration_drops_retired_schema_and_preserves_active_rows(
     tmp_path, monkeypatch
 ):
@@ -161,6 +240,7 @@ def test_cleanup_migration_drops_retired_schema_and_preserves_active_rows(
     ensure_migrations(db_path)
 
     with sqlite3.connect(db_path) as conn:
+        conn.execute("PRAGMA foreign_keys=ON")
         assert RETIRED_TABLES.isdisjoint(_schema_names(conn, "table"))
         assert not any(
             name.startswith(
@@ -181,6 +261,7 @@ def test_cleanup_migration_drops_retired_schema_and_preserves_active_rows(
             ("series", "digest", 70),
             ("digest_briefing", None, 80),
         ]
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
 def test_each_migration_and_marker_roll_back_together(tmp_path, monkeypatch):
@@ -206,6 +287,64 @@ def test_each_migration_and_marker_roll_back_together(tmp_path, monkeypatch):
             "SELECT COUNT(*) FROM _migrations WHERE name = ?",
             ("test_injected_failure",),
         ).fetchone()[0] == 0
+
+
+def test_concurrent_migration_runners_execute_body_once(tmp_path, monkeypatch):
+    db_path = tmp_path / "concurrent.sqlite"
+    monkeypatch.setattr(migrations, "_registry", [])
+    ensure_migrations(db_path)
+
+    def counted_migration(conn: sqlite3.Connection) -> None:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS migration_effects (id INTEGER PRIMARY KEY)"
+        )
+        conn.execute("INSERT INTO migration_effects DEFAULT VALUES")
+
+    monkeypatch.setattr(
+        migrations,
+        "_registry",
+        [("20260720_concurrent_test", counted_migration)],
+    )
+
+    precheck_barrier = threading.Barrier(2)
+    real_connect = migrations.sqlite3.connect
+
+    class TrackingConnection(sqlite3.Connection):
+        def execute(self, sql, parameters=()):
+            if sql.strip() == "SELECT name FROM _migrations":
+                precheck_barrier.wait(timeout=5)
+            return super().execute(sql, parameters)
+
+    def tracked_connect(*args, **kwargs):
+        kwargs["factory"] = TrackingConnection
+        return real_connect(*args, **kwargs)
+
+    monkeypatch.setattr(migrations.sqlite3, "connect", tracked_connect)
+    start_barrier = threading.Barrier(3)
+    errors = []
+
+    def run_migrations() -> None:
+        start_barrier.wait(timeout=5)
+        try:
+            ensure_migrations(db_path)
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=run_migrations) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    start_barrier.wait(timeout=5)
+    for thread in threads:
+        thread.join(timeout=10)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert errors == []
+    with real_connect(db_path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM migration_effects").fetchone()[0] == 1
+        assert conn.execute(
+            "SELECT COUNT(*) FROM _migrations WHERE name = ?",
+            ("20260720_concurrent_test",),
+        ).fetchone()[0] == 1
 
 
 def test_cleanup_migration_is_idempotent(tmp_path, monkeypatch):
@@ -282,12 +421,7 @@ def test_backup_database_refuses_target_collision(tmp_path, monkeypatch):
     with sqlite3.connect(source) as conn:
         conn.execute("CREATE TABLE records (value TEXT)")
 
-    class FrozenDateTime:
-        @classmethod
-        def now(cls):
-            return datetime(2026, 7, 19, 12, 34, 56)
-
-    monkeypatch.setattr(database_backup, "datetime", FrozenDateTime)
+    _freeze_backup_timestamp(monkeypatch, database_backup)
     output_dir = tmp_path / "backups"
     output_dir.mkdir()
     target = output_dir / "intelligence-pre-cleanup-20260719-123456.sqlite"
@@ -297,6 +431,152 @@ def test_backup_database_refuses_target_collision(tmp_path, monkeypatch):
         database_backup.backup_database(source, output_dir)
 
     assert target.read_bytes() == b"existing backup"
+    assert _backup_temp_dirs(output_dir) == []
+
+
+def test_backup_database_never_follows_preexisting_target_symlink(
+    tmp_path, monkeypatch
+):
+    from zhiji_backend import database_backup
+
+    source = tmp_path / "source.sqlite"
+    victim = tmp_path / "victim.sqlite"
+    with sqlite3.connect(source) as conn:
+        conn.execute("CREATE TABLE records (value TEXT)")
+        conn.execute("INSERT INTO records VALUES ('source')")
+    with sqlite3.connect(victim) as conn:
+        conn.execute("CREATE TABLE records (value TEXT)")
+        conn.execute("INSERT INTO records VALUES ('victim')")
+
+    _freeze_backup_timestamp(monkeypatch, database_backup)
+    output_dir = tmp_path / "backups"
+    output_dir.mkdir()
+    target = output_dir / "intelligence-pre-cleanup-20260719-123456.sqlite"
+    target.symlink_to(victim)
+
+    with pytest.raises(FileExistsError):
+        database_backup.backup_database(source, output_dir)
+
+    assert target.is_symlink()
+    with sqlite3.connect(victim) as conn:
+        assert conn.execute("SELECT value FROM records").fetchall() == [("victim",)]
+    assert _backup_temp_dirs(output_dir) == []
+
+
+def test_backup_database_does_not_follow_replaced_target_during_copy(
+    tmp_path, monkeypatch
+):
+    from zhiji_backend import database_backup
+
+    source = tmp_path / "source.sqlite"
+    victim = tmp_path / "victim.sqlite"
+    with sqlite3.connect(source) as conn:
+        conn.execute("CREATE TABLE records (value TEXT)")
+        conn.execute("INSERT INTO records VALUES ('source')")
+    with sqlite3.connect(victim) as conn:
+        conn.execute("CREATE TABLE records (value TEXT)")
+        conn.execute("INSERT INTO records VALUES ('victim')")
+
+    _freeze_backup_timestamp(monkeypatch, database_backup)
+    output_dir = tmp_path / "backups"
+    output_dir.mkdir()
+    target = output_dir / "intelligence-pre-cleanup-20260719-123456.sqlite"
+    real_connect = database_backup.sqlite3.connect
+    attacked = False
+
+    def replace_final_on_source_open(database, *args, **kwargs):
+        nonlocal attacked
+        database_text = str(database)
+        if not attacked and (
+            database_text == str(source)
+            or database_text.startswith(source.resolve().as_uri())
+        ):
+            target.unlink(missing_ok=True)
+            target.symlink_to(victim)
+            attacked = True
+        return real_connect(database, *args, **kwargs)
+
+    monkeypatch.setattr(database_backup.sqlite3, "connect", replace_final_on_source_open)
+
+    with pytest.raises(FileExistsError):
+        database_backup.backup_database(source, output_dir)
+
+    assert attacked
+    assert target.is_symlink()
+    with real_connect(victim) as conn:
+        assert conn.execute("SELECT value FROM records").fetchall() == [("victim",)]
+    assert _backup_temp_dirs(output_dir) == []
+
+
+def test_backup_database_source_disappearance_cannot_create_empty_database(
+    tmp_path, monkeypatch
+):
+    from zhiji_backend import database_backup
+
+    source = tmp_path / "source.sqlite"
+    with sqlite3.connect(source) as conn:
+        conn.execute("CREATE TABLE records (value TEXT)")
+
+    output_dir = tmp_path / "backups"
+    real_connect = database_backup.sqlite3.connect
+    removed = False
+
+    def remove_source_before_open(database, *args, **kwargs):
+        nonlocal removed
+        if kwargs.get("uri") and str(database).startswith(source.resolve().as_uri()):
+            source.unlink()
+            removed = True
+        return real_connect(database, *args, **kwargs)
+
+    monkeypatch.setattr(database_backup.sqlite3, "connect", remove_source_before_open)
+
+    with pytest.raises(sqlite3.OperationalError):
+        database_backup.backup_database(source, output_dir)
+
+    assert removed
+    assert not source.exists()
+    assert _backup_temp_dirs(output_dir) == []
+
+
+def test_backup_database_publishes_verified_temp_inode_and_cleans_temp_dir(
+    tmp_path, monkeypatch
+):
+    from zhiji_backend import database_backup
+
+    source = tmp_path / "source.sqlite"
+    with sqlite3.connect(source) as conn:
+        conn.execute("CREATE TABLE records (value TEXT)")
+        conn.execute("INSERT INTO records VALUES ('source')")
+
+    real_link = os.link
+    publication = {}
+
+    def capture_link(source_path, target_path, **kwargs):
+        publication["source"] = os.lstat(source_path)
+        publication["source_parent"] = os.stat(os.path.dirname(source_path))
+        publication["source_path"] = source_path
+        result = real_link(source_path, target_path, **kwargs)
+        publication["target"] = os.lstat(target_path)
+        return result
+
+    monkeypatch.setattr(database_backup.os, "link", capture_link)
+    output_dir = tmp_path / "backups"
+
+    backup = database_backup.backup_database(source, output_dir)
+
+    assert stat.S_ISREG(publication["source"].st_mode)
+    assert stat.S_ISREG(publication["target"].st_mode)
+    assert stat.S_IMODE(publication["source_parent"].st_mode) == 0o700
+    assert (
+        publication["source"].st_dev,
+        publication["source"].st_ino,
+    ) == (
+        publication["target"].st_dev,
+        publication["target"].st_ino,
+    )
+    assert not os.path.exists(os.path.dirname(publication["source_path"]))
+    assert os.path.samestat(publication["target"], os.lstat(backup))
+    assert _backup_temp_dirs(output_dir) == []
 
 
 def test_backup_database_deletes_target_when_integrity_verification_fails(
@@ -308,15 +588,10 @@ def test_backup_database_deletes_target_when_integrity_verification_fails(
     with sqlite3.connect(source) as conn:
         conn.execute("CREATE TABLE records (value TEXT)")
 
-    class FrozenDateTime:
-        @classmethod
-        def now(cls):
-            return datetime(2026, 7, 19, 12, 34, 56)
-
     def fail_verification(_target):
         raise RuntimeError("backup integrity check failed")
 
-    monkeypatch.setattr(database_backup, "datetime", FrozenDateTime)
+    _freeze_backup_timestamp(monkeypatch, database_backup)
     monkeypatch.setattr(database_backup, "_verify_backup", fail_verification)
     output_dir = tmp_path / "backups"
     target = output_dir / "intelligence-pre-cleanup-20260719-123456.sqlite"
@@ -325,3 +600,4 @@ def test_backup_database_deletes_target_when_integrity_verification_fails(
         database_backup.backup_database(source, output_dir)
 
     assert not target.exists()
+    assert _backup_temp_dirs(output_dir) == []

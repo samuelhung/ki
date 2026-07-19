@@ -21,6 +21,13 @@ def register(name: str) -> Callable[[MigrationFn], MigrationFn]:
     """Decorator to register a migration by name."""
 
     def decorator(fn: MigrationFn) -> MigrationFn:
+        if any(existing_name == name for existing_name, _fn in _registry):
+            raise ValueError(f"duplicate migration name: {name}")
+        if _registry and name <= _registry[-1][0]:
+            raise ValueError(
+                "migrations must be registered in chronological order: "
+                f"{name} must follow {_registry[-1][0]}"
+            )
         _registry.append((name, fn))
         return fn
 
@@ -31,8 +38,9 @@ def ensure_migrations(db_path: Path) -> None:
     """Apply any pending migrations to the database."""
     conn = sqlite3.connect(str(db_path))
     try:
-        conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
 
         conn.execute(
             """CREATE TABLE IF NOT EXISTS _migrations (
@@ -50,9 +58,16 @@ def ensure_migrations(db_path: Path) -> None:
             logger.info("Applying migration: %s", name)
             try:
                 conn.execute("BEGIN IMMEDIATE")
+                if conn.execute(
+                    "SELECT 1 FROM _migrations WHERE name = ?", (name,)
+                ).fetchone():
+                    conn.commit()
+                    applied.add(name)
+                    continue
                 fn(conn)
                 conn.execute("INSERT INTO _migrations (name) VALUES (?)", (name,))
                 conn.commit()
+                applied.add(name)
             except Exception:
                 conn.rollback()
                 raise
