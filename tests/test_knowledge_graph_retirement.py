@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import re
 from pathlib import Path
 
 from zhiji_backend import summarizer
@@ -9,6 +10,15 @@ from zhiji_backend.main import app
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND_ROOT = ROOT / "src" / "zhiji_backend"
+DB_SCHEMA_PATH = Path("db.py")
+GRAPH_PERSISTENCE_PATTERNS = {
+    "entities": re.compile(
+        r'''["']entities["']|\b(?:FROM|JOIN|INTO|UPDATE|REFERENCES|TABLE(?:\s+IF\s+NOT\s+EXISTS)?)\s+entities\b|\bidx_entities\b''',
+        re.IGNORECASE,
+    ),
+    "event_entities": re.compile(r"\bevent_entities\b"),
+    "entity_relations": re.compile(r"\bentity_relations\b"),
+}
 
 
 def test_active_backend_has_no_knowledge_graph_feature_surface():
@@ -31,6 +41,24 @@ def test_active_backend_has_no_knowledge_graph_feature_surface():
         getattr(route, "path", "").startswith("/api/entities")
         for route in app.routes
     )
+
+
+def test_graph_persistence_tables_are_not_referenced_by_active_code():
+    backend_sources = {
+        path.relative_to(BACKEND_ROOT): path.read_text(encoding="utf-8")
+        for path in BACKEND_ROOT.rglob("*.py")
+    }
+
+    for table_name, pattern in GRAPH_PERSISTENCE_PATTERNS.items():
+        reference_paths = {
+            path
+            for path, source in backend_sources.items()
+            if pattern.search(source)
+        }
+        assert reference_paths == {DB_SCHEMA_PATH}, (
+            f"{table_name} references must remain isolated to {DB_SCHEMA_PATH}: "
+            f"{sorted(str(path) for path in reference_paths)}"
+        )
 
 
 def test_brainstorm_keeps_generic_entity_id_contract():
