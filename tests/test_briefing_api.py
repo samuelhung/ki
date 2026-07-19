@@ -1,5 +1,7 @@
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -7,16 +9,25 @@ from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+MODULE_HOME = Path(tempfile.mkdtemp(prefix="zhiji-briefing-api-"))
+os.environ["ZHIJI_HOME"] = str(MODULE_HOME)
 
+from zhiji_backend.briefing import list_briefings
 from zhiji_backend.db import connect, init_db
 from zhiji_backend.main import app
+
+SQLITE_MAX_INTEGER = 9_223_372_036_854_775_807
 
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
     init_db()
-    return TestClient(app)
+    test_client = TestClient(app, raise_server_exceptions=False)
+    try:
+        yield test_client
+    finally:
+        test_client.close()
 
 
 @pytest.fixture
@@ -78,13 +89,40 @@ def test_briefing_history_is_newest_first(client, seeded_briefings):
     assert "topics_json" not in payload["items"][0]
 
 
-def test_briefing_history_clamps_pagination(client, seeded_briefings):
-    response = client.get("/api/briefing?limit=0&offset=-5")
+def test_briefing_history_helper_clamps_pagination(client, seeded_briefings):
+    payload = list_briefings(limit=0, offset=-5)
 
-    assert response.status_code == 200
-    payload = response.json()
     assert [item["id"] for item in payload["items"]] == ["briefing-3"]
     assert payload["total"] == 3
+    assert list_briefings(offset=SQLITE_MAX_INTEGER + 1)["items"] == []
+
+
+@pytest.mark.parametrize("offset", [-1, SQLITE_MAX_INTEGER + 1])
+def test_briefing_history_rejects_out_of_range_offset(client, offset):
+    response = client.get(f"/api/briefing?offset={offset}")
+
+    assert response.status_code == 422
+
+
+def test_briefing_history_tolerates_invalid_topic_payloads(client):
+    with connect() as conn:
+        conn.executemany(
+            """
+            INSERT INTO briefings (id, type, topics_json, events_used, created_at)
+            VALUES (?, 'quick', ?, 0, ?)
+            """,
+            [
+                ("briefing-malformed", "{invalid", "2026-07-19 10:00:00"),
+                ("briefing-object", json.dumps({"topic": "格局"}), "2026-07-19 11:00:00"),
+            ],
+        )
+
+    response = client.get("/api/briefing")
+
+    assert response.status_code == 200
+    topic_counts = {item["id"]: item["topic_count"] for item in response.json()["items"]}
+    assert topic_counts["briefing-malformed"] == 0
+    assert topic_counts["briefing-object"] == 0
 
 
 def test_briefing_detail_returns_topics(client, seeded_briefings):
@@ -94,6 +132,29 @@ def test_briefing_detail_returns_topics(client, seeded_briefings):
     assert response.json()["id"] == "briefing-2"
     assert response.json()["topics"][0]["topic"] == "格局"
     assert "topics_json" not in response.json()
+
+
+@pytest.mark.parametrize(
+    ("briefing_id", "topics_json"),
+    [
+        ("briefing-malformed", "{invalid"),
+        ("briefing-object", json.dumps({"topic": "格局"})),
+    ],
+)
+def test_briefing_detail_normalizes_invalid_topic_payloads(client, briefing_id, topics_json):
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO briefings (id, type, topics_json, events_used)
+            VALUES (?, 'quick', ?, 0)
+            """,
+            (briefing_id, topics_json),
+        )
+
+    response = client.get(f"/api/briefing/{briefing_id}")
+
+    assert response.status_code == 200
+    assert response.json()["topics"] == []
 
 
 def test_briefing_detail_returns_404(client):

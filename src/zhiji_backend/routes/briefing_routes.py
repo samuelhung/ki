@@ -1,8 +1,14 @@
 """News briefing generation and retrieval endpoints."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
-from ..briefing import generate_briefing, get_briefing, latest_briefing, list_briefings
+from fastapi import APIRouter, HTTPException, Query
+from ..briefing import (
+    MAX_SQLITE_OFFSET,
+    generate_briefing,
+    get_briefing,
+    latest_briefing,
+    list_briefings,
+)
 from ..models import BriefingRequest
 
 router = APIRouter()
@@ -36,7 +42,10 @@ def get_latest_briefing(briefing_type: str = "quick") -> dict[str, object]:
 
 
 @router.get("/api/briefing")
-def get_briefing_history(limit: int = 30, offset: int = 0) -> dict[str, object]:
+def get_briefing_history(
+    limit: int = 30,
+    offset: int = Query(default=0, ge=0, le=MAX_SQLITE_OFFSET),
+) -> dict[str, object]:
     """List briefings without returning their full topics payloads."""
     return list_briefings(limit=limit, offset=offset)
 

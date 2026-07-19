@@ -16,6 +16,8 @@ from .ai_client import chat
 
 logger = logging.getLogger(__name__)
 
+MAX_SQLITE_OFFSET = 9_223_372_036_854_775_807
+
 TOPIC_LABELS: dict[str, str] = {
     "world": "国际",
     "business": "商业",
@@ -178,6 +180,14 @@ def generate_briefing(briefing_type: str = "quick", limit: int = 80) -> dict[str
     }
 
 
+def _parse_topics_json(topics_json: str) -> list[Any]:
+    try:
+        topics = json.loads(topics_json)
+    except json.JSONDecodeError:
+        return []
+    return topics if isinstance(topics, list) else []
+
+
 def latest_briefing(briefing_type: str = "quick") -> dict[str, Any] | None:
     """Get the latest briefing of the given type."""
     init_db()
@@ -189,10 +199,7 @@ def latest_briefing(briefing_type: str = "quick") -> dict[str, Any] | None:
     if not row:
         return None
     d = dict(row)
-    try:
-        d["topics"] = json.loads(d.pop("topics_json"))
-    except json.JSONDecodeError:
-        d["topics"] = []
+    d["topics"] = _parse_topics_json(d.pop("topics_json"))
 
     # Enrich events with brainstorm relevance if cache exists
     _enrich_briefing_relevance(d["topics"])
@@ -203,14 +210,19 @@ def latest_briefing(briefing_type: str = "quick") -> dict[str, Any] | None:
 def list_briefings(limit: int = 30, offset: int = 0) -> dict[str, Any]:
     """Return compact briefing history metadata and the total row count."""
     limit = max(1, min(limit, 100))
-    offset = max(offset, 0)
+    offset = max(0, min(offset, MAX_SQLITE_OFFSET))
 
     init_db()
     with connect() as conn:
         total = conn.execute("SELECT COUNT(*) FROM briefings").fetchone()[0]
         rows = conn.execute(
             """
-            SELECT id, type, events_used, json_array_length(topics_json) AS topic_count,
+            SELECT id, type, events_used,
+                   CASE
+                       WHEN json_valid(topics_json) = 0 THEN 0
+                       WHEN json_type(topics_json) = 'array' THEN json_array_length(topics_json)
+                       ELSE 0
+                   END AS topic_count,
                    created_at
             FROM briefings
             ORDER BY created_at DESC, id DESC
@@ -242,10 +254,7 @@ def get_briefing(briefing_id: str) -> dict[str, Any] | None:
         return None
 
     briefing = dict(row)
-    try:
-        briefing["topics"] = json.loads(briefing.pop("topics_json"))
-    except json.JSONDecodeError:
-        briefing["topics"] = []
+    briefing["topics"] = _parse_topics_json(briefing.pop("topics_json"))
 
     _enrich_briefing_relevance(briefing["topics"])
     return briefing
