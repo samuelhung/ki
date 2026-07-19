@@ -239,6 +239,13 @@ app.include_router(study_router)
 app.include_router(chain_router)
 
 
+@app.get("/api/digest/latest", include_in_schema=False)
+@app.post("/api/digest/generate", include_in_schema=False)
+async def retired_digest_endpoint():
+    """Keep retired digest API paths from falling through to static mounts."""
+    return JSONResponse({"detail": "Not Found"}, status_code=404)
+
+
 # ---- Static file mounts ----
 
 INGEST_ROOT.mkdir(parents=True, exist_ok=True)

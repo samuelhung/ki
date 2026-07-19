@@ -1,6 +1,8 @@
 import json
+import os
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from zhiji_backend import config_manager
@@ -138,6 +140,184 @@ def test_already_normalized_config_is_not_rewritten(tmp_path, monkeypatch):
 
     assert loaded["briefing"]["briefing_daily"]["max_tokens"] == 9000
     assert writes == []
+
+
+def _set_active_config(**overrides):
+    config_manager._config = config_manager._deep_merge(config_manager._defaults(), overrides)
+
+
+def test_save_config_normalizes_legacy_only_payload_and_preserves_active_overrides(tmp_path, monkeypatch):
+    config_path = tmp_path / "system_config.json"
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
+    _set_active_config(
+        briefing={
+            "briefing_quick": {"max_tokens": 3500},
+            "briefing_daily": {"max_tokens": 9100},
+        },
+        series={"paper": {"max_tokens": 17000}},
+    )
+
+    config_manager.save_config(
+        {
+            "digest_briefing": {
+                "digest": {"max_tokens": 9999},
+                "briefing_quick": {"max_tokens": 4500},
+            },
+            "knowledge_graph": {"entity_insight": {"max_tokens": 99}},
+        }
+    )
+
+    saved = config_manager.get_config()
+    assert saved["briefing"]["briefing_quick"]["max_tokens"] == 4500
+    assert saved["briefing"]["briefing_daily"]["max_tokens"] == 9100
+    assert saved["series"]["paper"]["max_tokens"] == 17000
+    assert "digest_briefing" not in saved
+    assert "knowledge_graph" not in saved
+    assert json.loads(config_path.read_text(encoding="utf-8")) == saved
+
+
+def test_save_config_merges_canonical_only_payload_with_current_active_config(tmp_path, monkeypatch):
+    config_path = tmp_path / "system_config.json"
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
+    _set_active_config(briefing={"briefing_quick": {"max_tokens": 4200}})
+
+    config_manager.save_config(
+        {"briefing": {"briefing_daily": {"temperature": 0.19, "max_tokens": 9300}}}
+    )
+
+    saved = config_manager.get_config()
+    assert saved["briefing"]["briefing_quick"]["max_tokens"] == 4200
+    assert saved["briefing"]["briefing_daily"]["temperature"] == 0.19
+    assert saved["briefing"]["briefing_daily"]["max_tokens"] == 9300
+
+
+def test_save_config_mixed_payload_gives_canonical_briefing_values_precedence(tmp_path, monkeypatch):
+    config_path = tmp_path / "system_config.json"
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
+    _set_active_config()
+
+    config_manager.save_config(
+        {
+            "digest_briefing": {
+                "briefing_quick": {"temperature": 0.11, "max_tokens": 4100},
+                "briefing_daily": {"max_tokens": 9200},
+            },
+            "briefing": {"briefing_quick": {"max_tokens": 5100}},
+        }
+    )
+
+    saved = config_manager.get_config()
+    assert saved["briefing"]["briefing_quick"]["temperature"] == 0.11
+    assert saved["briefing"]["briefing_quick"]["max_tokens"] == 5100
+    assert saved["briefing"]["briefing_daily"]["max_tokens"] == 9200
+
+
+def test_save_config_preserves_unrelated_modules_omitted_by_stale_client(tmp_path, monkeypatch):
+    config_path = tmp_path / "system_config.json"
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
+    _set_active_config(
+        ingest_pipeline={"summarize": {"max_tokens": 3900}},
+        custom_module={"custom_task": {"temperature": 0.77}},
+    )
+
+    config_manager.save_config({"general": {"default_temperature": 0.25}})
+
+    saved = config_manager.get_config()
+    assert saved["general"]["default_temperature"] == 0.25
+    assert saved["ingest_pipeline"]["summarize"]["max_tokens"] == 3900
+    assert saved["custom_module"] == {"custom_task": {"temperature": 0.77}}
+
+
+def test_write_config_uses_same_directory_temp_fsync_and_atomic_replace(tmp_path, monkeypatch):
+    config_path = tmp_path / "system_config.json"
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
+    fsync_calls: list[int] = []
+    replace_calls: list[tuple[Path, Path]] = []
+    original_replace = os.replace
+
+    monkeypatch.setattr(config_manager.os, "fsync", fsync_calls.append, raising=False)
+
+    def replace(source, destination):
+        replace_calls.append((Path(source), Path(destination)))
+        original_replace(source, destination)
+
+    monkeypatch.setattr(config_manager.os, "replace", replace, raising=False)
+
+    config_manager._write_config({"briefing": {"briefing_quick": {"max_tokens": 4444}}})
+
+    assert len(fsync_calls) == 1
+    assert len(replace_calls) == 1
+    source, destination = replace_calls[0]
+    assert source.parent == config_path.parent
+    assert destination == config_path
+    assert not source.exists()
+    assert json.loads(config_path.read_text(encoding="utf-8"))["briefing"]["briefing_quick"]["max_tokens"] == 4444
+
+
+def test_atomic_write_failure_preserves_existing_file_and_cleans_temp(tmp_path, monkeypatch):
+    config_path = tmp_path / "system_config.json"
+    config_path.write_text('{"existing": true}', encoding="utf-8")
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(
+        config_manager.os,
+        "replace",
+        lambda *_: (_ for _ in ()).throw(OSError("replace failed")),
+        raising=False,
+    )
+
+    with pytest.raises(OSError, match="replace failed"):
+        config_manager._write_config({"replacement": True})
+
+    assert config_path.read_text(encoding="utf-8") == '{"existing": true}'
+    assert list(tmp_path.iterdir()) == [config_path]
+
+
+def test_save_failure_does_not_replace_active_in_memory_config(tmp_path, monkeypatch):
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", tmp_path / "system_config.json")
+    _set_active_config(briefing={"briefing_quick": {"max_tokens": 4300}})
+    before = config_manager.get_config()
+    monkeypatch.setattr(
+        config_manager,
+        "_write_config",
+        lambda *_: (_ for _ in ()).throw(OSError("disk full")),
+    )
+
+    with pytest.raises(OSError, match="disk full"):
+        config_manager.save_config(
+            {"digest_briefing": {"briefing_quick": {"max_tokens": 5300}}}
+        )
+
+    assert config_manager.get_config() is before
+    assert config_manager.get_config()["briefing"]["briefing_quick"]["max_tokens"] == 4300
+
+
+def test_load_keeps_normalized_config_when_migration_persistence_fails(
+    tmp_path, monkeypatch, caplog
+):
+    config_path = tmp_path / "system_config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "digest_briefing": {"briefing_quick": {"max_tokens": 4700}},
+                "general": {"base_url": "https://parsed.example.test/v1"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(
+        config_manager,
+        "_write_config",
+        lambda *_: (_ for _ in ()).throw(OSError("read-only filesystem")),
+    )
+    config_manager._config = {}
+
+    loaded = config_manager.load_config()
+
+    assert loaded["briefing"]["briefing_quick"]["max_tokens"] == 4700
+    assert loaded["general"]["base_url"] == "https://parsed.example.test/v1"
+    assert "digest_briefing" not in loaded
+    assert "Failed to persist normalized system config" in caplog.text
 
 
 def test_daily_digest_surfaces_are_retired():

@@ -20,7 +20,7 @@
 - 定时采集新条目并去重。
 - 生成结构化情报事件。
 - 对条目做摘要、分类、重要性和行动性判断。
-- 生成 Daily Digest / Weekly Digest。
+- 生成即时快报与深度日报。
 - 将高价值内容写入 Wiki。
 - 将可行动条目转成 Hermes Projects / Kanban 任务候选。
 
@@ -37,11 +37,10 @@ Hermes Projects 负责“项目化与执行”：
 - 背景与范围：`wiki/Context.md`
 - 架构设计：`wiki/Architecture.md`
 - 信息源清单：`wiki/Sources.md`
-- 日报：`wiki/DailyDigest.md`
 - 主题追踪：`wiki/Topics.md`
 - 行动候选：`wiki/ActionCandidates.md`
 - 路线图：`wiki/Roadmap.md`
 - 决策记录：`wiki/Decisions.md`
 - 待确认问题：`wiki/OpenQuestions.md`
 
-- 独立常驻 Web MVP 设计：`wiki/IndependentWebMVP.md`
+- 历史独立 Web MVP 设计（其中 Daily Digest 方案已退役）：`wiki/IndependentWebMVP.md`

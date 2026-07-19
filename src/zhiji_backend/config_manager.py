@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -73,22 +75,29 @@ def _defaults() -> dict:
 def load_config() -> dict[str, Any]:
     """Load config from disk, falling back to defaults if missing/corrupt."""
     global _config
-    try:
-        if CONFIG_PATH.exists():
+    if CONFIG_PATH.exists():
+        try:
             raw = json.loads(CONFIG_PATH.read_text("utf-8"))
             raw, structure_changed = _normalize_persisted_config(raw)
-            defaults = _defaults()
-            _config = _deep_merge(defaults, raw)
-            if structure_changed:
-                _write_config(raw)
-            logger.info("Loaded system config from %s", CONFIG_PATH)
-        else:
+        except Exception:
+            logger.exception("Failed to load config, using defaults")
             _config = _defaults()
-            save_config()
-            logger.info("Created default system config at %s", CONFIG_PATH)
-    except Exception:
-        logger.exception("Failed to load config, using defaults")
+            return _config
+
+        _config = _deep_merge(_defaults(), raw)
+        if structure_changed:
+            try:
+                _write_config(raw)
+            except Exception:
+                logger.exception("Failed to persist normalized system config at %s", CONFIG_PATH)
+        logger.info("Loaded system config from %s", CONFIG_PATH)
+    else:
         _config = _defaults()
+        try:
+            _write_config(_config)
+            logger.info("Created default system config at %s", CONFIG_PATH)
+        except Exception:
+            logger.exception("Failed to create default system config at %s", CONFIG_PATH)
     return _config
 
 
@@ -100,16 +109,38 @@ def get_config() -> dict[str, Any]:
 def save_config(config: dict | None = None) -> None:
     """Persist config to disk. If config is None, saves the current in-memory copy."""
     global _config
+    current, _ = _normalize_persisted_config(_config)
+    active = _deep_merge(_defaults(), current)
     if config is not None:
-        _config = config
-    _write_config(_config)
+        incoming, _ = _normalize_persisted_config(config)
+        active = _deep_merge(active, incoming)
+    _write_config(active)
+    _config = active
 
 
 def _write_config(config: dict) -> None:
-    """Write a config payload without changing the active in-memory config."""
+    """Atomically write a config payload without changing in-memory state."""
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CONFIG_PATH.write_text(json.dumps(config, ensure_ascii=False, indent=2), "utf-8")
-    logger.info("Saved system config to %s", CONFIG_PATH)
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=CONFIG_PATH.parent,
+            prefix=f".{CONFIG_PATH.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+            json.dump(config, temp_file, ensure_ascii=False, indent=2)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+        os.replace(temp_path, CONFIG_PATH)
+        temp_path = None
+        logger.info("Saved system config to %s", CONFIG_PATH)
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
 
 
 def get_module_config(module: str, task: str) -> dict:
@@ -146,6 +177,8 @@ def _deep_merge(base: dict, override: dict) -> dict:
 
 def _normalize_persisted_config(raw: dict) -> tuple[dict, bool]:
     """Migrate retired module keys while preserving sparse user overrides."""
+    if not isinstance(raw, dict):
+        raise ValueError("System config root must be an object")
     normalized = dict(raw)
     legacy = normalized.pop("digest_briefing", None)
     normalized.pop("knowledge_graph", None)

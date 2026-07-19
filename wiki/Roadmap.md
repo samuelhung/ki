@@ -6,7 +6,7 @@
 
 - 监控 5–10 个 RSS/GitHub 源。
 - 复用 `news-summary` skill 的新闻源和摘要格式作为默认模板。
-- 输出 Daily Digest 到 Wiki。
+- 生成即时快报与深度日报。
 - 高优先级内容可推送到飞书。
 - 不自动创建任务，只生成 ActionCandidates。
 
@@ -24,9 +24,9 @@ MVP 能力：
 - watcher runner
 - event store
 - summarization pipeline
-- daily digest generator
+- briefing generator
 - dashboard tab
-- 一键写入 Wiki
+- 高价值内容沉淀到 Wiki
 - 一键创建 Hermes Projects 任务
 
 ## 阶段 2：增强情报中心
@@ -42,7 +42,7 @@ MVP 能力：
 ## MVP 成功标准
 
 - 每日能稳定采集并去重。
-- Daily Digest 中大多数条目对用户有价值。
+- 即时快报与深度日报中的大多数条目对用户有价值。
 - 高优先级通知不会过度打扰。
 - ActionCandidates 中确实出现值得派发给 Agent 的任务。
 - Wiki 能沉淀有复用价值的趋势和结论，而不是堆满原始新闻。
@@ -56,12 +56,12 @@ MVP 能力：
    - 第一批源沿用 `news-summary` skill 的 RSS 模板：BBC、Reuters、NPR、Al Jazeera。
    - 建立 watermark 去重，首次运行只建立 baseline，后续只处理新增条目。
    - 输出结构化情报事件到 `.knowledge/events/YYYY-MM-DD.jsonl`。
-   - 将筛选后的内容写入 `DailyDigest.md`、`Topics.md`、`ActionCandidates.md`。
+   - 将筛选后的内容生成即时快报或深度日报，并维护行动候选。
    - 暂不自动创建 Kanban 任务，只生成行动候选，由用户确认后派发。
 
 2. 阶段 1：独立插件 MVP
    - 建设独立 `hermes-intelligence` 插件。
-   - 提供 source registry、watcher runner、event store、summary pipeline、digest generator、Dashboard tab。
+   - 提供 source registry、watcher runner、event store、summary pipeline、briefing generator、Dashboard tab。
    - 支持一键写入 Wiki、一键创建 Hermes Projects / Kanban 任务。
 
 3. 阶段 2：完整情报中心
@@ -69,7 +69,7 @@ MVP 能力：
    - 支持情报事件与多个 Hermes Projects 项目关联。
    - 从 ActionCandidates 演进到半自动任务建议和人工确认派发。
 
-当前立即下一步是阶段 0：先配置 5–10 个信息源，建立事件流和每日摘要流水线，验证摘要质量、去重策略、通知频率和行动候选是否有实际价值。
+当前立即下一步是阶段 0：先配置 5–10 个信息源，建立事件流和快报流水线，验证摘要质量、去重策略、通知频率和行动候选是否有实际价值。
 ## 当前实施状态
 
 Slice 1: Web App Skeleton 已完成。
@@ -88,7 +88,7 @@ http://127.0.0.1:9120
 ```
 ## 当前实施状态
 
-Slice 4: Digest / Topics / ActionCandidates 已完成。
+即时快报、Topics 与 ActionCandidates 已完成。早期 Slice 4 的独立 Daily Digest 功能已于 2026-07-19 退役。
 
 已具备：
 
@@ -100,12 +100,10 @@ Slice 4: Digest / Topics / ActionCandidates 已完成。
 - 同步追加到 `data/events/YYYY-MM-DD.jsonl`。
 - `POST /api/collect` 手动采集 API。
 - Web Dashboard “手动采集 RSS”按钮与 `Recent Events` 面板。
-- 基于 `events` 表生成 Daily Digest Markdown。
 - 按 topic 聚合近期事件并维护 `topics` 表。
 - 生成 ActionCandidates，但仍不自动创建 Kanban 任务。
-- 写回 Wiki `DailyDigest.md` / `Topics.md` / `ActionCandidates.md`。
-- `POST /api/digest/generate` 与 `GET /api/digest/latest`。
-- Web Dashboard “生成 Daily Digest”按钮与 Digest 预览面板。
+- 基于 `events` 表生成即时快报与深度日报，并通过 `/api/briefing` 查询和生成。
+- 已移除 Daily Digest 生成、Wiki 文件写回、Dashboard 预览以及 `/api/digest/*` 业务 API；旧路径仅返回 404。
 - 独立 Web 同时支持 `http://127.0.0.1:9120/` 与 `http://10.8.0.105:9120/` 访问。
 
 下一步进入 Slice 5: ActionCandidate Review / Hermes Projects Handoff：

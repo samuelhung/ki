@@ -1,4 +1,6 @@
-# 知识情报中心独立常驻 Web MVP 设计
+# 知识情报中心独立常驻 Web MVP 设计（历史归档）
+
+> **状态：已归档。** 本文记录 2026-05-21 的早期 MVP 方案，不代表当前产品接口或数据模型。文中的 Daily Digest / Digest 页面、`digests` 表、写回脚本和 `/api/digests/*` API 已退役；当前产品使用即时快报与深度日报，以及 `/api/briefing` 系列接口。事件字段中的历史值 `decision = 'digest'` 不在此次功能退役范围内。
 
 > 日期：2026-05-21  
 > 项目：`knowledge-intelligence`  
