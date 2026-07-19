@@ -423,6 +423,26 @@ def block_unconditionally_exits(statements: list[ast.stmt]) -> bool:
     return any(statement_unconditionally_exits(statement) for statement in statements)
 
 
+def block_has_reachable_break(statements: list[ast.stmt]) -> bool:
+    for statement in statements:
+        if isinstance(statement, ast.Break):
+            return True
+        if isinstance(statement, ast.If):
+            truth = static_truth(statement.test)
+            branches = [statement.body] if truth is True else [statement.orelse] if truth is False else [statement.body, statement.orelse]
+            if any(block_has_reachable_break(branch) for branch in branches):
+                return True
+        elif isinstance(statement, (ast.For, ast.AsyncFor, ast.While)):
+            pass
+        elif isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            pass
+        elif any(isinstance(node, ast.Break) for node in ast.walk(statement)):
+            return True
+        if statement_unconditionally_exits(statement):
+            return False
+    return False
+
+
 def statement_unconditionally_exits(statement: ast.stmt) -> bool:
     if isinstance(statement, (ast.Return, ast.Raise)):
         return True
@@ -437,6 +457,8 @@ def statement_unconditionally_exits(statement: ast.stmt) -> bool:
             and block_unconditionally_exits(statement.body)
             and block_unconditionally_exits(statement.orelse)
         )
+    if isinstance(statement, ast.While):
+        return static_truth(statement.test) is True and not block_has_reachable_break(statement.body)
     return False
 
 
@@ -494,7 +516,9 @@ def validate_named_compatibility(
             ]
             valid_constants = []
             if len(functions) == 1:
-                statements = functions[0].body
+                function = functions[0]
+                statements = function.body
+                has_raw_parameter = any(argument.arg == "raw" for argument in function.args.args)
                 init_indexes = [index for index, statement in enumerate(statements) if is_exact_normalized_init(statement)]
                 pop_entries = [
                     (index, constant)
@@ -506,7 +530,8 @@ def validate_named_compatibility(
                     None,
                 )
                 if (
-                    len(init_indexes) == 1
+                    has_raw_parameter
+                    and len(init_indexes) == 1
                     and len(pop_entries) == 1
                     and exit_index is not None
                     and init_indexes[0] < pop_entries[0][0] < exit_index
@@ -520,8 +545,8 @@ def validate_named_compatibility(
                     valid_constants.append(pop_entries[0][1])
             if len(valid_constants) != 1:
                 violations.append(
-                    "src/zhiji_backend/config_manager.py: knowledge_graph config cleanup requires normalized = dict(raw), "
-                    "one reachable normalized.pop('knowledge_graph', None), and a final return of normalized"
+                    "src/zhiji_backend/config_manager.py: knowledge_graph config cleanup requires a raw parameter, "
+                    "normalized = dict(raw), one reachable normalized.pop('knowledge_graph', None), and a final return of normalized"
                 )
             else:
                 key = ("src/zhiji_backend/config_manager.py", "retired knowledge graph")
@@ -865,6 +890,37 @@ def _normalize_persisted_config(raw):
         )
         if violations := scan(root):
             raise SystemExit("FAIL valid config cleanup data flow was rejected:\n" + "\n".join(violations))
+
+    with tempfile.TemporaryDirectory(prefix="zhiji-retired-config-while-exit-") as temp_dir:
+        root = Path(temp_dir)
+        write(
+            root,
+            "src/zhiji_backend/config_manager.py",
+            '''def _normalize_persisted_config(raw):
+    normalized = dict(raw)
+    while True:
+        return normalized, False
+    normalized.pop("knowledge_graph", None)
+    return normalized, False
+''',
+        )
+        if not any("knowledge_graph config cleanup" in item for item in scan(root)):
+            raise SystemExit("FAIL config checker accepted cleanup after a non-fallthrough while True")
+
+    with tempfile.TemporaryDirectory(prefix="zhiji-retired-config-missing-raw-parameter-") as temp_dir:
+        root = Path(temp_dir)
+        write(
+            root,
+            "src/zhiji_backend/config_manager.py",
+            '''def _normalize_persisted_config():
+    raw = {}
+    normalized = dict(raw)
+    normalized.pop("knowledge_graph", None)
+    return normalized, False
+''',
+        )
+        if not any("knowledge_graph config cleanup" in item for item in scan(root)):
+            raise SystemExit("FAIL config checker accepted dict(raw) without a raw parameter")
 
     with tempfile.TemporaryDirectory(prefix="zhiji-retired-allowlist-") as temp_dir:
         root = Path(temp_dir)
