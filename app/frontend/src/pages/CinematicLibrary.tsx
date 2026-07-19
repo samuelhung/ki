@@ -57,7 +57,7 @@ export default function CinematicLibrary() {
   useEffect(() => { if ((selectedEvent?.id || null) !== activeEventId) setActiveEventId(selectedEvent?.id || null); }, [selectedEvent?.id, activeEventId]);
   useEffect(() => { if ((selectedSource?.id || '') !== activeSourceId) setActiveSourceId(selectedSource?.id || ''); }, [selectedSource?.id, activeSourceId]);
   const eventStats = useMemo(() => getLibraryStats(events), [events]); const sourceStats = useMemo(() => getSourceStats(sources), [sources]);
-  const details = useIngestDetailActions({ activeEventId: mode === 'events' ? activeEventId : null, historyTab: '格局', setToast });
+  const details = useIngestDetailActions({ activeEventId: mode === 'events' ? activeEventId : null, setToast });
   const coreBoxHeight = Math.min(Math.max(viewportHeight * .158, 126), 178); const beamVerticalOffset = (coreBoxHeight - 6) / Math.max(viewportHeight, 1) - .5;
 
   function switchMode(next: 'events' | 'sources') { setMode(next); setQuery(''); navigate(next === 'events' ? '/events' : '/sources', { replace: true }); }

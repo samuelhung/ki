@@ -8,9 +8,10 @@ const API_BASE = '/api/events';
 
 type ToastMessage = { text: string; type: 'success' | 'info' };
 type EventListLoading = 'idle' | 'prepend' | 'append';
+export type PreviewTopicKey = TopicKey | 'briefing';
 
 interface UseIngestEventsOptions {
-  historyTab: TopicKey;
+  historyTab: PreviewTopicKey;
   debouncedSearch: string;
   setToast: (toast: ToastMessage) => void;
 }

@@ -33,7 +33,7 @@ import { BriefingStream, EventStream } from '../components/cinematic-ingest/Cine
 import type { BriefingTopic, DetailTab, EventItem, QueueItem } from '../components/cinematic-ingest/ingestTypes';
 import { useLaserRenderProfile } from '../components/cinematic-ingest/useLaserRenderProfile';
 import { useIngestQueue } from '../components/cinematic-ingest/useIngestQueue';
-import { useIngestEvents } from '../components/cinematic-ingest/useIngestEvents';
+import { useIngestEvents, type PreviewTopicKey } from '../components/cinematic-ingest/useIngestEvents';
 import { useIngestDetailActions } from '../components/cinematic-ingest/useIngestDetailActions';
 import { useIngestCommands } from '../components/cinematic-ingest/useIngestCommands';
 import { useDebouncedValue } from '../components/cinematic-ingest/useDebouncedValue';
@@ -100,7 +100,7 @@ export default function CinematicIngest() {
   const { navigateWithCurtain } = useCurtain();
   const { profile: templateProfile, style: templateLayoutStyle } = useCinematicTemplateLayout('ingest');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [historyTab, setHistoryTab] = useState<typeof TOPICS[number]['key']>('格局');
+  const [historyTab, setHistoryTab] = useState<PreviewTopicKey>('格局');
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search.trim(), 260);
   const [briefingTopics, setBriefingTopics] = useState<BriefingTopic[]>([]);
@@ -168,7 +168,7 @@ export default function CinematicIngest() {
     handleChainAnalyze,
     handleSyncHints,
     toggleQuestion,
-  } = useIngestDetailActions({ activeEventId, historyTab, setToast });
+  } = useIngestDetailActions({ activeEventId, setToast });
   const {
     douyinText,
     setDouyinText,

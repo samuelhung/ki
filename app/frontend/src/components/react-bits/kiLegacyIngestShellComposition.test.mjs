@@ -14,6 +14,8 @@ const dockAccessOverlay = readFileSync(new URL('../../pages/GlobalDockAccessOver
 const demo = readFileSync(new URL('../../pages/DualNavigationDemo.tsx', import.meta.url), 'utf8');
 const preview = readFileSync(new URL('../../pages/LegacyIngestShellPreview.tsx', import.meta.url), 'utf8');
 const ingest = readFileSync(new URL('../../pages/Ingest.tsx', import.meta.url), 'utf8');
+const previewIngest = readFileSync(new URL('../../pages/CinematicIngest.tsx', import.meta.url), 'utf8');
+const libraryPage = readFileSync(new URL('../../pages/CinematicLibrary.tsx', import.meta.url), 'utf8');
 const gooey = readFileSync(new URL('./GooeyNav.tsx', import.meta.url), 'utf8');
 const hero = readFileSync(new URL('../ModuleHeroTabs.tsx', import.meta.url), 'utf8');
 const shellCss = readFileSync(new URL('../../pages/DualNavigationDemo.css', import.meta.url), 'utf8');
@@ -27,6 +29,7 @@ const productionQa = existsSync(productionQaUrl) ? readFileSync(productionQaUrl,
 const spotlightRow = readFileSync(new URL('./SpotlightListRow.tsx', import.meta.url), 'utf8');
 const contentDetail = readFileSync(new URL('../cinematic-ingest/ContentDetailPanel.tsx', import.meta.url), 'utf8');
 const detailActions = readFileSync(new URL('../cinematic-ingest/useIngestDetailActions.ts', import.meta.url), 'utf8');
+const previewEvents = readFileSync(new URL('../cinematic-ingest/useIngestEvents.ts', import.meta.url), 'utf8');
 const embeddedWorkspace = readFileSync(new URL('../ingest/EmbeddedIngestWorkspace.tsx', import.meta.url), 'utf8');
 const embeddedTabs = readFileSync(new URL('../ingest/EmbeddedIngestTopicTabs.tsx', import.meta.url), 'utf8');
 const embeddedRow = readFileSync(new URL('../ingest/EmbeddedIngestRow.tsx', import.meta.url), 'utf8');
@@ -196,6 +199,14 @@ test('topic tabs sit above the list with icon-over-label layout and no dots', ()
   assert.match(ingestTypes, /export type TopicKey = '格局' \| '财富' \| '认知' \| '前瞻';/);
   for (const productionSource of [ingest, detailActions, contentDetail, embeddedWorkspace, embeddedTabs, embeddedRow, embeddedConfig]) {
     assert.doesNotMatch(productionSource, /briefing|Briefing|即时快报|\/api\/briefing\/latest/);
+  }
+  assert.match(previewEvents, /export type PreviewTopicKey = TopicKey \| 'briefing';/);
+  assert.match(previewEvents, /historyTab: PreviewTopicKey;/);
+  assert.match(previewIngest, /useState<PreviewTopicKey>\('格局'\)/);
+  assert.match(previewIngest, /key: 'briefing'/);
+  assert.doesNotMatch(detailActions, /historyTab|TopicKey/);
+  for (const detailCaller of [ingest, previewIngest, libraryPage]) {
+    assert.doesNotMatch(detailCaller, /useIngestDetailActions\(\{[^}]*historyTab/s);
   }
   assert.match(detailActions, /if \(!activeEventId\) \{\s*setDetail\(null\);\s*return;\s*\}/s);
   assert.match(embeddedWorkspace, /<section className="ki-ingest-list-pane"[^>]*>[\s\S]*?<EmbeddedIngestTopicTabs[\s\S]*?\{list\}[\s\S]*?<\/section>/);

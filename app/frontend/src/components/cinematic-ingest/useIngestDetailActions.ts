@@ -6,7 +6,6 @@ import type {
   DetailTab,
   EventItem,
   LinkedQuestion,
-  TopicKey,
 } from './ingestTypes';
 import { ingestCopy } from './ingestCopy';
 
@@ -16,13 +15,11 @@ type ToastMessage = { text: string; type: 'success' | 'info' };
 
 interface UseIngestDetailActionsOptions {
   activeEventId: string | null;
-  historyTab: TopicKey;
   setToast: (toast: ToastMessage) => void;
 }
 
 export function useIngestDetailActions({
   activeEventId,
-  historyTab,
   setToast,
 }: UseIngestDetailActionsOptions) {
   const [detail, setDetail] = useState<EventItem | null>(null);
@@ -288,7 +285,7 @@ export function useIngestDetailActions({
     chainAnalyzeRequestSeqRef.current += 1;
     syncHintsRequestSeqRef.current += 1;
     loadDetail(activeEventId);
-  }, [activeEventId, historyTab, loadDetail]);
+  }, [activeEventId, loadDetail]);
 
   useEffect(() => {
     if (detailTab === 'questions' && detail) loadLinkedQuestions(detail.id);

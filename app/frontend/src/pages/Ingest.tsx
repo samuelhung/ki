@@ -125,7 +125,6 @@ export default function Ingest({ embedded = false, actionRequest = null }: Inges
   const completionTimerRef = useRef<number | null>(null);
   const details = useIngestDetailActions({
     activeEventId,
-    historyTab,
     setToast,
   });
   const selectedEvent = events.find((event) => event.id === activeEventId) || null;
