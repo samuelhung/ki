@@ -265,3 +265,53 @@ def test_briefing_generate_rejects_out_of_range_limit(client, limit):
     )
 
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("ai_payload", "detail"),
+    [
+        ([], "AI response root is not an object"),
+        ({"topics": [None]}, "AI response topic 0 is not an object"),
+        (
+            {"topics": [{"topic": "格局", "events": {}}]},
+            "AI response topic 0 events is not a list",
+        ),
+        (
+            {"topics": [{"topic": "格局", "events": [None]}]},
+            "AI response topic 0 event 0 is not an object",
+        ),
+    ],
+)
+def test_briefing_generate_returns_controlled_error_for_malformed_ai_shape(
+    client, monkeypatch, ai_payload, detail
+):
+    monkeypatch.setattr(
+        briefing_module,
+        "_fetch_translated_events",
+        lambda limit: [
+            {
+                "id": "event-1",
+                "source_id": "npr",
+                "title": "Event",
+                "title_cn": "事件",
+                "summary_cn": "摘要",
+                "topic": "world",
+                "created_at": "2026-07-20 08:00:00",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        briefing_module,
+        "_call_ai",
+        lambda **kwargs: json.dumps(ai_payload),
+    )
+
+    response = client.post(
+        "/api/briefing/generate",
+        json={"type": "quick", "limit": 80},
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == f"AI generated invalid JSON: {detail}"
+    with connect() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM briefings").fetchone()[0] == 0

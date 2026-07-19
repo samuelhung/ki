@@ -1258,6 +1258,9 @@ for shell_test in tests/*.sh; do
   bash "$shell_test"
 done
 
+echo "== Frontend unit tests =="
+(cd app/frontend && npm run test:cinematic-scene && npm run test:cinematic-ingest)
+
 echo "== Frontend build =="
 (cd app/frontend && npm run build)
 

@@ -25,5 +25,5 @@ jobs:
         run: python -m pip install -e . pytest httpx
       - name: Run unified check
         run: ZHIJI_SKIP_RELEASE_CHECK=1 ./scripts/check.sh
-      - name: Run backend smoke tests
-        run: PYTHONPATH=src python -m pytest tests/test_backend_smoke.py tests/test_collect_api.py tests/test_digest_api.py tests/test_ingest_api.py tests/test_rss_collector.py tests/test_source_registry.py -q
+      - name: Run backend tests
+        run: PYTHONPATH=src python -m pytest -q

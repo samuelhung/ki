@@ -342,16 +342,12 @@ def _artifact_metadata(path: Path, *, integrity_check: str | None = None) -> dic
 
 
 def _fsync_parent(path: Path) -> None:
-    directory_fd: int | None = None
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    directory_fd = os.open(path.parent, flags)
     try:
-        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-        directory_fd = os.open(path.parent, flags)
         os.fsync(directory_fd)
-    except OSError:
-        pass
     finally:
-        if directory_fd is not None:
-            os.close(directory_fd)
+        os.close(directory_fd)
 
 
 def _write_json_exclusive(path: Path, payload: dict[str, Any]) -> None:
@@ -943,7 +939,12 @@ def _restore_path_matches(path: Path, metadata: dict[str, Any]) -> bool:
     return True
 
 
-def recover_rollback_restore(journal_path: Path) -> dict[str, Path]:
+def recover_rollback_restore(
+    journal_path: Path,
+    *,
+    expected_manifest_path: Path | None = None,
+    expected_manifest_sha256: str | None = None,
+) -> dict[str, Path]:
     journal_path = _canonical_manifest_path(
         str(Path(journal_path).expanduser().absolute().resolve(strict=True)),
         "restore journal",
@@ -957,6 +958,15 @@ def recover_rollback_restore(journal_path: Path) -> dict[str, Path]:
     manifest_path = _canonical_manifest_path(
         journal.get("manifest_path"), "rollback manifest"
     )
+    if expected_manifest_path is not None:
+        expected_manifest_path = Path(expected_manifest_path).resolve(strict=True)
+        if (
+            manifest_path != expected_manifest_path
+            or journal.get("manifest_sha256") != expected_manifest_sha256
+        ):
+            raise RuntimeError(
+                "rollback restore journal belongs to a different rollback manifest"
+            )
     manifest, pinned, destinations, _manifest_sha256 = _validate_rollback_manifest(
         manifest_path,
         allow_stale=True,
@@ -1020,12 +1030,21 @@ def recover_rollback_restore(journal_path: Path) -> dict[str, Path]:
 def restore_rollback_backup(manifest_path: Path) -> dict[str, Path]:
     """Stage and journal both rollback artifacts before replacing either target."""
     manifest_path = Path(manifest_path).expanduser().absolute().resolve(strict=True)
-    _, _, candidate_destinations, _ = _validate_rollback_manifest(
+    (
+        _,
+        _,
+        candidate_destinations,
+        candidate_manifest_sha256,
+    ) = _validate_rollback_manifest(
         manifest_path, allow_stale=True, pin_artifacts=False
     )
     journal_path = restore_journal_path(candidate_destinations["database"])
     if journal_path.exists():
-        return recover_rollback_restore(journal_path)
+        return recover_rollback_restore(
+            journal_path,
+            expected_manifest_path=manifest_path,
+            expected_manifest_sha256=candidate_manifest_sha256,
+        )
 
     manifest, pinned, destinations, manifest_sha256 = _validate_rollback_manifest(
         manifest_path

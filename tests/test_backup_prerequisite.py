@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
 import sqlite3
+import stat
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -717,3 +719,75 @@ def test_restore_failure_is_journaled_and_recovery_completes_both_artifacts(
     assert config_path.read_text(encoding="utf-8") == original_config
     with sqlite3.connect(db_path) as conn:
         assert conn.execute("SELECT id FROM entities").fetchall() == [("entity-1",)]
+
+
+def test_restore_rejects_existing_journal_for_different_manifest(
+    tmp_path, monkeypatch
+):
+    db_path, config_path, manifest_a = _bundle(tmp_path)
+    manifest_b = manifest_a.with_name("rollback-manifest-b.json")
+    manifest_b.write_bytes(manifest_a.read_bytes() + b" ")
+    migrations.ensure_migrations(db_path)
+    config_path.write_text('{"briefing": {}}', encoding="utf-8")
+    real_replace = database_backup._replace_staged_restore
+    failed_once = False
+
+    def fail_database_replace(stage, destination):
+        nonlocal failed_once
+        if Path(destination) == db_path and not failed_once:
+            failed_once = True
+            raise OSError("injected database restore failure")
+        real_replace(stage, destination)
+
+    monkeypatch.setattr(
+        database_backup, "_replace_staged_restore", fail_database_replace
+    )
+    with pytest.raises(RuntimeError, match="restore is incomplete"):
+        database_backup.restore_rollback_backup(manifest_a)
+
+    journal = database_backup.restore_journal_path(db_path)
+    assert journal.exists()
+    monkeypatch.setattr(database_backup, "_replace_staged_restore", real_replace)
+
+    with pytest.raises(RuntimeError, match="different rollback manifest"):
+        database_backup.restore_rollback_backup(manifest_b)
+
+    assert journal.exists()
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'entities'"
+        ).fetchone() is None
+
+
+def test_restore_aborts_before_target_replacement_when_journal_fsync_fails(
+    tmp_path, monkeypatch
+):
+    db_path, config_path, manifest_path = _bundle(tmp_path)
+    migrations.ensure_migrations(db_path)
+    config_path.write_text('{"briefing": {}}', encoding="utf-8")
+    database_before = db_path.read_bytes()
+    config_before = config_path.read_bytes()
+    real_fsync = database_backup.os.fsync
+    replacements: list[tuple[Path, Path]] = []
+
+    def fail_directory_fsync(fd):
+        if stat.S_ISDIR(os.fstat(fd).st_mode):
+            raise OSError(errno.EIO, "injected directory fsync failure")
+        real_fsync(fd)
+
+    def record_replacement(stage, destination):
+        replacements.append((Path(stage), Path(destination)))
+        raise AssertionError("target replacement started before durable journal")
+
+    monkeypatch.setattr(database_backup.os, "fsync", fail_directory_fsync)
+    monkeypatch.setattr(
+        database_backup, "_replace_staged_restore", record_replacement
+    )
+
+    with pytest.raises(OSError, match="directory fsync failure"):
+        database_backup.restore_rollback_backup(manifest_path)
+
+    assert replacements == []
+    assert db_path.read_bytes() == database_before
+    assert config_path.read_bytes() == config_before
+    assert not database_backup.restore_journal_path(db_path).exists()

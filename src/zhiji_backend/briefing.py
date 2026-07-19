@@ -90,6 +90,47 @@ def _build_events_text(events: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def _parse_generated_topics(raw: str) -> list[dict[str, Any]]:
+    try:
+        parsed = json.loads(raw)
+        if not isinstance(parsed, dict):
+            raise ValueError("AI response root is not an object")
+        topics = parsed.get("topics", [])
+        if not isinstance(topics, list):
+            raise ValueError("AI response 'topics' is not a list")
+
+        normalized_topics: list[dict[str, Any]] = []
+        for topic_index, topic in enumerate(topics):
+            if not isinstance(topic, dict):
+                raise ValueError(
+                    f"AI response topic {topic_index} is not an object"
+                )
+            events = topic.get("events", [])
+            if not isinstance(events, list):
+                raise ValueError(
+                    f"AI response topic {topic_index} events is not a list"
+                )
+            normalized_events: list[dict[str, Any]] = []
+            for event_index, event in enumerate(events):
+                if not isinstance(event, dict):
+                    raise ValueError(
+                        "AI response topic "
+                        f"{topic_index} event {event_index} is not an object"
+                    )
+                normalized_events.append(dict(event))
+            normalized_topic = dict(topic)
+            normalized_topic["events"] = normalized_events
+            normalized_topics.append(normalized_topic)
+        return normalized_topics
+    except (json.JSONDecodeError, ValueError) as exc:
+        logger.error(
+            "Failed to parse AI briefing response: %s\nRaw: %s",
+            exc,
+            raw[:500],
+        )
+        raise RuntimeError(f"AI generated invalid JSON: {exc}") from exc
+
+
 def generate_briefing(briefing_type: str = "quick", limit: int = 80) -> dict[str, Any]:
     """Generate a structured Chinese news briefing.
 
@@ -135,15 +176,7 @@ def generate_briefing(briefing_type: str = "quick", limit: int = 80) -> dict[str
     raw = _call_ai(system_prompt=system_prompt, user_prompt=user_prompt, max_tokens=4096, timeout=120,
                         task="briefing_quick" if is_quick else "briefing_daily")
 
-    # Parse and validate the AI response
-    try:
-        parsed = json.loads(raw)
-        topics_data = parsed.get("topics", [])
-        if not isinstance(topics_data, list):
-            raise ValueError("AI response 'topics' is not a list")
-    except (json.JSONDecodeError, ValueError) as e:
-        logger.error("Failed to parse AI briefing response: %s\nRaw: %s", e, raw[:500])
-        raise RuntimeError(f"AI generated invalid JSON: {e}")
+    topics_data = _parse_generated_topics(raw)
 
     # Count events referenced
     events_used = sum(len(t.get("events", [])) for t in topics_data)
