@@ -14,9 +14,8 @@ test('task center composes the shared cinematic shell and laser workspace', () =
   assert.match(page, /task-core-box/);
 });
 
-test('task center preserves an explicit legacy route', () => {
+test('task center uses the production route', () => {
   assert.match(app, /path="tasks" element={<CinematicTasks/);
-  assert.match(app, /path="tasks-old" element={<Tasks/);
 });
 
 test('AI judgment endpoint returns both the task and visible analysis result', () => {

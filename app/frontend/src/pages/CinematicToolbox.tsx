@@ -150,7 +150,6 @@ const ToolboxWorkspace = memo(function ToolboxWorkspace({ query }: { query: stri
                       <header className="toolbox-detail-header">
                         <span>FINANCE TOOL · {activeMode.label}</span>
                         <h2>贷款利率换算器</h2>
-                        <small><a href="/#/toolbox-old">旧版对比：/#/toolbox-old</a></small>
                         <button type="button" onClick={reset} title="重置参数" aria-label="重置参数"><RefreshCw size={17} /></button>
                       </header>
 

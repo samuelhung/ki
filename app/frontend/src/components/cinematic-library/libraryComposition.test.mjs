@@ -12,9 +12,7 @@ test('library composes the cinematic shell with shared content detail', () => {
   assert.match(page, /library-core-box/);
 });
 
-test('events and sources share the new workspace while legacy routes remain explicit', () => {
+test('events and sources share the production workspace', () => {
   assert.match(app, /path="events" element={<CinematicLibrary/);
   assert.match(app, /path="sources" element={<CinematicLibrary/);
-  assert.match(app, /path="events-old" element={<Events/);
-  assert.match(app, /path="sources-old" element={<Sources/);
 });

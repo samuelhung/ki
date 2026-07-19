@@ -11,10 +11,8 @@ const shell = readFileSync(new URL('../../pages/KiNavigationShell.tsx', import.m
 const dockItems = readFileSync(new URL('../../pages/globalDockItems.ts', import.meta.url), 'utf8');
 const dockOverlay = readFileSync(new URL('../../pages/GlobalDockOverlay.tsx', import.meta.url), 'utf8');
 const dockAccessOverlay = readFileSync(new URL('../../pages/GlobalDockAccessOverlay.tsx', import.meta.url), 'utf8');
-const demo = readFileSync(new URL('../../pages/DualNavigationDemo.tsx', import.meta.url), 'utf8');
 const preview = readFileSync(new URL('../../pages/LegacyIngestShellPreview.tsx', import.meta.url), 'utf8');
 const ingest = readFileSync(new URL('../../pages/Ingest.tsx', import.meta.url), 'utf8');
-const previewIngest = readFileSync(new URL('../../pages/CinematicIngest.tsx', import.meta.url), 'utf8');
 const libraryPage = readFileSync(new URL('../../pages/CinematicLibrary.tsx', import.meta.url), 'utf8');
 const gooey = readFileSync(new URL('./GooeyNav.tsx', import.meta.url), 'utf8');
 const hero = readFileSync(new URL('../ModuleHeroTabs.tsx', import.meta.url), 'utf8');
@@ -29,17 +27,15 @@ const productionQa = existsSync(productionQaUrl) ? readFileSync(productionQaUrl,
 const spotlightRow = readFileSync(new URL('./SpotlightListRow.tsx', import.meta.url), 'utf8');
 const contentDetail = readFileSync(new URL('../cinematic-ingest/ContentDetailPanel.tsx', import.meta.url), 'utf8');
 const detailActions = readFileSync(new URL('../cinematic-ingest/useIngestDetailActions.ts', import.meta.url), 'utf8');
-const previewEvents = readFileSync(new URL('../cinematic-ingest/useIngestEvents.ts', import.meta.url), 'utf8');
 const embeddedWorkspace = readFileSync(new URL('../ingest/EmbeddedIngestWorkspace.tsx', import.meta.url), 'utf8');
 const embeddedTabs = readFileSync(new URL('../ingest/EmbeddedIngestTopicTabs.tsx', import.meta.url), 'utf8');
 const embeddedRow = readFileSync(new URL('../ingest/EmbeddedIngestRow.tsx', import.meta.url), 'utf8');
 const embeddedConfig = readFileSync(new URL('../ingest/embeddedIngestConfig.ts', import.meta.url), 'utf8');
 const ingestTypes = readFileSync(new URL('../cinematic-ingest/ingestTypes.ts', import.meta.url), 'utf8');
 
-test('home keeps only the Today backdrop and center copy while the previous dashboard remains explicit', () => {
+test('home and ingest use the production navigation shell', () => {
   assert.match(app, /const CinematicHome = lazy/);
   assert.match(app, /<Route index element=\{<CinematicHome \/>\}/);
-  assert.match(app, /path="today-old" element=\{<Dashboard \/>\}/);
   assert.equal(existsSync(homeUrl), true);
   assert.match(home, /import KiNavigationShell from/);
   assert.match(home, /<KiNavigationShell[\s\S]*className="ki-shell-home cinematic-dashboard"[\s\S]*sceneVariant="today"[\s\S]*laserPrimary=\{false\}[\s\S]*showReveal=\{false\}/);
@@ -80,13 +76,9 @@ test('home keeps only the Today backdrop and center copy while the previous dash
   assert.match(curtain, /pathname === '\/ingest'/);
   assert.match(curtain, /if \(shouldBypassCurtain\(href\)\) \{[\s\S]*?navigate\(href\);[\s\S]*?return;[\s\S]*?\}/);
   assert.match(curtain, /if \(shouldBypassCurtain\(to\)\) \{\s*navigate\(to as string\);\s*return;/s);
-  assert.match(app, /path="ingest-previous" element=\{<CinematicIngest \/>\}/);
-  assert.match(app, /path="ingest-old" element=\{<Ingest \/>\}/);
-  assert.match(app, /path="demo\/ki-ingest" element=\{<Navigate to="\/ingest" replace \/>\}/);
 });
 
-test('the demo and preview share one global navigation shell', () => {
-  assert.match(demo, /<KiNavigationShell/);
+test('the production ingest page uses the global navigation shell', () => {
   assert.match(preview, /<KiNavigationShell/);
   assert.match(shell, /sceneVariant = 'ingest'/);
   assert.match(shell, /useCinematicBackdrop/);
@@ -200,12 +192,8 @@ test('topic tabs sit above the list with icon-over-label layout and no dots', ()
   for (const productionSource of [ingest, detailActions, contentDetail, embeddedWorkspace, embeddedTabs, embeddedRow, embeddedConfig]) {
     assert.doesNotMatch(productionSource, /briefing|Briefing|即时快报|\/api\/briefing\/latest/);
   }
-  assert.match(previewEvents, /export type PreviewTopicKey = TopicKey \| 'briefing';/);
-  assert.match(previewEvents, /historyTab: PreviewTopicKey;/);
-  assert.match(previewIngest, /useState<PreviewTopicKey>\('格局'\)/);
-  assert.match(previewIngest, /key: 'briefing'/);
   assert.doesNotMatch(detailActions, /historyTab|TopicKey/);
-  for (const detailCaller of [ingest, previewIngest, libraryPage]) {
+  for (const detailCaller of [ingest, libraryPage]) {
     assert.doesNotMatch(detailCaller, /useIngestDetailActions\(\{[^}]*historyTab/s);
   }
   assert.match(detailActions, /if \(!activeEventId\) \{\s*setDetail\(null\);\s*return;\s*\}/s);

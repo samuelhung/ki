@@ -6,6 +6,40 @@ import { scheduleCinematicRoutePreload } from './cinematicRoutePreload.ts';
 
 const home = readFileSync(new URL('./CinematicHome.tsx', import.meta.url), 'utf8');
 const ingest = readFileSync(new URL('./LegacyIngestShellPreview.tsx', import.meta.url), 'utf8');
+const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+
+test('App retires legacy and demo routes with their lazy imports', () => {
+  assert.doesNotMatch(app, /-old/);
+  assert.doesNotMatch(app, /ingest-previous/);
+  assert.doesNotMatch(app, /\/demo(?:\/|['"])/);
+
+  for (const legacyPage of [
+    'Dashboard',
+    'CinematicIngest',
+    'Ingest',
+    'Events',
+    'Sources',
+    'Brainstorm',
+    'BrainstormDetailPage',
+    'Tasks',
+    'Series',
+    'SeriesDetail',
+    'SystemDoc',
+    'SystemSettings',
+    'Study',
+    'StudyDetail',
+    'StudyMistakes',
+    'Toolbox',
+    'IndustryChains',
+    'CircularGalleryDemo',
+    'DualNavigationDemo',
+    'BrandLockupDemo',
+    'BrandDepthDemo',
+    'DockPopupVisualDemo',
+  ]) {
+    assert.doesNotMatch(app, new RegExp(`const ${legacyPage} = lazy`));
+  }
+});
 
 test('route preload uses cancellable browser idle time', async () => {
   const originalRequestIdleCallback = globalThis.requestIdleCallback;

@@ -267,7 +267,7 @@ export default function StudyDetail({ embedded = false, materialId, onMaterialCh
       const r = await apiFetch(`/api/study/${id}`, { method: 'DELETE' });
       if (!r.ok) throw new Error('删除失败');
       if (embedded) onDeleted?.(id);
-      else navigate('/study-old');
+      else navigate('/study');
     } catch (e: any) { setError(e.message || '删除失败'); setDeleting(false); }
   };
 
@@ -342,7 +342,7 @@ export default function StudyDetail({ embedded = false, materialId, onMaterialCh
   if (error || !material) return (
     <div className={`${embedded ? 'study-detail-legacy-embedded is-error' : 'flex-1 bg-[#0B0C10]'} flex items-center justify-center`}>
       <div className="text-center"><p className="text-red-400 text-sm">{error || '资料不存在'}</p>
-        <button onClick={() => navigate(embedded ? '/study' : '/study-old')} className="mt-4 text-xs text-gray-500 hover:text-gray-300">返回辅导中心</button>
+        <button onClick={() => navigate('/study')} className="mt-4 text-xs text-gray-500 hover:text-gray-300">返回辅导中心</button>
       </div>
     </div>
   );
@@ -351,7 +351,7 @@ export default function StudyDetail({ embedded = false, materialId, onMaterialCh
     <div className={`${embedded ? 'study-detail-legacy-embedded is-ready' : 'flex-1 bg-[#0B0C10]'} text-white flex flex-col h-full overflow-hidden`}>
       <div className="shrink-0 sticky top-0 z-10 bg-[#0B0C10] px-4 md:px-8 pt-4 md:pt-8">
         <div className="max-w-[1080px] mx-auto">
-          <button onClick={() => navigate(embedded ? '/study' : '/study-old')} className="study-detail-back flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 mb-3 transition-colors">
+          <button onClick={() => navigate('/study')} className="study-detail-back flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 mb-3 transition-colors">
             <ArrowLeft size={14} /> 辅导中心
           </button>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">

@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useState, useEffect, useCallback, useRef } from 'react';
-import { Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
+import { Routes, Route, Outlet, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Wifi, WifiOff, Upload } from 'lucide-react';
 import Sidebar from './components/Sidebar';
@@ -11,39 +11,17 @@ import { CurtainProvider, useCurtain } from './CurtainContext';
 import { CinematicBackdropProvider } from './components/cinematic/CinematicBackdropContext';
 import { getBackendUrl } from './api';
 
-const Dashboard = lazy(() => import('./pages/Dashboard'));
 const CinematicHome = lazy(() => import('./pages/CinematicHome'));
-const CinematicIngest = lazy(() => import('./pages/CinematicIngest'));
-const Ingest = lazy(() => import('./pages/Ingest'));
 const CinematicBriefings = lazy(() => import('./pages/CinematicBriefings'));
-const Events = lazy(() => import('./pages/Events'));
-const Sources = lazy(() => import('./pages/Sources'));
 const CinematicLibrary = lazy(() => import('./pages/CinematicLibrary'));
-const Brainstorm = lazy(() => import('./pages/Brainstorm'));
 const CinematicBrainstorm = lazy(() => import('./pages/CinematicBrainstorm'));
-const Tasks = lazy(() => import('./pages/Tasks'));
 const CinematicTasks = lazy(() => import('./pages/CinematicTasks'));
-const Series = lazy(() => import('./pages/Series'));
 const CinematicSeries = lazy(() => import('./pages/CinematicSeries'));
-const SeriesDetail = lazy(() => import('./pages/SeriesDetail'));
 const CinematicEventDetail = lazy(() => import('./pages/CinematicEventDetail'));
-const BrainstormDetailPage = lazy(() => import('./pages/BrainstormDetailPage'));
 const CinematicSystemCenter = lazy(() => import('./pages/CinematicSystemCenter'));
-const SystemDoc = lazy(() => import('./pages/SystemDoc'));
-const SystemSettings = lazy(() => import('./pages/SystemSettings'));
-const Study = lazy(() => import('./pages/Study'));
-const StudyDetail = lazy(() => import('./pages/StudyDetail'));
-const StudyMistakes = lazy(() => import('./pages/StudyMistakes'));
 const CinematicStudy = lazy(() => import('./pages/CinematicStudy'));
-const Toolbox = lazy(() => import('./pages/Toolbox'));
 const CinematicToolbox = lazy(() => import('./pages/CinematicToolbox'));
-const IndustryChains = lazy(() => import('./pages/IndustryChains'));
 const CinematicIndustryChains = lazy(() => import('./pages/CinematicIndustryChains'));
-const CircularGalleryDemo = lazy(() => import('./pages/CircularGalleryDemo'));
-const DualNavigationDemo = lazy(() => import('./pages/DualNavigationDemo'));
-const BrandLockupDemo = lazy(() => import('./pages/BrandLockupDemo'));
-const BrandDepthDemo = lazy(() => import('./pages/BrandDepthDemo'));
-const DockPopupVisualDemo = lazy(() => import('./pages/DockPopupVisualDemo'));
 const LegacyIngestShellPreview = lazy(() => import('./pages/LegacyIngestShellPreview'));
 
 function PageLoading() {
@@ -131,9 +109,7 @@ function CurtainOverlay() {
 
 function Layout() {
   const location = useLocation();
-  const isDashboardHome = location.pathname === '/';
-  const isStandaloneDemo = location.pathname === '/demo/circular-gallery' || location.pathname === '/demo/dual-nav' || location.pathname === '/demo/brand-lockups' || location.pathname === '/demo/brand-depth' || location.pathname === '/demo/dock-popup-visuals';
-  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/today-old' || location.pathname === '/ingest' || location.pathname === '/briefings' || location.pathname === '/ingest-previous' || location.pathname === '/events' || location.pathname.startsWith('/events/') || location.pathname === '/sources' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series' || location.pathname.startsWith('/series/') || location.pathname === '/study' || location.pathname.startsWith('/study/') || location.pathname === '/study-mistakes' || location.pathname === '/industry-chains' || location.pathname === '/chains' || location.pathname === '/brainstorm' || location.pathname.startsWith('/brainstorm/') || location.pathname === '/tasks' || isStandaloneDemo;
+  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest' || location.pathname === '/briefings' || location.pathname === '/events' || location.pathname.startsWith('/events/') || location.pathname === '/sources' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series' || location.pathname.startsWith('/series/') || location.pathname === '/study' || location.pathname.startsWith('/study/') || location.pathname === '/study-mistakes' || location.pathname === '/industry-chains' || location.pathname === '/chains' || location.pathname === '/brainstorm' || location.pathname.startsWith('/brainstorm/') || location.pathname === '/tasks';
 
   // ---- Offline detection ----
   const [isOnline, setIsOnline] = useState(true);
@@ -239,7 +215,7 @@ function Layout() {
         onDrop={handleDrop}
       >
         {/* Offline banner */}
-        {!isStandaloneDemo && !isOnline && (
+        {!isOnline && (
           <div className="absolute top-0 left-0 right-0 z-50 bg-black/45 border-b border-amber-300/20 text-amber-100/80 text-xs px-4 py-1.5 flex items-center justify-center gap-2 backdrop-blur-sm shadow-[0_0_24px_rgba(214,163,76,0.12)]">
             <WifiOff size={12} />
             <span>后端未连接 — 部分功能不可用</span>
@@ -253,7 +229,7 @@ function Layout() {
         )}
 
         {/* Drag-drop overlay */}
-        {!isStandaloneDemo && dragOver && (
+        {dragOver && (
           <div className="absolute inset-0 z-40 bg-purple-600/20 border-2 border-dashed border-purple-400 rounded-lg flex items-center justify-center pointer-events-none">
             <div className="text-center">
               <Upload size={48} className="text-purple-400 mx-auto mb-2" />
@@ -264,7 +240,7 @@ function Layout() {
         )}
 
         {/* Uploading indicator */}
-        {!isStandaloneDemo && uploading.length > 0 && (
+        {uploading.length > 0 && (
           <div className="absolute bottom-4 right-4 z-50 bg-gray-900/90 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-300 max-w-xs">
             <div className="flex items-center gap-2 mb-1">
               <Upload size={12} className="text-purple-400" />
@@ -334,49 +310,25 @@ export default function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<CinematicHome />} />
-          <Route path="today-old" element={<Dashboard />} />
           <Route path="ingest" element={<LegacyIngestShellPreview />} />
           <Route path="briefings" element={<CinematicBriefings />} />
-          <Route path="ingest-previous" element={<CinematicIngest />} />
-          <Route path="ingest-old" element={<Ingest />} />
           <Route path="events" element={<CinematicLibrary />} />
           <Route path="sources" element={<CinematicLibrary />} />
-          <Route path="events-old" element={<Events />} />
-          <Route path="sources-old" element={<Sources />} />
           <Route path="brainstorm" element={<CinematicBrainstorm />} />
           <Route path="brainstorm/:id" element={<CinematicBrainstorm />} />
-          <Route path="brainstorm-old" element={<Brainstorm />} />
-          <Route path="brainstorm-old/:id" element={<BrainstormDetailPage />} />
           <Route path="events/:id" element={<CinematicEventDetail />} />
           <Route path="system" element={<CinematicSystemCenter />} />
           <Route path="settings" element={<CinematicSystemCenter />} />
-          <Route path="system-old" element={<SystemDoc />} />
-          <Route path="settings-old" element={<SystemSettings />} />
           <Route path="tasks" element={<CinematicTasks />} />
-          <Route path="tasks-old" element={<Tasks />} />
           <Route path="series" element={<CinematicSeries />} />
-          <Route path="series-old" element={<Series />} />
-          <Route path="series-old/:id" element={<SeriesDetail />} />
           <Route path="series/:id" element={<CinematicSeries />} />
           <Route path="study" element={<CinematicStudy />} />
           <Route path="study/:id" element={<CinematicStudy />} />
-          <Route path="study-old" element={<Study legacy />} />
-          <Route path="study-old/:id" element={<StudyDetail />} />
           <Route path="study-mistakes" element={<CinematicStudy />} />
-          <Route path="study-mistakes-old" element={<StudyMistakes legacy />} />
           <Route path="toolbox" element={<CinematicToolbox />} />
-          <Route path="toolbox-old" element={<Toolbox />} />
           <Route path="industry-chains" element={<CinematicIndustryChains />} />
-          <Route path="industry-chains-old" element={<IndustryChains />} />
           <Route path="chains" element={<CinematicIndustryChains />} />
-          <Route path="chains-old" element={<IndustryChains />} />
           <Route path="tools" element={<CinematicToolbox />} />
-          <Route path="demo/circular-gallery" element={<CircularGalleryDemo />} />
-          <Route path="demo/dual-nav" element={<DualNavigationDemo />} />
-          <Route path="demo/brand-lockups" element={<BrandLockupDemo />} />
-          <Route path="demo/brand-depth" element={<BrandDepthDemo />} />
-          <Route path="demo/dock-popup-visuals" element={<DockPopupVisualDemo />} />
-          <Route path="demo/ki-ingest" element={<Navigate to="/ingest" replace />} />
         </Route>
       </Routes>
     </EventCacheProvider>

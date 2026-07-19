@@ -14,10 +14,9 @@ test('study composes the shared cinematic shell and embeds legacy detail', async
   assert.match(detail, /embedded\?: boolean/);
 });
 
-test('study keeps explicit legacy comparison routes', async () => {
+test('study keeps production list detail and mistakes routes', async () => {
   const app = await readFile(appUrl, 'utf8');
   assert.match(app, /path="study" element={<CinematicStudy/);
-  assert.match(app, /path="study-old" element={<Study legacy/);
-  assert.match(app, /path="study-old\/:id" element={<StudyDetail/);
-  assert.match(app, /path="study-mistakes-old" element={<StudyMistakes legacy/);
+  assert.match(app, /path="study\/:id" element={<CinematicStudy/);
+  assert.match(app, /path="study-mistakes" element={<CinematicStudy/);
 });

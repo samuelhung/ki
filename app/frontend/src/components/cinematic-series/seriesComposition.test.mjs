@@ -10,11 +10,9 @@ const viteConfig = readFileSync(new URL('../../../vite.config.ts', import.meta.u
 const packageJson = readFileSync(new URL('../../../package.json', import.meta.url), 'utf8');
 const css = `${readFileSync(new URL('./cinematic-series.css', import.meta.url), 'utf8')}\n${readFileSync(new URL('./cinematic-series-detail.css', import.meta.url), 'utf8')}`;
 
-test('series keeps legacy comparison routes while primary list and detail routes share the migrated page', () => {
+test('series list and detail routes share the migrated page', () => {
   assert.match(app, /path="series" element=\{<CinematicSeries \/>\}/);
   assert.match(app, /path="series\/:id" element=\{<CinematicSeries \/>\}/);
-  assert.match(app, /path="series-old" element=\{<Series \/>\}/);
-  assert.match(app, /path="series-old\/:id" element=\{<SeriesDetail \/>\}/);
 });
 
 test('series routes skip the global curtain like content ingest and toolbox', () => {

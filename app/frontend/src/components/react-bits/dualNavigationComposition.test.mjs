@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 
 const app = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8');
 const curtain = readFileSync(new URL('../../CurtainContext.tsx', import.meta.url), 'utf8');
-const page = readFileSync(new URL('../../pages/DualNavigationDemo.tsx', import.meta.url), 'utf8');
+const productionPage = readFileSync(new URL('../../pages/LegacyIngestShellPreview.tsx', import.meta.url), 'utf8');
 const shell = readFileSync(new URL('../../pages/KiNavigationShell.tsx', import.meta.url), 'utf8');
 const dockItems = readFileSync(new URL('../../pages/globalDockItems.ts', import.meta.url), 'utf8');
 const dockOverlay = readFileSync(new URL('../../pages/GlobalDockOverlay.tsx', import.meta.url), 'utf8');
@@ -40,15 +40,15 @@ const dockPopupCss = [
   'GlobalDockOverviewOverlay.css',
 ].map((file) => readFileSync(new URL(`../../pages/${file}`, import.meta.url), 'utf8')).join('\n');
 
-test('dual navigation demo keeps the top and bottom menus independent', () => {
-  assert.match(page, /<KiNavigationShell/);
+test('production navigation shell keeps the top and bottom menus independent', () => {
+  assert.match(productionPage, /<KiNavigationShell/);
   assert.match(shell, /<GooeyNav/);
   assert.match(shell, /<DualNavigationActionMenu/);
   assert.doesNotMatch(shell, /activeIndex=.*DualNavigationActionMenu/);
   assert.doesNotMatch(shell, /onActiveChange=.*DualNavigationActionMenu/);
 });
 
-test('dual navigation demo keeps the approved gooey navigation parameters', () => {
+test('production navigation shell keeps the approved gooey navigation parameters', () => {
   assert.match(shell, /particleCount=\{15\}/);
   assert.match(shell, /const GOOEY_PARTICLE_DISTANCES: \[number, number\] = \[90, 10\]/);
   assert.match(shell, /particleDistances=\{GOOEY_PARTICLE_DISTANCES\}/);
@@ -286,82 +286,13 @@ test('gooey nav replaces the browser focus outline with its own item focus style
   assert.match(gooeyCss, /focus-within:has\(:focus-visible\)/);
 });
 
-test('dual navigation demo is registered as an isolated full-screen route', () => {
-  assert.match(app, /path="demo\/dual-nav"/);
-  assert.match(app, /location\.pathname === '\/demo\/dual-nav'/);
-});
-
-test('three brand lockups are available in an isolated comparison demo', () => {
-  const demoUrl = new URL('../../pages/BrandLockupDemo.tsx', import.meta.url);
-  const demoCssUrl = new URL('../../pages/BrandLockupDemo.css', import.meta.url);
-  assert.equal(existsSync(demoUrl), true);
-  assert.equal(existsSync(demoCssUrl), true);
-  const brandDemo = readFileSync(demoUrl, 'utf8');
-  const brandDemoCss = readFileSync(demoCssUrl, 'utf8');
-  assert.match(app, /const BrandLockupDemo = lazy/);
-  assert.match(app, /path="demo\/brand-lockups" element=\{<BrandLockupDemo \/>\}/);
-  assert.match(app, /location\.pathname === '\/demo\/brand-lockups'/);
-  assert.match(brandDemo, /variant="signature"/);
-  assert.match(brandDemo, /variant="offset"/);
-  assert.match(brandDemo, /variant="quiet"/);
-  assert.match(brandDemo, /<GooeyNav/);
-  assert.match(brandDemo, /const DEMO_HREF = '\/demo\/brand-lockups'/);
-  assert.doesNotMatch(brandDemo, /label: '事件列表', href: '\/events'/);
-  assert.match(brandDemo, /placeholder="搜索内容标题"/);
-  assert.match(brandDemoCss, /\.brand-lockup-demo__row/);
-  assert.match(brandDemoCss, /\.brand-lockup-demo__brand--signature/);
-  assert.match(brandDemoCss, /\.brand-lockup-demo__brand--offset/);
-  assert.match(brandDemoCss, /\.brand-lockup-demo__brand--quiet/);
-});
-
-test('the dock popup visual demo keeps only the approved full-window bento system', () => {
-  const demoUrl = new URL('../../pages/DockPopupVisualDemo.tsx', import.meta.url);
-  const demoCssUrl = new URL('../../pages/DockPopupVisualDemo.css', import.meta.url);
-  assert.equal(existsSync(demoUrl), true);
-  assert.equal(existsSync(demoCssUrl), true);
-  const popupDemo = readFileSync(demoUrl, 'utf8');
-  const popupDemoCss = readFileSync(demoCssUrl, 'utf8');
-  assert.match(app, /const DockPopupVisualDemo = lazy/);
-  assert.match(app, /path="demo\/dock-popup-visuals" element=\{<DockPopupVisualDemo \/>\}/);
-  assert.match(app, /location\.pathname === '\/demo\/dock-popup-visuals'/);
-  assert.doesNotMatch(popupDemo, /key: 'hybrid'|key: 'electric'|const VARIANTS/);
-  assert.match(popupDemo, /<PopupStudy \/>/);
-  assert.match(popupDemo, /内容接入/);
-  assert.doesNotMatch(popupDemo, /apiFetch|fetch\(/);
-  assert.match(popupDemo, /<KiMagicBentoFrame/);
-  assert.match(popupDemoCss, /\.dock-popup-study__surface--bento/);
-  assert.match(popupDemoCss, /prefers-reduced-motion: reduce/);
-  assert.match(popupDemoCss, /pointer: coarse/);
-  assert.match(popupDemo, /dock-popup-study__submit-state/);
-  assert.match(popupDemoCss, /\.dock-popup-study__submit\s*\{[^}]*width:\s*100%[^}]*grid-template-columns:/s);
-  assert.match(popupDemoCss, /\.dock-popup-study__submit::after/);
-  assert.match(popupDemoCss, /\.dock-popup-study__submit:hover::after/);
-  assert.match(popupDemo, /dock-popup-study__tab-icon/);
-  assert.match(popupDemo, /dock-popup-study__field-label/);
-  assert.match(popupDemoCss, /\.dock-popup-study__tabs button\s*\{[^}]*grid-template-rows:/s);
-  assert.match(popupDemoCss, /\.dock-popup-study__tab-icon\.is-violet/);
-  assert.match(popupDemoCss, /\.dock-popup-study__field-label svg/);
-  assert.match(popupDemo, /dock-popup-study__interaction-zone/);
-  assert.doesNotMatch(popupDemoCss, /surface--hybrid|surface--electric|dock-popup-study__particle/);
-  assert.match(popupDemo, /role="combobox"/);
-  assert.match(popupDemo, /role="listbox"/);
-  assert.match(popupDemo, /role="option"/);
-  assert.match(popupDemo, /aria-expanded=\{open\}/);
-  assert.match(popupDemo, /dock-popup-study__mode-menu/);
-  assert.match(popupDemoCss, /\.dock-popup-study__mode-menu/);
-  assert.match(popupDemoCss, /\.dock-popup-study__mode-option\.is-selected/);
-  assert.doesNotMatch(popupDemo, /<select|<option/);
-});
-
 test('the full bento study uses the supplied GSAP Magic Bento interaction kernel', () => {
   const sourceUrl = new URL('./KiMagicBento.tsx', import.meta.url);
   const cssUrl = new URL('./KiMagicBento.css', import.meta.url);
-  const demoUrl = new URL('../../pages/DockPopupVisualDemo.tsx', import.meta.url);
   assert.equal(existsSync(sourceUrl), true);
   assert.equal(existsSync(cssUrl), true);
   const source = readFileSync(sourceUrl, 'utf8');
   const css = readFileSync(cssUrl, 'utf8');
-  const popupDemo = readFileSync(demoUrl, 'utf8');
   const magicBentoFrame = readFileSync(magicBentoFrameUrl, 'utf8');
   assert.match(source, /import \{ gsap \} from 'gsap'/);
   assert.match(source, /const DEFAULT_PARTICLE_COUNT = 12/);
@@ -392,8 +323,6 @@ test('the full bento study uses the supplied GSAP Magic Bento interaction kernel
   assert.doesNotMatch(css, /transition:\s*all/);
   assert.match(magicBentoFrame, /<MagicBentoGrid/);
   assert.equal((magicBentoFrame.match(/<MagicBentoCard/g) || []).length, 1);
-  assert.match(popupDemo, /dock-popup-study__window-bento-grid/);
-  assert.match(popupDemo, /dock-popup-study__window-bento-card/);
   assert.match(magicBentoFrame, /particleCount=\{18\}/);
   assert.match(magicBentoFrame, /spotlightRadius=\{420\}/);
   assert.match(magicBentoFrame, /tiltMax=\{2\.5\}/);
@@ -401,49 +330,6 @@ test('the full bento study uses the supplied GSAP Magic Bento interaction kernel
   assert.match(magicBentoFrame, /suspendSelector="input, textarea, select, \[data-bento-suspend\]"/);
   assert.match(magicBentoFrame, /enableTilt/);
   assert.match(magicBentoFrame, /enableMagnetism/);
-});
-
-test('the spatial brand demo keeps only the approved dark-gold and white TextType aperture lockup', () => {
-  const demoUrl = new URL('../../pages/BrandDepthDemo.tsx', import.meta.url);
-  const demoCssUrl = new URL('../../pages/BrandDepthDemo.css', import.meta.url);
-  const textTypeUrl = new URL('./TextType.jsx', import.meta.url);
-  assert.equal(existsSync(demoUrl), true);
-  assert.equal(existsSync(demoCssUrl), true);
-  assert.equal(existsSync(textTypeUrl), true);
-  const depthDemo = readFileSync(demoUrl, 'utf8');
-  const depthDemoCss = readFileSync(demoCssUrl, 'utf8');
-  assert.match(app, /const BrandDepthDemo = lazy/);
-  assert.match(app, /path="demo\/brand-depth" element=\{<BrandDepthDemo \/>\}/);
-  assert.match(app, /location\.pathname === '\/demo\/brand-depth'/);
-  assert.match(depthDemo, /brand-depth-demo__brand--aperture/);
-  assert.match(depthDemo, /import TextType from/);
-  assert.doesNotMatch(depthDemo, /GradientText/);
-  assert.match(depthDemo, /<TextType[\s\S]*text="其神乎 见微知著"[\s\S]*typingSpeed=\{75\}[\s\S]*pauseDuration=\{1500\}[\s\S]*deletingSpeed=\{50\}[\s\S]*showCursor=\{false\}[\s\S]*cursorCharacter="\|"/);
-  assert.doesNotMatch(depthDemo, /variant="planes"/);
-  assert.doesNotMatch(depthDemo, /variant="rail"/);
-  assert.match(depthDemo, /<GooeyNav/);
-  assert.match(depthDemoCss, /\.brand-depth-demo__brand--aperture/);
-  assert.doesNotMatch(depthDemoCss, /\.brand-depth-demo__brand--planes/);
-  assert.doesNotMatch(depthDemoCss, /\.brand-depth-demo__brand--rail/);
-  assert.match(depthDemoCss, /perspective:/);
-  assert.match(depthDemoCss, /translateZ\(/);
-  const apertureTitleRule = depthDemoCss.match(/\.brand-depth-demo__brand--aperture \.brand-depth-demo__title\s*\{[^}]*\}/s)?.[0] || '';
-  assert.match(apertureTitleRule, /color:\s*#f0c976/);
-  assert.match(apertureTitleRule, /opacity:\s*1/);
-  assert.match(apertureTitleRule, /mix-blend-mode:\s*normal/);
-  assert.match(apertureTitleRule, /transform:\s*none/);
-  assert.doesNotMatch(apertureTitleRule, /rgba\(0, 0, 0, \.94\)/);
-  assert.match(depthDemoCss, /\.brand-depth-demo__brand--aperture:hover \.brand-depth-demo__title\s*\{[^}]*transform:\s*none/s);
-  assert.match(depthDemoCss, /\.brand-depth-demo__brand--aperture \.brand-depth-demo__motto\s*\{[^}]*z-index:\s*4[^}]*top:\s*70px[^}]*left:\s*66px[^}]*opacity:\s*1[^}]*translateZ\(40px\)/s);
-  assert.doesNotMatch(depthDemoCss, /\.brand-depth-demo__brand--aperture \.brand-depth-demo__motto::before/);
-  assert.match(depthDemoCss, /\.brand-depth-demo__brand--aperture \.brand-depth-demo__motto\s*\{[^}]*color:\s*#fff[^}]*-webkit-text-fill-color:\s*#fff/s);
-  assert.match(depthDemo, /brand-depth-demo__aperture-track[^>]*><i \/><\/span>/);
-  assert.doesNotMatch(depthDemo, /brand-depth-demo__aperture-lines/);
-  assert.doesNotMatch(depthDemoCss, /\.brand-depth-demo__title::after/);
-  assert.match(depthDemoCss, /\.brand-depth-demo__aperture-track\s*\{[^}]*linear-gradient\([^}]*rgba\(240, 201, 118, \.54\)/s);
-  assert.match(depthDemoCss, /\.brand-depth-demo__aperture-track i\s*\{[^}]*animation:\s*brand-depth-star-travel 4\.5s/s);
-  assert.match(depthDemoCss, /@keyframes brand-depth-star-travel/);
-  assert.match(depthDemoCss, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.brand-depth-demo__aperture-track i\s*\{[^}]*animation:\s*none/s);
 });
 
 test('top navigation uses the reduced viewport inset', () => {
@@ -527,15 +413,6 @@ test('ingest pointer reveal uses a lightweight radial glow instead of backdrop f
   assert.match(pageCss, /\.dual-nav-demo__reveal\s*\{[^}]*translate3d/s);
 });
 
-test('dual navigation demo reuses the Today hero copy and typography', () => {
-  assert.match(page, /className="cinematic-hero dual-nav-demo__hero"/);
-  assert.match(page, /className="brand-title">知几</);
-  assert.match(page, /className="line3">其神乎 见微知著</);
-  assert.match(page, /真正的洞察，不在声势浩大处，而在一线微光/);
-  assert.doesNotMatch(page, /Dual Navigation/);
-  assert.match(pageCss, /\.dual-nav-demo__hero\s*\{[^}]*--cinematic-ui-scale:/s);
-});
-
 test('dual navigation uses one fixed nine-item semantic dock', () => {
   const items = dockItems.match(/export const GLOBAL_DOCK_ITEMS[^=]+= \[([\s\S]*?)\n\];/)?.[1] || '';
   assert.equal((items.match(/text:/g) || []).length, 9);
@@ -559,7 +436,7 @@ test('pointer reveal coalesces updates and bounds the filtered area', () => {
   assert.match(shell, /matchMedia\('\(prefers-reduced-motion: reduce\)'\)/);
 });
 
-test('demo exposes nine consolidated global workspaces in the gallery', () => {
+test('production shell exposes nine consolidated global workspaces in the dock', () => {
   for (const label of ['今日总览', '内容接入', '概念沉淀', '信息源', '事件列表', '专题发现', '新建问题', '新建任务', '处理队列']) {
     assert.match(dockItems, new RegExp(`text: '${label}'`));
   }
@@ -568,7 +445,7 @@ test('demo exposes nine consolidated global workspaces in the gallery', () => {
   assert.match(readFileSync(dockWorkspaceFrameUrl, 'utf8'), /role="dialog"/);
 });
 
-test('demo keeps only the selected curved semantic dock', () => {
+test('production shell keeps only the selected curved semantic dock', () => {
   assert.match(shell, /<DualNavigationActionMenu/);
   assert.doesNotMatch(shell, /ACTION_MENU_VARIANTS|actionMenuVariant|setActionMenuVariant/);
   assert.doesNotMatch(variants, /ActionMenuVariant|variant ===|--spotlight/);
@@ -586,7 +463,7 @@ test('dock keeps semantic labels icons colors and modal actions in one data sour
   assert.doesNotMatch(shell, /ACTION_META/);
 });
 
-test('semantic dock is memoized while the page keeps a stable selection callback', () => {
+test('semantic dock is memoized while the shell keeps a stable selection callback', () => {
   assert.match(variants, /export default memo\(DualNavigationActionMenu\)/);
   assert.match(shell, /const handleActionSelect = useCallback/);
   assert.match(pageCss, /\.dual-nav-action-menu\.is-dock/);

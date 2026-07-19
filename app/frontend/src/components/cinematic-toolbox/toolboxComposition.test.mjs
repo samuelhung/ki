@@ -7,10 +7,9 @@ const curtain = readFileSync(new URL('../../CurtainContext.tsx', import.meta.url
 const page = readFileSync(new URL('../../pages/CinematicToolbox.tsx', import.meta.url), 'utf8');
 const css = readFileSync(new URL('./cinematic-toolbox.css', import.meta.url), 'utf8');
 
-test('toolbox keeps the legacy route while the primary routes use the migrated page', () => {
+test('toolbox primary routes use the migrated page', () => {
   assert.match(app, /path="toolbox" element=\{<CinematicToolbox \/>\}/);
   assert.match(app, /path="tools" element=\{<CinematicToolbox \/>\}/);
-  assert.match(app, /path="toolbox-old" element=\{<Toolbox \/>\}/);
 });
 
 test('toolbox routes skip the global initial curtain like content ingest', () => {
@@ -52,7 +51,6 @@ test('toolbox preserves the old calculator modes and detailed results', () => {
   assert.match(page, /反向/);
   assert.match(page, /还款计划明细/);
   assert.match(page, /成本拐点/);
-  assert.match(page, /\/#\/toolbox-old/);
 });
 
 test('toolbox keeps explanatory and schedule content permanently expanded', () => {

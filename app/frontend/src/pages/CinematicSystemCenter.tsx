@@ -228,9 +228,6 @@ export default function CinematicSystemCenter() {
                       <header className="system-detail-header">
                         <span>CONTROL SURFACE · {activeGroup.label.toUpperCase()}</span>
                         <h2>{SECTION_LABELS[activeSection]}</h2>
-                        <small>
-                          旧版对比：<a href="/#/system-old">/#/system-old</a> · <a href="/#/settings-old">/#/settings-old</a>
-                        </small>
                         <div className="system-detail-actions" aria-label="系统操作">
                           <button type="button" title="刷新状态" aria-label="刷新状态" onClick={checkHealth}><RefreshCw size={17} /></button>
                           <button type="button" title="刷新数据库" aria-label="刷新数据库" onClick={loadDbInfo}><Database size={17} /></button>

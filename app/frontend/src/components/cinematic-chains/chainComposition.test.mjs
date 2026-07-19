@@ -145,11 +145,6 @@ test('chain collection indicators follow the real request lifecycle instead of f
   assert.doesNotMatch(legacy, /setTimeout\(\(\) => setCollectingNode\(null\), 30000\)/);
 });
 
-test('industry chains preserve explicit legacy comparison routes', () => {
-  assert.match(app, /path="industry-chains-old"/);
-  assert.match(app, /path="chains-old"/);
-});
-
 test('industry chain routes bypass the retired full-screen curtain', () => {
   const skipExpression = app.match(/const skipInitialCurtain = ([^;]+);/)?.[1] || '';
   const bypassFunction = curtain.match(/function shouldBypassCurtain[\s\S]*?\n\}/)?.[0] || '';

@@ -20,11 +20,6 @@ test('brainstorm composes the finalized KI split workspace and embedded detail',
   assert.match(css, /\.brainstorm-detail-embedded\s*\{[^}]*position:\s*relative/s);
 });
 
-test('brainstorm preserves explicit legacy routes', () => {
-  assert.match(app, /path="brainstorm-old"/);
-  assert.match(app, /path="brainstorm-old\/:id"/);
-});
-
 test('brainstorm bypasses the global curtain on initial and internal navigation', () => {
   assert.match(app, /location\.pathname === '\/brainstorm'/);
   assert.match(app, /location\.pathname\.startsWith\('\/brainstorm\/'\)/);

@@ -231,7 +231,7 @@ test('system Prompt content shares one left alignment axis', async () => {
   assert.match(css, /\.cinematic-system \.system-prompt-content\s*\{[^}]*padding-left:\s*0\s*!important/s);
 });
 
-test('system center preserves operational actions, compact status, and legacy routes', async () => {
+test('system center preserves operational actions and compact status', async () => {
   const page = await readFile(pageUrl, 'utf8');
 
   for (const label of ['刷新状态', '刷新数据库', '检查更新', '保存配置']) {
@@ -240,8 +240,6 @@ test('system center preserves operational actions, compact status, and legacy ro
   assert.match(page, /className="system-shell-status"/);
   assert.match(page, /health\.data\?\.ok\s*\?\s*'在线'/);
   assert.match(page, /health\.data\?\.ok\s*\?\s*'is-online'/);
-  assert.match(page, /\/#\/system-old/);
-  assert.match(page, /\/#\/settings-old/);
 });
 
 test('system shell CSS owns responsive split geometry without restoring the old bottom box', async () => {
