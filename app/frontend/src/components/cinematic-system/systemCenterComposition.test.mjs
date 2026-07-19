@@ -92,7 +92,7 @@ test('system center routes skip initial and navigation curtain animations', asyn
   assert.match(bypassFunction, /pathname === '\/settings'/);
 });
 
-test('system center exposes four observation entries and eight direct control entries', async () => {
+test('system center exposes four observation entries and seven direct control entries', async () => {
   const [page, panels] = await Promise.all([
     readFile(pageUrl, 'utf8'),
     readFile(panelsUrl, 'utf8'),
@@ -103,13 +103,14 @@ test('system center exposes four observation entries and eight direct control en
   const observationItems = page.match(/key: 'observe'[\s\S]*?items:\s*\[([\s\S]*?)\n\s*\],/)?.[1] || '';
   const moduleItems = panels.match(/export const MODULE_CONFIG_ITEMS = \[([\s\S]*?)\n\];/)?.[1] || '';
   assert.equal(observationItems.match(/\{ key:/g)?.length, 4);
-  assert.equal(moduleItems.match(/\{ key:/g)?.length, 7);
+  assert.equal(moduleItems.match(/\{ key:/g)?.length, 6);
   for (const key of ['boundary', 'changelog', 'logs', 'assets', 'base_config']) {
     assert.match(page, new RegExp(`key: '${key}'`));
   }
-  for (const key of ['ingest_pipeline', 'series', 'brainstorm', 'digest_briefing', 'tasks', 'concept', 'knowledge_graph']) {
+  for (const key of ['ingest_pipeline', 'series', 'brainstorm', 'digest_briefing', 'tasks', 'concept']) {
     assert.match(panels, new RegExp(`key: '${key}'`));
   }
+  assert.doesNotMatch(panels, /knowledge_graph|知识图谱|实体深度分析/);
   assert.doesNotMatch(page, /key: 'portrait'/);
   assert.doesNotMatch(page, /key: 'flow'/);
   assert.doesNotMatch(page, /key: 'ai_modules'/);

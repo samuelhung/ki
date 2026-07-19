@@ -30,7 +30,6 @@ export const MODULE_CONFIG_KEYS = [
   'digest_briefing',
   'tasks',
   'concept',
-  'knowledge_graph',
 ] as const;
 
 export const DOC_DETAIL_TABS = [
@@ -45,7 +44,6 @@ export const MODULE_CONFIG_ITEMS = [
   { key: 'digest_briefing', label: '摘要快报', meta: '每日摘要与即时快报', icon: FileText, accent: 'rose' },
   { key: 'tasks', label: '待办事务', meta: '事务判断与行动建议', icon: CheckCircle, accent: 'gold' },
   { key: 'concept', label: '概念沉淀', meta: '概念补全与结构化', icon: BookOpen, accent: 'violet' },
-  { key: 'knowledge_graph', label: '知识图谱', meta: '实体提取与深度分析', icon: Database, accent: 'blue' },
 ] as const;
 
 const FEATURE_VISUALS: Array<{ icon: LucideIcon; accent: string }> = [
@@ -71,7 +69,6 @@ const TASK_NAMES: Record<string, Record<string, string>> = {
   digest_briefing: { digest: '每日摘要', briefing_quick: '即时快报', briefing_daily: '深度日报' },
   tasks: { judge: '事务判断' },
   concept: { auto_complete: 'AI 补全' },
-  knowledge_graph: { entity_insight: '实体深度分析' },
 };
 
 const SUGGESTIONS: Record<string, Record<string, { temp: string; tokens: string }>> = {
@@ -81,7 +78,6 @@ const SUGGESTIONS: Record<string, Record<string, { temp: string; tokens: string 
   digest_briefing: { digest: { temp: '0.2-0.3', tokens: '8192' }, briefing_quick: { temp: '0.2-0.3', tokens: '3072' }, briefing_daily: { temp: '0.2-0.3', tokens: '8192' } },
   tasks: { judge: { temp: '0.3-0.4', tokens: '16384' } },
   concept: { auto_complete: { temp: '0.2-0.3', tokens: '1500' } },
-  knowledge_graph: { entity_insight: { temp: '0.4-0.6', tokens: '2048' } },
 };
 
 const LEVEL_CLASS: Record<string, string> = {

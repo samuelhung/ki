@@ -607,12 +607,6 @@ def _process_ingest(event_id: str, ingest_type: str, content, topic: str, title:
                         logger.info("AI generated title for %s: %s -> %s", event_id, old_title[:40], title)
                     SUMMARIES_DIR.mkdir(parents=True, exist_ok=True)
                     (SUMMARIES_DIR / f"{event_id}.md").write_text(ai_summary or "", encoding="utf-8")
-                    # Store knowledge graph entities
-                    entities = result.get("entities", [])
-                    relations = result.get("relations", [])
-                    if entities:
-                        from .entity_routes import _store_entities
-                        _store_entities(event_id, entities, relations)
                 else:
                     logger.warning("AI summarization returned None for %s — API may be unavailable", event_id)
             except Exception as e:

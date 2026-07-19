@@ -170,21 +170,15 @@ def summarize_transcript(
     title: str = "",
     timeout: int = 180,
     need_title: bool = False,
-    extract_entities: bool = True,
 ) -> dict | None:
-    """Generate a structured Chinese summary + overview + entity graph.
+    """Generate a structured Chinese summary and overview.
 
     Auto-detects book-length content (>50K chars) and switches to a
     detailed book-review template with full-text input and expanded output.
 
-    When extract_entities=True, also extracts knowledge graph entities and
-    relations in a follow-up AI call.
-
     Returns dict with keys:
       - 'summary' (markdown body)
       - 'overview' (narrative)
-      - 'entities' (list of {name, type, summary, category}) when extract_entities=True
-      - 'relations' (list of {source, target, type}) when extract_entities=True
       - 'suggested_title' when need_title=True
     Returns None on failure.
     """
@@ -285,100 +279,12 @@ def summarize_transcript(
     if suggested_title:
         result["suggested_title"] = suggested_title
 
-    # ── Entity extraction for knowledge graph ──
-    ent_count = 0
-    rel_count = 0
-    if extract_entities:
-        entities, relations = _extract_entities(transcript, title, timeout)
-        if entities is not None:
-            result["entities"] = entities
-            result["relations"] = relations
-            ent_count = len(entities)
-            rel_count = len(relations)
-
     logger.info(
-        "Summary + overview generated (%d chars input, %s -> %d chars summary, %d chars overview)%s%s%s",
+        "Summary + overview generated (%d chars input, %s -> %d chars summary, %d chars overview)%s",
         text_len,
         "book" if use_book_template else "video",
         len(summary),
         len(overview),
         f", title={suggested_title}" if suggested_title else "",
-        f", entities={ent_count}" if extract_entities else "",
-        f", relations={rel_count}" if extract_entities else "",
     )
     return result
-
-
-# ── Entity extraction ──
-
-ENTITY_EXTRACTION_PROMPT = """你是知识图谱实体提取器。从文本中提取关键实体和它们之间的关系。
-
-实体类型: person(人物) organization(组织) location(地点) concept(概念) event(事件) theory(理论框架) book(书籍) metric(数据指标)
-
-关系类型: claims(主张) refutes(反驳) extends(继承发展) causes(因果关系) belongs_to(属于) contrasts(对比) cites(引用) synergizes(协同作用)
-
-输出纯 JSON, 包含两个字段:
-{
-  "entities": [
-    {"name": "实体名", "type": "类型", "summary": "<=15字简介", "category": "格局/财富/认知/前瞻"}
-  ],
-  "relations": [
-    {"source": "源实体名", "target": "目标实体名", "type": "关系类型"}
-  ]
-}
-
-要求:
-- entity 的 name 必须与 relations 的 source/target 完全一致
-- 只提取有实质内容的实体(核心人物/关键概念/重要地点组织), 泛泛提及的跳过
-- 实体 5-15 个, 关系 3-8 对
-- category 从 格局/财富/认知/前瞻 中选最贴切的一个
-- 直接用 JSON 输出, 不包裹在 Markdown 代码块中"""
-
-
-def _extract_entities(text: str, title: str, timeout: int) -> tuple:
-    """Extract entities and relations from text using AI.
-
-    Returns (entities_list, relations_list) or (None, None) on failure.
-    """
-    import json as _json
-
-    # Use a smaller slice for entity extraction to keep it fast
-    sample = text[:60000] if len(text) > 60000 else text
-    user_prompt = f"标题: {title}\n\n文本内容:\n{sample}"
-
-    messages = [
-        {"role": "system", "content": ENTITY_EXTRACTION_PROMPT},
-        {"role": "user", "content": user_prompt},
-    ]
-
-    raw = chat(
-        messages,
-        temperature=0.1,
-        max_tokens=2048,
-        timeout=min(timeout, 60),
-        module="ingest_pipeline",
-        task="entity_extraction",
-    )
-    if not raw:
-        return None, None
-
-    try:
-        raw = raw.strip()
-        if raw.startswith("```"):
-            parts = raw.split("```")
-            if len(parts) >= 2:
-                raw = parts[1]
-                if raw.startswith("json"):
-                    raw = raw[4:]
-                raw = raw.strip()
-        data = _json.loads(raw)
-        entities = data.get("entities", [])
-        relations = data.get("relations", [])
-        logger.info(
-            "Entity extraction: %d entities, %d relations from %d chars",
-            len(entities), len(relations), len(sample),
-        )
-        return entities, relations
-    except (_json.JSONDecodeError, KeyError, TypeError) as e:
-        logger.warning("Entity extraction parse error: %s", e)
-        return None, None

@@ -62,9 +62,6 @@ def _defaults() -> dict:
         "concept": {
             "auto_complete": {"temperature": 0.3, "max_tokens": 1500, "thinking": False},
         },
-        "knowledge_graph": {
-            "entity_insight": {"temperature": 0.5, "max_tokens": 2048, "thinking": False},
-        },
         "study": {
             "math_应用题":        {"temperature": 0.3, "max_tokens": 16384, "thinking": False},
             "英语_阅读理解":      {"temperature": 0.3, "max_tokens": 16384, "thinking": False},

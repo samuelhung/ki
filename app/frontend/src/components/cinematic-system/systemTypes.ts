@@ -46,7 +46,6 @@ export interface SystemConfig {
   digest_briefing: ModuleConfig;
   tasks: ModuleConfig;
   concept: ModuleConfig;
-  knowledge_graph: ModuleConfig;
 }
 
 export interface HealthData {
