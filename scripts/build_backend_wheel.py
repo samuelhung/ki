@@ -71,7 +71,8 @@ def verify_wheel(wheel: Path) -> None:
     required = [
         "zhiji_backend/frontend_dist/index.html",
         "three-vendor",
-        "Dashboard",
+        "KiNavigationShell",
+        "CinematicBriefings",
     ]
     missing = [needle for needle in required if not any(needle in name for name in names)]
     if missing:
