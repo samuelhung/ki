@@ -1,7 +1,6 @@
 import json
 import os
 import sys
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -9,14 +8,20 @@ from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-MODULE_HOME = Path(tempfile.mkdtemp(prefix="zhiji-briefing-api-"))
-os.environ["ZHIJI_HOME"] = str(MODULE_HOME)
 
+from zhiji_backend import briefing as briefing_module
 from zhiji_backend.briefing import list_briefings
 from zhiji_backend.db import connect, init_db
 from zhiji_backend.main import app
 
 SQLITE_MAX_INTEGER = 9_223_372_036_854_775_807
+
+
+def test_pytest_bootstrap_uses_isolated_data_home():
+    test_home = Path(os.environ["ZHIJI_HOME"]).resolve()
+
+    assert test_home.exists()
+    assert test_home != (Path.home() / ".zhiji").resolve()
 
 
 @pytest.fixture
@@ -155,6 +160,53 @@ def test_briefing_detail_normalizes_invalid_topic_payloads(client, briefing_id, 
 
     assert response.status_code == 200
     assert response.json()["topics"] == []
+
+
+@pytest.mark.parametrize(
+    ("briefing_id", "topics_json", "expected_topics"),
+    [
+        ("briefing-null-topic", json.dumps([None]), []),
+        (
+            "briefing-null-event",
+            json.dumps([{"topic": "格局", "events": [None]}]),
+            [{"topic": "格局", "events": []}],
+        ),
+        (
+            "briefing-object-events",
+            json.dumps([{"topic": "格局", "events": {"event_id": "event-1"}}]),
+            [{"topic": "格局", "events": []}],
+        ),
+    ],
+)
+def test_briefing_detail_normalizes_nested_topic_payloads(
+    client,
+    briefing_id,
+    topics_json,
+    expected_topics,
+):
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO briefings (id, type, topics_json, events_used)
+            VALUES (?, 'quick', ?, 0)
+            """,
+            (briefing_id, topics_json),
+        )
+
+    response = client.get(f"/api/briefing/{briefing_id}")
+
+    assert response.status_code == 200
+    assert response.json()["topics"] == expected_topics
+
+
+def test_parse_topics_json_does_not_mutate_decoded_input(monkeypatch):
+    decoded = [{"topic": "格局", "events": [{"event_id": "event-1"}]}]
+    monkeypatch.setattr(briefing_module.json, "loads", lambda _: decoded)
+
+    topics = briefing_module._parse_topics_json("ignored")
+    topics[0]["events"][0]["event_id"] = "changed"
+
+    assert decoded == [{"topic": "格局", "events": [{"event_id": "event-1"}]}]
 
 
 def test_briefing_detail_returns_404(client):

@@ -180,12 +180,27 @@ def generate_briefing(briefing_type: str = "quick", limit: int = 80) -> dict[str
     }
 
 
-def _parse_topics_json(topics_json: str) -> list[Any]:
+def _parse_topics_json(topics_json: str) -> list[dict[str, Any]]:
     try:
         topics = json.loads(topics_json)
     except json.JSONDecodeError:
         return []
-    return topics if isinstance(topics, list) else []
+    if not isinstance(topics, list):
+        return []
+
+    normalized_topics: list[dict[str, Any]] = []
+    for topic in topics:
+        if not isinstance(topic, dict):
+            continue
+        normalized_topic = dict(topic)
+        events = topic.get("events")
+        normalized_topic["events"] = (
+            [dict(event) for event in events if isinstance(event, dict)]
+            if isinstance(events, list)
+            else []
+        )
+        normalized_topics.append(normalized_topic)
+    return normalized_topics
 
 
 def latest_briefing(briefing_type: str = "quick") -> dict[str, Any] | None:
