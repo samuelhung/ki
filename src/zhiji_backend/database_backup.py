@@ -23,6 +23,29 @@ def _regular_file_identity(path: Path) -> tuple[int, int]:
     return file_stat.st_dev, file_stat.st_ino
 
 
+def _regular_non_symlink_identity(path: Path) -> tuple[int, int]:
+    link_stat = os.lstat(path)
+    file_stat = os.stat(path)
+    link_identity = link_stat.st_dev, link_stat.st_ino
+    file_identity = file_stat.st_dev, file_stat.st_ino
+    if (
+        not stat.S_ISREG(link_stat.st_mode)
+        or not stat.S_ISREG(file_stat.st_mode)
+        or link_identity != file_identity
+    ):
+        raise RuntimeError("database source must be a regular non-symlink file")
+    return file_identity
+
+
+def _require_source_identity(path: Path, expected: tuple[int, int]) -> None:
+    try:
+        current = _regular_non_symlink_identity(path)
+    except (FileNotFoundError, RuntimeError) as exc:
+        raise RuntimeError("database source identity changed") from exc
+    if current != expected:
+        raise RuntimeError("database source identity changed")
+
+
 def _verify_backup(target: Path) -> None:
     identity = _regular_file_identity(target)
     try:
@@ -64,15 +87,17 @@ def _unlink_if_identity(path: Path, identity: tuple[int, int]) -> None:
 
 def backup_database(source: Path, output_dir: Path) -> Path:
     """Create and verify a timestamped SQLite backup without overwriting files."""
-    requested_source = Path(source).expanduser()
+    requested_source = Path(source).expanduser().absolute()
     try:
+        requested_identity = _regular_non_symlink_identity(requested_source)
         source = requested_source.resolve(strict=True)
     except FileNotFoundError as exc:
         raise FileNotFoundError(
             f"database source does not exist: {requested_source}"
         ) from exc
-    if not stat.S_ISREG(os.stat(source).st_mode):
-        raise FileNotFoundError(f"database source does not exist: {source}")
+    source_identity = _regular_non_symlink_identity(source)
+    if source_identity != requested_identity:
+        raise RuntimeError("database source identity changed during path resolution")
 
     output_dir = Path(output_dir).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -85,9 +110,12 @@ def backup_database(source: Path, output_dir: Path) -> Path:
 
     try:
         with sqlite3.connect(_read_only_uri(source), uri=True) as src:
+            _require_source_identity(source, source_identity)
             with sqlite3.connect(staged_backup) as dst:
                 src.backup(dst)
+            _require_source_identity(source, source_identity)
         _verify_backup(staged_backup)
+        _require_source_identity(source, source_identity)
         staged_identity = _regular_file_identity(staged_backup)
         _publish_backup(staged_backup, target, staged_identity)
     except Exception:

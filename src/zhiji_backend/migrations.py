@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import time
 from pathlib import Path
 from typing import Callable
 
@@ -15,6 +16,12 @@ logger = logging.getLogger(__name__)
 
 MigrationFn = Callable[[sqlite3.Connection], None]
 _registry: list[tuple[str, MigrationFn]] = []
+MIGRATION_BUSY_TIMEOUT_MS = 1000
+MIGRATION_LOCK_RETRY_SECONDS = 60.0
+MIGRATION_LOCK_RETRY_INITIAL_DELAY_SECONDS = 0.05
+MIGRATION_LOCK_RETRY_MAX_DELAY_SECONDS = 1.0
+_monotonic = time.monotonic
+_sleep = time.sleep
 
 
 def register(name: str) -> Callable[[MigrationFn], MigrationFn]:
@@ -34,11 +41,36 @@ def register(name: str) -> Callable[[MigrationFn], MigrationFn]:
     return decorator
 
 
+def _is_lock_error(exc: sqlite3.OperationalError) -> bool:
+    error_code = getattr(exc, "sqlite_errorcode", None)
+    if error_code is not None:
+        return error_code & 0xFF in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED)
+    message = str(exc).lower()
+    return "database is locked" in message or "database table is locked" in message
+
+
+def _begin_immediate_with_retry(conn: sqlite3.Connection) -> None:
+    deadline = _monotonic() + MIGRATION_LOCK_RETRY_SECONDS
+    delay = MIGRATION_LOCK_RETRY_INITIAL_DELAY_SECONDS
+
+    while True:
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            return
+        except sqlite3.OperationalError as exc:
+            conn.rollback()
+            remaining = deadline - _monotonic()
+            if not _is_lock_error(exc) or remaining <= 0:
+                raise
+            _sleep(min(delay, remaining))
+            delay = min(delay * 2, MIGRATION_LOCK_RETRY_MAX_DELAY_SECONDS)
+
+
 def ensure_migrations(db_path: Path) -> None:
     """Apply any pending migrations to the database."""
     conn = sqlite3.connect(str(db_path))
     try:
-        conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute(f"PRAGMA busy_timeout={MIGRATION_BUSY_TIMEOUT_MS}")
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA foreign_keys=ON")
 
@@ -57,7 +89,7 @@ def ensure_migrations(db_path: Path) -> None:
                 continue
             logger.info("Applying migration: %s", name)
             try:
-                conn.execute("BEGIN IMMEDIATE")
+                _begin_immediate_with_retry(conn)
                 if conn.execute(
                     "SELECT 1 FROM _migrations WHERE name = ?", (name,)
                 ).fetchone():

@@ -4,6 +4,7 @@ import os
 import sqlite3
 import stat
 import threading
+import time
 from datetime import datetime
 
 import pytest
@@ -289,12 +290,24 @@ def test_each_migration_and_marker_roll_back_together(tmp_path, monkeypatch):
         ).fetchone()[0] == 0
 
 
-def test_concurrent_migration_runners_execute_body_once(tmp_path, monkeypatch):
+def test_concurrent_migration_runners_retry_lock_and_execute_body_once(
+    tmp_path, monkeypatch
+):
     db_path = tmp_path / "concurrent.sqlite"
     monkeypatch.setattr(migrations, "_registry", [])
     ensure_migrations(db_path)
 
+    body_lock = threading.Lock()
+    body_calls = 0
+    retry_observed = threading.Event()
+
     def counted_migration(conn: sqlite3.Connection) -> None:
+        nonlocal body_calls
+        with body_lock:
+            body_calls += 1
+            call_number = body_calls
+        if call_number == 1:
+            assert retry_observed.wait(timeout=1)
         conn.execute(
             "CREATE TABLE IF NOT EXISTS migration_effects (id INTEGER PRIMARY KEY)"
         )
@@ -319,6 +332,23 @@ def test_concurrent_migration_runners_execute_body_once(tmp_path, monkeypatch):
         kwargs["factory"] = TrackingConnection
         return real_connect(*args, **kwargs)
 
+    real_sleep = time.sleep
+
+    def observe_retry(delay: float) -> None:
+        retry_observed.set()
+        real_sleep(delay)
+
+    monkeypatch.setattr(migrations, "MIGRATION_BUSY_TIMEOUT_MS", 20, raising=False)
+    monkeypatch.setattr(
+        migrations, "MIGRATION_LOCK_RETRY_SECONDS", 1.0, raising=False
+    )
+    monkeypatch.setattr(
+        migrations, "MIGRATION_LOCK_RETRY_INITIAL_DELAY_SECONDS", 0.01, raising=False
+    )
+    monkeypatch.setattr(
+        migrations, "MIGRATION_LOCK_RETRY_MAX_DELAY_SECONDS", 0.05, raising=False
+    )
+    monkeypatch.setattr(migrations, "_sleep", observe_retry, raising=False)
     monkeypatch.setattr(migrations.sqlite3, "connect", tracked_connect)
     start_barrier = threading.Barrier(3)
     errors = []
@@ -339,6 +369,8 @@ def test_concurrent_migration_runners_execute_body_once(tmp_path, monkeypatch):
 
     assert all(not thread.is_alive() for thread in threads)
     assert errors == []
+    assert retry_observed.is_set()
+    assert body_calls == 1
     with real_connect(db_path) as conn:
         assert conn.execute("SELECT COUNT(*) FROM migration_effects").fetchone()[0] == 1
         assert conn.execute(
@@ -412,6 +444,114 @@ def test_backup_database_fails_when_source_is_missing(tmp_path):
 
     with pytest.raises(FileNotFoundError):
         backup_database(tmp_path / "missing.sqlite", tmp_path / "backups")
+
+
+def test_backup_database_rejects_symlink_source(tmp_path):
+    from zhiji_backend.database_backup import backup_database
+
+    real_source = tmp_path / "real.sqlite"
+    source = tmp_path / "source.sqlite"
+    with sqlite3.connect(real_source) as conn:
+        conn.execute("CREATE TABLE records (value TEXT)")
+    source.symlink_to(real_source)
+    output_dir = tmp_path / "backups"
+
+    with pytest.raises(RuntimeError, match="regular non-symlink"):
+        backup_database(source, output_dir)
+
+    assert not output_dir.exists()
+
+
+def test_backup_database_detects_source_replacement_before_connect(
+    tmp_path, monkeypatch
+):
+    from zhiji_backend import database_backup
+
+    source = tmp_path / "source.sqlite"
+    replacement = tmp_path / "replacement.sqlite"
+    with sqlite3.connect(source) as conn:
+        conn.execute("CREATE TABLE records (value TEXT)")
+        conn.execute("INSERT INTO records VALUES ('original')")
+    with sqlite3.connect(replacement) as conn:
+        conn.execute("CREATE TABLE records (value TEXT)")
+        conn.execute("INSERT INTO records VALUES ('replacement')")
+
+    _freeze_backup_timestamp(monkeypatch, database_backup)
+    source_uri = source.resolve().as_uri()
+    real_connect = database_backup.sqlite3.connect
+    swapped = False
+
+    def replace_before_connect(database, *args, **kwargs):
+        nonlocal swapped
+        if not swapped and kwargs.get("uri") and str(database).startswith(source_uri):
+            os.replace(replacement, source)
+            swapped = True
+        return real_connect(database, *args, **kwargs)
+
+    monkeypatch.setattr(database_backup.sqlite3, "connect", replace_before_connect)
+    output_dir = tmp_path / "backups"
+    target = output_dir / "intelligence-pre-cleanup-20260719-123456.sqlite"
+
+    with pytest.raises(RuntimeError, match="source identity changed"):
+        database_backup.backup_database(source, output_dir)
+
+    assert swapped
+    assert not target.exists()
+    assert _backup_temp_dirs(output_dir) == []
+
+
+def test_backup_database_detects_source_replacement_during_backup(
+    tmp_path, monkeypatch
+):
+    from zhiji_backend import database_backup
+
+    source = tmp_path / "source.sqlite"
+    replacement = tmp_path / "replacement.sqlite"
+    with sqlite3.connect(source) as conn:
+        conn.execute("CREATE TABLE records (value TEXT)")
+        conn.execute("INSERT INTO records VALUES ('original')")
+    with sqlite3.connect(replacement) as conn:
+        conn.execute("CREATE TABLE records (value TEXT)")
+        conn.execute("INSERT INTO records VALUES ('replacement')")
+
+    _freeze_backup_timestamp(monkeypatch, database_backup)
+    source_uri = source.resolve().as_uri()
+    real_connect = database_backup.sqlite3.connect
+    swapped = False
+
+    class ReplacingSourceConnection:
+        def __init__(self, conn):
+            self._conn = conn
+
+        def __enter__(self):
+            self._conn.__enter__()
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return self._conn.__exit__(exc_type, exc, traceback)
+
+        def backup(self, target_conn):
+            nonlocal swapped
+            os.replace(replacement, source)
+            swapped = True
+            return self._conn.backup(target_conn)
+
+    def replace_during_backup(database, *args, **kwargs):
+        conn = real_connect(database, *args, **kwargs)
+        if kwargs.get("uri") and str(database).startswith(source_uri):
+            return ReplacingSourceConnection(conn)
+        return conn
+
+    monkeypatch.setattr(database_backup.sqlite3, "connect", replace_during_backup)
+    output_dir = tmp_path / "backups"
+    target = output_dir / "intelligence-pre-cleanup-20260719-123456.sqlite"
+
+    with pytest.raises(RuntimeError, match="source identity changed"):
+        database_backup.backup_database(source, output_dir)
+
+    assert swapped
+    assert not target.exists()
+    assert _backup_temp_dirs(output_dir) == []
 
 
 def test_backup_database_refuses_target_collision(tmp_path, monkeypatch):
