@@ -6,6 +6,24 @@ export function selectBriefingId(items, requestedId) {
   return validItems[0]?.id ?? '';
 }
 
+export function resolveBriefingLoadSelection({
+  items,
+  currentId,
+  pendingPreferredId,
+  succeeded,
+}) {
+  if (!succeeded) {
+    return {
+      selectedId: currentId || '',
+      pendingPreferredId: pendingPreferredId || '',
+    };
+  }
+  return {
+    selectedId: selectBriefingId(items, pendingPreferredId || currentId),
+    pendingPreferredId: '',
+  };
+}
+
 export function briefingMetrics(detail) {
   return {
     typeLabel: detail?.type === 'daily' ? '深度日报' : '即时快报',

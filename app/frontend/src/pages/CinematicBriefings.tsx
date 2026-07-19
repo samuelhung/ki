@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Clock3, ExternalLink, FileText, Loader2, Sparkles, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { apiFetch } from '../api';
-import { briefingMetrics, selectBriefingId } from '../components/cinematic-briefings/briefingWorkspace.mjs';
+import { briefingMetrics, resolveBriefingLoadSelection } from '../components/cinematic-briefings/briefingWorkspace.mjs';
 import { RequestLifecycle } from '../components/ingest/requestLifecycle';
 import SpotlightListRow from '../components/react-bits/SpotlightListRow';
 import KiNavigationShell from './KiNavigationShell';
@@ -70,11 +70,12 @@ export default function CinematicBriefings() {
   const [detailError, setDetailError] = useState('');
   const [generateError, setGenerateError] = useState('');
   const generatingRef = useRef(false);
+  const pendingPreferredIdRef = useRef('');
   const listRequestLifecycleRef = useRef(new RequestLifecycle());
   const detailRequestLifecycleRef = useRef(new RequestLifecycle());
   const generateRequestLifecycleRef = useRef(new RequestLifecycle());
 
-  const loadBriefings = useCallback(async (preferredId = '') => {
+  const loadBriefings = useCallback(async () => {
     const { sequence, signal } = listRequestLifecycleRef.current.start();
     setListLoading(true);
     setListError('');
@@ -90,9 +91,25 @@ export default function CinematicBriefings() {
         });
       if (!listRequestLifecycleRef.current.isCurrent(sequence)) return;
       setItems(nextItems);
-      setSelectedId((current) => selectBriefingId(nextItems, preferredId || current));
+      setSelectedId((current) => {
+        const selection = resolveBriefingLoadSelection({
+          items: nextItems,
+          currentId: current,
+          pendingPreferredId: pendingPreferredIdRef.current,
+          succeeded: true,
+        });
+        pendingPreferredIdRef.current = selection.pendingPreferredId;
+        return selection.selectedId;
+      });
     } catch (reason: any) {
       if (reason?.name === 'AbortError' || !listRequestLifecycleRef.current.isCurrent(sequence)) return;
+      const selection = resolveBriefingLoadSelection({
+        items: [],
+        currentId: '',
+        pendingPreferredId: pendingPreferredIdRef.current,
+        succeeded: false,
+      });
+      pendingPreferredIdRef.current = selection.pendingPreferredId;
       setListError(reason?.message || '快报历史加载失败');
     } finally {
       if (listRequestLifecycleRef.current.isCurrent(sequence)) setListLoading(false);
@@ -157,7 +174,8 @@ export default function CinematicBriefings() {
       if (!response.ok) throw new Error(await responseError(response, '即时快报生成失败'));
       const generated = await response.json();
       if (!generateRequestLifecycleRef.current.isCurrent(sequence) || !generated?.id) return;
-      await loadBriefings(generated.id);
+      pendingPreferredIdRef.current = generated.id;
+      await loadBriefings();
     } catch (reason: any) {
       if (reason?.name === 'AbortError' || !generateRequestLifecycleRef.current.isCurrent(sequence)) return;
       setGenerateError(reason?.message || '即时快报生成失败');
@@ -220,7 +238,7 @@ export default function CinematicBriefings() {
                         </SpotlightListRow>
                       ))}
                       {listLoading && <p className="ki-ingest-pane-state"><Loader2 size={15} className="animate-spin" />快报历史加载中</p>}
-                      {!listLoading && listError && <p className="ki-ingest-pane-state is-error">{listError}<button type="button" onClick={() => void loadBriefings(selectedId)}>重试</button></p>}
+                      {!listLoading && listError && <p className="ki-ingest-pane-state is-error">{listError}<button type="button" onClick={() => void loadBriefings()}>重试</button></p>}
                       {!listLoading && !listError && items.length === 0 && <p className="ki-ingest-pane-state">暂无快报，生成一份即时快报开始整理</p>}
                     </div>
                   </section>

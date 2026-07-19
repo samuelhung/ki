@@ -22,6 +22,32 @@ test('selectBriefingId tolerates malformed history payloads', async () => {
   assert.equal(selectBriefingId([null, { id: '' }, { id: 'briefing-valid' }], ''), 'briefing-valid');
 });
 
+test('pending generated selection survives refresh failure and is consumed by a successful retry', async () => {
+  const { resolveBriefingLoadSelection } = await import(workspaceUrl);
+
+  const failedRefresh = resolveBriefingLoadSelection({
+    items: [{ id: 'briefing-old' }],
+    currentId: 'briefing-old',
+    pendingPreferredId: 'briefing-generated',
+    succeeded: false,
+  });
+  assert.deepEqual(failedRefresh, {
+    selectedId: 'briefing-old',
+    pendingPreferredId: 'briefing-generated',
+  });
+
+  const successfulRetry = resolveBriefingLoadSelection({
+    items: [{ id: 'briefing-generated' }, { id: 'briefing-old' }],
+    currentId: failedRefresh.selectedId,
+    pendingPreferredId: failedRefresh.pendingPreferredId,
+    succeeded: true,
+  });
+  assert.deepEqual(successfulRetry, {
+    selectedId: 'briefing-generated',
+    pendingPreferredId: '',
+  });
+});
+
 test('briefingMetrics reports type, generated time, topic count, and event count', async () => {
   assert.equal(existsSync(workspaceUrl), true, 'briefingWorkspace.mjs should exist');
   const { briefingMetrics } = await import(workspaceUrl);

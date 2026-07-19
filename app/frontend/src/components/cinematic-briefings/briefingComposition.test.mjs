@@ -52,7 +52,18 @@ test('generation posts quick once, disables duplicates, refreshes history, and s
   assert.match(page, /body: JSON\.stringify\(\{ type: 'quick' \}\)/);
   assert.match(page, /if \(generating\) return/);
   assert.match(page, /disabled=\{generating\}/);
-  assert.match(page, /await loadBriefings\(generated\.id\)/);
+  assert.match(page, /pendingPreferredIdRef\.current = generated\.id/);
+  assert.match(page, /await loadBriefings\(\)/);
+});
+
+test('failed generated-history refresh retains the pending preferred id for retry', () => {
+  assert.match(page, /pendingPreferredIdRef = useRef\(''\)/);
+  assert.match(page, /pendingPreferredIdRef\.current = generated\.id/);
+  assert.match(page, /resolveBriefingLoadSelection\(\{/);
+  assert.match(page, /pendingPreferredId: pendingPreferredIdRef\.current/);
+  assert.match(page, /succeeded: false/);
+  assert.match(page, /pendingPreferredIdRef\.current = selection\.pendingPreferredId/);
+  assert.match(page, /onClick=\{\(\) => void loadBriefings\(\)\}/);
 });
 
 test('briefing detail groups topic summaries and navigates referenced event buttons', () => {
