@@ -2,12 +2,7 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app" / "backend"))
-
-from ingest.pipeline import PIPELINES, Step
+from zhiji_backend.ingest.pipeline import PIPELINES, Step
 
 
 def test_douyin_share_pipeline_steps():

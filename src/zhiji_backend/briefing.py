@@ -194,11 +194,15 @@ def _parse_topics_json(topics_json: str) -> list[dict[str, Any]]:
             continue
         normalized_topic = dict(topic)
         events = topic.get("events")
-        normalized_topic["events"] = (
-            [dict(event) for event in events if isinstance(event, dict)]
-            if isinstance(events, list)
-            else []
-        )
+        normalized_events: list[dict[str, Any]] = []
+        if isinstance(events, list):
+            for event in events:
+                if not isinstance(event, dict):
+                    continue
+                event_id = event.get("event_id")
+                if isinstance(event_id, str) and event_id:
+                    normalized_events.append(dict(event))
+        normalized_topic["events"] = normalized_events
         normalized_topics.append(normalized_topic)
     return normalized_topics
 

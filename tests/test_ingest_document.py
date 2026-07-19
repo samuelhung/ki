@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app" / "backend"))
-
-from ingest.document import process_document
+from zhiji_backend.ingest.document import process_document
 
 
 def test_process_text_document(tmp_path: Path):

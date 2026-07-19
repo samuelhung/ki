@@ -199,6 +199,33 @@ def test_briefing_detail_normalizes_nested_topic_payloads(
     assert response.json()["topics"] == expected_topics
 
 
+@pytest.mark.parametrize(
+    ("briefing_id", "event_id"),
+    [
+        ("briefing-list-event-id", ["event-1"]),
+        ("briefing-null-event-id", None),
+        ("briefing-empty-event-id", ""),
+    ],
+)
+def test_briefing_detail_removes_invalid_event_ids(client, briefing_id, event_id):
+    topics_json = json.dumps(
+        [{"topic": "格局", "events": [{"event_id": event_id, "title_cn": "无效事件"}]}]
+    )
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO briefings (id, type, topics_json, events_used)
+            VALUES (?, 'quick', ?, 0)
+            """,
+            (briefing_id, topics_json),
+        )
+
+    response = client.get(f"/api/briefing/{briefing_id}")
+
+    assert response.status_code == 200
+    assert response.json()["topics"] == [{"topic": "格局", "events": []}]
+
+
 def test_parse_topics_json_does_not_mutate_decoded_input(monkeypatch):
     decoded = [{"topic": "格局", "events": [{"event_id": "event-1"}]}]
     monkeypatch.setattr(briefing_module.json, "loads", lambda _: decoded)
