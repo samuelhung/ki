@@ -374,29 +374,41 @@ def validate_named_compatibility(
     violations = []
     allowed_ranges: dict[tuple[str, str], list[tuple[int, int, int, int]]] = {}
     config_path = root / "src/zhiji_backend/config_manager.py"
-    if config_path.exists() and "knowledge_graph" in config_path.read_text(encoding="utf-8"):
+    if config_path.exists():
         tree, errors = parse_python(config_path, "knowledge_graph config cleanup")
         violations.extend(errors)
         if tree is not None:
-            constants = [node for node in ast.walk(tree) if isinstance(node, ast.Constant) and node.value == "knowledge_graph"]
-            parent = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+            functions = [
+                node for node in tree.body
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name == "_normalize_persisted_config"
+            ]
             valid_constants = []
-            for constant in constants:
-                call = parent.get(constant)
-                valid = (
-                    isinstance(call, ast.Call)
-                    and isinstance(call.func, ast.Attribute)
-                    and call.func.attr == "pop"
-                    and isinstance(call.func.value, ast.Name)
-                    and call.func.value.id == "normalized"
-                    and len(call.args) >= 2
-                    and isinstance(call.args[1], ast.Constant)
-                    and call.args[1].value is None
+            if len(functions) == 1:
+                for statement in functions[0].body:
+                    if isinstance(statement, (ast.Return, ast.Raise)):
+                        break
+                    if not isinstance(statement, ast.Expr) or not isinstance(statement.value, ast.Call):
+                        continue
+                    call = statement.value
+                    if (
+                        isinstance(call.func, ast.Attribute)
+                        and call.func.attr == "pop"
+                        and isinstance(call.func.value, ast.Name)
+                        and call.func.value.id == "normalized"
+                        and len(call.args) == 2
+                        and not call.keywords
+                        and isinstance(call.args[0], ast.Constant)
+                        and call.args[0].value == "knowledge_graph"
+                        and isinstance(call.args[1], ast.Constant)
+                        and call.args[1].value is None
+                    ):
+                        valid_constants.append(call.args[0])
+            if len(valid_constants) != 1:
+                violations.append(
+                    "src/zhiji_backend/config_manager.py: knowledge_graph config cleanup requires exactly one "
+                    "reachable normalized.pop('knowledge_graph', None) in _normalize_persisted_config"
                 )
-                if valid:
-                    valid_constants.append(constant)
-            if not valid_constants:
-                violations.append("src/zhiji_backend/config_manager.py: knowledge_graph is allowed only in normalized.pop cleanup")
             else:
                 key = ("src/zhiji_backend/config_manager.py", "retired knowledge graph")
                 allowed_ranges[key] = [node_range(node) for node in valid_constants]
@@ -606,22 +618,89 @@ FRAGMENT_ENTITY = "/api/entities#legacy"
         if sum("retired entity or digest API" in item for item in findings) < 4:
             raise SystemExit("FAIL retired feature scan missed exact or subpath retired APIs")
 
-    with tempfile.TemporaryDirectory(prefix="zhiji-retired-config-scope-") as temp_dir:
+    with tempfile.TemporaryDirectory(prefix="zhiji-retired-config-unrelated-function-") as temp_dir:
         root = Path(temp_dir)
         write(
             root,
             "src/zhiji_backend/config_manager.py",
-            'normalized.pop("knowledge_graph", None)\nACTIVE_MODULE = "knowledge_graph"\n',
+            '''def cleanup_legacy_config(normalized):
+    normalized.pop("knowledge_graph", None)
+
+def _normalize_persisted_config(raw):
+    return dict(raw), False
+''',
         )
-        if not any("retired knowledge graph" in item for item in scan(root)):
-            raise SystemExit("FAIL config path blanket-allowed unrelated knowledge_graph")
+        if not any("knowledge_graph config cleanup" in item for item in scan(root)):
+            raise SystemExit("FAIL config checker accepted an unrelated function decoy")
+
+    with tempfile.TemporaryDirectory(prefix="zhiji-retired-config-if-false-") as temp_dir:
+        root = Path(temp_dir)
+        write(
+            root,
+            "src/zhiji_backend/config_manager.py",
+            '''def _normalize_persisted_config(raw):
+    normalized = dict(raw)
+    if False:
+        normalized.pop("knowledge_graph", None)
+    return normalized, False
+''',
+        )
+        if not any("knowledge_graph config cleanup" in item for item in scan(root)):
+            raise SystemExit("FAIL config checker accepted an unreachable if False decoy")
+
+    with tempfile.TemporaryDirectory(prefix="zhiji-retired-config-three-args-") as temp_dir:
+        root = Path(temp_dir)
+        write(
+            root,
+            "src/zhiji_backend/config_manager.py",
+            '''def _normalize_persisted_config(raw):
+    normalized = dict(raw)
+    normalized.pop("knowledge_graph", None, None)
+    return normalized, False
+''',
+        )
+        if not any("knowledge_graph config cleanup" in item for item in scan(root)):
+            raise SystemExit("FAIL config checker accepted normalized.pop with three arguments")
+
+    with tempfile.TemporaryDirectory(prefix="zhiji-retired-config-formatting-") as temp_dir:
+        root = Path(temp_dir)
+        write(
+            root,
+            "src/zhiji_backend/config_manager.py",
+            '''def _normalize_persisted_config(
+    raw: dict[str, object],
+) -> tuple[dict[str, object], bool]:
+    normalized: dict[str, object] = dict(raw)
+    normalized.pop( 'knowledge_graph' , None )
+    return normalized, False
+''',
+        )
+        if violations := scan(root):
+            raise SystemExit("FAIL harmless config cleanup formatting was rejected:\n" + "\n".join(violations))
+
+    with tempfile.TemporaryDirectory(prefix="zhiji-retired-config-missing-pop-") as temp_dir:
+        root = Path(temp_dir)
+        write(
+            root,
+            "src/zhiji_backend/config_manager.py",
+            '''def _normalize_persisted_config(raw):
+    normalized = dict(raw)
+    return normalized, False
+''',
+        )
+        if not any("knowledge_graph config cleanup" in item for item in scan(root)):
+            raise SystemExit("FAIL config checker accepted a missing real cleanup pop")
 
     with tempfile.TemporaryDirectory(prefix="zhiji-retired-allowlist-") as temp_dir:
         root = Path(temp_dir)
         write(
             root,
             "src/zhiji_backend/config_manager.py",
-            "normalized: dict = {}\nnormalized.pop( 'knowledge_graph' , None )\n",
+            '''def _normalize_persisted_config(raw: dict) -> tuple[dict, bool]:
+    normalized: dict = dict(raw)
+    normalized.pop( 'knowledge_graph' , None )
+    return normalized, False
+''',
         )
         write(
             root,
@@ -665,7 +744,13 @@ EXTRA_ROUTE = "/api/digest/admin"
         write(
             root,
             "src/zhiji_backend/config_manager.py",
-            'normalized.pop("knowledge_graph", None)\nACTIVE_MODULE = "knowledge_graph"\n',
+            '''def _normalize_persisted_config(raw):
+    normalized = dict(raw)
+    normalized.pop("knowledge_graph", None)
+    return normalized, False
+
+ACTIVE_MODULE = "knowledge_graph"
+''',
         )
         write(
             root,
