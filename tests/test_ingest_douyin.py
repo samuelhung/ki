@@ -174,7 +174,7 @@ class TestDownloadVideo:
         resp = MagicMock()
         resp.raise_for_status = lambda: None
         resp.iter_content = lambda chunk_size: [b"fake-video-data"]
-        mock_requests.get.return_value = resp
+        mock_requests.Session.return_value.get.return_value = resp
 
         dest = tmp_path / "video.mp4"
         result = download_video("https://example.com/video.mp4", dest)
