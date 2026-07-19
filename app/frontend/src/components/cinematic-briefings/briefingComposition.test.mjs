@@ -5,6 +5,8 @@ import test from 'node:test';
 const app = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8');
 const shell = readFileSync(new URL('../../pages/KiNavigationShell.tsx', import.meta.url), 'utf8');
 const packageJson = readFileSync(new URL('../../../package.json', import.meta.url), 'utf8');
+const qaCore = readFileSync(new URL('../../../scripts/qa-cinematic-pages-core.mjs', import.meta.url), 'utf8');
+const qaJourney = readFileSync(new URL('../../../scripts/qa-cinematic-user-path.mjs', import.meta.url), 'utf8');
 const pageUrl = new URL('../../pages/CinematicBriefings.tsx', import.meta.url);
 const cssUrl = new URL('../../pages/CinematicBriefings.css', import.meta.url);
 const page = existsSync(pageUrl) ? readFileSync(pageUrl, 'utf8') : '';
@@ -110,4 +112,17 @@ test('cinematic scene test script includes briefing helper and composition tests
   assert.match(packageJson, /src\/components\/cinematic-briefings\/briefingRequests\.test\.mjs/);
   assert.match(packageJson, /src\/components\/cinematic-briefings\/briefingWorkspace\.test\.mjs/);
   assert.match(packageJson, /src\/components\/cinematic-briefings\/briefingComposition\.test\.mjs/);
+});
+
+test('briefing QA waits for loaded history and detail terminal states', () => {
+  for (const qaSource of [qaCore, qaJourney]) {
+    assert.match(qaSource, /快报历史加载中/);
+    assert.match(qaSource, /快报详情加载中/);
+    assert.match(qaSource, /\.briefing-history-row/);
+    assert.match(qaSource, /\.briefing-detail-header/);
+    assert.match(qaSource, /暂无快报/);
+    assert.match(qaSource, /classList\.contains\('is-error'\)/);
+  }
+  assert.match(qaCore, /readyState:\s*'briefings'/);
+  assert.match(qaJourney, /briefing_workspace_ready/);
 });

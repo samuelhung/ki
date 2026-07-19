@@ -136,6 +136,27 @@ async function waitForStableSelectors(cdp, label, selectors, timeoutMs = 20000) 
   `, timeoutMs);
 }
 
+async function waitForBriefingTerminalState(cdp, timeoutMs = 20000) {
+  await waitFor(cdp, 'briefing history and detail terminal state', `
+    const loadingLabels = ['快报历史加载中', '快报详情加载中'];
+    const loadingStates = [...document.querySelectorAll('.ki-ingest-pane-state, .briefing-detail-state')]
+      .filter((element) => loadingLabels.some((label) => element.textContent.includes(label)));
+    if (loadingStates.length) return false;
+
+    const historyState = document.querySelector('.briefing-history-list .ki-ingest-pane-state');
+    const historyReady = Boolean(
+      document.querySelector('.briefing-history-row') ||
+      (historyState && (historyState.classList.contains('is-error') || historyState.textContent.includes('暂无快报')))
+    );
+    const detailState = document.querySelector('.briefing-detail-state');
+    const detailReady = Boolean(
+      document.querySelector('.briefing-detail-header') ||
+      (detailState && (detailState.classList.contains('is-error') || detailState.textContent.includes('选择一份快报查看详情')))
+    );
+    return historyReady && detailReady;
+  `, timeoutMs);
+}
+
 async function navigate(cdp, url, markerSource) {
   await cdp.send('Page.navigate', { url });
   await waitFor(cdp, `page ${url}`, `return document.readyState === 'complete' || document.readyState === 'interactive';`);
@@ -259,12 +280,14 @@ async function runJourneyQa(baseUrl, outDir) {
         return bounds.width > 0 && bounds.height > 0;
       });
     `);
+    await waitForBriefingTerminalState(cdp);
     await waitForStableSelectors(cdp, 'stable briefing workspace', [
       '.ki-shell-briefings',
       '.briefing-split-stage',
       '.briefing-history-pane',
       '.briefing-detail-pane',
     ]);
+    await waitForBriefingTerminalState(cdp);
     assertions.push('briefing_workspace_ready');
 
     if (generateBriefing) {

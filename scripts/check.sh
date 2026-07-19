@@ -21,6 +21,7 @@ run_retired_feature_scan() {
   PYTHONPATH=src "$PYTHON_BIN" - "$ROOT" "$mode" <<'PY'
 from __future__ import annotations
 
+import ast
 import re
 import sys
 import tempfile
@@ -29,20 +30,27 @@ from pathlib import Path
 
 ROOT = Path(sys.argv[1])
 MODE = sys.argv[2]
-SOURCE_SUFFIXES = {".js", ".mjs", ".py", ".ts", ".tsx"}
+SOURCE_SUFFIXES = {".js", ".jsx", ".mjs", ".py", ".ts", ".tsx"}
 SKIPPED_PARTS = {".git", ".venv", "dist", "node_modules", "tmp"}
 RETIRED_TABLES = "event_entities|entity_relations|entities|digests|topics"
+RETIRED_TABLE_SET = {"event_entities", "entity_relations", "entities", "digests", "topics"}
+FRONTEND_PREFIXES = ("app/frontend/src/", "app/frontend/scripts/")
+STRING_LITERAL = re.compile(r"(?P<quote>['\"`])(?P<value>[^'\"`\n]*)(?P=quote)")
+OLD_ROUTE_SEGMENT = re.compile(r"(?:^|/)[^/?#]*-old(?:$|[/?#])", re.IGNORECASE)
+ROUTE_CONTEXT = re.compile(r"(?:\b(?:path|route|href|url)\s*[:=]\s*|\bpath\s*=\s*)$", re.IGNORECASE)
+RETIRED_DEMO_IMPORTS = {
+    "BrandDepthDemo",
+    "BrandLockupDemo",
+    "CircularGalleryDemo",
+    "DockPopupVisualDemo",
+    "DualNavigationDemo",
+}
+
+SQL_IDENTIFIER_QUOTE = r"(?:[\"'`]\s*{name}\s*[\"'`]|\[\s*{name}\s*\]|{name})"
+SQL_SCHEMA = SQL_IDENTIFIER_QUOTE.format(name=r"(?:main|temp)")
+SQL_TABLE = SQL_IDENTIFIER_QUOTE.format(name=rf"(?:{RETIRED_TABLES})")
 
 RULES = (
-    (
-        "retired frontend route or demo import",
-        re.compile(
-            r"today-old|ingest-previous|/demo/|"
-            r"(?:from\s+|import\s*\()\s*['\"][^'\"]*"
-            r"(?:CircularGalleryDemo|DualNavigationDemo|BrandLockupDemo|BrandDepthDemo|DockPopupVisualDemo)"
-            r"(?:\.(?:[cm]?[jt]sx?))?['\"]"
-        ),
-    ),
     (
         "retired entity or digest API/module",
         re.compile(
@@ -55,7 +63,8 @@ RULES = (
     (
         "retired table creation",
         re.compile(
-            rf"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[\"'`\[]?(?:{RETIRED_TABLES})\b",
+            rf"\bCREATE\s+(?:(?:TEMP|TEMPORARY)\s+)?TABLE\s+"
+            rf"(?:IF\s+NOT\s+EXISTS\s+)?(?:{SQL_SCHEMA}\s*\.\s*)?{SQL_TABLE}(?![A-Za-z0-9_])",
             re.IGNORECASE,
         ),
     ),
@@ -74,7 +83,7 @@ def is_test_or_spec(path: Path) -> bool:
 
 
 def source_paths(root: Path):
-    for base in (root / "app/frontend/src", root / "src/zhiji_backend"):
+    for base in (root / "app/frontend/src", root / "app/frontend/scripts", root / "src/zhiji_backend"):
         if not base.exists():
             continue
         for path in base.rglob("*"):
@@ -86,6 +95,24 @@ def source_paths(root: Path):
             if is_test_or_spec(relative):
                 continue
             yield relative, path
+
+
+def retired_frontend_route_matches(relative: Path, source: str):
+    if not relative.as_posix().startswith(FRONTEND_PREFIXES):
+        return
+    for match in STRING_LITERAL.finditer(source):
+        value = match.group("value")
+        basename = value.rsplit("/", 1)[-1].split(".", 1)[0]
+        context = source[max(0, match.start() - 100):match.start()]
+        is_path_literal = value.startswith(("/", "#/")) or bool(ROUTE_CONTEXT.search(context))
+        retired = (
+            "ingest-previous" in value
+            or "/demo/" in value
+            or (is_path_literal and OLD_ROUTE_SEGMENT.search(value))
+            or (basename in RETIRED_DEMO_IMPORTS and not value.endswith(".css"))
+        )
+        if retired:
+            yield match
 
 
 def allowed_match(relative: Path, label: str, match: re.Match[str]) -> bool:
@@ -100,42 +127,189 @@ def allowed_match(relative: Path, label: str, match: re.Match[str]) -> bool:
     return False
 
 
+def parse_python(path: Path, label: str) -> tuple[ast.Module | None, list[str]]:
+    try:
+        return ast.parse(path.read_text(encoding="utf-8")), []
+    except SyntaxError as exc:
+        return None, [f"{path}: cannot validate {label}: {exc.msg}"]
+
+
+def call_name(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return None
+
+
+def decorator_route(node: ast.AST) -> tuple[str, str, bool] | None:
+    if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+        return None
+    if not isinstance(node.func.value, ast.Name) or node.func.value.id != "app":
+        return None
+    if node.func.attr not in {"get", "post"} or not node.args:
+        return None
+    path = node.args[0]
+    if not isinstance(path, ast.Constant) or not isinstance(path.value, str):
+        return None
+    hidden = any(
+        keyword.arg == "include_in_schema"
+        and isinstance(keyword.value, ast.Constant)
+        and keyword.value.value is False
+        for keyword in node.keywords
+    )
+    return node.func.attr, path.value, hidden
+
+
+def returns_json_404(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    returns = [node for node in function.body if isinstance(node, ast.Return)]
+    if len(returns) != 1 or not isinstance(returns[0].value, ast.Call):
+        return False
+    call = returns[0].value
+    if call_name(call.func) != "JSONResponse":
+        return False
+    return any(
+        keyword.arg == "status_code"
+        and isinstance(keyword.value, ast.Constant)
+        and keyword.value.value == 404
+        for keyword in call.keywords
+    )
+
+
 def validate_digest_tombstone(root: Path) -> list[str]:
     main_path = root / "src/zhiji_backend/main.py"
     if not main_path.exists():
         return []
     source = main_path.read_text(encoding="utf-8")
-    if "/api/digest" not in source:
-        return []
-    paths = re.findall(r'["\'](/api/digest[^"\']*)["\']', source)
+    tree, violations = parse_python(main_path, "digest tombstone")
+    if violations:
+        return violations
+    assert tree is not None
+    paths = [
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and node.value.startswith("/api/digest")
+    ]
     if sorted(paths) != ["/api/digest/generate", "/api/digest/latest"]:
         return ["src/zhiji_backend/main.py: only the two retired digest tombstone paths are allowed"]
-    tombstone = re.compile(
-        r'@app\.get\("/api/digest/latest", include_in_schema=False\)\s*'
-        r'@app\.post\("/api/digest/generate", include_in_schema=False\)\s*'
-        r'async def retired_digest_endpoint\(\):\s*'
-        r'"""Keep retired digest API paths from falling through to static mounts\."""\s*'
-        r'return JSONResponse\(\{"detail": "Not Found"\}, status_code=404\)',
-        re.MULTILINE,
-    )
-    if tombstone.search(source):
-        return []
-    return ["src/zhiji_backend/main.py: retired digest paths must remain hidden 404 tombstones"]
+    functions = [
+        node for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "retired_digest_endpoint"
+    ]
+    if len(functions) != 1:
+        return ["src/zhiji_backend/main.py: retired digest paths must use one hidden 404 tombstone"]
+    routes = [decorator_route(node) for node in functions[0].decorator_list]
+    expected_routes = {
+        ("get", "/api/digest/latest", True),
+        ("post", "/api/digest/generate", True),
+    }
+    if set(filter(None, routes)) != expected_routes or not returns_json_404(functions[0]):
+        return ["src/zhiji_backend/main.py: retired digest paths must remain hidden and return 404"]
+    return []
 
 
 def validate_named_compatibility(root: Path) -> list[str]:
-    expected = {
-        "src/zhiji_backend/config_manager.py": 'normalized.pop("knowledge_graph", None)',
-        "src/zhiji_backend/migrations.py": "WHERE module = 'knowledge_graph'",
-    }
     violations = []
-    for relative, expected_line in expected.items():
-        path = root / relative
-        if not path.exists():
-            continue
-        lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if "knowledge_graph" in line]
-        if lines and lines != [expected_line]:
-            violations.append(f"{relative}: knowledge_graph is allowed only in the named cleanup statement")
+    config_path = root / "src/zhiji_backend/config_manager.py"
+    if config_path.exists() and "knowledge_graph" in config_path.read_text(encoding="utf-8"):
+        tree, errors = parse_python(config_path, "knowledge_graph config cleanup")
+        violations.extend(errors)
+        if tree is not None:
+            constants = [node for node in ast.walk(tree) if isinstance(node, ast.Constant) and node.value == "knowledge_graph"]
+            parent = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+            valid = len(constants) == 1
+            if valid:
+                call = parent.get(constants[0])
+                valid = (
+                    isinstance(call, ast.Call)
+                    and isinstance(call.func, ast.Attribute)
+                    and call.func.attr == "pop"
+                    and isinstance(call.func.value, ast.Name)
+                    and call.func.value.id == "normalized"
+                    and len(call.args) >= 2
+                    and isinstance(call.args[1], ast.Constant)
+                    and call.args[1].value is None
+                )
+            if not valid:
+                violations.append("src/zhiji_backend/config_manager.py: knowledge_graph is allowed only in normalized.pop cleanup")
+
+    migration_path = root / "src/zhiji_backend/migrations.py"
+    if migration_path.exists():
+        tree, errors = parse_python(migration_path, "retired feature migration")
+        violations.extend(errors)
+        if tree is not None:
+            migration = next(
+                (
+                    node for node in tree.body
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and any(
+                        isinstance(decorator, ast.Call)
+                        and call_name(decorator.func) == "register"
+                        and decorator.args
+                        and isinstance(decorator.args[0], ast.Constant)
+                        and decorator.args[0].value == "20260719_remove_retired_features"
+                        for decorator in node.decorator_list
+                    )
+                ),
+                None,
+            )
+            table_loop = None
+            if migration is not None:
+                table_loop = next(
+                    (
+                        node for node in migration.body
+                        if isinstance(node, ast.For)
+                        and isinstance(node.target, ast.Name)
+                        and node.target.id == "table_name"
+                        and isinstance(node.iter, (ast.Tuple, ast.List))
+                    ),
+                    None,
+                )
+            table_names = {
+                item.value
+                for item in (table_loop.iter.elts if table_loop is not None else [])
+                if isinstance(item, ast.Constant) and isinstance(item.value, str)
+            }
+            drops_loop_table = bool(
+                table_loop
+                and any(
+                    isinstance(node, ast.Call)
+                    and call_name(node.func) == "execute"
+                    and node.args
+                    and isinstance(node.args[0], ast.JoinedStr)
+                    and "DROP TABLE IF EXISTS" in "".join(
+                        value.value for value in node.args[0].values
+                        if isinstance(value, ast.Constant) and isinstance(value.value, str)
+                    ).upper()
+                    and any(
+                        isinstance(value, ast.FormattedValue)
+                        and isinstance(value.value, ast.Name)
+                        and value.value.id == "table_name"
+                        for value in node.args[0].values
+                    )
+                    for node in ast.walk(table_loop)
+                )
+            )
+            if table_names != RETIRED_TABLE_SET or not drops_loop_table:
+                violations.append("src/zhiji_backend/migrations.py: named migration must drop the exact retired tables")
+            graph_literals = [
+                node.value for node in ast.walk(migration)
+                if isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and "knowledge_graph" in node.value
+            ] if migration is not None else []
+            graph_cleanup = len(graph_literals) == 1 and bool(
+                re.search(
+                    r"DELETE\s+FROM\s+ai_usage\b[\s\S]*\bmodule\s*=\s*['\"]knowledge_graph['\"]",
+                    graph_literals[0],
+                    re.IGNORECASE,
+                )
+            )
+            if not graph_cleanup:
+                violations.append("src/zhiji_backend/migrations.py: knowledge_graph is allowed only in ai_usage cleanup")
     return violations
 
 
@@ -159,6 +333,9 @@ def scan(root: Path) -> list[str]:
         if relative_name in retired_files:
             violations.append(f"{relative_name}: retired business module must not exist")
         source = path.read_text(encoding="utf-8")
+        for match in retired_frontend_route_matches(relative, source):
+            line = source.count("\n", 0, match.start()) + 1
+            violations.append(f"{relative_name}:{line}: retired frontend route or demo import: {match.group(0)!r}")
         for label, pattern in RULES:
             for match in pattern.finditer(source):
                 if allowed_match(relative, label, match):
@@ -196,19 +373,58 @@ def self_test() -> None:
         if missing:
             raise SystemExit(f"FAIL retired feature scan self-test missed: {', '.join(missing)}")
 
+    retired_route_cases = {
+        "app/frontend/src/LegacyRoute.jsx": 'const path = "/reports-old";\n',
+        "app/frontend/src/App.tsx": 'const path = "ingest-previous";\n',
+        "app/frontend/scripts/qa-retired.mjs": 'const route = "/demo/dual-nav";\n',
+        "app/frontend/scripts/qa-retired.js": 'const href = "/#/archive-old";\n',
+    }
+    for relative, source in retired_route_cases.items():
+        with tempfile.TemporaryDirectory(prefix="zhiji-retired-route-") as temp_dir:
+            root = Path(temp_dir)
+            write(root, relative, source)
+            if not any("retired frontend route" in item for item in scan(root)):
+                raise SystemExit(f"FAIL retired feature scan missed route fixture: {relative}")
+
+    retired_table_cases = (
+        'CREATE TEMP TABLE digests (id TEXT);',
+        'create temporary table if not exists main."entities" (id text);',
+        'CREATE TEMPORARY TABLE [temp] . [topics] (id TEXT);',
+        "CrEaTe TaBlE `main` . 'event_entities' (id TEXT);",
+    )
+    for index, source in enumerate(retired_table_cases):
+        with tempfile.TemporaryDirectory(prefix="zhiji-retired-table-") as temp_dir:
+            root = Path(temp_dir)
+            write(root, f"src/zhiji_backend/table_case_{index}.py", source)
+            if not any("retired table creation" in item for item in scan(root)):
+                raise SystemExit(f"FAIL retired feature scan missed table fixture: {source}")
+
     with tempfile.TemporaryDirectory(prefix="zhiji-retired-allowlist-") as temp_dir:
         root = Path(temp_dir)
-        write(root, "src/zhiji_backend/config_manager.py", 'normalized.pop("knowledge_graph", None)\n')
-        write(root, "src/zhiji_backend/migrations.py", "WHERE module = 'knowledge_graph'\n")
+        write(
+            root,
+            "src/zhiji_backend/config_manager.py",
+            "normalized: dict = {}\nnormalized.pop( 'knowledge_graph' , None )\n",
+        )
+        write(
+            root,
+            "src/zhiji_backend/migrations.py",
+            '''@register('20260719_remove_retired_features')
+def remove_retired_features(conn) -> None:
+    for table_name in ('event_entities', 'entity_relations', 'entities', 'digests', 'topics'):
+        conn.execute(f'DROP TABLE IF EXISTS {table_name}')
+    conn.execute("DELETE FROM ai_usage WHERE module = 'knowledge_graph'")
+''',
+        )
         write(root, "app/frontend/src/pages/KiNavigationShell.tsx", "import './DualNavigationDemo.css';\n")
+        write(root, "app/frontend/scripts/qa-method.mjs", 'const method = "clear-old";\n')
         write(
             root,
             "src/zhiji_backend/main.py",
-            '''@app.get("/api/digest/latest", include_in_schema=False)
-@app.post("/api/digest/generate", include_in_schema=False)
-async def retired_digest_endpoint():
-    """Keep retired digest API paths from falling through to static mounts."""
-    return JSONResponse({"detail": "Not Found"}, status_code=404)
+            '''@app.get('/api/digest/latest', include_in_schema = False)
+@app.post('/api/digest/generate', include_in_schema = False)
+async def retired_digest_endpoint() -> JSONResponse:
+    return JSONResponse(content={'detail': 'Not Found'}, status_code = 404)
 ''',
         )
         write(root, "app/frontend/src/App.test.mjs", 'assert.match(app, /\\/demo\\//);\n')
@@ -234,11 +450,47 @@ EXTRA_ROUTE = "/api/digest/admin"
             "src/zhiji_backend/config_manager.py",
             'normalized.pop("knowledge_graph", None)\nACTIVE_MODULE = "knowledge_graph"\n',
         )
+        write(
+            root,
+            "src/zhiji_backend/migrations.py",
+            '''@register("20260719_remove_retired_features")
+def remove_retired_features(conn):
+    for table_name in ("event_entities", "entity_relations", "entities", "digests"):
+        conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+    conn.execute("DELETE FROM ai_usage WHERE module = 'knowledge_graph'")
+''',
+        )
         violations = scan(root)
         if not any("digest" in item for item in violations):
             raise SystemExit("FAIL retired feature self-test allowed digest tombstone drift")
         if not any("knowledge graph" in item or "knowledge_graph" in item for item in violations):
             raise SystemExit("FAIL retired feature self-test allowed knowledge graph drift")
+        if not any("retired tables" in item for item in violations):
+            raise SystemExit("FAIL retired feature self-test allowed migration table drift")
+
+    with tempfile.TemporaryDirectory(prefix="zhiji-retired-tombstone-drift-") as temp_dir:
+        root = Path(temp_dir)
+        write(
+            root,
+            "src/zhiji_backend/main.py",
+            '''@app.get("/api/digest/latest", include_in_schema=False)
+@app.post("/api/digest/generate", include_in_schema=False)
+async def retired_digest_endpoint():
+    return JSONResponse({"detail": "Gone"}, status_code=410)
+''',
+        )
+        if not any("404" in item for item in scan(root)):
+            raise SystemExit("FAIL retired feature self-test allowed non-404 digest tombstone")
+
+    with tempfile.TemporaryDirectory(prefix="zhiji-retired-compatibility-removed-") as temp_dir:
+        root = Path(temp_dir)
+        write(root, "src/zhiji_backend/main.py", "app = object()\n")
+        write(root, "src/zhiji_backend/migrations.py", "def unrelated_migration():\n    return None\n")
+        violations = scan(root)
+        if not any("tombstone" in item or "digest" in item for item in violations):
+            raise SystemExit("FAIL retired feature self-test allowed tombstone removal")
+        if not any("retired tables" in item for item in violations):
+            raise SystemExit("FAIL retired feature self-test allowed cleanup migration removal")
 
     print("retired feature scan self-test ok")
 

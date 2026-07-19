@@ -35,6 +35,7 @@ const pages = [
     path: '/#/briefings',
     markers: ['ki-shell-briefings', 'briefing-split-stage', 'briefing-history-pane', 'briefing-detail-pane'],
     readySelectors: ['.ki-shell-briefings', '.briefing-split-stage', '.briefing-history-pane', '.briefing-detail-pane'],
+    readyState: 'briefings',
     maxScreenshotMs: 8000,
     maxDomDumpMs: 5500,
     expectedCanvasCount: 1,
@@ -659,6 +660,25 @@ async function capturePageWithCdp({ cdp, url, page, screenshotPath }) {
       const markers = ${JSON.stringify(page.markers)};
       if (!markers.every((marker) => html.includes(marker))) return false;
       if (html.includes('加载中...')) return false;
+      const briefingTerminalReady = () => {
+        const loadingLabels = ['快报历史加载中', '快报详情加载中'];
+        const loadingStates = [...document.querySelectorAll('.ki-ingest-pane-state, .briefing-detail-state')]
+          .filter((element) => loadingLabels.some((label) => element.textContent.includes(label)));
+        if (loadingStates.length) return false;
+
+        const historyState = document.querySelector('.briefing-history-list .ki-ingest-pane-state');
+        const historyReady = Boolean(
+          document.querySelector('.briefing-history-row') ||
+          (historyState && (historyState.classList.contains('is-error') || historyState.textContent.includes('暂无快报')))
+        );
+        const detailState = document.querySelector('.briefing-detail-state');
+        const detailReady = Boolean(
+          document.querySelector('.briefing-detail-header') ||
+          (detailState && (detailState.classList.contains('is-error') || detailState.textContent.includes('选择一份快报查看详情')))
+        );
+        return historyReady && detailReady;
+      };
+      if (${JSON.stringify(page.readyState || '')} === 'briefings' && !briefingTerminalReady()) return false;
       const readySelectors = ${JSON.stringify(page.readySelectors || [])};
       if (readySelectors.length) {
         const snapshot = () => readySelectors.map((selector) => {
@@ -679,11 +699,13 @@ async function capturePageWithCdp({ cdp, url, page, screenshotPath }) {
         if (before.some((item) => !item || !item.visible || item.width <= 0 || item.height <= 0)) return false;
         return new Promise((resolveReady) => requestAnimationFrame(() => requestAnimationFrame(() => {
           const after = snapshot();
-          resolveReady(after.every((item, index) => item && before[index] &&
+          const rectanglesStable = after.every((item, index) => item && before[index] &&
             Math.abs(item.top - before[index].top) < 0.5 &&
             Math.abs(item.left - before[index].left) < 0.5 &&
             Math.abs(item.width - before[index].width) < 0.5 &&
-            Math.abs(item.height - before[index].height) < 0.5));
+            Math.abs(item.height - before[index].height) < 0.5);
+          resolveReady(rectanglesStable &&
+            (${JSON.stringify(page.readyState || '')} !== 'briefings' || briefingTerminalReady()));
         })));
       }
       if (${JSON.stringify(page.key)} === 'today') {
