@@ -31,6 +31,16 @@ const pages = [
     virtualTimeBudgetMs: 14000,
   },
   {
+    key: 'briefings',
+    path: '/#/briefings',
+    markers: ['ki-shell-briefings', 'briefing-split-stage', 'briefing-history-pane', 'briefing-detail-pane'],
+    readySelectors: ['.ki-shell-briefings', '.briefing-split-stage', '.briefing-history-pane', '.briefing-detail-pane'],
+    maxScreenshotMs: 8000,
+    maxDomDumpMs: 5500,
+    expectedCanvasCount: 1,
+    virtualTimeBudgetMs: 14000,
+  },
+  {
     key: 'system',
     path: '/#/system',
     markers: ['ki-shell-system', 'ki-ingest-split-stage', 'system-detail-reader', 'system-function-list'],
@@ -649,6 +659,33 @@ async function capturePageWithCdp({ cdp, url, page, screenshotPath }) {
       const markers = ${JSON.stringify(page.markers)};
       if (!markers.every((marker) => html.includes(marker))) return false;
       if (html.includes('加载中...')) return false;
+      const readySelectors = ${JSON.stringify(page.readySelectors || [])};
+      if (readySelectors.length) {
+        const snapshot = () => readySelectors.map((selector) => {
+          const element = document.querySelector(selector);
+          if (!element) return null;
+          const bounds = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          return {
+            selector,
+            top: bounds.top,
+            left: bounds.left,
+            width: bounds.width,
+            height: bounds.height,
+            visible: style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) !== 0,
+          };
+        });
+        const before = snapshot();
+        if (before.some((item) => !item || !item.visible || item.width <= 0 || item.height <= 0)) return false;
+        return new Promise((resolveReady) => requestAnimationFrame(() => requestAnimationFrame(() => {
+          const after = snapshot();
+          resolveReady(after.every((item, index) => item && before[index] &&
+            Math.abs(item.top - before[index].top) < 0.5 &&
+            Math.abs(item.left - before[index].left) < 0.5 &&
+            Math.abs(item.width - before[index].width) < 0.5 &&
+            Math.abs(item.height - before[index].height) < 0.5));
+        })));
+      }
       if (${JSON.stringify(page.key)} === 'today') {
         const intro = document.querySelector('.cinematic-intro-wipe');
         const introStyle = intro ? getComputedStyle(intro) : null;

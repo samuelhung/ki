@@ -6,6 +6,7 @@ import { once } from 'node:events';
 import net from 'node:net';
 
 const chromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const generateBriefing = /^(?:1|true)$/i.test(process.env.ZHIJI_QA_GENERATE_BRIEFING || '');
 
 function pageUrl(baseUrl, path) {
   return new URL(path, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).toString();
@@ -104,6 +105,35 @@ async function waitFor(cdp, label, source, timeoutMs = 15000) {
     await new Promise((resolveWait) => setTimeout(resolveWait, 180));
   }
   throw new Error(`Timed out waiting for ${label}`);
+}
+
+async function waitForStableSelectors(cdp, label, selectors, timeoutMs = 20000) {
+  await waitFor(cdp, label, `
+    const selectors = ${JSON.stringify(selectors)};
+    const snapshot = () => selectors.map((selector) => {
+      const element = document.querySelector(selector);
+      if (!element) return null;
+      const bounds = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return {
+        top: bounds.top,
+        left: bounds.left,
+        width: bounds.width,
+        height: bounds.height,
+        visible: style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) !== 0,
+      };
+    });
+    const before = snapshot();
+    if (before.some((item) => !item || !item.visible || item.width <= 0 || item.height <= 0)) return false;
+    return new Promise((resolveStable) => requestAnimationFrame(() => requestAnimationFrame(() => {
+      const after = snapshot();
+      resolveStable(after.every((item, index) => item && before[index] &&
+        Math.abs(item.top - before[index].top) < 0.5 &&
+        Math.abs(item.left - before[index].left) < 0.5 &&
+        Math.abs(item.width - before[index].width) < 0.5 &&
+        Math.abs(item.height - before[index].height) < 0.5));
+    })));
+  `, timeoutMs);
 }
 
 async function navigate(cdp, url, markerSource) {
@@ -219,6 +249,48 @@ async function runJourneyQa(baseUrl, outDir) {
     }
     assertions.push('detail_tabs_switch');
     screenshots.push(await capture(cdp, resolvedOutDir, 'ingest-journey'));
+
+    await navigate(cdp, pageUrl(baseUrl, '/#/briefings'), `
+      const selectors = ['.ki-shell-briefings', '.briefing-split-stage', '.briefing-history-pane', '.briefing-detail-pane'];
+      return selectors.every((selector) => {
+        const element = document.querySelector(selector);
+        if (!element) return false;
+        const bounds = element.getBoundingClientRect();
+        return bounds.width > 0 && bounds.height > 0;
+      });
+    `);
+    await waitForStableSelectors(cdp, 'stable briefing workspace', [
+      '.ki-shell-briefings',
+      '.briefing-split-stage',
+      '.briefing-history-pane',
+      '.briefing-detail-pane',
+    ]);
+    assertions.push('briefing_workspace_ready');
+
+    if (generateBriefing) {
+      const initialBriefingState = await evaluate(cdp, `
+        const rows = [...document.querySelectorAll('.briefing-history-row')];
+        return { count: rows.length, first: rows[0]?.textContent || '' };
+      `);
+      const generationStarted = await evaluate(cdp, `
+        const button = document.querySelector('.briefing-generate-button');
+        if (!button || button.disabled) return false;
+        button.click();
+        return true;
+      `);
+      if (!generationStarted) throw new Error('Briefing generation button was not available');
+      await waitFor(cdp, 'briefing generation', `
+        const button = document.querySelector('.briefing-generate-button');
+        const rows = [...document.querySelectorAll('.briefing-history-row')];
+        const first = rows[0]?.textContent || '';
+        const changed = rows.length > ${initialBriefingState.count} || first !== ${JSON.stringify(initialBriefingState.first)};
+        return Boolean(button && !button.disabled && !document.querySelector('.briefing-generate-error') && changed);
+      `, 120000);
+      assertions.push('briefing_generation_succeeds');
+    } else {
+      assertions.push('briefing_generation_skipped');
+    }
+    screenshots.push(await capture(cdp, resolvedOutDir, 'briefings-journey'));
 
     await navigate(cdp, pageUrl(baseUrl, '/#/system'), `
       return Boolean(document.querySelector('.system-detail-reader') && document.querySelector('.system-core-box'));

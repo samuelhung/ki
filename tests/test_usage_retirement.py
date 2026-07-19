@@ -1,25 +1,38 @@
+from datetime import datetime, timedelta, timezone
+
 from fastapi.testclient import TestClient
 
 from zhiji_backend.db import connect, init_db
 from zhiji_backend.main import app
+from zhiji_backend.routes import usage_routes
+
+
+BOUNDARY_USAGE_AT = datetime(2026, 7, 19, 16, 30, tzinfo=timezone.utc)
+
+
+def _freeze_usage_day(monkeypatch) -> str:
+    assert BOUNDARY_USAGE_AT.astimezone(timezone(timedelta(hours=8))).date() != BOUNDARY_USAGE_AT.date()
+    monkeypatch.setattr(usage_routes, "_today", lambda: BOUNDARY_USAGE_AT.date().isoformat())
+    return BOUNDARY_USAGE_AT.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def test_usage_dashboard_combines_historical_briefing_rows_and_excludes_digest(
     tmp_path, monkeypatch
 ):
     monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    created_at = _freeze_usage_day(monkeypatch)
     init_db()
     with connect() as conn:
         conn.executemany(
             """
-            INSERT INTO ai_usage (module, task, total_tokens, cost_rmb, status)
-            VALUES (?, ?, ?, ?, 'success')
+            INSERT INTO ai_usage (module, task, total_tokens, cost_rmb, status, created_at)
+            VALUES (?, ?, ?, ?, 'success', ?)
             """,
             [
-                ("digest_briefing", "briefing_quick", 100, 0.01),
-                ("briefing", "briefing_quick", 200, 0.02),
-                ("digest_briefing", "briefing_daily", 300, 0.03),
-                ("digest_briefing", "digest", 999, 9.99),
+                ("digest_briefing", "briefing_quick", 100, 0.01, created_at),
+                ("briefing", "briefing_quick", 200, 0.02, created_at),
+                ("digest_briefing", "briefing_daily", 300, 0.03, created_at),
+                ("digest_briefing", "digest", 999, 9.99, created_at),
             ],
         )
 
@@ -55,18 +68,19 @@ def test_retired_digest_endpoints_return_explicit_404():
 
 def test_usage_retirement_preserves_nulls_and_non_briefing_digest_tasks(tmp_path, monkeypatch):
     monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    created_at = _freeze_usage_day(monkeypatch)
     init_db()
     with connect() as conn:
         conn.executemany(
             """
-            INSERT INTO ai_usage (module, task, total_tokens, status)
-            VALUES (?, ?, ?, 'success')
+            INSERT INTO ai_usage (module, task, total_tokens, status, created_at)
+            VALUES (?, ?, ?, 'success', ?)
             """,
             [
-                (None, None, 10),
-                ("digest_briefing", None, 20),
-                ("series", "digest", 30),
-                ("digest_briefing", "digest", 999),
+                (None, None, 10, created_at),
+                ("digest_briefing", None, 20, created_at),
+                ("series", "digest", 30, created_at),
+                ("digest_briefing", "digest", 999, created_at),
             ],
         )
 
