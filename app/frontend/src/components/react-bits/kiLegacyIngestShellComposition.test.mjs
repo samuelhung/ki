@@ -30,6 +30,7 @@ const embeddedWorkspace = readFileSync(new URL('../ingest/EmbeddedIngestWorkspac
 const embeddedTabs = readFileSync(new URL('../ingest/EmbeddedIngestTopicTabs.tsx', import.meta.url), 'utf8');
 const embeddedRow = readFileSync(new URL('../ingest/EmbeddedIngestRow.tsx', import.meta.url), 'utf8');
 const embeddedConfig = readFileSync(new URL('../ingest/embeddedIngestConfig.ts', import.meta.url), 'utf8');
+const ingestTypes = readFileSync(new URL('../cinematic-ingest/ingestTypes.ts', import.meta.url), 'utf8');
 
 test('home keeps only the Today backdrop and center copy while the previous dashboard remains explicit', () => {
   assert.match(app, /const CinematicHome = lazy/);
@@ -177,7 +178,7 @@ test('formal ingest composes a split list orbit and reusable detail workspace', 
   assert.match(embeddedConfig, /Sparkles/);
   assert.match(embeddedConfig, /Brain/);
   assert.match(embeddedConfig, /Radio/);
-  assert.match(embeddedConfig, /Zap/);
+  assert.doesNotMatch(embeddedConfig, /Zap|briefing|即时快报/);
   assert.match(ingest, /activeEventId/);
   assert.match(ingest, /setActiveEventId\(eventId\)/);
   assert.match(shellCss, /\.ki-ingest-split-stage\s*\{[^}]*grid-template-columns:/s);
@@ -186,10 +187,18 @@ test('formal ingest composes a split list orbit and reusable detail workspace', 
 });
 
 test('topic tabs sit above the list with icon-over-label layout and no dots', () => {
+  const topicConfig = embeddedConfig.match(/export const EMBEDDED_INGEST_TOPICS = \[([\s\S]*?)\] as const;/)?.[1] || '';
+  assert.deepEqual(
+    [...topicConfig.matchAll(/key: '([^']+)'/g)].map((match) => match[1]),
+    ['格局', '财富', '认知', '前瞻'],
+  );
+  assert.match(ingestTypes, /export type TopicKey = '格局' \| '财富' \| '认知' \| '前瞻';/);
+  assert.doesNotMatch(ingest, /briefing|Briefing|即时快报|\/api\/briefing\/latest/);
+  assert.doesNotMatch(embeddedTabs, /briefing|Briefing|即时快报/);
   assert.match(embeddedWorkspace, /<section className="ki-ingest-list-pane"[^>]*>[\s\S]*?<EmbeddedIngestTopicTabs[\s\S]*?\{list\}[\s\S]*?<\/section>/);
-  assert.doesNotMatch(embeddedTabs, /topic\.key !== 'briefing' && <em>/);
   assert.match(shellCss, /\.ki-ingest-list-pane\s*\{[^}]*--ki-list-width:\s*62%/s);
-  assert.match(shellCss, /\.legacy-ingest-root\.is-shell-embedded\.cinematic-ingest \.ki-ingest-topic-orbit\s*\{[^}]*width:\s*var\(--ki-list-width\)[^}]*grid-template-columns:\s*repeat\(5, minmax\(0, 1fr\)\)[^}]*border-bottom:/s);
+  assert.match(shellCss, /\.legacy-ingest-root\.is-shell-embedded\.cinematic-ingest \.ki-ingest-topic-orbit\s*\{[^}]*width:\s*var\(--ki-list-width\)[^}]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)[^}]*border-bottom:/s);
+  assert.doesNotMatch(shellCss, /ki-ingest-briefing/);
   assert.match(shellCss, /\.legacy-ingest-root\.is-shell-embedded\.cinematic-ingest \.ki-ingest-topic-orbit\s*\{[^}]*overflow:\s*visible\s*!important[^}]*scrollbar-width:\s*none/s);
   assert.match(shellCss, /\.ki-spotlight-row\s*\{[^}]*width:\s*var\(--ki-list-width\)/s);
   assert.match(shellCss, /\.legacy-ingest-root\.is-shell-embedded \.ki-ingest-topic-orbit button span\s*\{[^}]*writing-mode:\s*horizontal-tb/s);
@@ -209,7 +218,7 @@ test('compact topic tabs remain fully legible instead of inheriting the dim lega
   assert.match(shellCss, /\.ki-ingest-topic-orbit button\.is-gold:not\(\.is-active\)\s*\{\s*color:\s*rgb\(255 202 74\)\s*!important/);
   assert.match(shellCss, /\.ki-ingest-topic-orbit button\.is-violet:not\(\.is-active\)\s*\{\s*color:\s*rgb\(204 190 255\)\s*!important/);
   assert.match(shellCss, /\.ki-ingest-topic-orbit button\.is-cyan:not\(\.is-active\)\s*\{\s*color:\s*rgb\(121 237 249\)\s*!important/);
-  assert.match(shellCss, /\.ki-ingest-topic-orbit button\.is-rose:not\(\.is-active\)\s*\{\s*color:\s*rgb\(255 132 152\)\s*!important/);
+  assert.doesNotMatch(shellCss, /\.ki-ingest-topic-orbit button\.is-rose/);
 });
 
 test('compact detail tabs preserve the full chinese labels', () => {
@@ -240,7 +249,7 @@ test('spotlight rows use topic icons stay level and match the topic tab width', 
   assert.match(embeddedConfig, /TOPIC_LIST_ICONS/);
   assert.match(embeddedRow, /<TypeIcon/);
   assert.match(embeddedRow, /ki-ingest-list-type-icon/);
-  assert.match(shellCss, /\.ki-ingest-event-list,[\s\S]*?transform:\s*none/s);
+  assert.match(shellCss, /\.ki-ingest-event-list\s*\{[^}]*transform:\s*none/s);
   assert.match(shellCss, /\.ki-spotlight-row\s*\{[^}]*width:\s*var\(--ki-list-width\)[^}]*justify-self:\s*end/s);
   assert.match(shellCss, /\.ki-ingest-list-row\s*\{[^}]*grid-template-columns:\s*24px minmax\(0, 1fr\)/s);
 });
@@ -377,7 +386,7 @@ test('the shared shell exposes a continuous middle-workspace scale', () => {
 test('embedded ingest is constrained by the scaled workspace instead of the viewport', () => {
   assert.match(shellCss, /\.legacy-ingest-root\.is-shell-embedded\s*\{[^}]*height:\s*100%[^}]*min-height:\s*0/s);
   assert.match(shellCss, /\.legacy-ingest-root\.is-shell-embedded > \.flex-1\s*\{[^}]*min-height:\s*0/s);
-  assert.match(shellCss, /\.ki-ingest-event-list,[\s\S]*?\.ki-ingest-briefing-list\s*\{[^}]*flex:\s*1/s);
+  assert.match(shellCss, /\.ki-ingest-event-list\s*\{[^}]*flex:\s*1/s);
 });
 
 test('vite previews keep api requests same-origin so port 5188 uses the 9120 proxy', () => {

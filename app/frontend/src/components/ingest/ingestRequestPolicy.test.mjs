@@ -30,21 +30,19 @@ test('statistics are not reloaded by list navigation', () => {
 test('ingest request families abort stale work and clean up on unmount', () => {
   assert.match(ingest, /statusRequestLifecycleRef/);
   assert.match(ingest, /queueRequestLifecycleRef/);
-  assert.match(ingest, /briefingRequestLifecycleRef/);
   assert.match(ingest, /topicCountRequestLifecycleRef/);
   assert.match(ingest, /abortableDelay\(2000, signal\)/);
   assert.match(ingest, /statusRequestLifecycleRef\.current\.abort\(\)/);
   assert.match(ingest, /queueRequestLifecycleRef\.current\.abort\(\)/);
-  assert.match(ingest, /briefingRequestLifecycleRef\.current\.abort\(\)/);
   assert.match(ingest, /topicCountRequestLifecycleRef\.current\.abort\(\)/);
+  assert.doesNotMatch(ingest, /briefingRequestLifecycleRef|\/api\/briefing\/latest/);
 });
 
 test('queue and supporting requests only commit their latest response', () => {
   assert.match(ingest, /const loadQueue = useCallback/);
-  assert.match(ingest, /const loadBriefing = useCallback/);
   assert.match(ingest, /const loadTopicCounts = useCallback/);
   assert.match(ingest, /queueRequestLifecycleRef\.current\.isCurrent\(sequence\)/);
-  assert.match(ingest, /briefingRequestLifecycleRef\.current\.isCurrent\(sequence\)/);
   assert.match(ingest, /topicCountRequestLifecycleRef\.current\.isCurrent\(sequence\)/);
   assert.match(ingest, /apiFetch\('\/api\/ingest\/queue\?limit=30', \{ signal \}\)/);
+  assert.doesNotMatch(ingest, /loadBriefing|briefingLoading|briefingError|briefingTopics/);
 });

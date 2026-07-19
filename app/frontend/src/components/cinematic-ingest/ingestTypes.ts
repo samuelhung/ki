@@ -89,7 +89,7 @@ export interface BriefingTopic {
   }>;
 }
 
-export type TopicKey = '格局' | '财富' | '认知' | '前瞻' | 'briefing';
+export type TopicKey = '格局' | '财富' | '认知' | '前瞻';
 export type DetailTab = 'body' | 'summary' | 'questions' | 'chain';
 export type IngestCommandMode = 'douyin' | 'file' | 'concept' | 'scan';
 

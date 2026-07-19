@@ -13,7 +13,6 @@ import { ContentDetailPanel } from '../components/cinematic-ingest/ContentDetail
 import { useIngestDetailActions } from '../components/cinematic-ingest/useIngestDetailActions';
 import { useDebouncedValue } from '../components/cinematic-ingest/useDebouncedValue';
 import type { DetailTab, EventItem, TopicKey } from '../components/cinematic-ingest/ingestTypes';
-import { EmbeddedBriefingList, type EmbeddedBriefingTopic } from '../components/ingest/EmbeddedBriefingList';
 import { EmbeddedIngestList } from '../components/ingest/EmbeddedIngestList';
 import { EmbeddedIngestWorkspace } from '../components/ingest/EmbeddedIngestWorkspace';
 import { isLatestRequest, shouldPollQueue } from '../components/ingest/ingestRequestPolicy';
@@ -78,16 +77,13 @@ export default function Ingest({ embedded = false, actionRequest = null }: Inges
   const [stats, setStats] = useState<IngestStats>({ today_submissions: 0, processing: 0, completed: 0 });
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
-  const [historyTab, setHistoryTab] = useState<'格局' | '财富' | '认知' | '前瞻' | 'briefing'>('格局');
+  const [historyTab, setHistoryTab] = useState<TopicKey>('格局');
   const [page, setPage] = useState(1);
   const [totalCounts, setTotalCounts] = useState<Record<string, number>>({ douyin: 0, file: 0 });
   const [search, setSearch] = useState(() => new URLSearchParams(location.search).get('search') || '');
   const debouncedSearch = useDebouncedValue(search, 250);
   const [total, setTotal] = useState(0);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [briefingTopics, setBriefingTopics] = useState<EmbeddedBriefingTopic[]>([]);
-  const [briefingLoading, setBriefingLoading] = useState(false);
-  const [bpExpanded, setBpExpanded] = useState<Set<string>>(new Set());
   const { navigateWithCurtain } = useCurtain();
   const [modalType, setModalType] = useState<'douyin' | 'file' | 'concept' | 'queue' | null>(null);
   const [douyinText, setDouyinText] = useState('');
@@ -116,7 +112,6 @@ export default function Ingest({ embedded = false, actionRequest = null }: Inges
   const [mobileSelectMode, setMobileSelectMode] = useState(false);
   const [topicCounts, setTopicCounts] = useState<Record<string, number>>({});
   const [eventsError, setEventsError] = useState('');
-  const [briefingError, setBriefingError] = useState('');
   const [queueItems, setQueueItems] = useState<any[]>([]);
   const [queueShowAllDone, setQueueShowAllDone] = useState(false);
   const [searchPortalTarget, setSearchPortalTarget] = useState<HTMLElement | null>(null);
@@ -126,12 +121,11 @@ export default function Ingest({ embedded = false, actionRequest = null }: Inges
   const statsRequestLifecycleRef = useRef(new RequestLifecycle());
   const statusRequestLifecycleRef = useRef(new RequestLifecycle());
   const queueRequestLifecycleRef = useRef(new RequestLifecycle());
-  const briefingRequestLifecycleRef = useRef(new RequestLifecycle());
   const topicCountRequestLifecycleRef = useRef(new RequestLifecycle());
   const completionTimerRef = useRef<number | null>(null);
   const details = useIngestDetailActions({
     activeEventId,
-    historyTab: (historyTab === 'briefing' ? '格局' : historyTab) as TopicKey,
+    historyTab,
     setToast,
   });
   const selectedEvent = events.find((event) => event.id === activeEventId) || null;
@@ -155,7 +149,7 @@ export default function Ingest({ embedded = false, actionRequest = null }: Inges
     const requestController = new AbortController();
     eventRequestAbortRef.current = requestController;
     setLoading(true);
-    const sourceId = historyTab === 'briefing' ? '' : 'douyin,user-upload,user-concept';
+    const sourceId = 'douyin,user-upload,user-concept';
     const topicFilter = ['格局', '财富', '认知', '前瞻'].includes(historyTab) ? `&topic=${historyTab}` : '';
     const searchParam = debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : '';
     try {
@@ -211,28 +205,6 @@ export default function Ingest({ embedded = false, actionRequest = null }: Inges
     }
   }, []);
 
-  const loadBriefing = useCallback(async () => {
-    const { sequence, signal } = briefingRequestLifecycleRef.current.start();
-    setBriefingLoading(true);
-    try {
-      const response = await apiFetch('/api/briefing/latest?briefing_type=quick', { signal });
-      if (response.ok) {
-        const data = await response.json();
-        if (briefingRequestLifecycleRef.current.isCurrent(sequence)) {
-          setBriefingError('');
-          setBriefingTopics(data.topics || []);
-        }
-      }
-    } catch (error: any) {
-      if (error?.name !== 'AbortError' && briefingRequestLifecycleRef.current.isCurrent(sequence)) {
-        console.error('加载简报失败', error);
-        setBriefingError(error.message || '加载简报失败');
-      }
-    } finally {
-      if (briefingRequestLifecycleRef.current.isCurrent(sequence)) setBriefingLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     if (mobileSelectMode && selectedIds.length === 0) {
       setMobileSelectMode(false);
@@ -240,12 +212,7 @@ export default function Ingest({ embedded = false, actionRequest = null }: Inges
   }, [selectedIds, mobileSelectMode]);
 
   useEffect(() => {
-    if (historyTab !== 'briefing') {
-      void loadEvents();
-      return;
-    }
-    eventRequestSequenceRef.current += 1;
-    eventRequestAbortRef.current?.abort();
+    void loadEvents();
   }, [historyTab, loadEvents]);
 
   useEffect(() => {
@@ -253,16 +220,7 @@ export default function Ingest({ embedded = false, actionRequest = null }: Inges
   }, [loadStats]);
 
   useEffect(() => {
-    if (historyTab === 'briefing') {
-      void loadBriefing();
-      return;
-    }
-    briefingRequestLifecycleRef.current.abort();
-    setBriefingLoading(false);
-  }, [historyTab, loadBriefing]);
-
-  useEffect(() => {
-    if (!embedded || historyTab === 'briefing') return;
+    if (!embedded) return;
     setActiveEventId((current) => (
       events.some((event) => event.id === current) ? current : events[0]?.id ?? null
     ));
@@ -288,7 +246,6 @@ export default function Ingest({ embedded = false, actionRequest = null }: Inges
     statsRequestLifecycleRef.current.abort();
     statusRequestLifecycleRef.current.abort();
     queueRequestLifecycleRef.current.abort();
-    briefingRequestLifecycleRef.current.abort();
     topicCountRequestLifecycleRef.current.abort();
     if (completionTimerRef.current !== null) window.clearTimeout(completionTimerRef.current);
   }, []);
@@ -567,16 +524,7 @@ export default function Ingest({ embedded = false, actionRequest = null }: Inges
     setPage(1);
   }, []);
 
-  const embeddedList = useMemo(() => historyTab === 'briefing' ? (
-    <EmbeddedBriefingList
-      topics={briefingTopics}
-      activeEventId={activeEventId}
-      loading={briefingLoading}
-      error={briefingError}
-      onRetry={loadBriefing}
-      onSelect={openDetail}
-    />
-  ) : (
+  const embeddedList = useMemo(() => (
     <EmbeddedIngestList
       events={events}
       activeEventId={activeEventId}
@@ -589,14 +537,10 @@ export default function Ingest({ embedded = false, actionRequest = null }: Inges
     />
   ), [
     activeEventId,
-    briefingError,
-    briefingLoading,
-    briefingTopics,
     events,
     eventsError,
     handleDelete,
     historyTab,
-    loadBriefing,
     loadEvents,
     loading,
     openDetail,
@@ -738,7 +682,6 @@ export default function Ingest({ embedded = false, actionRequest = null }: Inges
                   { key: '财富' as const, label: '财富', sub: '经济金融·商业洞察·投资理财', icon: Coins, color: 'text-amber-400' },
                   { key: '认知' as const, label: '认知', sub: '思维模型·方法论·底层逻辑', icon: Brain, color: 'text-purple-400' },
                   { key: '前瞻' as const, label: '前瞻', sub: '科技趋势·未来预判·前沿动态', icon: Telescope, color: 'text-emerald-400' },
-                  { key: 'briefing' as const, label: '即时快报', sub: '全球要闻·智能整理·快速浏览', icon: Zap, color: 'text-rose-400' },
                 ]).map(t => (
                   <button key={t.key} onClick={() => { setHistoryTab(t.key); setPage(1); }}
                     className={`pb-3 text-sm font-medium transition-colors relative whitespace-nowrap flex flex-col items-center ${historyTab === t.key ? 'text-white' : 'text-gray-500 hover:text-gray-300'}`}>
@@ -772,14 +715,13 @@ export default function Ingest({ embedded = false, actionRequest = null }: Inges
             <select
               className="md:hidden w-full px-3 py-2 text-sm bg-[#141518] border border-[#2A2B30] rounded-lg text-white focus:outline-none focus:border-purple-500/50 mb-4"
               value={historyTab}
-              onChange={e => { setHistoryTab(e.target.value as any); setPage(1); }}
+              onChange={e => { setHistoryTab(e.target.value as TopicKey); setPage(1); }}
             >
               {([
                 { key: '格局' as const, label: '格局', sub: '地缘政治·大国博弈·国际关系' },
                 { key: '财富' as const, label: '财富', sub: '经济金融·商业洞察·投资理财' },
                 { key: '认知' as const, label: '认知', sub: '思维模型·方法论·底层逻辑' },
                 { key: '前瞻' as const, label: '前瞻', sub: '科技趋势·未来预判·前沿动态' },
-                { key: 'briefing' as const, label: '即时快报', sub: '全球要闻·智能整理·快速浏览' },
               ]).map(t => (
                 <option key={t.key} value={t.key}>
                   {t.label}{t.sub ? ` · ${t.sub}` : ''}
@@ -787,9 +729,7 @@ export default function Ingest({ embedded = false, actionRequest = null }: Inges
               ))}
             </select>
 
-          {/* Event list — only for history tabs (not briefing) */}
-          {historyTab !== 'briefing' && (
-            <>
+          {/* Event list */}
             {eventsError && (
             <div className="mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
               {eventsError}
@@ -866,72 +806,7 @@ export default function Ingest({ embedded = false, actionRequest = null }: Inges
               ))}
             </div>
           )}
-          </>
-        )}
-
-          {/* Briefing content */}
-          {historyTab === 'briefing' && (
-            <>
-            {briefingError && (
-            <div className="mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-              {briefingError}
-              <button onClick={loadBriefing} className="ml-3 underline hover:text-red-300">重试</button>
-            </div>
-          )}
-            {briefingLoading ? (
-              <div className="bg-[#141518] border border-[#2A2B30] rounded-xl p-8 flex items-center justify-center">
-                <Loader2 size={24} className="animate-spin text-purple-400" />
-              </div>
-            ) : briefingTopics.length === 0 ? (
-              <EmptyState icon="📰" title="暂无新闻简报" hint="请先点击上方「立即采集」获取最新新闻" />
-            ) : (
-              <div className="space-y-3">
-                {briefingTopics.map(topic => (
-                  <div key={topic.topic} className="bg-[#141518] border border-[#2A2B30] rounded-xl">
-                    <button onClick={() => { setBpExpanded(prev => { const next = new Set(prev); if (next.has(topic.topic)) next.delete(topic.topic); else next.add(topic.topic); return next; }); }}
-                      className="w-full flex items-center gap-3 p-4 text-left hover:bg-[#1A1B20] transition-colors rounded-xl">
-                      <ChevronRight size={16} className={`text-gray-500 shrink-0 transition-transform ${bpExpanded.has(topic.topic) ? 'rotate-90' : ''}`} />
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-sm font-semibold text-gray-200">{topic.topic_label || topic.topic}</h3>
-                        {topic.summary && <p className="text-xs text-gray-500 mt-1 line-clamp-2">{topic.summary}</p>}
-                      </div>
-                      <span className="text-xs text-gray-600 shrink-0">{topic.events.length} 条</span>
-                    </button>
-                    {bpExpanded.has(topic.topic) && (
-                      <div className="pl-11 pr-4 pb-3 space-y-1">
-                        {topic.events.map(evt => (
-                          <button key={evt.event_id} onClick={() => openDetail(evt.event_id)}
-                            className="w-full text-left px-3 py-2 rounded-lg hover:bg-[#1A1B20] transition-colors group flex items-center gap-3">
-                            <div className="text-xs text-gray-300 group-hover:text-white leading-relaxed truncate flex-1 min-w-0">
-                              {evt.title_cn || evt.title}
-                            </div>
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              {evt.source_name && <span className="text-[10px] text-gray-600">{evt.source_name}</span>}
-                              {evt.created_at && <span className="text-[10px] text-gray-600">{formatTimeBeijing(evt.created_at)}</span>}
-                              {evt.relevance && (evt.relevance.high > 0 || evt.relevance.medium > 0) && (
-                                <>
-                                  {evt.relevance.high > 0 && (
-                                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">高</span>
-                                  )}
-                                  {evt.relevance.high === 0 && evt.relevance.medium > 0 && (
-                                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">中</span>
-                                  )}
-                                </>
-                              )}
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )
-          }
-          </>
-          )}
-          {/* Search + Batch delete + Pagination — only for history tabs */}
-          {historyTab !== 'briefing' && (
+          {/* Search + Batch delete + Pagination */}
           <div className="flex items-center justify-between mt-4 text-sm">
             <div>
               {selectedIds.length > 0 && (
@@ -948,7 +823,6 @@ export default function Ingest({ embedded = false, actionRequest = null }: Inges
                 className="p-1.5 rounded-lg hover:bg-[#2A2B30] disabled:opacity-30"><ChevronRight size={16} /></button>
             </div>
           </div>
-          )}
             </>
             )}
         </div>
