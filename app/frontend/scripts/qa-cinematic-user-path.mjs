@@ -92,7 +92,7 @@ async function evaluate(cdp, source, timeoutMs = 15000) {
     timeout: timeoutMs,
   });
   if (result.exceptionDetails) {
-    throw new Error(result.exceptionDetails.text || 'Runtime.evaluate failed');
+    throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text || 'Runtime.evaluate failed');
   }
   return result.result?.value;
 }
@@ -138,22 +138,23 @@ async function waitForStableSelectors(cdp, label, selectors, timeoutMs = 20000) 
 
 async function waitForBriefingTerminalState(cdp, timeoutMs = 20000) {
   await waitFor(cdp, 'briefing history and detail terminal state', `
+    const historyError = document.querySelector('.briefing-history-list .ki-ingest-pane-state.is-error');
+    if (historyError) throw new Error('Briefing QA failed: history error: ' + historyError.textContent.trim());
+    const detailError = document.querySelector('.briefing-detail-state.is-error');
+    if (detailError) throw new Error('Briefing QA failed: detail error: ' + detailError.textContent.trim());
+
     const loadingLabels = ['快报历史加载中', '快报详情加载中'];
     const loadingStates = [...document.querySelectorAll('.ki-ingest-pane-state, .briefing-detail-state')]
       .filter((element) => loadingLabels.some((label) => element.textContent.includes(label)));
     if (loadingStates.length) return false;
 
     const historyState = document.querySelector('.briefing-history-list .ki-ingest-pane-state');
-    const historyReady = Boolean(
-      document.querySelector('.briefing-history-row') ||
-      (historyState && (historyState.classList.contains('is-error') || historyState.textContent.includes('暂无快报')))
-    );
+    const historyLoaded = Boolean(document.querySelector('.briefing-history-row'));
+    const historyEmpty = Boolean(historyState && historyState.textContent.includes('暂无快报'));
     const detailState = document.querySelector('.briefing-detail-state');
-    const detailReady = Boolean(
-      document.querySelector('.briefing-detail-header') ||
-      (detailState && (detailState.classList.contains('is-error') || detailState.textContent.includes('选择一份快报查看详情')))
-    );
-    return historyReady && detailReady;
+    const detailLoaded = Boolean(document.querySelector('.briefing-detail-header'));
+    const detailEmpty = Boolean(detailState && detailState.textContent.includes('选择一份快报查看详情'));
+    return (historyLoaded && detailLoaded) || (historyEmpty && detailEmpty);
   `, timeoutMs);
 }
 

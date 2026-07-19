@@ -121,7 +121,12 @@ test('briefing QA waits for loaded history and detail terminal states', () => {
     assert.match(qaSource, /\.briefing-history-row/);
     assert.match(qaSource, /\.briefing-detail-header/);
     assert.match(qaSource, /暂无快报/);
-    assert.match(qaSource, /classList\.contains\('is-error'\)/);
+    assert.match(qaSource, /\.is-error/);
+    assert.match(qaSource, /Briefing QA failed: history error/);
+    assert.match(qaSource, /Briefing QA failed: detail error/);
+    assert.match(qaSource, /historyLoaded\s*&&\s*detailLoaded/);
+    assert.match(qaSource, /historyEmpty\s*&&\s*detailEmpty/);
+    assert.match(qaSource, /exceptionDetails\.exception\?\.description/);
   }
   assert.match(qaCore, /readyState:\s*'briefings'/);
   assert.match(qaJourney, /briefing_workspace_ready/);

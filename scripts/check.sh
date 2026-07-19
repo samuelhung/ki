@@ -34,6 +34,7 @@ SOURCE_SUFFIXES = {".js", ".jsx", ".mjs", ".py", ".ts", ".tsx"}
 SKIPPED_PARTS = {".git", ".venv", "dist", "node_modules", "tmp"}
 RETIRED_TABLES = "event_entities|entity_relations|entities|digests|topics"
 RETIRED_TABLE_SET = {"event_entities", "entity_relations", "entities", "digests", "topics"}
+RETIRED_IDENTIFIER_PATTERN = re.compile(rf"\b(?:{RETIRED_TABLES})\b")
 FRONTEND_PREFIXES = ("app/frontend/src/", "app/frontend/scripts/")
 STRING_LITERAL = re.compile(r"(?P<quote>['\"`])(?P<value>[^'\"`\n]*)(?P=quote)")
 OLD_ROUTE_SEGMENT = re.compile(r"(?:^|/)[^/?#]*-old(?:$|[/?#])", re.IGNORECASE)
@@ -54,7 +55,8 @@ RULES = (
     (
         "retired entity or digest API/module",
         re.compile(
-            r"/api/entities(?:/[A-Za-z0-9_-]+)?|/api/digest(?:/[A-Za-z0-9_-]+)?|"
+            r"/api/entities(?:/[A-Za-z0-9._~-]+)*(?![A-Za-z0-9._~-])|"
+            r"/api/digest(?:/[A-Za-z0-9._~-]+)*(?![A-Za-z0-9._~-])|"
             r"\b(?:entity_routes|digest_routes)\b|"
             r"(?:from|import)\s+(?:zhiji_backend\.)?(?:entity|entities|digest|digest_ai)\b"
         ),
@@ -115,16 +117,21 @@ def retired_frontend_route_matches(relative: Path, source: str):
             yield match
 
 
-def allowed_match(relative: Path, label: str, match: re.Match[str]) -> bool:
+def allowed_match(
+    relative: Path,
+    label: str,
+    match: re.Match[str],
+    line: int,
+    column: int,
+    allowed_ranges: dict[tuple[str, str], list[tuple[int, int, int, int]]],
+) -> bool:
     path = relative.as_posix()
     if label == "retired knowledge graph":
-        return path in {
-            "src/zhiji_backend/config_manager.py",
-            "src/zhiji_backend/migrations.py",
-        }
+        if path == "src/zhiji_backend/config_manager.py":
+            return True
     if label == "retired entity or digest API/module" and path == "src/zhiji_backend/main.py":
         return match.group(0) in {"/api/digest/latest", "/api/digest/generate"}
-    return False
+    return any(position_in_span(line, column, span) for span in allowed_ranges.get((path, label), []))
 
 
 def parse_python(path: Path, label: str) -> tuple[ast.Module | None, list[str]]:
@@ -140,6 +147,130 @@ def call_name(node: ast.AST) -> str | None:
     if isinstance(node, ast.Attribute):
         return node.attr
     return None
+
+
+def node_range(node: ast.AST) -> tuple[int, int, int, int]:
+    return (
+        node.lineno,
+        node.col_offset,
+        getattr(node, "end_lineno", node.lineno),
+        getattr(node, "end_col_offset", node.col_offset + 1),
+    )
+
+
+def position_in_span(line: int, column: int, span: tuple[int, int, int, int]) -> bool:
+    start_line, start_column, end_line, end_column = span
+    if line < start_line or line > end_line:
+        return False
+    if line == start_line and column < start_column:
+        return False
+    if line == end_line and column >= end_column:
+        return False
+    return True
+
+
+def assignment_map(nodes: list[ast.stmt]) -> dict[str, ast.AST]:
+    assignments = {}
+    for node in nodes:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    assignments[target.id] = node.value
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.value is not None:
+            assignments[node.target.id] = node.value
+    return assignments
+
+
+def resolve_reference(
+    node: ast.AST,
+    function_assignments: dict[str, ast.AST],
+    module_assignments: dict[str, ast.AST],
+    seen: set[str] | None = None,
+) -> ast.AST:
+    if not isinstance(node, ast.Name):
+        return node
+    seen = set() if seen is None else set(seen)
+    if node.id in seen:
+        return node
+    seen.add(node.id)
+    target = function_assignments.get(node.id, module_assignments.get(node.id))
+    if target is None:
+        return node
+    return resolve_reference(target, function_assignments, module_assignments, seen)
+
+
+def resolve_string(
+    node: ast.AST,
+    function_assignments: dict[str, ast.AST],
+    module_assignments: dict[str, ast.AST],
+) -> tuple[str | None, list[ast.Constant]]:
+    resolved = resolve_reference(node, function_assignments, module_assignments)
+    if isinstance(resolved, ast.Constant) and isinstance(resolved.value, str):
+        return resolved.value, [resolved]
+    if isinstance(resolved, ast.BinOp) and isinstance(resolved.op, ast.Add):
+        left, left_nodes = resolve_string(resolved.left, function_assignments, module_assignments)
+        right, right_nodes = resolve_string(resolved.right, function_assignments, module_assignments)
+        if left is not None and right is not None:
+            return left + right, left_nodes + right_nodes
+    return None, []
+
+
+def resolve_string_set(
+    node: ast.AST,
+    function_assignments: dict[str, ast.AST],
+    module_assignments: dict[str, ast.AST],
+) -> tuple[set[str] | None, list[ast.Constant]]:
+    resolved = resolve_reference(node, function_assignments, module_assignments)
+    if isinstance(resolved, (ast.Tuple, ast.List, ast.Set)):
+        values = set()
+        constants = []
+        for item in resolved.elts:
+            value, value_nodes = resolve_string(item, function_assignments, module_assignments)
+            if value is None:
+                return None, []
+            values.add(value)
+            constants.extend(value_nodes)
+        return values, constants
+    if isinstance(resolved, ast.BinOp) and isinstance(resolved.op, ast.Add):
+        left, left_nodes = resolve_string_set(resolved.left, function_assignments, module_assignments)
+        right, right_nodes = resolve_string_set(resolved.right, function_assignments, module_assignments)
+        if left is not None and right is not None:
+            return left | right, left_nodes + right_nodes
+    return None, []
+
+
+def is_drop_template(
+    node: ast.AST,
+    loop_variable: str,
+    function_assignments: dict[str, ast.AST],
+    module_assignments: dict[str, ast.AST],
+) -> bool:
+    resolved = resolve_reference(node, function_assignments, module_assignments)
+    if isinstance(resolved, ast.JoinedStr):
+        static = "".join(
+            value.value for value in resolved.values
+            if isinstance(value, ast.Constant) and isinstance(value.value, str)
+        ).upper()
+        return "DROP TABLE IF EXISTS" in static and any(
+            isinstance(value, ast.FormattedValue)
+            and isinstance(value.value, ast.Name)
+            and value.value.id == loop_variable
+            for value in resolved.values
+        )
+    if isinstance(resolved, ast.Call) and isinstance(resolved.func, ast.Attribute) and resolved.func.attr == "format":
+        template, _constants = resolve_string(resolved.func.value, function_assignments, module_assignments)
+        return bool(
+            template
+            and "DROP TABLE IF EXISTS" in template.upper()
+            and resolved.args
+            and isinstance(resolved.args[0], ast.Name)
+            and resolved.args[0].id == loop_variable
+        )
+    return False
+
+
+def is_retired_api_path(value: str, base: str) -> bool:
+    return value == base or value.startswith(f"{base}/")
 
 
 def decorator_route(node: ast.AST) -> tuple[str, str, bool] | None:
@@ -190,7 +321,7 @@ def validate_digest_tombstone(root: Path) -> list[str]:
         for node in ast.walk(tree)
         if isinstance(node, ast.Constant)
         and isinstance(node.value, str)
-        and node.value.startswith("/api/digest")
+        and is_retired_api_path(node.value, "/api/digest")
     ]
     if sorted(paths) != ["/api/digest/generate", "/api/digest/latest"]:
         return ["src/zhiji_backend/main.py: only the two retired digest tombstone paths are allowed"]
@@ -211,8 +342,11 @@ def validate_digest_tombstone(root: Path) -> list[str]:
     return []
 
 
-def validate_named_compatibility(root: Path) -> list[str]:
+def validate_named_compatibility(
+    root: Path,
+) -> tuple[list[str], dict[tuple[str, str], list[tuple[int, int, int, int]]]]:
     violations = []
+    allowed_ranges: dict[tuple[str, str], list[tuple[int, int, int, int]]] = {}
     config_path = root / "src/zhiji_backend/config_manager.py"
     if config_path.exists() and "knowledge_graph" in config_path.read_text(encoding="utf-8"):
         tree, errors = parse_python(config_path, "knowledge_graph config cleanup")
@@ -241,6 +375,7 @@ def validate_named_compatibility(root: Path) -> list[str]:
         tree, errors = parse_python(migration_path, "retired feature migration")
         violations.extend(errors)
         if tree is not None:
+            module_assignments = assignment_map(tree.body)
             migration = next(
                 (
                     node for node in tree.body
@@ -256,65 +391,70 @@ def validate_named_compatibility(root: Path) -> list[str]:
                 ),
                 None,
             )
+            function_assignments = assignment_map(migration.body) if migration is not None else {}
             table_loop = None
+            table_names = None
+            table_constants = []
             if migration is not None:
-                table_loop = next(
-                    (
-                        node for node in migration.body
-                        if isinstance(node, ast.For)
-                        and isinstance(node.target, ast.Name)
-                        and node.target.id == "table_name"
-                        and isinstance(node.iter, (ast.Tuple, ast.List))
-                    ),
-                    None,
-                )
-            table_names = {
-                item.value
-                for item in (table_loop.iter.elts if table_loop is not None else [])
-                if isinstance(item, ast.Constant) and isinstance(item.value, str)
-            }
+                for candidate in (node for node in ast.walk(migration) if isinstance(node, ast.For)):
+                    if not isinstance(candidate.target, ast.Name):
+                        continue
+                    candidate_names, candidate_constants = resolve_string_set(
+                        candidate.iter,
+                        function_assignments,
+                        module_assignments,
+                    )
+                    if candidate_names == RETIRED_TABLE_SET:
+                        table_loop = candidate
+                        table_names = candidate_names
+                        table_constants = candidate_constants
+                        break
             drops_loop_table = bool(
                 table_loop
                 and any(
                     isinstance(node, ast.Call)
                     and call_name(node.func) == "execute"
                     and node.args
-                    and isinstance(node.args[0], ast.JoinedStr)
-                    and "DROP TABLE IF EXISTS" in "".join(
-                        value.value for value in node.args[0].values
-                        if isinstance(value, ast.Constant) and isinstance(value.value, str)
-                    ).upper()
-                    and any(
-                        isinstance(value, ast.FormattedValue)
-                        and isinstance(value.value, ast.Name)
-                        and value.value.id == "table_name"
-                        for value in node.args[0].values
+                    and is_drop_template(
+                        node.args[0],
+                        table_loop.target.id,
+                        function_assignments,
+                        module_assignments,
                     )
                     for node in ast.walk(table_loop)
                 )
             )
             if table_names != RETIRED_TABLE_SET or not drops_loop_table:
                 violations.append("src/zhiji_backend/migrations.py: named migration must drop the exact retired tables")
-            graph_literals = [
-                node.value for node in ast.walk(migration)
-                if isinstance(node, ast.Constant)
-                and isinstance(node.value, str)
-                and "knowledge_graph" in node.value
-            ] if migration is not None else []
-            graph_cleanup = len(graph_literals) == 1 and bool(
-                re.search(
-                    r"DELETE\s+FROM\s+ai_usage\b[\s\S]*\bmodule\s*=\s*['\"]knowledge_graph['\"]",
-                    graph_literals[0],
-                    re.IGNORECASE,
-                )
-            )
+            graph_cleanup = False
+            graph_nodes = []
+            if migration is not None:
+                for call in (
+                    node for node in ast.walk(migration)
+                    if isinstance(node, ast.Call) and call_name(node.func) == "execute" and node.args
+                ):
+                    sql, sql_nodes = resolve_string(call.args[0], function_assignments, module_assignments)
+                    if sql and re.search(
+                        r"DELETE\s+FROM\s+ai_usage\b[\s\S]*\bmodule\s*=\s*['\"]knowledge_graph['\"](?![A-Za-z0-9_])",
+                        sql,
+                        re.IGNORECASE,
+                    ):
+                        graph_cleanup = True
+                        graph_nodes.extend(node for node in sql_nodes if "knowledge_graph" in node.value)
             if not graph_cleanup:
                 violations.append("src/zhiji_backend/migrations.py: knowledge_graph is allowed only in ai_usage cleanup")
-    return violations
+            if graph_cleanup:
+                key = ("src/zhiji_backend/migrations.py", "retired knowledge graph")
+                allowed_ranges[key] = [node_range(node) for node in graph_nodes]
+            if table_names == RETIRED_TABLE_SET and drops_loop_table:
+                key = ("src/zhiji_backend/migrations.py", "retired persistence identifier")
+                allowed_ranges[key] = [node_range(node) for node in table_constants]
+    return violations, allowed_ranges
 
 
 def scan(root: Path) -> list[str]:
-    violations = validate_digest_tombstone(root) + validate_named_compatibility(root)
+    compatibility_violations, allowed_ranges = validate_named_compatibility(root)
+    violations = validate_digest_tombstone(root) + compatibility_violations
     retired_files = {
         "app/frontend/src/pages/BrandDepthDemo.tsx",
         "app/frontend/src/pages/BrandLockupDemo.tsx",
@@ -338,9 +478,20 @@ def scan(root: Path) -> list[str]:
             violations.append(f"{relative_name}:{line}: retired frontend route or demo import: {match.group(0)!r}")
         for label, pattern in RULES:
             for match in pattern.finditer(source):
-                if allowed_match(relative, label, match):
-                    continue
                 line = source.count("\n", 0, match.start()) + 1
+                line_start = source.rfind("\n", 0, match.start()) + 1
+                column = match.start() - line_start
+                if allowed_match(relative, label, match, line, column, allowed_ranges):
+                    continue
+                violations.append(f"{relative_name}:{line}: {label}: {match.group(0)!r}")
+        if relative_name == "src/zhiji_backend/migrations.py":
+            label = "retired persistence identifier"
+            for match in RETIRED_IDENTIFIER_PATTERN.finditer(source):
+                line = source.count("\n", 0, match.start()) + 1
+                line_start = source.rfind("\n", 0, match.start()) + 1
+                column = match.start() - line_start
+                if allowed_match(relative, label, match, line, column, allowed_ranges):
+                    continue
                 violations.append(f"{relative_name}:{line}: {label}: {match.group(0)!r}")
     return violations
 
@@ -398,6 +549,24 @@ def self_test() -> None:
             write(root, f"src/zhiji_backend/table_case_{index}.py", source)
             if not any("retired table creation" in item for item in scan(root)):
                 raise SystemExit(f"FAIL retired feature scan missed table fixture: {source}")
+
+    with tempfile.TemporaryDirectory(prefix="zhiji-retired-api-boundary-") as temp_dir:
+        root = Path(temp_dir)
+        write(
+            root,
+            "src/zhiji_backend/api_names.py",
+            'NEW_DIGEST = "/api/digests-v2"\nNEW_ENTITY = "/api/entities-v2"\n',
+        )
+        if any("retired entity or digest API" in item for item in scan(root)):
+            raise SystemExit("FAIL retired feature scan rejected non-retired API prefixes")
+        write(
+            root,
+            "src/zhiji_backend/retired_api_names.py",
+            'OLD_DIGEST = "/api/digest"\nOLD_ENTITY = "/api/entities/by-id"\n',
+        )
+        findings = scan(root)
+        if sum("retired entity or digest API" in item for item in findings) < 2:
+            raise SystemExit("FAIL retired feature scan missed exact or subpath retired APIs")
 
     with tempfile.TemporaryDirectory(prefix="zhiji-retired-allowlist-") as temp_dir:
         root = Path(temp_dir)
@@ -467,6 +636,69 @@ def remove_retired_features(conn):
             raise SystemExit("FAIL retired feature self-test allowed knowledge graph drift")
         if not any("retired tables" in item for item in violations):
             raise SystemExit("FAIL retired feature self-test allowed migration table drift")
+
+    with tempfile.TemporaryDirectory(prefix="zhiji-retired-migration-equivalent-") as temp_dir:
+        root = Path(temp_dir)
+        write(
+            root,
+            "src/zhiji_backend/migrations.py",
+            '''RETIRED_TABLE_NAMES = ("event_entities", "entity_relations", "entities", "digests", "topics")
+DROP_RETIRED_TABLE = "DROP TABLE IF EXISTS {}"
+RETIRED_USAGE_CLEANUP = "DELETE FROM ai_usage WHERE module = 'knowledge_graph'"
+
+@register("20260719_remove_retired_features")
+def remove_retired_features(conn):
+    tables = RETIRED_TABLE_NAMES
+    for table_name in tables:
+        conn.execute(DROP_RETIRED_TABLE.format(table_name))
+    conn.execute(RETIRED_USAGE_CLEANUP)
+''',
+        )
+        if violations := scan(root):
+            raise SystemExit("FAIL equivalent retired migration was rejected:\n" + "\n".join(violations))
+
+    with tempfile.TemporaryDirectory(prefix="zhiji-retired-migration-scope-") as temp_dir:
+        root = Path(temp_dir)
+        write(
+            root,
+            "src/zhiji_backend/migrations.py",
+            '''RETIRED_TABLE_NAMES = ("event_entities", "entity_relations", "entities", "digests", "topics")
+RETIRED_USAGE_CLEANUP = "DELETE FROM ai_usage WHERE module = 'knowledge_graph'"
+ACTIVE_MODULE = "knowledge_graph"
+ACTIVE_TABLE = "entities"
+
+@register("20260719_remove_retired_features")
+def remove_retired_features(conn):
+    for table_name in RETIRED_TABLE_NAMES:
+        conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+    conn.execute(RETIRED_USAGE_CLEANUP)
+''',
+        )
+        if not any("retired knowledge graph" in item for item in scan(root)):
+            raise SystemExit("FAIL migration path blanket-allowed unrelated knowledge_graph")
+        if not any("retired persistence identifier" in item for item in scan(root)):
+            raise SystemExit("FAIL migration path blanket-allowed unrelated retired table identifier")
+
+    with tempfile.TemporaryDirectory(prefix="zhiji-retired-migration-equivalent-drift-") as temp_dir:
+        root = Path(temp_dir)
+        write(
+            root,
+            "src/zhiji_backend/migrations.py",
+            '''RETIRED_TABLE_NAMES = ("event_entities", "entity_relations", "entities", "digests")
+RETIRED_USAGE_CLEANUP = "DELETE FROM ai_usage WHERE module = 'knowledge_graph_archive'"
+
+@register("20260719_remove_retired_features")
+def remove_retired_features(conn):
+    for table_name in RETIRED_TABLE_NAMES:
+        conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+    conn.execute(RETIRED_USAGE_CLEANUP)
+''',
+        )
+        findings = scan(root)
+        if not any("retired tables" in item for item in findings):
+            raise SystemExit("FAIL equivalent migration drift missed retired table set")
+        if not any("ai_usage cleanup" in item for item in findings):
+            raise SystemExit("FAIL equivalent migration drift missed usage cleanup")
 
     with tempfile.TemporaryDirectory(prefix="zhiji-retired-tombstone-drift-") as temp_dir:
         root = Path(temp_dir)

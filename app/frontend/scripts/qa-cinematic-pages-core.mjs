@@ -273,7 +273,7 @@ async function evaluate(cdp, source, timeoutMs = 15000) {
     timeout: timeoutMs,
   });
   if (result.exceptionDetails) {
-    throw new Error(result.exceptionDetails.text || 'Runtime.evaluate failed');
+    throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text || 'Runtime.evaluate failed');
   }
   return result.result?.value;
 }
@@ -661,22 +661,23 @@ async function capturePageWithCdp({ cdp, url, page, screenshotPath }) {
       if (!markers.every((marker) => html.includes(marker))) return false;
       if (html.includes('加载中...')) return false;
       const briefingTerminalReady = () => {
+        const historyError = document.querySelector('.briefing-history-list .ki-ingest-pane-state.is-error');
+        if (historyError) throw new Error('Briefing QA failed: history error: ' + historyError.textContent.trim());
+        const detailError = document.querySelector('.briefing-detail-state.is-error');
+        if (detailError) throw new Error('Briefing QA failed: detail error: ' + detailError.textContent.trim());
+
         const loadingLabels = ['快报历史加载中', '快报详情加载中'];
         const loadingStates = [...document.querySelectorAll('.ki-ingest-pane-state, .briefing-detail-state')]
           .filter((element) => loadingLabels.some((label) => element.textContent.includes(label)));
         if (loadingStates.length) return false;
 
         const historyState = document.querySelector('.briefing-history-list .ki-ingest-pane-state');
-        const historyReady = Boolean(
-          document.querySelector('.briefing-history-row') ||
-          (historyState && (historyState.classList.contains('is-error') || historyState.textContent.includes('暂无快报')))
-        );
+        const historyLoaded = Boolean(document.querySelector('.briefing-history-row'));
+        const historyEmpty = Boolean(historyState && historyState.textContent.includes('暂无快报'));
         const detailState = document.querySelector('.briefing-detail-state');
-        const detailReady = Boolean(
-          document.querySelector('.briefing-detail-header') ||
-          (detailState && (detailState.classList.contains('is-error') || detailState.textContent.includes('选择一份快报查看详情')))
-        );
-        return historyReady && detailReady;
+        const detailLoaded = Boolean(document.querySelector('.briefing-detail-header'));
+        const detailEmpty = Boolean(detailState && detailState.textContent.includes('选择一份快报查看详情'));
+        return (historyLoaded && detailLoaded) || (historyEmpty && detailEmpty);
       };
       if (${JSON.stringify(page.readyState || '')} === 'briefings' && !briefingTerminalReady()) return false;
       const readySelectors = ${JSON.stringify(page.readySelectors || [])};
@@ -697,15 +698,19 @@ async function capturePageWithCdp({ cdp, url, page, screenshotPath }) {
         });
         const before = snapshot();
         if (before.some((item) => !item || !item.visible || item.width <= 0 || item.height <= 0)) return false;
-        return new Promise((resolveReady) => requestAnimationFrame(() => requestAnimationFrame(() => {
-          const after = snapshot();
-          const rectanglesStable = after.every((item, index) => item && before[index] &&
-            Math.abs(item.top - before[index].top) < 0.5 &&
-            Math.abs(item.left - before[index].left) < 0.5 &&
-            Math.abs(item.width - before[index].width) < 0.5 &&
-            Math.abs(item.height - before[index].height) < 0.5);
-          resolveReady(rectanglesStable &&
-            (${JSON.stringify(page.readyState || '')} !== 'briefings' || briefingTerminalReady()));
+        return new Promise((resolveReady, rejectReady) => requestAnimationFrame(() => requestAnimationFrame(() => {
+          try {
+            const after = snapshot();
+            const rectanglesStable = after.every((item, index) => item && before[index] &&
+              Math.abs(item.top - before[index].top) < 0.5 &&
+              Math.abs(item.left - before[index].left) < 0.5 &&
+              Math.abs(item.width - before[index].width) < 0.5 &&
+              Math.abs(item.height - before[index].height) < 0.5);
+            resolveReady(rectanglesStable &&
+              (${JSON.stringify(page.readyState || '')} !== 'briefings' || briefingTerminalReady()));
+          } catch (error) {
+            rejectReady(error);
+          }
         })));
       }
       if (${JSON.stringify(page.key)} === 'today') {
