@@ -315,3 +315,73 @@ def test_briefing_generate_returns_controlled_error_for_malformed_ai_shape(
     assert response.json()["detail"] == f"AI generated invalid JSON: {detail}"
     with connect() as conn:
         assert conn.execute("SELECT COUNT(*) FROM briefings").fetchone()[0] == 0
+
+
+def test_briefing_generate_filters_invalid_and_unknown_event_references(
+    client, monkeypatch
+):
+    monkeypatch.setattr(
+        briefing_module,
+        "_fetch_translated_events",
+        lambda limit: [
+            {
+                "id": "event-1",
+                "source_id": "npr",
+                "title": "Event",
+                "title_cn": "事件",
+                "summary_cn": "摘要",
+                "topic": "world",
+                "created_at": "2026-07-20 08:00:00",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        briefing_module,
+        "_call_ai",
+        lambda **kwargs: json.dumps(
+            {
+                "topics": [
+                    {
+                        "topic": "格局",
+                        "events": [
+                            {"event_id": "event-1", "title_cn": "有效事件"},
+                            {"event_id": "", "title_cn": "空引用"},
+                            {"event_id": None, "title_cn": "空值引用"},
+                            {"title_cn": "缺少引用"},
+                            {"event_id": ["event-1"], "title_cn": "错误类型"},
+                            {"event_id": "unknown", "title_cn": "未知引用"},
+                        ],
+                    }
+                ]
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        briefing_module,
+        "_batch_contemplate_briefing_events",
+        lambda topics: None,
+    )
+
+    response = client.post(
+        "/api/briefing/generate",
+        json={"type": "quick", "limit": 80},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["events_used"] == 1
+    detail = client.get(f"/api/briefing/{payload['id']}")
+    assert detail.status_code == 200
+    assert detail.json()["events_used"] == 1
+    assert detail.json()["topics"] == [
+        {
+            "topic": "格局",
+            "events": [
+                {
+                    "event_id": "event-1",
+                    "title_cn": "有效事件",
+                    "created_at": "2026-07-20 08:00:00",
+                }
+            ],
+        }
+    ]

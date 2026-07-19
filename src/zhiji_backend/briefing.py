@@ -90,7 +90,9 @@ def _build_events_text(events: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def _parse_generated_topics(raw: str) -> list[dict[str, Any]]:
+def _parse_generated_topics(
+    raw: str, allowed_event_ids: set[str]
+) -> list[dict[str, Any]]:
     try:
         parsed = json.loads(raw)
         if not isinstance(parsed, dict):
@@ -117,6 +119,13 @@ def _parse_generated_topics(raw: str) -> list[dict[str, Any]]:
                         "AI response topic "
                         f"{topic_index} event {event_index} is not an object"
                     )
+                event_id = event.get("event_id")
+                if (
+                    not isinstance(event_id, str)
+                    or not event_id
+                    or event_id not in allowed_event_ids
+                ):
+                    continue
                 normalized_events.append(dict(event))
             normalized_topic = dict(topic)
             normalized_topic["events"] = normalized_events
@@ -176,13 +185,17 @@ def generate_briefing(briefing_type: str = "quick", limit: int = 80) -> dict[str
     raw = _call_ai(system_prompt=system_prompt, user_prompt=user_prompt, max_tokens=4096, timeout=120,
                         task="briefing_quick" if is_quick else "briefing_daily")
 
-    topics_data = _parse_generated_topics(raw)
+    event_map: dict[str, str] = {}
+    for event in events:
+        event_id = event.get("id")
+        if isinstance(event_id, str) and event_id:
+            event_map[event_id] = event.get("created_at", "")
+    topics_data = _parse_generated_topics(raw, set(event_map))
 
     # Count events referenced
     events_used = sum(len(t.get("events", [])) for t in topics_data)
 
     # Enrich events with created_at from DB
-    event_map: dict[str, str] = {e["id"]: e.get("created_at", "") for e in events}
     for topic in topics_data:
         for evt in topic.get("events", []):
             eid = evt.get("event_id", "")
