@@ -277,14 +277,6 @@
 
 .dual-nav-demo__index:last-child { text-align: right; }
 
-.dual-nav-demo__hero {
-  --cinematic-ui-scale: .68;
-  z-index: 4;
-  top: 41%;
-  left: 50%;
-  width: 860px;
-}
-
 .ki-shell-content {
   position: absolute;
   z-index: 4;
@@ -1070,7 +1062,6 @@
   .dual-nav-demo__brand-star-track { top: 44px; width: 126px; }
   .dual-nav-demo__primary { left: calc(10.88% - 18px); gap: 20px; }
   .dual-nav-demo__top-accessory { width: 150px; }
-  .dual-nav-demo__hero { --cinematic-ui-scale: .72; top: 39%; }
   .dual-nav-demo__gallery { height: 34vh; min-height: 240px; }
   .dual-nav-action-menu { gap: 3px; }
   .dual-nav-action-item strong { font-size: 9px; }
@@ -1079,7 +1070,6 @@
 }
 
 @media (max-height: 760px) {
-  .dual-nav-demo__hero { --cinematic-ui-scale: .6; top: 37%; }
   .dual-nav-demo__gallery { min-height: 210px; }
   .ki-shell-content { top: 122px; bottom: 206px; }
 }
@@ -1089,7 +1079,6 @@
 }
 
 @media (min-width: 1800px) and (min-height: 1000px) {
-  .dual-nav-demo__hero { --cinematic-ui-scale: .82; top: 42%; }
   .ki-shell-content { right: clamp(70px, 7vw, 170px); left: clamp(70px, 7vw, 170px); }
   .dual-nav-action-menu.is-dock { width: min(1080px, calc(100vw - 120px)); }
   .dual-nav-demo__gallery::before { top: clamp(240px, 18vh, 280px); }
