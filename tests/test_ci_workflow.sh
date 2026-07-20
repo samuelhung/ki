@@ -16,5 +16,6 @@ grep -Fq 'subosito/flutter-action@v2' .github/workflows/zhiji-check.yml
 grep -Fq "flutter-version: '3.44.2'" .github/workflows/zhiji-check.yml
 grep -Fq 'run: flutter analyze' .github/workflows/zhiji-check.yml
 grep -Fq 'working-directory: desktop' .github/workflows/zhiji-check.yml
+grep -Fq 'run: brew install ffmpeg' .github/workflows/zhiji-check.yml
 
 echo "ci workflow ok"
