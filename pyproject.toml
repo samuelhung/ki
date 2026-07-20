@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "zhiji-backend"
-version = "1.3.14"
+version = "2.0.0"
 description = "知几 —— 个人情报中心后端服务"
 requires-python = ">=3.12"
 dependencies = [

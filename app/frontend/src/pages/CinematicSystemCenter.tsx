@@ -170,10 +170,15 @@ export default function CinematicSystemCenter() {
       laserPrimary
       topAccessory={(
         <div className="system-shell-status" aria-label="系统状态">
-          <span className={connectionClass}><i />服务 {connectionState}</span>
-          <span className={health.data && !health.data.database?.ok ? 'is-error' : 'is-database'}>主库 {databaseState}</span>
-          <span>{health.data?.version || APP_VERSION}</span>
-          <span>{health.latency_ms ? `${health.latency_ms}ms` : '--ms'}</span>
+          <div className="system-shell-status__health">
+            <span className={connectionClass}><i />服务 {connectionState}</span>
+            <span className={health.data && !health.data.database?.ok ? 'is-error' : 'is-database'}>SQLite {databaseState}</span>
+          </div>
+          <div className="system-shell-status__versions">
+            <span>API {health.data?.version || APP_VERSION}</span>
+            <span>Web {APP_VERSION}</span>
+            <span>{health.latency_ms ? `${health.latency_ms}ms` : '--ms'}</span>
+          </div>
         </div>
       )}
     >

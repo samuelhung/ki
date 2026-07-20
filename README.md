@@ -92,16 +92,20 @@ ZHIJI_SKIP_RELEASE_CHECK=1 ./scripts/check.sh
 标准部署流程：
 
 ```bash
-# 1. 本机构建前端并打进 backend wheel
+# 1. 本机构建前端并打进 backend wheel（Python 3.12）
 cd /Users/yuk/Documents/zhiji/ki
-python3 scripts/build_backend_wheel.py --python /Users/yuk/Documents/zhiji/ki/.venv-build/bin/python
+cd app/frontend && npm run build && cd ../..
+/Users/yuk/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 \
+  -m pip wheel --no-build-isolation --no-deps . -w dist
+PYTHONPATH=. /Users/yuk/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 \
+  -c "from pathlib import Path; from scripts.build_backend_wheel import verify_wheel; verify_wheel(Path('dist/zhiji_backend-2.0.0-py3-none-any.whl'))"
 
 # 2. 上传 wheel 到远端 packages
-scp /Users/yuk/Documents/zhiji/ki/dist/zhiji_backend-1.3.14-py3-none-any.whl \
-  zhiji-prod:/Users/mrh/Documents/KI/packages/zhiji_backend-1.3.14-py3-none-any.whl
+scp /Users/yuk/Documents/zhiji/ki/dist/zhiji_backend-2.0.0-py3-none-any.whl \
+  zhiji-prod:/Users/mrh/Documents/KI/packages/zhiji_backend-2.0.0-py3-none-any.whl
 
 # 3. 远端正式安装并重启服务
-ssh zhiji-prod "/Users/mrh/Documents/KI/runtime/venv/bin/python -m pip install --force-reinstall --no-deps /Users/mrh/Documents/KI/packages/zhiji_backend-1.3.14-py3-none-any.whl && launchctl kickstart -k gui/\$(id -u)/com.zhiji.backend"
+ssh zhiji-prod "/Users/mrh/Documents/KI/runtime/venv/bin/python -m pip install --force-reinstall --no-deps /Users/mrh/Documents/KI/packages/zhiji_backend-2.0.0-py3-none-any.whl && launchctl kickstart -k gui/\$(id -u)/com.zhiji.backend"
 
 # 4. 健康检查
 ssh zhiji-prod "sleep 2; curl -fsS http://127.0.0.1:9120/api/health"
@@ -120,7 +124,7 @@ curl -fsS http://10.8.0.105:9120/api/health
 ssh zhiji-prod 'launchctl bootout gui/$(id -u)/com.zhiji.backend || true'
 
 # 2. 安装新 wheel，但不要启动服务
-ssh zhiji-prod '/Users/mrh/Documents/KI/runtime/venv/bin/python -m pip install --force-reinstall --no-deps /Users/mrh/Documents/KI/packages/zhiji_backend-1.3.14-py3-none-any.whl'
+ssh zhiji-prod '/Users/mrh/Documents/KI/runtime/venv/bin/python -m pip install --force-reinstall --no-deps /Users/mrh/Documents/KI/packages/zhiji_backend-2.0.0-py3-none-any.whl'
 
 # 3. 创建数据库、system_config.json 和回滚清单；命令输出清单绝对路径
 ssh zhiji-prod '/Users/mrh/Documents/KI/runtime/venv/bin/zhiji backup-db --output-dir /Users/mrh/Documents/KI/backups'
@@ -158,6 +162,26 @@ ssh zhiji-prod 'launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.zhij
 ## 发布原则
 
 功能性代码改动发版前必须同步：版本号、`desktop/changelog.json`、系统说明/架构文档、前端构建版本 hash、Flutter WebView `desktop_version`。发版前优先运行 `./scripts/check.sh`；该脚本会阻断旧 Tauri 更新、旧 backend import、bsdiff/bspatch/manifest/install_helper 和内网后端 DMG 分发残留。发版后必须验证远端 appcast 首条与 GitHub Release asset 对齐，再做实机安装/更新提示验证。
+
+### 2.0 版本契约
+
+当前产品版本为 `2.0.0`，Python wheel 同时承载后端 API 和 Web 前端，因此两者必须使用同一个产品版本：
+
+| 层 | 当前版本 | 版本来源 |
+|---|---:|---|
+| 后端 API | `2.0.0` | `src/zhiji_backend/__init__.py`、`pyproject.toml` |
+| Web 前端 | `2.0.0` | `app/frontend/src/constants.ts`、`app/frontend/vite.config.ts` |
+| 桌面端 | `2.0.0+90` | `desktop/pubspec.yaml`；`+90` 为单调递增构建号 |
+
+系统中枢右上角状态条用于区分运行层：
+
+- `服务 在线`：后端健康检查可访问。
+- `SQLite 正常`：生产数据库可连接并读取。
+- `API 2.0.0`：当前远端后端返回的真实版本。
+- `Web 2.0.0`：浏览器当前加载的前端构建版本。
+- `120ms`：本次健康检查请求耗时。
+
+版本升级遵循语义化规则：不兼容的接口、数据或产品代际变化升级主版本；新增兼容功能升级次版本；兼容修复升级补丁版本。每次升级必须同步后端、Web、桌面端、About、changelog 和版本记录，并通过 `./scripts/check.sh` 的版本一致性门禁。
 
 ## v1.3.9 深审修复
 

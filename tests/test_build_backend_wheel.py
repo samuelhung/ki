@@ -13,7 +13,7 @@ def _write_wheel(path: Path, names: list[str]) -> None:
 
 
 def test_verify_wheel_requires_current_production_frontend(tmp_path: Path) -> None:
-    wheel = tmp_path / "zhiji_backend-1.3.14-py3-none-any.whl"
+    wheel = tmp_path / "zhiji_backend-2.0.0-py3-none-any.whl"
     _write_wheel(
         wheel,
         [
@@ -28,7 +28,7 @@ def test_verify_wheel_requires_current_production_frontend(tmp_path: Path) -> No
 
 
 def test_verify_wheel_rejects_missing_briefing_workspace(tmp_path: Path) -> None:
-    wheel = tmp_path / "zhiji_backend-1.3.14-py3-none-any.whl"
+    wheel = tmp_path / "zhiji_backend-2.0.0-py3-none-any.whl"
     _write_wheel(
         wheel,
         [

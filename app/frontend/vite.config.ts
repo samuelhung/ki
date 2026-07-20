@@ -2,7 +2,7 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
-const appVersion = '1.3.14';
+const appVersion = '2.0.0';
 const remoteBackend = 'http://10.8.0.105:9120';
 const apiProxy = {
   '/__ki_remote_session': {

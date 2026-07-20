@@ -101,6 +101,7 @@ export const ARCHITECTURE_FEATURES = [
 ];
 
 export const CHANGELOG_ENTRIES = [
+  { version: '2.0.0', date: '2026-07-20', title: '知几 2.0：统一新版工作台与运行状态', items: ['完成首页、内容采集、即时快报、专题系列、头脑风暴、产业链、工具箱和系统中枢新版工作台迁移', '统一顶部导航、中部双栏舞台、全局 Dock、弹窗体系与多尺寸屏幕适配', '系统中枢分别展示服务、SQLite、API、Web 和请求延迟状态', '清理已废弃业务、接口、数据库表与历史兼容代码'] },
   { version: '1.3.14', date: '2026-06-28', title: '收口 AI 调用为 OpenAI 兼容接口', items: ['后端新增统一 ai_client，AI 调用默认走内网 OpenAI-compatible 网关与 deepseek-v4-pro-max', '配置 API 优先支持 AI_API_KEY / OPENAI_API_KEY，并保留 DEEPSEEK_API_KEY 兼容旧环境', '系统设置页同步新增 max 模型选项，移除 DeepSeek 原生接口推荐文案'] },
   { version: '1.3.13', date: '2026-06-28', title: '修复专题系列直达路由加载失败', items: ['后端对 /series 等 SPA 直达页面同样签发 HttpOnly 会话 cookie，避免绕过首页时业务 API 401', '修复专题列表接口在连接关闭后继续查询成员标题导致的 Internal Server Error', '新增专题列表连接生命周期回归测试，防止再次返回非 JSON 错误文本'] },
   { version: '1.3.12', date: '2026-06-28', title: '修复远程地址直接打开后的仪表盘加载失败', items: ['后端首页在配置 KI_API_TOKEN 后自动签发 HttpOnly 会话 cookie，远程同源页面无需手动填写令牌即可访问业务 API', '业务 API 同时接受 Authorization 令牌与后端签发的会话 cookie，保留非同源直接调用的 401 安全边界', '直接打开 http://10.8.0.105:9120/ 后仪表盘、热力图和事件列表可正常加载'] },
