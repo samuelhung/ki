@@ -9,13 +9,12 @@ from __future__ import annotations
 import json
 import logging
 import os
-import threading
 import time
 import urllib.request
 from typing import Any
 
 from .config_manager import DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, get_config
-from .db import get_db_path
+from .usage_writer import UsageRecord, enqueue_usage
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +28,7 @@ def _record_usage(
     elapsed_ms: int,
     error: str = "",
 ) -> None:
-    """Write an ai_usage row in a background thread — never blocks the caller."""
+    """Calculate usage telemetry and enqueue it without affecting the AI result."""
     try:
         prompt_tokens = usage.get("prompt_tokens", 0) if usage else 0
         completion_tokens = usage.get("completion_tokens", 0) if usage else 0
@@ -43,25 +42,31 @@ def _record_usage(
         prompt_tokens = completion_tokens = total_tokens = cached_tokens = reasoning_tokens = 0
         cost = 0
 
-    def _write() -> None:
-        try:
-            import sqlite3
-            db_path = str(get_db_path())
-            conn = sqlite3.connect(str(db_path))
-            conn.execute(
-                """INSERT INTO ai_usage
-                   (module, task, model, status, prompt_tokens, completion_tokens, total_tokens,
-                    cached_tokens, reasoning_tokens, cost_rmb, duration_ms, error)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (module or "", task or "", model, status, prompt_tokens, completion_tokens,
-                 total_tokens, cached_tokens, reasoning_tokens, round(cost, 6), elapsed_ms, error),
+    try:
+        enqueue_usage(
+            UsageRecord(
+                module=module or "",
+                task=task or "",
+                model=model,
+                status=status,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                cached_tokens=cached_tokens,
+                reasoning_tokens=reasoning_tokens,
+                cost_rmb=round(cost, 6),
+                duration_ms=elapsed_ms,
+                error=error,
             )
-            conn.commit()
-            conn.close()
-        except Exception:
-            pass
-
-    threading.Thread(target=_write, daemon=True).start()
+        )
+    except Exception as exc:
+        logger.error(
+            "AI usage enqueue failed module=%s task=%s status=%s exception=%s",
+            module or "",
+            task or "",
+            status,
+            type(exc).__name__,
+        )
 
 
 def _resolve_api_key(general: dict[str, Any]) -> str:

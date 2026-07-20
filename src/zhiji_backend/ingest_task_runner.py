@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from .db import connect
+from .usage_writer import start_usage_writer, stop_usage_writer
 
 
 def run_task(task_id: str) -> None:
@@ -29,7 +30,16 @@ def run_task(task_id: str) -> None:
     _process_ingest(event_id, ingest_type, content, topic, title)
 
 
-if __name__ == "__main__":
-    if len(sys.argv) != 2:
+def main(argv: list[str] | None = None) -> None:
+    args = sys.argv[1:] if argv is None else argv
+    if len(args) != 1:
         raise SystemExit("usage: python -m zhiji_backend.ingest_task_runner <task_id>")
-    run_task(sys.argv[1])
+    start_usage_writer()
+    try:
+        run_task(args[0])
+    finally:
+        stop_usage_writer()
+
+
+if __name__ == "__main__":
+    main()
