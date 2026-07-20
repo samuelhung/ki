@@ -224,6 +224,32 @@ class _TimeoutGroupProcess(_TimeoutProcess):
             self.group_alive = False
 
 
+class _UnkillableTimeoutGroupProcess(_TimeoutGroupProcess):
+    def __init__(self, *, leader_exits_after_term: bool):
+        super().__init__()
+        self.leader_exits_after_term = leader_exits_after_term
+
+    def communicate(self, timeout=None):
+        if not self.terminated:
+            raise task_queue.subprocess.TimeoutExpired(
+                cmd=["runner"], timeout=timeout or 0
+            )
+        if not self.killed and not self.leader_exits_after_term:
+            raise task_queue.subprocess.TimeoutExpired(
+                cmd=["runner"], timeout=timeout or 0
+            )
+        return "", ""
+
+    def receive_group_signal(self, sig):
+        if sig == signal.SIGTERM:
+            self.terminated = True
+            if self.leader_exits_after_term:
+                self.returncode = -signal.SIGTERM
+        elif sig == signal.SIGKILL:
+            self.killed = True
+            self.returncode = -signal.SIGKILL
+
+
 class _UnrelatedSignalProcess(_BlockingProcess):
     def terminate(self):
         self.terminated = True
@@ -381,6 +407,57 @@ def test_timeout_terminates_remaining_runner_descendants(tmp_path, monkeypatch):
         ).fetchone()
     assert tuple(task) == ("pending", 1)
     assert event["status"] == "pending"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process groups only")
+@pytest.mark.parametrize("leader_exits_after_term", [True, False])
+def test_timeout_orphaned_process_tree_is_not_requeued(
+    leader_exits_after_term, tmp_path, monkeypatch, caplog
+):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    init_db()
+    task_id = _insert_processing_task(
+        event_id=f"evt-timeout-orphan-{leader_exits_after_term}",
+        task_id=f"task-timeout-orphan-{leader_exits_after_term}",
+    )
+    process = _UnkillableTimeoutGroupProcess(
+        leader_exits_after_term=leader_exits_after_term
+    )
+    signals = []
+
+    def kill_group(group_id, sig):
+        if sig == 0:
+            return
+        signals.append((group_id, sig))
+        process.receive_group_signal(sig)
+
+    monkeypatch.setattr(task_queue, "_TASK_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(task_queue, "_SHUTDOWN_TERMINATE_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(task_queue.os, "getpgrp", lambda: 9999)
+    monkeypatch.setattr(task_queue.os, "killpg", kill_group)
+    monkeypatch.setattr(task_queue.subprocess, "Popen", lambda *args, **kwargs: process)
+
+    with caplog.at_level("ERROR"):
+        task_queue._process_one(task_id)
+
+    assert signals == [
+        (process.pid, signal.SIGTERM),
+        (process.pid, signal.SIGKILL),
+    ]
+    with connect() as conn:
+        task = conn.execute(
+            "SELECT status, error, retry_count FROM ingest_tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
+        event = conn.execute(
+            "SELECT status, last_error FROM events WHERE id = ?",
+            (f"evt-timeout-orphan-{leader_exits_after_term}",),
+        ).fetchone()
+    assert task["status"] == "error"
+    assert "SIGKILL" in task["error"]
+    assert task["retry_count"] == 0
+    assert tuple(event) == ("error", task["error"])
+    assert "阻止自动重试" in caplog.text
 
 
 def test_child_process_failure_marks_processing_event_error(tmp_path, monkeypatch):
@@ -620,6 +697,54 @@ def test_stop_worker_terminates_real_parent_and_descendant_processes(monkeypatch
             except (ProcessLookupError, PermissionError):
                 pass
             process.wait(timeout=4)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process groups only")
+def test_stop_worker_cleans_group_after_leader_already_exited_normally(monkeypatch):
+    script = (
+        "import subprocess, sys; "
+        "code = \"import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+        "print('ready', flush=True); time.sleep(10)\"; "
+        "child = subprocess.Popen([sys.executable, '-c', code], stdout=subprocess.PIPE, text=True); "
+        "child.stdout.readline(); print(child.pid, flush=True)"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", script],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    assert process.stdout is not None
+    child_pid = int(process.stdout.readline().strip())
+    assert process.wait(timeout=2) == 0
+    worker = _JoinableWorker()
+    task_queue._active_process = process
+    task_queue._active_process_group_id = process.pid
+    task_queue._active_task_id = "task-leader-exited"
+    task_queue._worker = worker
+    monkeypatch.setattr(task_queue, "_SHUTDOWN_TERMINATE_TIMEOUT_SECONDS", 0.2)
+
+    try:
+        assert task_queue.stop_worker() is True
+        assert task_queue._shutdown_interrupted is None
+
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            try:
+                os.kill(child_pid, 0)
+            except ProcessLookupError:
+                break
+            except PermissionError:
+                pytest.skip("process inspection is restricted in this environment")
+            time.sleep(0.05)
+        else:
+            pytest.fail(f"descendant process {child_pid} is still running")
+    finally:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
 
 
 def test_already_exited_child_is_not_reclassified_as_shutdown_interrupted(

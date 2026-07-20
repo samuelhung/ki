@@ -433,6 +433,7 @@ def _process_one(task_id: str) -> None:
         try:
             stdout, stderr = proc.communicate(timeout=_TASK_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
+            process_tree_quiesced = False
             _signal_ingest_process(
                 proc,
                 process_group_id,
@@ -459,6 +460,12 @@ def _process_one(task_id: str) -> None:
                         "Task %s child did not exit after timeout kill", task_id
                     )
                     stdout, stderr = "", ""
+                _, process_tree_quiesced = _wait_for_process_tree_exit(
+                    proc,
+                    process_group_id,
+                    task_id,
+                    _SHUTDOWN_TERMINATE_TIMEOUT_SECONDS,
+                )
             else:
                 if _process_group_exists(process_group_id, task_id):
                     _signal_ingest_process(
@@ -468,16 +475,35 @@ def _process_one(task_id: str) -> None:
                         "kill",
                         task_id,
                     )
-                    _wait_for_process_tree_exit(
+                    _, process_tree_quiesced = _wait_for_process_tree_exit(
                         proc,
                         process_group_id,
                         task_id,
                         _SHUTDOWN_TERMINATE_TIMEOUT_SECONDS,
                     )
+                else:
+                    process_tree_quiesced = True
 
             interrupted_by_shutdown = _release_active_process(task_id, proc)
             if interrupted_by_shutdown:
                 _restore_shutdown_interrupted_task(task_id)
+                return
+
+            if not process_tree_quiesced:
+                error_msg = (
+                    "内部超时：采集进程组在 SIGKILL 后仍未退出，已阻止自动重试"
+                )
+                with connect() as conn:
+                    conn.execute(
+                        "UPDATE ingest_tasks SET status = 'error', error = ?, "
+                        "finished_at = datetime('now') WHERE id = ?",
+                        (error_msg, task_id),
+                    )
+                    conn.execute(
+                        "UPDATE events SET status = 'error', last_error = ? WHERE id = ?",
+                        (error_msg, event_id),
+                    )
+                logger.error("Task %s %s", task_id, error_msg)
                 return
 
             # Pipeline may have actually completed but the child process did not
@@ -711,19 +737,24 @@ def stop_worker() -> bool:
         proc = _active_process
         task_id = _active_task_id
         process_group_id = _active_process_group_id
-        if (
-            proc is not None
-            and task_id is not None
-            and _observe_process_returncode(proc, task_id, "selection") is None
-        ):
-            _shutdown_interrupted = (task_id, proc)
-            _shutdown_signals_sent.clear()
-            _shutdown_fallback_causation = False
-            _shutdown_signal_resolved.clear()
-        else:
+        if proc is None or task_id is None:
             proc = None
             task_id = None
             process_group_id = None
+        else:
+            leader_alive = (
+                _observe_process_returncode(proc, task_id, "selection") is None
+            )
+            group_alive = _process_group_exists(process_group_id, task_id)
+            if leader_alive:
+                _shutdown_interrupted = (task_id, proc)
+                _shutdown_signals_sent.clear()
+                _shutdown_fallback_causation = False
+                _shutdown_signal_resolved.clear()
+            elif not group_alive:
+                proc = None
+                task_id = None
+                process_group_id = None
 
     process_tree_quiesced = True
     verified_interruption = False
