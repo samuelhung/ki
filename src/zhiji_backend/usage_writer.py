@@ -171,7 +171,7 @@ class _UsageWriter:
         return False
 
     def _write_once(self, record: UsageRecord) -> None:
-        with connect() as conn:
+        with connect(busy_timeout_ms=0) as conn:
             conn.execute(
                 """INSERT INTO ai_usage
                    (module, task, model, status, prompt_tokens, completion_tokens, total_tokens,

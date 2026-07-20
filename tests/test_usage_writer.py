@@ -10,7 +10,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from zhiji_backend import ai_client, ingest_task_runner, main
+from zhiji_backend import ai_client, db as db_module, ingest_task_runner, main
 from zhiji_backend import usage_writer as usage_writer_module
 from zhiji_backend.db import connect, init_db
 from zhiji_backend.routes import usage_routes
@@ -39,6 +39,62 @@ def test_usage_record_is_immutable():
 
     with pytest.raises(FrozenInstanceError):
         record.status = "error"
+
+
+def test_db_connect_defaults_to_5000ms_and_accepts_keyword_override(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "connection-policy.sqlite"))
+
+    with db_module.connect() as conn:
+        default_timeout = conn.execute("PRAGMA busy_timeout").fetchone()[0]
+    with db_module.connect(busy_timeout_ms=0) as conn:
+        overridden_timeout = conn.execute("PRAGMA busy_timeout").fetchone()[0]
+
+    assert default_timeout == 5000
+    assert overridden_timeout == 0
+
+
+def test_usage_writer_uses_nonblocking_database_connection(tmp_path, monkeypatch):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "writer-policy.sqlite"))
+    init_db()
+    observed_timeouts: list[int] = []
+
+    @contextmanager
+    def observed_connect(*, busy_timeout_ms=5000):
+        with db_module.connect(busy_timeout_ms=busy_timeout_ms) as conn:
+            observed_timeouts.append(
+                conn.execute("PRAGMA busy_timeout").fetchone()[0]
+            )
+            yield conn
+
+    monkeypatch.setattr(usage_writer_module, "connect", observed_connect)
+
+    _UsageWriter()._write_once(_record())
+
+    assert observed_timeouts == [0]
+
+
+def test_usage_dashboard_connections_keep_default_busy_timeout(tmp_path, monkeypatch):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "dashboard-policy.sqlite"))
+    init_db()
+    observed_timeouts: list[int] = []
+
+    @contextmanager
+    def observed_connect():
+        with db_module.connect() as conn:
+            observed_timeouts.append(
+                conn.execute("PRAGMA busy_timeout").fetchone()[0]
+            )
+            yield conn
+
+    monkeypatch.setattr(usage_routes, "connect", observed_connect)
+
+    payload = usage_routes.dashboard()
+
+    assert observed_timeouts
+    assert set(observed_timeouts) == {5000}
+    assert set(payload) == {"today", "modules", "tasks", "trend"}
 
 
 def test_writer_uses_bounded_default_queue_and_idempotent_lifecycle():
