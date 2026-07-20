@@ -8,6 +8,7 @@ import sqlite3
 import threading
 import time
 from dataclasses import dataclass
+from enum import Enum, auto
 
 from .db import connect
 
@@ -35,6 +36,14 @@ class UsageRecord:
     error: str
 
 
+class _LifecycleState(Enum):
+    NEW = auto()
+    RUNNING = auto()
+    STOPPING = auto()
+    STOPPED = auto()
+    DISABLED = auto()
+
+
 class _UsageWriter:
     def __init__(self, queue_size: int = _QUEUE_SIZE) -> None:
         self._queue: queue.Queue[UsageRecord] = queue.Queue(maxsize=queue_size)
@@ -42,28 +51,53 @@ class _UsageWriter:
         self._warning_lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
-        self._accepting = True
+        self._state = _LifecycleState.NEW
         self._last_drop_warning = float("-inf")
         self._clock = time.monotonic
 
-    def start(self) -> None:
+    def start(self) -> bool:
         with self._state_lock:
-            if self._thread is not None and self._thread.is_alive():
-                return
-            self._stop_event.clear()
-            self._accepting = True
-            self._thread = threading.Thread(
+            if self._state is _LifecycleState.RUNNING:
+                return self._thread is not None and self._thread.is_alive()
+            if self._state in (_LifecycleState.STOPPING, _LifecycleState.DISABLED):
+                return False
+            return self._start_locked()
+
+    def _start_locked(self) -> bool:
+        self._stop_event.clear()
+        try:
+            thread = threading.Thread(
                 target=self._run,
                 name="ai-usage-writer",
                 daemon=True,
             )
-            self._thread.start()
+            thread.start()
+        except Exception as exc:
+            self._thread = None
+            self._state = _LifecycleState.DISABLED
+            self._stop_event.set()
+            self._log_disabled(exc)
+            return False
+        self._thread = thread
+        self._state = _LifecycleState.RUNNING
+        return True
+
+    def disable(self, exc: Exception) -> None:
+        with self._state_lock:
+            self._state = _LifecycleState.DISABLED
+            self._stop_event.set()
+        self._log_disabled(exc)
+
+    @staticmethod
+    def _log_disabled(exc: Exception) -> None:
+        logger.error("AI usage writer disabled exception=%s", type(exc).__name__)
 
     def enqueue(self, record: UsageRecord) -> bool:
-        self.start()
         queue_full = False
         with self._state_lock:
-            if not self._accepting:
+            if self._state is _LifecycleState.NEW and not self._start_locked():
+                return False
+            if self._state is not _LifecycleState.RUNNING:
                 return False
             try:
                 self._queue.put_nowait(record)
@@ -77,15 +111,22 @@ class _UsageWriter:
     def stop(self, timeout: float = _DEFAULT_STOP_TIMEOUT_SECONDS) -> int:
         with self._state_lock:
             thread = self._thread
-            if thread is None:
-                self._accepting = False
+            if self._state is _LifecycleState.NEW:
+                self._state = _LifecycleState.STOPPED
+                self._stop_event.set()
                 return self._unfinished_count()
-            self._accepting = False
+            if self._state in (_LifecycleState.STOPPED, _LifecycleState.DISABLED):
+                return self._unfinished_count()
+            if self._state is _LifecycleState.RUNNING:
+                self._state = _LifecycleState.STOPPING
             self._stop_event.set()
 
-        thread.join(max(0.0, timeout))
+        if thread is not None:
+            thread.join(max(0.0, timeout))
         with self._state_lock:
-            alive = thread.is_alive()
+            alive = thread is not None and thread.is_alive()
+            if not alive and self._state is _LifecycleState.STOPPING:
+                self._state = _LifecycleState.STOPPED
             if not alive and self._thread is thread:
                 self._thread = None
         unwritten = self._unfinished_count()
@@ -94,15 +135,25 @@ class _UsageWriter:
         return unwritten
 
     def _run(self) -> None:
-        while not self._stop_event.is_set() or not self._queue.empty():
-            try:
-                record = self._queue.get(timeout=0.05)
-            except queue.Empty:
-                continue
-            try:
-                self._write_with_retry(record)
-            finally:
-                self._queue.task_done()
+        try:
+            while not self._stop_event.is_set() or not self._queue.empty():
+                try:
+                    record = self._queue.get(timeout=0.05)
+                except queue.Empty:
+                    continue
+                try:
+                    self._write_with_retry(record)
+                finally:
+                    self._queue.task_done()
+        finally:
+            current = threading.current_thread()
+            with self._state_lock:
+                if self._state is _LifecycleState.STOPPING:
+                    self._state = _LifecycleState.STOPPED
+                elif self._state is _LifecycleState.RUNNING:
+                    self._state = _LifecycleState.DISABLED
+                if self._thread is current:
+                    self._thread = None
 
     def _write_with_retry(self, record: UsageRecord) -> bool:
         for attempt in range(len(_RETRY_DELAYS_SECONDS) + 1):
@@ -176,13 +227,25 @@ class _UsageWriter:
 _writer = _UsageWriter()
 
 
-def start_usage_writer() -> None:
-    _writer.start()
+def start_usage_writer() -> bool:
+    try:
+        return _writer.start()
+    except Exception as exc:
+        _writer.disable(exc)
+        return False
 
 
 def enqueue_usage(record: UsageRecord) -> bool:
-    return _writer.enqueue(record)
+    try:
+        return _writer.enqueue(record)
+    except Exception as exc:
+        _writer.disable(exc)
+        return False
 
 
 def stop_usage_writer(timeout: float = _DEFAULT_STOP_TIMEOUT_SECONDS) -> int:
-    return _writer.stop(timeout=timeout)
+    try:
+        return _writer.stop(timeout=timeout)
+    except Exception as exc:
+        _writer.disable(exc)
+        return _writer._unfinished_count()

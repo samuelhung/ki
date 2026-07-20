@@ -11,6 +11,7 @@ from dataclasses import FrozenInstanceError
 import pytest
 
 from zhiji_backend import ai_client, ingest_task_runner, main
+from zhiji_backend import usage_writer as usage_writer_module
 from zhiji_backend.db import connect, init_db
 from zhiji_backend.routes import usage_routes
 from zhiji_backend.usage_writer import UsageRecord, _UsageWriter
@@ -50,6 +51,65 @@ def test_writer_uses_bounded_default_queue_and_idempotent_lifecycle():
     assert writer._thread is thread
     assert writer.stop() == 0
     assert writer.stop() == 0
+
+
+def test_enqueue_after_stop_does_not_restart_writer():
+    writer = _UsageWriter()
+    writer.start()
+    first_thread = writer._thread
+    assert writer.stop() == 0
+
+    assert writer.enqueue(_record()) is False
+    assert writer._thread is None
+    assert first_thread is not None
+    assert first_thread.is_alive() is False
+
+
+def test_explicit_start_after_stop_begins_fresh_lifecycle():
+    writer = _UsageWriter()
+    writer.start()
+    first_thread = writer._thread
+    assert writer.stop() == 0
+
+    assert writer.start() is True
+    second_thread = writer._thread
+
+    assert second_thread is not None
+    assert second_thread is not first_thread
+    assert second_thread.is_alive() is True
+    assert writer.stop() == 0
+
+
+@pytest.mark.parametrize("failure_point", ["constructor", "start"])
+def test_writer_start_failure_disables_lifecycle_without_leaking_error_text(
+    monkeypatch, caplog, failure_point
+):
+    writer = _UsageWriter()
+
+    if failure_point == "constructor":
+        def fail_thread(*_args, **_kwargs):
+            raise RuntimeError("secret-token-value")
+
+        monkeypatch.setattr(usage_writer_module.threading, "Thread", fail_thread)
+    else:
+        class FailingThread:
+            def start(self):
+                raise ValueError("secret-token-value")
+
+        monkeypatch.setattr(
+            usage_writer_module.threading,
+            "Thread",
+            lambda *_args, **_kwargs: FailingThread(),
+        )
+
+    with caplog.at_level(logging.ERROR):
+        assert writer.start() is False
+        assert writer.enqueue(_record()) is False
+
+    assert "AI usage writer disabled" in caplog.text
+    assert ("RuntimeError" in caplog.text) is (failure_point == "constructor")
+    assert ("ValueError" in caplog.text) is (failure_point == "start")
+    assert "secret-token-value" not in caplog.text
 
 
 def test_writer_serializes_records_and_drains_on_stop(tmp_path, monkeypatch):
@@ -115,7 +175,7 @@ def test_writer_does_not_retry_non_transient_operational_error(monkeypatch, capl
 
 def test_full_queue_never_blocks_and_warning_is_rate_limited(monkeypatch, caplog):
     writer = _UsageWriter(queue_size=1)
-    monkeypatch.setattr(writer, "start", lambda: None)
+    writer._state = usage_writer_module._LifecycleState.RUNNING
     writer._queue.put_nowait(_record())
     ticks = iter([100.0, 101.0, 161.0])
     monkeypatch.setattr(writer, "_clock", lambda: next(ticks))
@@ -150,6 +210,30 @@ def test_stop_is_bounded_and_reports_active_and_queued_records(monkeypatch, capl
 
     assert unwritten == 2
     assert "2 usage record(s) unwritten" in caplog.text
+
+
+def test_enqueue_returns_false_after_stop_begins(monkeypatch):
+    writer = _UsageWriter()
+    entered = threading.Event()
+    release = threading.Event()
+
+    def block(_record):
+        entered.set()
+        release.wait(1)
+
+    monkeypatch.setattr(writer, "_write_once", block)
+    assert writer.enqueue(_record(1)) is True
+    assert entered.wait(1)
+
+    stopper = threading.Thread(target=lambda: writer.stop(timeout=1))
+    stopper.start()
+    assert writer._stop_event.wait(1)
+
+    assert writer.enqueue(_record(2)) is False
+
+    release.set()
+    stopper.join(1)
+    assert stopper.is_alive() is False
 
 
 def test_ai_client_calculates_cost_and_enqueues_without_spawning_thread(monkeypatch):
@@ -306,6 +390,39 @@ def test_main_lifespan_stops_usage_writer_when_worker_start_fails(monkeypatch):
     assert calls == ["usage-start", "worker-start", "usage-stop"]
 
 
+def test_main_lifespan_continues_when_usage_thread_cannot_start(
+    monkeypatch, caplog
+):
+    calls: list[str] = []
+    isolated_writer = _UsageWriter()
+    monkeypatch.setattr(usage_writer_module, "_writer", isolated_writer)
+    monkeypatch.setattr(
+        usage_writer_module.threading,
+        "Thread",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("secret-fastapi-value")
+        ),
+    )
+    monkeypatch.setattr(main, "ensure_migrations", lambda _path: None)
+    monkeypatch.setattr(main, "load_config", lambda: None)
+    monkeypatch.setattr(main, "init_db", lambda: None)
+    monkeypatch.setattr(main, "seed_default_sources", lambda: None)
+    monkeypatch.setattr(main, "start_worker", lambda: calls.append("worker-start"))
+    monkeypatch.setattr(main, "stop_worker", lambda: calls.append("worker-stop"))
+
+    async def exercise():
+        async with main.lifespan(main.app):
+            calls.append("running")
+
+    with caplog.at_level(logging.ERROR):
+        asyncio.run(exercise())
+
+    assert calls == ["worker-start", "running", "worker-stop"]
+    assert "AI usage writer disabled" in caplog.text
+    assert "RuntimeError" in caplog.text
+    assert "secret-fastapi-value" not in caplog.text
+
+
 def test_ingest_runner_always_drains_usage_writer(monkeypatch):
     calls: list[str] = []
     monkeypatch.setattr(ingest_task_runner, "start_usage_writer", lambda: calls.append("start"))
@@ -320,6 +437,32 @@ def test_ingest_runner_always_drains_usage_writer(monkeypatch):
         ingest_task_runner.main(["task-1"])
 
     assert calls == ["start", "stop"]
+
+
+def test_ingest_runner_continues_when_usage_thread_cannot_start(monkeypatch, caplog):
+    calls: list[str] = []
+    isolated_writer = _UsageWriter()
+    monkeypatch.setattr(usage_writer_module, "_writer", isolated_writer)
+    monkeypatch.setattr(
+        usage_writer_module.threading,
+        "Thread",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("secret-child-value")
+        ),
+    )
+    monkeypatch.setattr(
+        ingest_task_runner,
+        "run_task",
+        lambda task_id: calls.append(task_id),
+    )
+
+    with caplog.at_level(logging.ERROR):
+        ingest_task_runner.main(["task-1"])
+
+    assert calls == ["task-1"]
+    assert "AI usage writer disabled" in caplog.text
+    assert "RuntimeError" in caplog.text
+    assert "secret-child-value" not in caplog.text
 
 
 def test_usage_queries_use_shared_connection(monkeypatch):
