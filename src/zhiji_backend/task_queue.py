@@ -186,6 +186,61 @@ def _clear_shutdown_interrupted(task_id: str, proc: subprocess.Popen[str]) -> No
             _shutdown_signal_succeeded = False
 
 
+def _observe_process_returncode(
+    proc: subprocess.Popen[str], task_id: str, phase: str
+) -> int | None:
+    """Poll without allowing process-observation failures to escape shutdown."""
+    try:
+        return proc.poll()
+    except Exception:
+        logger.warning(
+            "Failed to poll ingest child for task %s during %s",
+            task_id,
+            phase,
+            exc_info=True,
+        )
+        try:
+            return proc.returncode
+        except Exception:
+            return None
+
+
+def _resolve_shutdown_interruption(
+    task_id: str, proc: subprocess.Popen[str], interrupted: bool
+) -> None:
+    global _shutdown_signal_succeeded
+    with _active_process_lock:
+        if _shutdown_interrupted == (task_id, proc):
+            _shutdown_signal_succeeded = interrupted
+            _shutdown_signal_resolved.set()
+
+
+def _is_shutdown_exit(returncode: int | None) -> bool:
+    return returncode is not None and returncode < 0
+
+
+def _log_shutdown_operation_failure(
+    task_id: str, operation: str, *, level: int = logging.WARNING
+) -> None:
+    logger.log(
+        level,
+        "Failed to stop ingest child for task %s during %s",
+        task_id,
+        operation,
+        exc_info=True,
+    )
+
+
+def _worker_is_alive(worker: threading.Thread | None) -> bool:
+    if worker is None:
+        return False
+    try:
+        return worker.is_alive()
+    except Exception:
+        logger.error("Failed to inspect ingest task worker state", exc_info=True)
+        return True
+
+
 def _process_one(task_id: str) -> None:
     """Process a single pending task with a timeout guard.
 
@@ -491,7 +546,11 @@ def stop_worker() -> bool:
     with _active_process_lock:
         proc = _active_process
         task_id = _active_task_id
-        if proc is not None and task_id is not None and proc.returncode is None:
+        if (
+            proc is not None
+            and task_id is not None
+            and _observe_process_returncode(proc, task_id, "selection") is None
+        ):
             _shutdown_interrupted = (task_id, proc)
             _shutdown_signal_succeeded = False
             _shutdown_signal_resolved.clear()
@@ -500,36 +559,81 @@ def stop_worker() -> bool:
             task_id = None
 
     if proc is not None:
-        signal_sent = False
+        interrupted = False
         try:
             proc.terminate()
-            signal_sent = True
-        except (OSError, subprocess.SubprocessError):
-            logger.warning("Failed to stop ingest child for task %s", task_id, exc_info=True)
-        finally:
-            with _active_process_lock:
-                if _shutdown_interrupted == (task_id, proc):
-                    _shutdown_signal_succeeded = signal_sent
-                    _shutdown_signal_resolved.set()
+        except Exception:
+            _log_shutdown_operation_failure(task_id, "terminate")
+        else:
+            returncode = _observe_process_returncode(proc, task_id, "after terminate")
+            interrupted = _is_shutdown_exit(returncode)
+            if interrupted:
+                _resolve_shutdown_interruption(task_id, proc, True)
+            elif returncode is None:
+                try:
+                    returncode = proc.wait(
+                        timeout=_SHUTDOWN_TERMINATE_TIMEOUT_SECONDS
+                    )
+                except subprocess.TimeoutExpired:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        _log_shutdown_operation_failure(task_id, "kill")
+                    else:
+                        returncode = _observe_process_returncode(
+                            proc, task_id, "after kill"
+                        )
+                        interrupted = _is_shutdown_exit(returncode)
+                        if interrupted:
+                            _resolve_shutdown_interruption(task_id, proc, True)
+                        elif returncode is None:
+                            try:
+                                returncode = proc.wait(
+                                    timeout=_SHUTDOWN_TERMINATE_TIMEOUT_SECONDS
+                                )
+                            except Exception:
+                                _log_shutdown_operation_failure(
+                                    task_id, "post-kill wait"
+                                )
+                            else:
+                                interrupted = _is_shutdown_exit(returncode)
+                except Exception:
+                    _log_shutdown_operation_failure(task_id, "wait")
+                else:
+                    interrupted = _is_shutdown_exit(returncode)
 
-        if signal_sent:
-            try:
-                proc.wait(timeout=_SHUTDOWN_TERMINATE_TIMEOUT_SECONDS)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait(timeout=_SHUTDOWN_TERMINATE_TIMEOUT_SECONDS)
+        _resolve_shutdown_interruption(task_id, proc, interrupted)
 
     worker = _worker
-    if worker and worker.is_alive():
-        worker.join(timeout=_SHUTDOWN_JOIN_TIMEOUT_SECONDS)
-    quiesced = worker is None or not worker.is_alive()
+    if _worker_is_alive(worker):
+        try:
+            worker.join(timeout=_SHUTDOWN_JOIN_TIMEOUT_SECONDS)
+        except Exception:
+            logger.error("Failed to join ingest task worker", exc_info=True)
+
+    quiesced = not _worker_is_alive(worker)
 
     if not quiesced:
+        fallback_applied = False
         if task_id is not None and _shutdown_signal_succeeded:
-            _restore_shutdown_interrupted_task(task_id)
-        logger.error(
-            "Ingest task worker did not stop within %ss; fallback recovery applied task=%s",
-            _SHUTDOWN_JOIN_TIMEOUT_SECONDS,
-            task_id or "none",
-        )
+            try:
+                _restore_shutdown_interrupted_task(task_id)
+                fallback_applied = True
+            except Exception:
+                logger.error(
+                    "Failed fallback recovery for shutdown-interrupted task %s",
+                    task_id,
+                    exc_info=True,
+                )
+        if fallback_applied:
+            logger.error(
+                "Ingest task worker did not stop within %ss; fallback recovery applied task=%s",
+                _SHUTDOWN_JOIN_TIMEOUT_SECONDS,
+                task_id,
+            )
+        else:
+            logger.error(
+                "Ingest task worker did not stop within %ss; no verified interrupted task to recover",
+                _SHUTDOWN_JOIN_TIMEOUT_SECONDS,
+            )
     return quiesced

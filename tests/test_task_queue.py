@@ -63,6 +63,9 @@ class _BlockingProcess:
             self.returncode = -15
             self.exited.set()
 
+    def poll(self):
+        return self.returncode
+
     def wait(self, timeout=None):
         if not self.exited.wait(timeout=0 if timeout is None else min(timeout, 0.05)):
             raise task_queue.subprocess.TimeoutExpired(cmd=["runner"], timeout=timeout or 0)
@@ -86,6 +89,81 @@ class _TerminateFailureProcess(_BlockingProcess):
         if not self.exited.wait(timeout=2):
             raise AssertionError("test process was not released")
         return "", "ordinary child failure"
+
+
+class _AlreadyExitedProcess:
+    returncode = None
+
+    def __init__(self):
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.terminated = False
+        self.poll_calls = 0
+
+    def communicate(self, timeout=None):
+        self.started.set()
+        if not self.release.wait(timeout=2):
+            raise AssertionError("normal child result was not observed")
+        return "completed", ""
+
+    def poll(self):
+        self.poll_calls += 1
+        self.returncode = 0
+        self.release.set()
+        return 0
+
+    def terminate(self):
+        self.terminated = True
+
+    def wait(self, timeout=None):
+        return 0
+
+
+class _ExitedBetweenPollAndTerminateProcess(_AlreadyExitedProcess):
+    def poll(self):
+        self.poll_calls += 1
+        if self.poll_calls == 1:
+            return None
+        self.returncode = 0
+        self.release.set()
+        return 0
+
+    def terminate(self):
+        self.terminated = True
+
+
+class _ShutdownOperationFailureProcess:
+    returncode = None
+
+    def __init__(self, failure_point: str):
+        self.failure_point = failure_point
+        self.calls: list[str] = []
+        self.wait_calls = 0
+
+    def poll(self):
+        return None
+
+    def terminate(self):
+        self.calls.append("terminate")
+        if self.failure_point == "terminate":
+            raise RuntimeError("terminate failed")
+
+    def wait(self, timeout=None):
+        self.wait_calls += 1
+        self.calls.append(f"wait-{self.wait_calls}")
+        if self.failure_point == "wait":
+            raise RuntimeError("wait failed")
+        if self.wait_calls == 1:
+            raise task_queue.subprocess.TimeoutExpired(cmd=["runner"], timeout=timeout or 0)
+        if self.failure_point == "post-kill-wait":
+            raise RuntimeError("post-kill wait failed")
+        self.returncode = -9
+        return self.returncode
+
+    def kill(self):
+        self.calls.append("kill")
+        if self.failure_point == "kill":
+            raise RuntimeError("kill failed")
 
 
 @pytest.fixture(autouse=True)
@@ -256,6 +334,111 @@ def test_stop_worker_kills_child_that_ignores_terminate(tmp_path, monkeypatch):
             "SELECT status, retry_count FROM ingest_tasks WHERE id = ?", (task_id,)
         ).fetchone()
     assert tuple(task) == ("pending", 0)
+
+
+def test_already_exited_child_is_not_reclassified_as_shutdown_interrupted(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    init_db()
+    task_id = _insert_processing_task(
+        event_id="evt-already-exited", task_id="task-already-exited"
+    )
+    with connect() as conn:
+        conn.execute(
+            "UPDATE events SET status = 'completed' WHERE id = 'evt-already-exited'"
+        )
+
+    process = _AlreadyExitedProcess()
+    monkeypatch.setattr(task_queue.subprocess, "Popen", lambda *args, **kwargs: process)
+    worker = threading.Thread(target=task_queue._process_one, args=(task_id,))
+    task_queue._worker = worker
+    worker.start()
+    assert process.started.wait(timeout=1)
+
+    assert task_queue.stop_worker() is True
+
+    with connect() as conn:
+        task = conn.execute(
+            "SELECT status FROM ingest_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        event = conn.execute(
+            "SELECT status FROM events WHERE id = 'evt-already-exited'"
+        ).fetchone()
+    assert process.poll_calls >= 1
+    assert process.terminated is False
+    assert task["status"] == "done"
+    assert event["status"] == "completed"
+
+
+def test_noop_terminate_after_exit_is_not_shutdown_causation(tmp_path, monkeypatch):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    init_db()
+    task_id = _insert_processing_task(
+        event_id="evt-exit-race", task_id="task-exit-race"
+    )
+    with connect() as conn:
+        conn.execute("UPDATE events SET status = 'completed' WHERE id = 'evt-exit-race'")
+
+    process = _ExitedBetweenPollAndTerminateProcess()
+    monkeypatch.setattr(task_queue.subprocess, "Popen", lambda *args, **kwargs: process)
+    worker = threading.Thread(target=task_queue._process_one, args=(task_id,))
+    task_queue._worker = worker
+    worker.start()
+    assert process.started.wait(timeout=1)
+
+    assert task_queue.stop_worker() is True
+
+    with connect() as conn:
+        task = conn.execute(
+            "SELECT status FROM ingest_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        event = conn.execute(
+            "SELECT status FROM events WHERE id = 'evt-exit-race'"
+        ).fetchone()
+    assert process.terminated is True
+    assert process.poll_calls >= 2
+    assert task["status"] == "done"
+    assert event["status"] == "completed"
+
+
+@pytest.mark.parametrize(
+    "failure_point, expected_calls",
+    [
+        ("terminate", ["terminate"]),
+        ("wait", ["terminate", "wait-1"]),
+        ("kill", ["terminate", "wait-1", "kill"]),
+        ("post-kill-wait", ["terminate", "wait-1", "kill", "wait-2"]),
+    ],
+)
+def test_stop_worker_contains_shutdown_operation_failures(
+    failure_point, expected_calls, monkeypatch, caplog
+):
+    process = _ShutdownOperationFailureProcess(failure_point)
+
+    class _JoinableWorker:
+        def __init__(self):
+            self.alive = True
+            self.join_timeout = None
+
+        def is_alive(self):
+            return self.alive
+
+        def join(self, timeout=None):
+            self.join_timeout = timeout
+            self.alive = False
+
+    worker = _JoinableWorker()
+    task_queue._active_process = process
+    task_queue._active_task_id = "task-operation-failure"
+    task_queue._worker = worker
+
+    with caplog.at_level("WARNING"):
+        assert task_queue.stop_worker() is True
+
+    assert process.calls == expected_calls
+    assert worker.join_timeout == task_queue._SHUTDOWN_JOIN_TIMEOUT_SECONDS
+    assert "Failed to stop ingest child" in caplog.text
 
 
 def test_failed_terminate_does_not_reclassify_ordinary_child_failure(
