@@ -7,6 +7,7 @@ can be retried via the API.
 
 from __future__ import annotations
 
+import errno
 import json
 import logging
 import os
@@ -36,7 +37,8 @@ _active_task_id: str | None = None
 _active_process_group_id: int | None = None
 _shutdown_interrupted: tuple[str, subprocess.Popen[str]] | None = None
 _shutdown_signal_resolved = threading.Event()
-_shutdown_signal_succeeded = False
+_shutdown_signals_sent: set[int] = set()
+_shutdown_fallback_causation = False
 
 
 def _safe_pending_unlink(path_value: str) -> None:
@@ -175,19 +177,17 @@ def _release_active_process(task_id: str, proc: subprocess.Popen[str]) -> bool:
     # outside the ownership lock prevents a failed signal from being mistaken
     # for an intentional shutdown interruption.
     _shutdown_signal_resolved.wait(timeout=_SHUTDOWN_TERMINATE_TIMEOUT_SECONDS)
-    with _active_process_lock:
-        return (
-            _shutdown_interrupted == (task_id, proc)
-            and _shutdown_signal_succeeded
-        )
+    return _matches_shutdown_causation(task_id, proc, proc.returncode)
 
 
 def _clear_shutdown_interrupted(task_id: str, proc: subprocess.Popen[str]) -> None:
-    global _shutdown_interrupted, _shutdown_signal_succeeded
+    global _shutdown_interrupted, _shutdown_fallback_causation
     with _active_process_lock:
         if _shutdown_interrupted == (task_id, proc):
             _shutdown_interrupted = None
-            _shutdown_signal_succeeded = False
+            _shutdown_signals_sent.clear()
+            _shutdown_fallback_causation = False
+            _shutdown_signal_resolved.clear()
 
 
 def _observe_process_returncode(
@@ -209,18 +209,36 @@ def _observe_process_returncode(
             return None
 
 
-def _resolve_shutdown_interruption(
-    task_id: str, proc: subprocess.Popen[str], interrupted: bool
-) -> None:
-    global _shutdown_signal_succeeded
+def _resolve_shutdown_interruption(task_id: str, proc: subprocess.Popen[str]) -> None:
     with _active_process_lock:
         if _shutdown_interrupted == (task_id, proc):
-            _shutdown_signal_succeeded = interrupted
             _shutdown_signal_resolved.set()
 
 
-def _is_shutdown_exit(returncode: int | None) -> bool:
-    return returncode is not None and returncode < 0
+def _record_shutdown_signal(
+    task_id: str,
+    proc: subprocess.Popen[str],
+    sig: signal.Signals,
+    used_fallback: bool,
+) -> None:
+    global _shutdown_fallback_causation
+    with _active_process_lock:
+        if _shutdown_interrupted != (task_id, proc):
+            return
+        _shutdown_signals_sent.add(int(sig))
+        if used_fallback and os.name != "posix":
+            _shutdown_fallback_causation = True
+
+
+def _matches_shutdown_causation(
+    task_id: str, proc: subprocess.Popen[str], returncode: int | None
+) -> bool:
+    with _active_process_lock:
+        if _shutdown_interrupted != (task_id, proc) or returncode in (None, 0):
+            return False
+        if returncode < 0 and -returncode in _shutdown_signals_sent:
+            return True
+        return _shutdown_fallback_causation
 
 
 def _log_shutdown_operation_failure(
@@ -251,7 +269,7 @@ def _signal_ingest_process(
     sig: signal.Signals,
     fallback_operation: str,
     task_id: str,
-) -> bool:
+) -> tuple[bool, bool]:
     if os.name == "posix" and process_group_id is not None:
         try:
             own_group_id = os.getpgrp()
@@ -261,7 +279,7 @@ def _signal_ingest_process(
             if process_group_id != own_group_id:
                 try:
                     os.killpg(process_group_id, sig)
-                    return True
+                    return True, False
                 except Exception:
                     _log_shutdown_operation_failure(
                         task_id, f"process-group {fallback_operation}"
@@ -274,10 +292,73 @@ def _signal_ingest_process(
 
     try:
         getattr(proc, fallback_operation)()
-        return True
+        return True, True
     except Exception:
         _log_shutdown_operation_failure(task_id, fallback_operation)
+        return False, True
+
+
+def _process_group_exists(process_group_id: int | None, task_id: str) -> bool:
+    if os.name != "posix" or process_group_id is None:
         return False
+    try:
+        if process_group_id == os.getpgrp():
+            return False
+        os.killpg(process_group_id, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except OSError as exc:
+        if exc.errno == errno.ESRCH:
+            return False
+        if exc.errno == errno.EPERM:
+            return True
+        logger.warning(
+            "Failed to inspect ingest process group for task %s",
+            task_id,
+            exc_info=True,
+        )
+        return True
+    except Exception:
+        logger.warning(
+            "Failed to inspect ingest process group for task %s",
+            task_id,
+            exc_info=True,
+        )
+        return True
+
+
+def _wait_for_process_tree_exit(
+    proc: subprocess.Popen[str],
+    process_group_id: int | None,
+    task_id: str,
+    timeout: float,
+) -> tuple[int | None, bool]:
+    deadline = time.monotonic() + max(0.0, timeout)
+    returncode = _observe_process_returncode(proc, task_id, "process-tree wait")
+    while True:
+        group_gone = not _process_group_exists(process_group_id, task_id)
+        if returncode is not None and group_gone:
+            return returncode, True
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return returncode, returncode is not None and group_gone
+        if returncode is None:
+            try:
+                returncode = proc.wait(timeout=min(0.05, remaining))
+            except subprocess.TimeoutExpired:
+                pass
+            except Exception:
+                _log_shutdown_operation_failure(task_id, "process-tree wait")
+                returncode = _observe_process_returncode(
+                    proc, task_id, "after process-tree wait failure"
+                )
+                return returncode, (
+                    returncode is not None
+                    and not _process_group_exists(process_group_id, task_id)
+                )
+        else:
+            time.sleep(min(0.05, remaining))
 
 
 def _process_one(task_id: str) -> None:
@@ -338,9 +419,10 @@ def _process_one(task_id: str) -> None:
             _active_process = proc
             _active_task_id = task_id
             pid = getattr(proc, "pid", None)
-            _active_process_group_id = (
+            process_group_id = (
                 pid if os.name == "posix" and isinstance(pid, int) and pid > 0 else None
             )
+            _active_process_group_id = process_group_id
 
     if proc is None:
         _restore_shutdown_interrupted_task(task_id)
@@ -351,12 +433,47 @@ def _process_one(task_id: str) -> None:
         try:
             stdout, stderr = proc.communicate(timeout=_TASK_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
-            proc.terminate()
+            _signal_ingest_process(
+                proc,
+                process_group_id,
+                signal.SIGTERM,
+                "terminate",
+                task_id,
+            )
             try:
                 stdout, stderr = proc.communicate(timeout=10)
             except subprocess.TimeoutExpired:
-                proc.kill()
-                stdout, stderr = proc.communicate()
+                _signal_ingest_process(
+                    proc,
+                    process_group_id,
+                    signal.SIGKILL,
+                    "kill",
+                    task_id,
+                )
+                try:
+                    stdout, stderr = proc.communicate(
+                        timeout=_SHUTDOWN_TERMINATE_TIMEOUT_SECONDS
+                    )
+                except subprocess.TimeoutExpired:
+                    logger.error(
+                        "Task %s child did not exit after timeout kill", task_id
+                    )
+                    stdout, stderr = "", ""
+            else:
+                if _process_group_exists(process_group_id, task_id):
+                    _signal_ingest_process(
+                        proc,
+                        process_group_id,
+                        signal.SIGKILL,
+                        "kill",
+                        task_id,
+                    )
+                    _wait_for_process_tree_exit(
+                        proc,
+                        process_group_id,
+                        task_id,
+                        _SHUTDOWN_TERMINATE_TIMEOUT_SECONDS,
+                    )
 
             interrupted_by_shutdown = _release_active_process(task_id, proc)
             if interrupted_by_shutdown:
@@ -446,10 +563,9 @@ def _process_one(task_id: str) -> None:
             _safe_pending_unlink(str(content_path))
         logger.info("Task %s completed for event %s", task_id, event_id)
     finally:
-        interrupted_by_shutdown = (
-            _release_active_process(task_id, proc) or interrupted_by_shutdown
-        )
-        if interrupted_by_shutdown:
+        shutdown_state_owned = _shutdown_interrupted == (task_id, proc)
+        interrupted_by_shutdown = _release_active_process(task_id, proc) or interrupted_by_shutdown
+        if shutdown_state_owned:
             _clear_shutdown_interrupted(task_id, proc)
 
     # Auto-suggest: AI checks if this event belongs to any existing series
@@ -589,7 +705,7 @@ def start_worker() -> None:
 
 def stop_worker() -> bool:
     """Stop the worker and its exact active child, returning quiescence status."""
-    global _shutdown_interrupted, _shutdown_signal_succeeded
+    global _shutdown_interrupted, _shutdown_fallback_causation
     _shutdown_flag.set()
     with _active_process_lock:
         proc = _active_process
@@ -601,54 +717,59 @@ def stop_worker() -> bool:
             and _observe_process_returncode(proc, task_id, "selection") is None
         ):
             _shutdown_interrupted = (task_id, proc)
-            _shutdown_signal_succeeded = False
+            _shutdown_signals_sent.clear()
+            _shutdown_fallback_causation = False
             _shutdown_signal_resolved.clear()
         else:
             proc = None
             task_id = None
             process_group_id = None
 
+    process_tree_quiesced = True
+    verified_interruption = False
     if proc is not None:
-        interrupted = False
-        if _signal_ingest_process(
+        sent, used_fallback = _signal_ingest_process(
             proc, process_group_id, signal.SIGTERM, "terminate", task_id
-        ):
-            returncode = _observe_process_returncode(proc, task_id, "after terminate")
-            interrupted = _is_shutdown_exit(returncode)
-            if interrupted:
-                _resolve_shutdown_interruption(task_id, proc, True)
-            elif returncode is None:
-                try:
-                    returncode = proc.wait(
-                        timeout=_SHUTDOWN_TERMINATE_TIMEOUT_SECONDS
-                    )
-                except subprocess.TimeoutExpired:
-                    if _signal_ingest_process(
-                        proc, process_group_id, signal.SIGKILL, "kill", task_id
-                    ):
-                        returncode = _observe_process_returncode(
-                            proc, task_id, "after kill"
-                        )
-                        interrupted = _is_shutdown_exit(returncode)
-                        if interrupted:
-                            _resolve_shutdown_interruption(task_id, proc, True)
-                        elif returncode is None:
-                            try:
-                                returncode = proc.wait(
-                                    timeout=_SHUTDOWN_TERMINATE_TIMEOUT_SECONDS
-                                )
-                            except Exception:
-                                _log_shutdown_operation_failure(
-                                    task_id, "post-kill wait"
-                                )
-                            else:
-                                interrupted = _is_shutdown_exit(returncode)
-                except Exception:
-                    _log_shutdown_operation_failure(task_id, "wait")
-                else:
-                    interrupted = _is_shutdown_exit(returncode)
+        )
+        if sent:
+            _record_shutdown_signal(
+                task_id, proc, signal.SIGTERM, used_fallback
+            )
 
-        _resolve_shutdown_interruption(task_id, proc, interrupted)
+        if sent:
+            returncode, process_tree_quiesced = _wait_for_process_tree_exit(
+                proc,
+                process_group_id,
+                task_id,
+                _SHUTDOWN_TERMINATE_TIMEOUT_SECONDS,
+            )
+        else:
+            returncode = _observe_process_returncode(
+                proc, task_id, "after failed terminate"
+            )
+            process_tree_quiesced = (
+                returncode is not None
+                and not _process_group_exists(process_group_id, task_id)
+            )
+        if not process_tree_quiesced:
+            sent, used_fallback = _signal_ingest_process(
+                proc, process_group_id, signal.SIGKILL, "kill", task_id
+            )
+            if sent:
+                _record_shutdown_signal(
+                    task_id, proc, signal.SIGKILL, used_fallback
+                )
+            returncode, process_tree_quiesced = _wait_for_process_tree_exit(
+                proc,
+                process_group_id,
+                task_id,
+                _SHUTDOWN_TERMINATE_TIMEOUT_SECONDS,
+            )
+
+        verified_interruption = _matches_shutdown_causation(
+            task_id, proc, returncode
+        )
+        _resolve_shutdown_interruption(task_id, proc)
 
     worker = _worker
     if _worker_is_alive(worker):
@@ -657,11 +778,12 @@ def stop_worker() -> bool:
         except Exception:
             logger.error("Failed to join ingest task worker", exc_info=True)
 
-    quiesced = not _worker_is_alive(worker)
+    worker_quiesced = not _worker_is_alive(worker)
+    quiesced = worker_quiesced and process_tree_quiesced
 
-    if not quiesced:
+    if not worker_quiesced:
         fallback_applied = False
-        if task_id is not None and _shutdown_signal_succeeded:
+        if task_id is not None and verified_interruption:
             try:
                 _restore_shutdown_interrupted_task(task_id)
                 fallback_applied = True
@@ -681,5 +803,17 @@ def stop_worker() -> bool:
             logger.error(
                 "Ingest task worker did not stop within %ss; no verified interrupted task to recover",
                 _SHUTDOWN_JOIN_TIMEOUT_SECONDS,
+            )
+    if not process_tree_quiesced:
+        if _process_group_exists(process_group_id, task_id or "none"):
+            logger.error(
+                "Ingest process group still exists after SIGKILL task=%s pgid=%s",
+                task_id or "none",
+                process_group_id,
+            )
+        else:
+            logger.error(
+                "Ingest child still active after SIGKILL task=%s",
+                task_id or "none",
             )
     return quiesced

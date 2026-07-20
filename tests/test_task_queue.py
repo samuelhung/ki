@@ -143,6 +143,7 @@ class _ShutdownOperationFailureProcess:
         self.failure_point = failure_point
         self.calls: list[str] = []
         self.wait_calls = 0
+        self.killed = False
 
     def poll(self):
         return None
@@ -157,7 +158,8 @@ class _ShutdownOperationFailureProcess:
         self.calls.append(f"wait-{self.wait_calls}")
         if self.failure_point == "wait":
             raise RuntimeError("wait failed")
-        if self.wait_calls == 1:
+        if not self.killed:
+            time.sleep(timeout or 0)
             raise task_queue.subprocess.TimeoutExpired(cmd=["runner"], timeout=timeout or 0)
         if self.failure_point == "post-kill-wait":
             raise RuntimeError("post-kill wait failed")
@@ -168,12 +170,15 @@ class _ShutdownOperationFailureProcess:
         self.calls.append("kill")
         if self.failure_point == "kill":
             raise RuntimeError("kill failed")
+        self.killed = True
 
 
 class _GroupSignalProcess(_BlockingProcess):
     def __init__(self, *, survive_terminate: bool = False):
-        super().__init__(survive_terminate=survive_terminate)
+        super().__init__()
         self.pid = 4242
+        self.descendant_survives_terminate = survive_terminate
+        self.group_alive = True
         self.fallback_terminate_called = False
         self.fallback_kill_called = False
 
@@ -188,13 +193,48 @@ class _GroupSignalProcess(_BlockingProcess):
     def receive_group_signal(self, sig):
         if sig == signal.SIGTERM:
             self.terminated = True
-            if not self.survive_terminate:
-                self.returncode = -signal.SIGTERM
-                self.exited.set()
+            self.returncode = -signal.SIGTERM
+            self.exited.set()
+            if not self.descendant_survives_terminate:
+                self.group_alive = False
         elif sig == signal.SIGKILL:
             self.killed = True
             self.returncode = -signal.SIGKILL
             self.exited.set()
+            self.group_alive = False
+
+
+class _TimeoutGroupProcess(_TimeoutProcess):
+    def __init__(self):
+        self.pid = 4343
+        self.returncode = None
+        self.terminated = False
+        self.killed = False
+        self.group_alive = True
+
+    def poll(self):
+        return self.returncode
+
+    def receive_group_signal(self, sig):
+        if sig == signal.SIGTERM:
+            self.terminated = True
+            self.returncode = -signal.SIGTERM
+        elif sig == signal.SIGKILL:
+            self.killed = True
+            self.group_alive = False
+
+
+class _UnrelatedSignalProcess(_BlockingProcess):
+    def terminate(self):
+        self.terminated = True
+        self.returncode = -signal.SIGINT
+        self.exited.set()
+
+    def communicate(self, timeout=None):
+        self.started.set()
+        if not self.exited.wait(timeout=2):
+            raise AssertionError("unrelated signal result was not released")
+        return "", "unrelated signal"
 
 
 class _JoinableWorker:
@@ -222,8 +262,10 @@ def _reset_worker_state():
         task_queue._active_process_group_id = None
     if hasattr(task_queue, "_shutdown_interrupted"):
         task_queue._shutdown_interrupted = None
-    if hasattr(task_queue, "_shutdown_signal_succeeded"):
-        task_queue._shutdown_signal_succeeded = False
+    if hasattr(task_queue, "_shutdown_signals_sent"):
+        task_queue._shutdown_signals_sent.clear()
+    if hasattr(task_queue, "_shutdown_fallback_causation"):
+        task_queue._shutdown_fallback_causation = False
     if hasattr(task_queue, "_shutdown_signal_resolved"):
         task_queue._shutdown_signal_resolved.clear()
     yield
@@ -299,6 +341,46 @@ def test_timeout_retry_resets_task_and_event_to_pending(tmp_path, monkeypatch):
     assert event["last_error"] is None
     assert task_queue._active_process is None
     assert task_queue._active_task_id is None
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process groups only")
+def test_timeout_terminates_remaining_runner_descendants(tmp_path, monkeypatch):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    init_db()
+    task_id = _insert_processing_task(
+        event_id="evt-timeout-group", task_id="task-timeout-group"
+    )
+    process = _TimeoutGroupProcess()
+    signals = []
+
+    def kill_group(group_id, sig):
+        if sig == 0:
+            if process.group_alive:
+                return
+            raise ProcessLookupError
+        signals.append((group_id, sig))
+        process.receive_group_signal(sig)
+
+    monkeypatch.setattr(task_queue, "_TASK_TIMEOUT_SECONDS", 1)
+    monkeypatch.setattr(task_queue.os, "getpgrp", lambda: 9999)
+    monkeypatch.setattr(task_queue.os, "killpg", kill_group)
+    monkeypatch.setattr(task_queue.subprocess, "Popen", lambda *args, **kwargs: process)
+
+    task_queue._process_one(task_id)
+
+    assert signals == [
+        (process.pid, signal.SIGTERM),
+        (process.pid, signal.SIGKILL),
+    ]
+    with connect() as conn:
+        task = conn.execute(
+            "SELECT status, retry_count FROM ingest_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        event = conn.execute(
+            "SELECT status FROM events WHERE id = 'evt-timeout-group'"
+        ).fetchone()
+    assert tuple(task) == ("pending", 1)
+    assert event["status"] == "pending"
 
 
 def test_child_process_failure_marks_processing_event_error(tmp_path, monkeypatch):
@@ -383,6 +465,7 @@ def test_stop_worker_kills_child_that_ignores_terminate(tmp_path, monkeypatch):
     task_id = _insert_processing_task(event_id="evt-kill", task_id="task-kill")
     process = _BlockingProcess(survive_terminate=True)
     monkeypatch.setattr(task_queue.subprocess, "Popen", lambda *args, **kwargs: process)
+    monkeypatch.setattr(task_queue, "_SHUTDOWN_TERMINATE_TIMEOUT_SECONDS", 0.1)
 
     worker = threading.Thread(target=task_queue._process_one, args=(task_id,))
     task_queue._worker = worker
@@ -416,11 +499,16 @@ def test_stop_worker_signals_entire_process_group(
     signals = []
 
     def kill_group(group_id, sig):
+        if sig == 0:
+            if process.group_alive:
+                return
+            raise ProcessLookupError
         signals.append((group_id, sig))
         process.receive_group_signal(sig)
 
     monkeypatch.setattr(task_queue.os, "getpgrp", lambda: 9999)
     monkeypatch.setattr(task_queue.os, "killpg", kill_group)
+    monkeypatch.setattr(task_queue, "_SHUTDOWN_TERMINATE_TIMEOUT_SECONDS", 0.01)
     task_queue._active_process = process
     task_queue._active_process_group_id = process.pid
     task_queue._active_task_id = "task-group"
@@ -432,6 +520,39 @@ def test_stop_worker_signals_entire_process_group(
     assert process.fallback_terminate_called is False
     assert process.fallback_kill_called is False
     assert worker.join_timeout == task_queue._SHUTDOWN_JOIN_TIMEOUT_SECONDS
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process groups only")
+def test_stop_worker_reports_nonquiescent_when_group_survives_sigkill(
+    monkeypatch, caplog
+):
+    process = _GroupSignalProcess(survive_terminate=True)
+    worker = _JoinableWorker()
+    signals = []
+
+    def kill_group(group_id, sig):
+        if sig == 0:
+            return
+        signals.append((group_id, sig))
+        if sig == signal.SIGTERM:
+            process.receive_group_signal(sig)
+
+    monkeypatch.setattr(task_queue, "_SHUTDOWN_TERMINATE_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(task_queue.os, "getpgrp", lambda: 9999)
+    monkeypatch.setattr(task_queue.os, "killpg", kill_group)
+    task_queue._active_process = process
+    task_queue._active_process_group_id = process.pid
+    task_queue._active_task_id = "task-stubborn-group"
+    task_queue._worker = worker
+
+    with caplog.at_level("ERROR"):
+        assert task_queue.stop_worker() is False
+
+    assert signals == [
+        (process.pid, signal.SIGTERM),
+        (process.pid, signal.SIGKILL),
+    ]
+    assert "process group" in caplog.text
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX process groups only")
@@ -453,11 +574,13 @@ def test_stop_worker_never_signals_its_own_process_group(monkeypatch):
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX process groups only")
-def test_stop_worker_terminates_real_parent_and_descendant_processes():
+def test_stop_worker_terminates_real_parent_and_descendant_processes(monkeypatch):
     script = (
         "import subprocess, sys, time; "
-        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(3)']); "
-        "print(child.pid, flush=True); time.sleep(3)"
+        "code = \"import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+        "print('ready', flush=True); time.sleep(10)\"; "
+        "child = subprocess.Popen([sys.executable, '-c', code], stdout=subprocess.PIPE, text=True); "
+        "child.stdout.readline(); print(child.pid, flush=True); time.sleep(10)"
     )
     process = subprocess.Popen(
         [sys.executable, "-c", script],
@@ -473,12 +596,13 @@ def test_stop_worker_terminates_real_parent_and_descendant_processes():
     task_queue._active_process_group_id = process.pid
     task_queue._active_task_id = "task-real-group"
     task_queue._worker = worker
+    monkeypatch.setattr(task_queue, "_SHUTDOWN_TERMINATE_TIMEOUT_SECONDS", 0.2)
 
     try:
         assert task_queue.stop_worker() is True
         assert process.poll() is not None
 
-        deadline = time.monotonic() + 2
+        deadline = time.monotonic() + 3
         while time.monotonic() < deadline:
             try:
                 os.kill(child_pid, 0)
@@ -565,16 +689,16 @@ def test_noop_terminate_after_exit_is_not_shutdown_causation(tmp_path, monkeypat
 
 
 @pytest.mark.parametrize(
-    "failure_point, expected_calls",
+    "failure_point, expected_calls, expected_quiesced",
     [
-        ("terminate", ["terminate"]),
-        ("wait", ["terminate", "wait-1"]),
-        ("kill", ["terminate", "wait-1", "kill"]),
-        ("post-kill-wait", ["terminate", "wait-1", "kill", "wait-2"]),
+        ("terminate", ["terminate", "kill", "wait-1"], True),
+        ("wait", ["terminate", "wait-1", "kill", "wait-2"], False),
+        ("kill", ["terminate", "wait-1", "kill", "wait-2"], False),
+        ("post-kill-wait", ["terminate", "wait-1", "kill", "wait-2"], False),
     ],
 )
 def test_stop_worker_contains_shutdown_operation_failures(
-    failure_point, expected_calls, monkeypatch, caplog
+    failure_point, expected_calls, expected_quiesced, monkeypatch, caplog
 ):
     process = _ShutdownOperationFailureProcess(failure_point)
 
@@ -582,9 +706,10 @@ def test_stop_worker_contains_shutdown_operation_failures(
     task_queue._active_process = process
     task_queue._active_task_id = "task-operation-failure"
     task_queue._worker = worker
+    monkeypatch.setattr(task_queue, "_SHUTDOWN_TERMINATE_TIMEOUT_SECONDS", 0.01)
 
     with caplog.at_level("WARNING"):
-        assert task_queue.stop_worker() is True
+        assert task_queue.stop_worker() is expected_quiesced
 
     assert process.calls == expected_calls
     assert worker.join_timeout == task_queue._SHUTDOWN_JOIN_TIMEOUT_SECONDS
@@ -618,6 +743,34 @@ def test_failed_terminate_does_not_reclassify_ordinary_child_failure(
         ).fetchone()
     assert tuple(task) == ("error", "ordinary child failure")
     assert tuple(event) == ("error", "ordinary child failure")
+
+
+def test_unrelated_negative_exit_is_not_shutdown_interruption_and_clears_state(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    init_db()
+    task_id = _insert_processing_task(
+        event_id="evt-unrelated-signal", task_id="task-unrelated-signal"
+    )
+    process = _UnrelatedSignalProcess()
+    monkeypatch.setattr(task_queue.subprocess, "Popen", lambda *args, **kwargs: process)
+    worker = threading.Thread(target=task_queue._process_one, args=(task_id,))
+    task_queue._worker = worker
+    worker.start()
+    assert process.started.wait(timeout=1)
+
+    assert task_queue.stop_worker() is True
+
+    with connect() as conn:
+        task = conn.execute(
+            "SELECT status, error FROM ingest_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+    assert tuple(task) == ("error", "unrelated signal")
+    assert task_queue._shutdown_interrupted is None
+    assert not task_queue._shutdown_signals_sent
+    assert task_queue._shutdown_fallback_causation is False
+    assert task_queue._shutdown_signal_resolved.is_set() is False
 
 
 def test_shutdown_before_spawn_restores_claimed_task_without_starting_child(tmp_path, monkeypatch):
