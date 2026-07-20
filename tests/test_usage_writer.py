@@ -395,6 +395,33 @@ def test_main_lifespan_stops_workers_when_application_raises(monkeypatch):
     assert calls == ["usage-start", "worker-start", "worker-stop", "usage-stop"]
 
 
+def test_main_lifespan_keeps_usage_writer_accepting_when_worker_is_not_quiescent(
+    monkeypatch,
+):
+    calls: list[str] = []
+    monkeypatch.setattr(main, "ensure_migrations", lambda _path: None)
+    monkeypatch.setattr(main, "load_config", lambda: None)
+    monkeypatch.setattr(main, "init_db", lambda: None)
+    monkeypatch.setattr(main, "seed_default_sources", lambda: None)
+    monkeypatch.setattr(main, "start_usage_writer", lambda: calls.append("usage-start"))
+    monkeypatch.setattr(main, "start_worker", lambda: calls.append("worker-start"))
+
+    def stop_worker_without_quiescing():
+        calls.append("worker-stop")
+        return False
+
+    monkeypatch.setattr(main, "stop_worker", stop_worker_without_quiescing)
+    monkeypatch.setattr(main, "stop_usage_writer", lambda: calls.append("usage-stop"))
+
+    async def exercise():
+        async with main.lifespan(main.app):
+            calls.append("running")
+
+    asyncio.run(exercise())
+
+    assert calls == ["usage-start", "worker-start", "running", "worker-stop"]
+
+
 def test_main_lifespan_stops_usage_writer_when_worker_shutdown_fails(monkeypatch):
     calls: list[str] = []
     monkeypatch.setattr(main, "ensure_migrations", lambda _path: None)

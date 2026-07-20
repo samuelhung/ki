@@ -28,6 +28,12 @@ PENDING_DIR = INGEST_ROOT / "pending"
 
 _worker: threading.Thread | None = None
 _shutdown_flag = threading.Event()
+_active_process_lock = threading.Lock()
+_active_process: subprocess.Popen[str] | None = None
+_active_task_id: str | None = None
+_shutdown_interrupted: tuple[str, subprocess.Popen[str]] | None = None
+_shutdown_signal_resolved = threading.Event()
+_shutdown_signal_succeeded = False
 
 
 def _safe_pending_unlink(path_value: str) -> None:
@@ -125,6 +131,59 @@ def recover_stuck() -> int:
 # Per-task timeout to prevent a hung download/transcribe from blocking the queue forever.
 # 15 minutes: document (2s) / audio (6 min poll) / video (8 min) / scanned PDF OCR (10 min + summarize)
 _TASK_TIMEOUT_SECONDS = 900
+_SHUTDOWN_TERMINATE_TIMEOUT_SECONDS = 5
+_SHUTDOWN_JOIN_TIMEOUT_SECONDS = 10
+
+
+def _restore_shutdown_interrupted_task(task_id: str) -> None:
+    """Return an exact shutdown-interrupted task to its recoverable state."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT event_id FROM ingest_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        if not row:
+            return
+        restored = conn.execute(
+            "UPDATE ingest_tasks SET status = 'pending', started_at = NULL, "
+            "finished_at = NULL, error = NULL WHERE id = ? AND status = 'running'",
+            (task_id,),
+        )
+        if restored.rowcount:
+            conn.execute(
+                "UPDATE events SET status = 'pending', last_error = NULL "
+                "WHERE id = ? AND status = 'processing'",
+                (row["event_id"],),
+            )
+
+
+def _release_active_process(task_id: str, proc: subprocess.Popen[str]) -> bool:
+    """Release process ownership and report whether shutdown selected it."""
+    global _active_process, _active_task_id
+    with _active_process_lock:
+        shutdown_selected = _shutdown_interrupted == (task_id, proc)
+        if _active_process is proc and _active_task_id == task_id:
+            _active_process = None
+            _active_task_id = None
+    if not shutdown_selected:
+        return False
+
+    # stop_worker resolves this immediately after terminate() returns. Waiting
+    # outside the ownership lock prevents a failed signal from being mistaken
+    # for an intentional shutdown interruption.
+    _shutdown_signal_resolved.wait(timeout=_SHUTDOWN_TERMINATE_TIMEOUT_SECONDS)
+    with _active_process_lock:
+        return (
+            _shutdown_interrupted == (task_id, proc)
+            and _shutdown_signal_succeeded
+        )
+
+
+def _clear_shutdown_interrupted(task_id: str, proc: subprocess.Popen[str]) -> None:
+    global _shutdown_interrupted, _shutdown_signal_succeeded
+    with _active_process_lock:
+        if _shutdown_interrupted == (task_id, proc):
+            _shutdown_interrupted = None
+            _shutdown_signal_succeeded = False
 
 
 def _process_one(task_id: str) -> None:
@@ -164,100 +223,131 @@ def _process_one(task_id: str) -> None:
             (task_id,),
         )
 
-    # Run pipeline in a child process so timeout can terminate real work.
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "zhiji_backend.ingest_task_runner", task_id],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
+    # Check shutdown, spawn, and publish ownership atomically so stop_worker()
+    # cannot miss a child created between its shutdown signal and process scan.
+    global _active_process, _active_task_id
+    with _active_process_lock:
+        if _shutdown_flag.is_set():
+            proc = None
+        else:
+            proc = subprocess.Popen(
+                [sys.executable, "-m", "zhiji_backend.ingest_task_runner", task_id],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            _active_process = proc
+            _active_task_id = task_id
+
+    if proc is None:
+        _restore_shutdown_interrupted_task(task_id)
+        return
+
+    interrupted_by_shutdown = False
     try:
-        stdout, stderr = proc.communicate(timeout=_TASK_TIMEOUT_SECONDS)
-    except subprocess.TimeoutExpired:
-        proc.terminate()
         try:
-            stdout, stderr = proc.communicate(timeout=10)
+            stdout, stderr = proc.communicate(timeout=_TASK_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
-            proc.kill()
-            stdout, stderr = proc.communicate()
+            proc.terminate()
+            try:
+                stdout, stderr = proc.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                stdout, stderr = proc.communicate()
 
-        # Pipeline may have actually completed but the child process did not
-        # exit in time. Check the event status first.
-        with connect() as conn:
-            event_status = conn.execute(
-                "SELECT status FROM events WHERE id = ?", (event_id,)
-            ).fetchone()
+            interrupted_by_shutdown = _release_active_process(task_id, proc)
+            if interrupted_by_shutdown:
+                _restore_shutdown_interrupted_task(task_id)
+                return
 
-            if event_status and event_status["status"] == "completed":
-                # Pipeline finished — just slow, not hung
-                conn.execute(
-                    "UPDATE ingest_tasks SET status = 'done', finished_at = datetime('now') WHERE id = ?",
-                    (task_id,),
-                )
-                msg = f"completed but exceeded {_TASK_TIMEOUT_SECONDS}s timeout — marked done"
-                logger.warning("Task %s %s", task_id, msg)
-            else:
-                # Truly hung — check if we should auto-retry
-                retry_count = conn.execute(
-                    "SELECT COALESCE(retry_count, 0) FROM ingest_tasks WHERE id = ?", (task_id,)
+            # Pipeline may have actually completed but the child process did not
+            # exit in time. Check the event status first.
+            with connect() as conn:
+                event_status = conn.execute(
+                    "SELECT status FROM events WHERE id = ?", (event_id,)
                 ).fetchone()
-                current_retries = retry_count[0] if retry_count else 0
 
-                if current_retries < 1:
-                    # Auto-retry once: wait 60s then reset to pending
-                    logger.warning("Task %s timed out — auto-retrying in 60s (retry %d→%d)",
-                                   task_id, current_retries, current_retries + 1)
+                if event_status and event_status["status"] == "completed":
+                    # Pipeline finished — just slow, not hung
                     conn.execute(
-                        "UPDATE ingest_tasks SET status = 'pending', error = NULL, "
-                        "started_at = NULL, finished_at = NULL, "
-                        "retry_count = COALESCE(retry_count, 0) + 1 WHERE id = ?",
+                        "UPDATE ingest_tasks SET status = 'done', finished_at = datetime('now') WHERE id = ?",
                         (task_id,),
                     )
-                    conn.execute(
-                        "UPDATE events SET status = 'pending', last_error = NULL "
-                        "WHERE id = ? AND status = 'processing'",
-                        (event_id,),
-                    )
+                    msg = f"completed but exceeded {_TASK_TIMEOUT_SECONDS}s timeout — marked done"
+                    logger.warning("Task %s %s", task_id, msg)
                 else:
-                    # Already retried once — permanent error
-                    error_msg = f"任务超时（{_TASK_TIMEOUT_SECONDS}s），已自动重试1次仍失败，可能卡在下载或转写步骤"
-                    conn.execute(
-                        "UPDATE ingest_tasks SET status = 'error', error = ?, finished_at = datetime('now') WHERE id = ?",
-                        (error_msg, task_id),
-                    )
-                    conn.execute(
-                        "UPDATE events SET status = 'error', last_error = ? "
-                        "WHERE id = ? AND status = 'processing'",
-                        (error_msg, event_id),
-                    )
-                    logger.error("Task %s timed out after %ds + 1 retry — permanent error", task_id, _TASK_TIMEOUT_SECONDS)
-        return
+                    # Truly hung — check if we should auto-retry
+                    retry_count = conn.execute(
+                        "SELECT COALESCE(retry_count, 0) FROM ingest_tasks WHERE id = ?", (task_id,)
+                    ).fetchone()
+                    current_retries = retry_count[0] if retry_count else 0
 
-    if proc.returncode != 0:
-        error_msg = (stderr or stdout or f"ingest child exited with {proc.returncode}")[-500:]
+                    if current_retries < 1:
+                        # Auto-retry once: wait 60s then reset to pending
+                        logger.warning("Task %s timed out — auto-retrying in 60s (retry %d→%d)",
+                                       task_id, current_retries, current_retries + 1)
+                        conn.execute(
+                            "UPDATE ingest_tasks SET status = 'pending', error = NULL, "
+                            "started_at = NULL, finished_at = NULL, "
+                            "retry_count = COALESCE(retry_count, 0) + 1 WHERE id = ?",
+                            (task_id,),
+                        )
+                        conn.execute(
+                            "UPDATE events SET status = 'pending', last_error = NULL "
+                            "WHERE id = ? AND status = 'processing'",
+                            (event_id,),
+                        )
+                    else:
+                        # Already retried once — permanent error
+                        error_msg = f"任务超时（{_TASK_TIMEOUT_SECONDS}s），已自动重试1次仍失败，可能卡在下载或转写步骤"
+                        conn.execute(
+                            "UPDATE ingest_tasks SET status = 'error', error = ?, finished_at = datetime('now') WHERE id = ?",
+                            (error_msg, task_id),
+                        )
+                        conn.execute(
+                            "UPDATE events SET status = 'error', last_error = ? "
+                            "WHERE id = ? AND status = 'processing'",
+                            (error_msg, event_id),
+                        )
+                        logger.error("Task %s timed out after %ds + 1 retry — permanent error", task_id, _TASK_TIMEOUT_SECONDS)
+            return
+
+        interrupted_by_shutdown = _release_active_process(task_id, proc)
+        if interrupted_by_shutdown:
+            _restore_shutdown_interrupted_task(task_id)
+            return
+
+        if proc.returncode != 0:
+            error_msg = (stderr or stdout or f"ingest child exited with {proc.returncode}")[-500:]
+            with connect() as conn:
+                conn.execute(
+                    "UPDATE ingest_tasks SET status = 'error', error = ?, finished_at = datetime('now') WHERE id = ?",
+                    (error_msg, task_id),
+                )
+                conn.execute(
+                    "UPDATE events SET status = 'error', last_error = ? "
+                    "WHERE id = ? AND status = 'processing'",
+                    (error_msg, event_id),
+                )
+            logger.error("Task %s failed for event %s: %s", task_id, event_id, error_msg)
+            return
+
+        # Success
         with connect() as conn:
             conn.execute(
-                "UPDATE ingest_tasks SET status = 'error', error = ?, finished_at = datetime('now') WHERE id = ?",
-                (error_msg, task_id),
+                "UPDATE ingest_tasks SET status = 'done', finished_at = datetime('now') WHERE id = ?",
+                (task_id,),
             )
-            conn.execute(
-                "UPDATE events SET status = 'error', last_error = ? "
-                "WHERE id = ? AND status = 'processing'",
-                (error_msg, event_id),
-            )
-        logger.error("Task %s failed for event %s: %s", task_id, event_id, error_msg)
-        return
-
-    # Success
-    with connect() as conn:
-        conn.execute(
-            "UPDATE ingest_tasks SET status = 'done', finished_at = datetime('now') WHERE id = ?",
-            (task_id,),
+        # Cleanup pending file if any
+        if content_path := payload.get("content_path"):
+            _safe_pending_unlink(str(content_path))
+        logger.info("Task %s completed for event %s", task_id, event_id)
+    finally:
+        interrupted_by_shutdown = (
+            _release_active_process(task_id, proc) or interrupted_by_shutdown
         )
-    # Cleanup pending file if any
-    if content_path := payload.get("content_path"):
-        _safe_pending_unlink(str(content_path))
-    logger.info("Task %s completed for event %s", task_id, event_id)
+        if interrupted_by_shutdown:
+            _clear_shutdown_interrupted(task_id, proc)
 
     # Auto-suggest: AI checks if this event belongs to any existing series
     try:
@@ -394,8 +484,52 @@ def start_worker() -> None:
     _worker.start()
 
 
-def stop_worker() -> None:
-    """Signal the worker to stop and wait for graceful shutdown."""
+def stop_worker() -> bool:
+    """Stop the worker and its exact active child, returning quiescence status."""
+    global _shutdown_interrupted, _shutdown_signal_succeeded
     _shutdown_flag.set()
-    if _worker and _worker.is_alive():
-        _worker.join(timeout=10)
+    with _active_process_lock:
+        proc = _active_process
+        task_id = _active_task_id
+        if proc is not None and task_id is not None and proc.returncode is None:
+            _shutdown_interrupted = (task_id, proc)
+            _shutdown_signal_succeeded = False
+            _shutdown_signal_resolved.clear()
+        else:
+            proc = None
+            task_id = None
+
+    if proc is not None:
+        signal_sent = False
+        try:
+            proc.terminate()
+            signal_sent = True
+        except (OSError, subprocess.SubprocessError):
+            logger.warning("Failed to stop ingest child for task %s", task_id, exc_info=True)
+        finally:
+            with _active_process_lock:
+                if _shutdown_interrupted == (task_id, proc):
+                    _shutdown_signal_succeeded = signal_sent
+                    _shutdown_signal_resolved.set()
+
+        if signal_sent:
+            try:
+                proc.wait(timeout=_SHUTDOWN_TERMINATE_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=_SHUTDOWN_TERMINATE_TIMEOUT_SECONDS)
+
+    worker = _worker
+    if worker and worker.is_alive():
+        worker.join(timeout=_SHUTDOWN_JOIN_TIMEOUT_SECONDS)
+    quiesced = worker is None or not worker.is_alive()
+
+    if not quiesced:
+        if task_id is not None and _shutdown_signal_succeeded:
+            _restore_shutdown_interrupted_task(task_id)
+        logger.error(
+            "Ingest task worker did not stop within %ss; fallback recovery applied task=%s",
+            _SHUTDOWN_JOIN_TIMEOUT_SECONDS,
+            task_id or "none",
+        )
+    return quiesced

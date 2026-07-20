@@ -101,6 +101,7 @@ async def lifespan(app: FastAPI):
     init_db()
     seed_default_sources()
     start_usage_writer()
+    worker_quiesced = True
     try:
         start_worker()
         logging.getLogger("main").info("KI server ready")
@@ -108,9 +109,14 @@ async def lifespan(app: FastAPI):
             yield
         finally:
             logging.getLogger("main").info("KI server shutting down")
-            stop_worker()
+            worker_quiesced = stop_worker() is not False
     finally:
-        stop_usage_writer()
+        if worker_quiesced:
+            stop_usage_writer()
+        else:
+            logging.getLogger("main").error(
+                "Ingest worker is still active; keeping usage writer available until process exit"
+            )
 
 
 app = FastAPI(title="知几", version=__version__, lifespan=lifespan)
