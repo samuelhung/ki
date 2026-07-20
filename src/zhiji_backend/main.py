@@ -101,9 +101,11 @@ async def lifespan(app: FastAPI):
     init_db()
     seed_default_sources()
     start_usage_writer()
+    worker_started = False
     worker_quiesced = False
     try:
         start_worker()
+        worker_started = True
         logging.getLogger("main").info("KI server ready")
         try:
             yield
@@ -111,7 +113,7 @@ async def lifespan(app: FastAPI):
             logging.getLogger("main").info("KI server shutting down")
             worker_quiesced = stop_worker() is True
     finally:
-        if worker_quiesced:
+        if not worker_started or worker_quiesced:
             stop_usage_writer()
         else:
             logging.getLogger("main").error(

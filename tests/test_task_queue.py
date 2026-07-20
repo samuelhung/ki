@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import os
+import signal
+import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -166,6 +170,46 @@ class _ShutdownOperationFailureProcess:
             raise RuntimeError("kill failed")
 
 
+class _GroupSignalProcess(_BlockingProcess):
+    def __init__(self, *, survive_terminate: bool = False):
+        super().__init__(survive_terminate=survive_terminate)
+        self.pid = 4242
+        self.fallback_terminate_called = False
+        self.fallback_kill_called = False
+
+    def terminate(self):
+        self.fallback_terminate_called = True
+        super().terminate()
+
+    def kill(self):
+        self.fallback_kill_called = True
+        super().kill()
+
+    def receive_group_signal(self, sig):
+        if sig == signal.SIGTERM:
+            self.terminated = True
+            if not self.survive_terminate:
+                self.returncode = -signal.SIGTERM
+                self.exited.set()
+        elif sig == signal.SIGKILL:
+            self.killed = True
+            self.returncode = -signal.SIGKILL
+            self.exited.set()
+
+
+class _JoinableWorker:
+    def __init__(self):
+        self.alive = True
+        self.join_timeout = None
+
+    def is_alive(self):
+        return self.alive
+
+    def join(self, timeout=None):
+        self.join_timeout = timeout
+        self.alive = False
+
+
 @pytest.fixture(autouse=True)
 def _reset_worker_state():
     task_queue._shutdown_flag.clear()
@@ -174,6 +218,8 @@ def _reset_worker_state():
         task_queue._active_process = None
     if hasattr(task_queue, "_active_task_id"):
         task_queue._active_task_id = None
+    if hasattr(task_queue, "_active_process_group_id"):
+        task_queue._active_process_group_id = None
     if hasattr(task_queue, "_shutdown_interrupted"):
         task_queue._shutdown_interrupted = None
     if hasattr(task_queue, "_shutdown_signal_succeeded"):
@@ -274,6 +320,24 @@ def test_child_process_failure_marks_processing_event_error(tmp_path, monkeypatc
     assert event["last_error"] == task["error"]
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process sessions only")
+def test_ingest_runner_starts_in_its_own_session(tmp_path, monkeypatch):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    init_db()
+    task_id = _insert_processing_task(event_id="evt-session", task_id="task-session")
+    observed_kwargs = {}
+
+    def spawn(*args, **kwargs):
+        observed_kwargs.update(kwargs)
+        return _FailingProcess()
+
+    monkeypatch.setattr(task_queue.subprocess, "Popen", spawn)
+
+    task_queue._process_one(task_id)
+
+    assert observed_kwargs["start_new_session"] is True
+
+
 def test_stop_worker_terminates_active_child_and_restores_exact_task(tmp_path, monkeypatch):
     monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
     init_db()
@@ -334,6 +398,104 @@ def test_stop_worker_kills_child_that_ignores_terminate(tmp_path, monkeypatch):
             "SELECT status, retry_count FROM ingest_tasks WHERE id = ?", (task_id,)
         ).fetchone()
     assert tuple(task) == ("pending", 0)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process groups only")
+@pytest.mark.parametrize(
+    "survive_terminate, expected_signals",
+    [
+        (False, [signal.SIGTERM]),
+        (True, [signal.SIGTERM, signal.SIGKILL]),
+    ],
+)
+def test_stop_worker_signals_entire_process_group(
+    survive_terminate, expected_signals, monkeypatch
+):
+    process = _GroupSignalProcess(survive_terminate=survive_terminate)
+    worker = _JoinableWorker()
+    signals = []
+
+    def kill_group(group_id, sig):
+        signals.append((group_id, sig))
+        process.receive_group_signal(sig)
+
+    monkeypatch.setattr(task_queue.os, "getpgrp", lambda: 9999)
+    monkeypatch.setattr(task_queue.os, "killpg", kill_group)
+    task_queue._active_process = process
+    task_queue._active_process_group_id = process.pid
+    task_queue._active_task_id = "task-group"
+    task_queue._worker = worker
+
+    assert task_queue.stop_worker() is True
+
+    assert signals == [(process.pid, sig) for sig in expected_signals]
+    assert process.fallback_terminate_called is False
+    assert process.fallback_kill_called is False
+    assert worker.join_timeout == task_queue._SHUTDOWN_JOIN_TIMEOUT_SECONDS
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process groups only")
+def test_stop_worker_never_signals_its_own_process_group(monkeypatch):
+    process = _GroupSignalProcess()
+    process.pid = os.getpgrp()
+    worker = _JoinableWorker()
+    group_signals = []
+    monkeypatch.setattr(task_queue.os, "killpg", lambda *args: group_signals.append(args))
+    task_queue._active_process = process
+    task_queue._active_process_group_id = process.pid
+    task_queue._active_task_id = "task-own-group"
+    task_queue._worker = worker
+
+    assert task_queue.stop_worker() is True
+
+    assert group_signals == []
+    assert process.fallback_terminate_called is True
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process groups only")
+def test_stop_worker_terminates_real_parent_and_descendant_processes():
+    script = (
+        "import subprocess, sys, time; "
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(3)']); "
+        "print(child.pid, flush=True); time.sleep(3)"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", script],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    assert process.stdout is not None
+    child_pid = int(process.stdout.readline().strip())
+    worker = _JoinableWorker()
+    task_queue._active_process = process
+    task_queue._active_process_group_id = process.pid
+    task_queue._active_task_id = "task-real-group"
+    task_queue._worker = worker
+
+    try:
+        assert task_queue.stop_worker() is True
+        assert process.poll() is not None
+
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            try:
+                os.kill(child_pid, 0)
+            except ProcessLookupError:
+                break
+            except PermissionError:
+                pytest.skip("process inspection is restricted in this environment")
+            time.sleep(0.05)
+        else:
+            pytest.fail(f"descendant process {child_pid} is still running")
+    finally:
+        if process.poll() is None:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+            process.wait(timeout=4)
 
 
 def test_already_exited_child_is_not_reclassified_as_shutdown_interrupted(
@@ -415,18 +577,6 @@ def test_stop_worker_contains_shutdown_operation_failures(
     failure_point, expected_calls, monkeypatch, caplog
 ):
     process = _ShutdownOperationFailureProcess(failure_point)
-
-    class _JoinableWorker:
-        def __init__(self):
-            self.alive = True
-            self.join_timeout = None
-
-        def is_alive(self):
-            return self.alive
-
-        def join(self, timeout=None):
-            self.join_timeout = timeout
-            self.alive = False
 
     worker = _JoinableWorker()
     task_queue._active_process = process

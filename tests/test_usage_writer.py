@@ -456,7 +456,7 @@ def test_main_lifespan_keeps_usage_writer_when_worker_shutdown_raises(monkeypatc
     assert calls == ["usage-start", "worker-start", "worker-stop"]
 
 
-def test_main_lifespan_keeps_usage_writer_when_worker_start_fails(monkeypatch):
+def test_main_lifespan_stops_usage_writer_when_worker_never_started(monkeypatch):
     calls: list[str] = []
     monkeypatch.setattr(main, "ensure_migrations", lambda _path: None)
     monkeypatch.setattr(main, "load_config", lambda: None)
@@ -478,7 +478,7 @@ def test_main_lifespan_keeps_usage_writer_when_worker_start_fails(monkeypatch):
 
     asyncio.run(exercise())
 
-    assert calls == ["usage-start", "worker-start"]
+    assert calls == ["usage-start", "worker-start", "usage-stop"]
 
 
 def test_main_lifespan_continues_when_usage_thread_cannot_start(

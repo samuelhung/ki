@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import signal
 import shutil
 import sqlite3
 import subprocess
@@ -31,6 +33,7 @@ _shutdown_flag = threading.Event()
 _active_process_lock = threading.Lock()
 _active_process: subprocess.Popen[str] | None = None
 _active_task_id: str | None = None
+_active_process_group_id: int | None = None
 _shutdown_interrupted: tuple[str, subprocess.Popen[str]] | None = None
 _shutdown_signal_resolved = threading.Event()
 _shutdown_signal_succeeded = False
@@ -158,12 +161,13 @@ def _restore_shutdown_interrupted_task(task_id: str) -> None:
 
 def _release_active_process(task_id: str, proc: subprocess.Popen[str]) -> bool:
     """Release process ownership and report whether shutdown selected it."""
-    global _active_process, _active_task_id
+    global _active_process, _active_task_id, _active_process_group_id
     with _active_process_lock:
         shutdown_selected = _shutdown_interrupted == (task_id, proc)
         if _active_process is proc and _active_task_id == task_id:
             _active_process = None
             _active_task_id = None
+            _active_process_group_id = None
     if not shutdown_selected:
         return False
 
@@ -241,6 +245,41 @@ def _worker_is_alive(worker: threading.Thread | None) -> bool:
         return True
 
 
+def _signal_ingest_process(
+    proc: subprocess.Popen[str],
+    process_group_id: int | None,
+    sig: signal.Signals,
+    fallback_operation: str,
+    task_id: str,
+) -> bool:
+    if os.name == "posix" and process_group_id is not None:
+        try:
+            own_group_id = os.getpgrp()
+        except Exception:
+            logger.warning("Failed to inspect server process group", exc_info=True)
+        else:
+            if process_group_id != own_group_id:
+                try:
+                    os.killpg(process_group_id, sig)
+                    return True
+                except Exception:
+                    _log_shutdown_operation_failure(
+                        task_id, f"process-group {fallback_operation}"
+                    )
+            else:
+                logger.error(
+                    "Refusing to signal server process group for ingest task %s",
+                    task_id,
+                )
+
+    try:
+        getattr(proc, fallback_operation)()
+        return True
+    except Exception:
+        _log_shutdown_operation_failure(task_id, fallback_operation)
+        return False
+
+
 def _process_one(task_id: str) -> None:
     """Process a single pending task with a timeout guard.
 
@@ -280,19 +319,28 @@ def _process_one(task_id: str) -> None:
 
     # Check shutdown, spawn, and publish ownership atomically so stop_worker()
     # cannot miss a child created between its shutdown signal and process scan.
-    global _active_process, _active_task_id
+    global _active_process, _active_task_id, _active_process_group_id
     with _active_process_lock:
         if _shutdown_flag.is_set():
             proc = None
         else:
+            popen_kwargs = {
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.PIPE,
+                "text": True,
+            }
+            if os.name == "posix":
+                popen_kwargs["start_new_session"] = True
             proc = subprocess.Popen(
                 [sys.executable, "-m", "zhiji_backend.ingest_task_runner", task_id],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
+                **popen_kwargs,
             )
             _active_process = proc
             _active_task_id = task_id
+            pid = getattr(proc, "pid", None)
+            _active_process_group_id = (
+                pid if os.name == "posix" and isinstance(pid, int) and pid > 0 else None
+            )
 
     if proc is None:
         _restore_shutdown_interrupted_task(task_id)
@@ -546,6 +594,7 @@ def stop_worker() -> bool:
     with _active_process_lock:
         proc = _active_process
         task_id = _active_task_id
+        process_group_id = _active_process_group_id
         if (
             proc is not None
             and task_id is not None
@@ -557,14 +606,13 @@ def stop_worker() -> bool:
         else:
             proc = None
             task_id = None
+            process_group_id = None
 
     if proc is not None:
         interrupted = False
-        try:
-            proc.terminate()
-        except Exception:
-            _log_shutdown_operation_failure(task_id, "terminate")
-        else:
+        if _signal_ingest_process(
+            proc, process_group_id, signal.SIGTERM, "terminate", task_id
+        ):
             returncode = _observe_process_returncode(proc, task_id, "after terminate")
             interrupted = _is_shutdown_exit(returncode)
             if interrupted:
@@ -575,11 +623,9 @@ def stop_worker() -> bool:
                         timeout=_SHUTDOWN_TERMINATE_TIMEOUT_SECONDS
                     )
                 except subprocess.TimeoutExpired:
-                    try:
-                        proc.kill()
-                    except Exception:
-                        _log_shutdown_operation_failure(task_id, "kill")
-                    else:
+                    if _signal_ingest_process(
+                        proc, process_group_id, signal.SIGKILL, "kill", task_id
+                    ):
                         returncode = _observe_process_returncode(
                             proc, task_id, "after kill"
                         )
