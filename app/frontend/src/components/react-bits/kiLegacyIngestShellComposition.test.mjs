@@ -296,7 +296,7 @@ test('vite dev automatically bootstraps a remote session before retrying protect
   assert.match(vite, /rewrite:\s*\(\)\s*=>\s*'\/'/);
   assert.match(api, /bootstrapViteRemoteSession/);
   assert.match(api, /response\.status !== 401/);
-  assert.match(api, /fetch\('\/__ki_remote_session'/);
+  assert.match(api, /fetchWithPolicy\('\/__ki_remote_session'/);
 });
 
 test('formal ingest visual QA waits for the split workspace instead of retired cinematic modules', () => {

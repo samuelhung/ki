@@ -15,6 +15,8 @@ test('apiFetch preserves its Response contract while applying the shared policy'
   assert.match(api, /const runtimeApiFetch = createApiFetch\(\{/);
   assert.match(api, /request: fetchWithPolicy/);
   assert.match(api, /return runtimeApiFetch\(input, init\)/);
+  assert.match(api, /viteSessionBootstrap = fetchWithPolicy\('\/__ki_remote_session', \{[\s\S]*?timeoutMs: 10_000/);
+  assert.doesNotMatch(api, /fetch\('\/__ki_remote_session'/);
 });
 
 test('health polling and connection tests use bounded shared requests', () => {

@@ -55,10 +55,10 @@ let viteSessionBootstrap: Promise<boolean> | null = null;
 async function bootstrapViteRemoteSession(): Promise<boolean> {
   if (!isViteDev) return false;
   if (!viteSessionBootstrap) {
-    viteSessionBootstrap = fetch('/__ki_remote_session', {
+    viteSessionBootstrap = fetchWithPolicy('/__ki_remote_session', {
       cache: 'no-store',
       credentials: 'include',
-      signal: AbortSignal.timeout(10_000),
+      timeoutMs: 10_000,
     })
       .then((response) => response.ok)
       .catch(() => false)

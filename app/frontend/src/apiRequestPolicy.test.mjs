@@ -34,6 +34,19 @@ function rejectIfStillPending(promise, timeoutMs = 100) {
   ]);
 }
 
+async function withoutNativeAbortComposition(callback) {
+  const timeout = AbortSignal.timeout;
+  const any = AbortSignal.any;
+  AbortSignal.timeout = undefined;
+  AbortSignal.any = undefined;
+  try {
+    await callback();
+  } finally {
+    AbortSignal.timeout = timeout;
+    AbortSignal.any = any;
+  }
+}
+
 test('request policy exposes the approved runtime interface', async () => {
   assert.equal(typeof policy.ApiRequestError, 'function');
   assert.equal(typeof policy.fetchWithPolicy, 'function');
@@ -87,7 +100,24 @@ test('request policy preserves caller cancellation', async () => {
   );
 });
 
-test('request policy composes an embedded Request signal with a distinct init signal', async () => {
+test('request policy honors an embedded Request signal when init does not override it', async () => {
+  const requestController = new AbortController();
+  const request = new Request('https://example.test/embedded-abort', {
+    signal: requestController.signal,
+  });
+  const pending = policy.fetchWithPolicy(request, { timeoutMs: 1_000 }, abortAwareFetch);
+
+  requestController.abort();
+
+  await assert.rejects(
+    pending,
+    (error) => error instanceof policy.ApiRequestError
+      && error.kind === 'cancelled'
+      && error.name === 'AbortError',
+  );
+});
+
+test('an explicit init signal overrides the embedded Request signal', async () => {
   const requestController = new AbortController();
   const initController = new AbortController();
   const request = new Request('https://example.test/embedded-abort', {
@@ -98,8 +128,16 @@ test('request policy composes an embedded Request signal with a distinct init si
     { signal: initController.signal, timeoutMs: 1_000 },
     abortAwareFetch,
   );
+  let settled = false;
+  void pending.then(
+    () => { settled = true; },
+    () => { settled = true; },
+  );
 
   requestController.abort();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(settled, false);
+  initController.abort();
 
   await assert.rejects(
     pending,
@@ -107,6 +145,67 @@ test('request policy composes an embedded Request signal with a distinct init si
       && error.kind === 'cancelled'
       && error.name === 'AbortError',
   );
+});
+
+test('fallback signal composition classifies caller cancellation', async () => {
+  await withoutNativeAbortComposition(async () => {
+    const controller = new AbortController();
+    const pending = policy.fetchWithPolicy(
+      '/fallback-cancel',
+      { signal: controller.signal, timeoutMs: 1_000 },
+      abortAwareFetch,
+    );
+
+    controller.abort();
+
+    await assert.rejects(
+      pending,
+      (error) => error instanceof policy.ApiRequestError
+        && error.kind === 'cancelled'
+        && error.name === 'AbortError',
+    );
+  });
+});
+
+test('fallback signal composition classifies request deadlines', async () => {
+  await withoutNativeAbortComposition(async () => {
+    await assert.rejects(
+      policy.fetchWithPolicy('/fallback-timeout', { timeoutMs: 5 }, abortAwareFetch),
+      (error) => error instanceof policy.ApiRequestError && error.kind === 'timeout',
+    );
+  });
+});
+
+test('fallback signal composition remains active after response headers', async () => {
+  await withoutNativeAbortComposition(async () => {
+    const controller = new AbortController();
+    const response = await policy.fetchWithPolicy(
+      '/fallback-stream',
+      { signal: controller.signal, timeoutMs: 1_000 },
+      async (_input, init) => responseWithStalledBody(init.signal),
+    );
+    const body = response.text();
+
+    controller.abort();
+
+    await assert.rejects(
+      rejectIfStillPending(body),
+      (error) => error?.name === 'AbortError',
+    );
+  });
+});
+
+test('signal composition setup failures are classified', async () => {
+  const timeout = AbortSignal.timeout;
+  AbortSignal.timeout = () => { throw new TypeError('unsupported timeout'); };
+  try {
+    await assert.rejects(
+      policy.fetchWithPolicy('/setup-error', {}, async () => new Response()),
+      (error) => error instanceof policy.ApiRequestError && error.kind === 'network',
+    );
+  } finally {
+    AbortSignal.timeout = timeout;
+  }
 });
 
 test('caller cancellation remains attached while a response body is streaming', async () => {
