@@ -27,9 +27,9 @@ interface SeriesMember {
 export interface SeriesDetailData {
   id: string;
   name: string;
-  description: string;
+  description: string | null;
   member_ids: string;
-  sort_order: string;
+  sort_order: string | null;
   status: string;
   intro?: string;
   summary?: string;
@@ -48,7 +48,7 @@ interface SeriesDetailProps {
 }
 
 interface Suggestion {
-  event_id: string;
+  id: string;
   title: string;
   overview?: string;
   topic: string;

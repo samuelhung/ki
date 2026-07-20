@@ -96,14 +96,6 @@ class _ZhijiShellState extends State<ZhijiShell> with TrayListener, WindowListen
     _healthTimer = Timer.periodic(const Duration(seconds: 15), (_) => _checkBackend());
   }
 
-  bool _hasConfig() {
-    try {
-      return _configFile.existsSync();
-    } catch (_) {
-      return false;
-    }
-  }
-
   @override
   void dispose() {
     _healthTimer?.cancel();
