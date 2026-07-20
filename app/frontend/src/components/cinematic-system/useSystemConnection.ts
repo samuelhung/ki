@@ -24,6 +24,7 @@ export function useSystemConnection(setHealth: SetHealthState) {
     try {
       const authHeaders = token ? { Authorization: `Bearer ${token}` } : undefined;
       const healthRes = await fetchWithPolicy(target + '/api/health', { timeoutMs: 10_000 });
+      if (!healthRes.ok) throw new Error('健康检查失败');
       const json = await readApiJson<HealthData>(healthRes);
       if (!json.ok) throw new Error('健康检查失败');
       const protectedRes = await fetchWithPolicy(target + '/api/dashboard/summary', {

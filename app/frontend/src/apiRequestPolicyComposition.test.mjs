@@ -22,7 +22,8 @@ test('health polling and connection tests use bounded shared requests', () => {
   assert.match(app, /apiFetch\('\/api\/health', \{\s*timeoutMs: 5_000/s);
   assert.doesNotMatch(systemConnection, /await fetch\(/);
   assert.match(systemConnection, /fetchWithPolicy\(target \+ '\/api\/health', \{ timeoutMs: 10_000 \}\)/);
-  assert.match(systemConnection, /readApiJson/);
+  assert.match(systemConnection, /if \(!healthRes\.ok\) throw new Error\('健康检查失败'\);\s*const json = await readApiJson/s);
+  assert.match(systemConnection, /protectedRes\.status === 401\) throw new Error\('业务接口未授权，请填写后端 KI_API_TOKEN'\)/);
 });
 
 test('every production upload entry point uses the approved long timeout', () => {
