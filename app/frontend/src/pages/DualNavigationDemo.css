@@ -491,9 +491,11 @@
 
 .ki-ingest-event-list {
   flex: 1;
+  width: var(--ki-list-width);
   min-height: 0;
+  margin: 0 18px 0 auto;
   overflow: auto;
-  padding: 0 18px 18px 4px;
+  padding: 0 0 18px;
   display: grid;
   align-content: start;
   gap: 4px;
@@ -512,10 +514,10 @@
   --spotlight-y: 50%;
   --spotlight-color: rgba(125, 211, 252, .2);
   position: relative;
-  width: var(--ki-list-width);
+  width: 100%;
   min-height: 84px;
   min-width: 0;
-  justify-self: end;
+  justify-self: stretch;
   overflow: hidden;
   border-radius: 4px;
   background: rgba(7, 7, 11, .14);
@@ -798,6 +800,19 @@
   .legacy-ingest-root.is-shell-embedded .ki-ingest-topic-orbit button.is-gold:not(.is-active) { color: rgb(255 202 74) !important; }
   .legacy-ingest-root.is-shell-embedded .ki-ingest-topic-orbit button.is-violet:not(.is-active) { color: rgb(204 190 255) !important; }
   .legacy-ingest-root.is-shell-embedded .ki-ingest-topic-orbit button.is-cyan:not(.is-active) { color: rgb(121 237 249) !important; }
+}
+
+@media (max-width: 760px) {
+  .legacy-ingest-root.is-shell-embedded.cinematic-ingest .ki-ingest-topic-orbit {
+    width: 100% !important;
+    margin-right: 0 !important;
+    margin-left: 0 !important;
+  }
+
+  .ki-ingest-event-list {
+    width: 100%;
+    margin-right: 0;
+  }
 }
 
 .dual-nav-demo__gallery {

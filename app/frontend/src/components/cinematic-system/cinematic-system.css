@@ -1940,7 +1940,7 @@
   align-content: start !important;
   gap: 4px !important;
   overflow: auto !important;
-  padding: 0 18px 18px 4px !important;
+  padding: 0 0 18px !important;
   pointer-events: auto !important;
   transform: none !important;
 }

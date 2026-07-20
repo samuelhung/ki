@@ -202,7 +202,8 @@ test('topic tabs sit above the list with icon-over-label layout and no dots', ()
   assert.match(shellCss, /\.legacy-ingest-root\.is-shell-embedded\.cinematic-ingest \.ki-ingest-topic-orbit\s*\{[^}]*width:\s*var\(--ki-list-width\)[^}]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)[^}]*border-bottom:/s);
   assert.doesNotMatch(shellCss, /ki-ingest-briefing/);
   assert.match(shellCss, /\.legacy-ingest-root\.is-shell-embedded\.cinematic-ingest \.ki-ingest-topic-orbit\s*\{[^}]*overflow:\s*visible\s*!important[^}]*scrollbar-width:\s*none/s);
-  assert.match(shellCss, /\.ki-spotlight-row\s*\{[^}]*width:\s*var\(--ki-list-width\)/s);
+  assert.match(shellCss, /\.ki-ingest-event-list\s*\{[^}]*width:\s*var\(--ki-list-width\)[^}]*margin:\s*0 18px 0 auto[^}]*padding:\s*0 0 18px/s);
+  assert.match(shellCss, /\.ki-spotlight-row\s*\{[^}]*width:\s*100%[^}]*justify-self:\s*stretch/s);
   assert.match(shellCss, /\.legacy-ingest-root\.is-shell-embedded \.ki-ingest-topic-orbit button span\s*\{[^}]*writing-mode:\s*horizontal-tb/s);
   assert.match(shellCss, /\.legacy-ingest-root\.is-shell-embedded \.ki-ingest-topic-orbit button\s*\{[^}]*border-bottom:\s*0\s*!important/s);
   assert.match(shellCss, /\.legacy-ingest-root\.is-shell-embedded \.ki-ingest-topic-orbit button\.is-active:after\s*\{[^}]*bottom:\s*-11px\s*!important/s);
@@ -247,12 +248,14 @@ test('formal ingest list uses compact spotlight rows without React pointer state
   assert.match(shellCss, /\.ki-ingest-list-row\s*\{[^}]*min-height:\s*84px/s);
 });
 
-test('spotlight rows use topic icons stay level and match the topic tab width', () => {
+test('spotlight rows use topic icons and share the topic rail alignment axis', () => {
   assert.match(embeddedConfig, /TOPIC_LIST_ICONS/);
   assert.match(embeddedRow, /<TypeIcon/);
   assert.match(embeddedRow, /ki-ingest-list-type-icon/);
   assert.match(shellCss, /\.ki-ingest-event-list\s*\{[^}]*transform:\s*none/s);
-  assert.match(shellCss, /\.ki-spotlight-row\s*\{[^}]*width:\s*var\(--ki-list-width\)[^}]*justify-self:\s*end/s);
+  assert.match(shellCss, /\.ki-ingest-event-list\s*\{[^}]*width:\s*var\(--ki-list-width\)[^}]*margin:\s*0 18px 0 auto/s);
+  assert.match(shellCss, /\.ki-spotlight-row\s*\{[^}]*width:\s*100%[^}]*justify-self:\s*stretch/s);
+  assert.match(shellCss, /@media \(max-width:\s*760px\)[\s\S]*\.ki-ingest-event-list\s*\{[^}]*width:\s*100%[^}]*margin-right:\s*0/s);
   assert.match(shellCss, /\.ki-ingest-list-row\s*\{[^}]*grid-template-columns:\s*24px minmax\(0, 1fr\)/s);
 });
 

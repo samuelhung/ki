@@ -271,6 +271,7 @@ test('system shell CSS owns responsive split geometry without restoring the old 
   assert.match(css, /\.ki-shell-system \.system-detail-reader\s*\{[^}]*position:\s*relative[^}]*width:\s*100%[^}]*height:\s*100%/s);
   assert.match(css, /\.ki-shell-system \.system-group-tabs\s*\{/);
   assert.match(css, /\.ki-shell-system \.cinematic-ingest\.cinematic-system \.system-function-list\s*\{[^}]*pointer-events:\s*auto !important[^}]*transform:\s*none !important/s);
+  assert.match(css, /\.ki-shell-system \.cinematic-ingest\.cinematic-system \.system-function-list\s*\{[^}]*padding:\s*0 0 18px !important/s);
   assert.match(css, /system-function-list\[data-group="control"\][\s\S]*min-height:\s*56px/);
   assert.match(css, /@media \(max-width:\s*1280px\)[\s\S]*system-function-list\[data-group="control"\][\s\S]*min-height:\s*46px/);
   assert.doesNotMatch(css, /system-ai-pane-switcher/);

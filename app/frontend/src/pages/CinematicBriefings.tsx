@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Clock3, ExternalLink, FileText, Loader2, Sparkles, Zap } from 'lucide-react';
+import { Clock3, ExternalLink, FileText, Layers3, Loader2, Newspaper, Sparkles, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { apiFetch } from '../api';
 import { fetchBriefingDetail, fetchBriefingHistory, generateQuickBriefing } from '../components/cinematic-briefings/briefingRequests.mjs';
@@ -172,29 +172,12 @@ export default function CinematicBriefings() {
               <div className="max-w-[1500px] mx-auto pt-4 h-full">
                 <div className="ki-ingest-split-stage briefing-split-stage">
                   <section className="ki-ingest-list-pane briefing-history-pane" aria-label="快报历史">
-                    <header className="briefing-history-head">
-                      <div>
-                        <span>BRIEFING HISTORY</span>
-                        <strong>快报历史</strong>
-                      </div>
-                      <button
-                        type="button"
-                        className="briefing-generate-button"
-                        aria-label="生成即时快报"
-                        title="生成即时快报"
-                        disabled={generating}
-                        onClick={handleGenerate}
-                      >
-                        {generating ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+                    <nav className="ingest-topic-orbit ki-ingest-topic-orbit briefing-history-head" aria-label="快报历史操作">
+                      <button type="button" className="is-active is-rose" aria-current="page">
+                        <FileText size={17} />
+                        <span>快报历史</span>
                       </button>
-                    </header>
-
-                    {generateError && (
-                      <div className="briefing-generate-error" role="alert">
-                        <span>{generateError}</span>
-                        <button type="button" onClick={handleGenerate}>重试</button>
-                      </div>
-                    )}
+                    </nav>
 
                     <div className="ki-ingest-event-list briefing-history-list" aria-live="polite">
                       {items.map((item) => (
@@ -216,7 +199,25 @@ export default function CinematicBriefings() {
                   </section>
 
                   <section className="ki-ingest-detail-pane briefing-detail-pane" aria-label="快报详情">
-                    <div className="briefing-detail-surface">
+                    <div className="ingest-detail-reader briefing-detail-surface">
+                      <div className="briefing-detail-actions">
+                        <button
+                          type="button"
+                          className="briefing-generate-button"
+                          aria-label="生成即时快报"
+                          title="生成即时快报"
+                          disabled={generating}
+                          onClick={handleGenerate}
+                        >
+                          {generating ? <Loader2 size={17} className="animate-spin" /> : <Sparkles size={17} />}
+                        </button>
+                      </div>
+                      {generateError && (
+                        <div className="briefing-generate-error" role="alert">
+                          <span>{generateError}</span>
+                          <button type="button" onClick={handleGenerate}>重试</button>
+                        </div>
+                      )}
                       {detailLoading && <div className="briefing-detail-state"><Loader2 size={20} className="animate-spin" /><span>快报详情加载中</span></div>}
                       {!detailLoading && detailError && (
                         <div className="briefing-detail-state is-error" role="alert">
@@ -228,44 +229,61 @@ export default function CinematicBriefings() {
                       {!detailLoading && !detailError && detail && (
                         <>
                           <header className="briefing-detail-header">
-                            <div>
-                              <span>{detail.type === 'daily' ? 'DAILY INTELLIGENCE' : 'INSTANT INTELLIGENCE'}</span>
-                              <h1>{typeLabel(detail.type)}</h1>
-                            </div>
-                            <time><Clock3 size={13} />{formatTimeBeijing(detail.created_at || selectedItem?.created_at || '')}</time>
+                            <span>{detail.type === 'daily' ? 'DAILY INTELLIGENCE' : 'INSTANT INTELLIGENCE'}</span>
+                            <h2>{typeLabel(detail.type)}</h2>
+                            <small>{formatTimeBeijing(detail.created_at || selectedItem?.created_at || '')}</small>
                           </header>
 
-                          <div className="briefing-topic-stream">
-                            {detail.topics.map((topic, topicIndex) => (
-                              <article className="briefing-topic-section" key={`${topic.topic}-${topicIndex}`}>
-                                <header>
-                                  <span>{String(topicIndex + 1).padStart(2, '0')}</span>
-                                  <h2>{topic.topic_label || topic.topic || '未分类主题'}</h2>
-                                </header>
-                                {topic.summary && <p className="briefing-topic-summary">{topic.summary}</p>}
-                                <div className="briefing-event-references">
-                                  {topic.events.map((event) => (
-                                    <button type="button" key={event.event_id} onClick={() => navigate(`/events/${event.event_id}`)}>
-                                      <span>
-                                        <strong>{event.title_cn || event.highlight || '查看关联事件'}</strong>
-                                        {event.highlight && event.title_cn && <small>{event.highlight}</small>}
-                                      </span>
-                                      <em>{event.source_name || '关联事件'}<ExternalLink size={12} /></em>
-                                    </button>
-                                  ))}
-                                  {topic.events.length === 0 && <p>该主题暂无关联事件</p>}
-                                </div>
-                              </article>
-                            ))}
-                            {detail.topics.length === 0 && <div className="briefing-detail-state">这份快报暂无主题内容</div>}
+                          <div className="ingest-detail-tabs briefing-detail-metrics" aria-label="快报指标">
+                            <span>
+                              {detail.type === 'daily' ? <FileText size={15} /> : <Zap size={15} />}
+                              <b>{metrics.typeLabel}</b>
+                              <small>类型</small>
+                            </span>
+                            <span>
+                              <Clock3 size={15} />
+                              <b>{formatTimeBeijing(metrics.generatedAt)}</b>
+                              <small>生成时间</small>
+                            </span>
+                            <span>
+                              <Layers3 size={15} />
+                              <b>{metrics.topicCount}</b>
+                              <small>主题</small>
+                            </span>
+                            <span>
+                              <Newspaper size={15} />
+                              <b>{metrics.eventCount}</b>
+                              <small>事件</small>
+                            </span>
                           </div>
 
-                          <footer className="briefing-status-box" aria-label="快报状态">
-                            <span><b>{metrics.typeLabel}</b><small>类型</small></span>
-                            <span><b>{formatTimeBeijing(metrics.generatedAt)}</b><small>生成时间</small></span>
-                            <span><b>{metrics.topicCount}</b><small>主题</small></span>
-                            <span><b>{metrics.eventCount}</b><small>事件</small></span>
-                          </footer>
+                          <div className="detail-scroll-shell">
+                            <div className="detail-scroll briefing-topic-stream">
+                              {detail.topics.map((topic, topicIndex) => (
+                                <article className="briefing-topic-section" key={`${topic.topic}-${topicIndex}`}>
+                                  <header>
+                                    <span>{String(topicIndex + 1).padStart(2, '0')}</span>
+                                    <h3>{topic.topic_label || topic.topic || '未分类主题'}</h3>
+                                  </header>
+                                  {topic.summary && <p className="briefing-topic-summary">{topic.summary}</p>}
+                                  <div className="briefing-event-references">
+                                    {topic.events.map((event) => (
+                                      <button type="button" key={event.event_id} onClick={() => navigate(`/events/${event.event_id}`)}>
+                                        <span>
+                                          <strong>{event.title_cn || event.highlight || '查看关联事件'}</strong>
+                                          {event.highlight && event.title_cn && <small>{event.highlight}</small>}
+                                        </span>
+                                        <em>{event.source_name || '关联事件'}<ExternalLink size={12} /></em>
+                                      </button>
+                                    ))}
+                                    {topic.events.length === 0 && <p>该主题暂无关联事件</p>}
+                                  </div>
+                                </article>
+                              ))}
+                              {detail.topics.length === 0 && <div className="briefing-detail-state">这份快报暂无主题内容</div>}
+                            </div>
+                          </div>
+
                         </>
                       )}
                     </div>

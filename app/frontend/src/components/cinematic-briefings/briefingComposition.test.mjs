@@ -3,12 +3,14 @@ import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const app = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8');
+const curtain = readFileSync(new URL('../../CurtainContext.tsx', import.meta.url), 'utf8');
 const shell = readFileSync(new URL('../../pages/KiNavigationShell.tsx', import.meta.url), 'utf8');
 const packageJson = readFileSync(new URL('../../../package.json', import.meta.url), 'utf8');
 const qaCore = readFileSync(new URL('../../../scripts/qa-cinematic-pages-core.mjs', import.meta.url), 'utf8');
 const qaJourney = readFileSync(new URL('../../../scripts/qa-cinematic-user-path.mjs', import.meta.url), 'utf8');
 const pageUrl = new URL('../../pages/CinematicBriefings.tsx', import.meta.url);
 const cssUrl = new URL('../../pages/CinematicBriefings.css', import.meta.url);
+const sharedShellCss = readFileSync(new URL('../../pages/DualNavigationDemo.css', import.meta.url), 'utf8');
 const page = existsSync(pageUrl) ? readFileSync(pageUrl, 'utf8') : '';
 const css = existsSync(cssUrl) ? readFileSync(cssUrl, 'utf8') : '';
 
@@ -35,6 +37,36 @@ test('briefings use full-screen layout and bypass the page entry curtain', () =>
   const fullScreenExpression = app.match(/const isCinematicFullScreen = ([^;]+);/)?.[1] || '';
   assert.match(skipExpression, /location\.pathname === '\/briefings'/);
   assert.match(fullScreenExpression, /location\.pathname === '\/briefings'/);
+  assert.match(curtain, /pathname === '\/briefings'/);
+});
+
+test('briefing workspace reuses the content-ingest split and detail reader hierarchy', () => {
+  assert.match(page, /className="ki-ingest-split-stage briefing-split-stage"/);
+  assert.match(page, /className="ki-ingest-list-pane briefing-history-pane"/);
+  assert.match(page, /className="ingest-topic-orbit ki-ingest-topic-orbit briefing-history-head"/);
+  const leftPane = page.slice(page.indexOf('aria-label="快报历史"'), page.indexOf('aria-label="快报详情"'));
+  assert.doesNotMatch(leftPane, /briefing-generate-button/);
+  assert.match(page, /className="ingest-detail-reader briefing-detail-surface"/);
+  assert.match(page, /className="briefing-detail-actions"[\s\S]*className="briefing-generate-button"/);
+  assert.match(page, /className="ingest-detail-tabs briefing-detail-metrics"/);
+  assert.match(page, /className="detail-scroll-shell"/);
+  assert.match(page, /className="detail-scroll briefing-topic-stream"/);
+  assert.doesNotMatch(page, /className="briefing-status-box"/);
+
+  const desktopCss = css.slice(0, css.indexOf('@media (max-width: 760px)'));
+  assert.doesNotMatch(desktopCss, /\.briefing-split-stage\s*\{[^}]*grid-template-columns:/s);
+  assert.doesNotMatch(desktopCss, /\.briefing-history-pane\s*\{[^}]*--ki-list-width:/s);
+  assert.doesNotMatch(desktopCss, /\.briefing-history-list\s*\{[^}]*padding-top:/s);
+  assert.doesNotMatch(desktopCss, /\.briefing-history-list\s+\.ki-spotlight-row\s*\{[^}]*width:/s);
+  assert.doesNotMatch(desktopCss, /\.briefing-detail-header\s*>\s*span\s*\{/s);
+  assert.match(desktopCss, /\.briefing-history-row\s*\{[^}]*min-height:\s*84px/s);
+  assert.doesNotMatch(desktopCss, /\.briefing-history-head\s*\{[^}]*grid-template-columns:/s);
+  assert.match(desktopCss, /\.briefing-detail-header\s*\{[^}]*position:\s*relative/s);
+  assert.match(desktopCss, /\.briefing-detail-actions\s*\{[^}]*position:\s*absolute[^}]*top:\s*0[^}]*right:\s*12px/s);
+  assert.match(desktopCss, /\.ki-shell-briefings\s+\.briefing-detail-pane\s+\.briefing-detail-surface\s*\{[^}]*position:\s*relative\s*!important[^}]*width:\s*100%\s*!important[^}]*height:\s*100%\s*!important[^}]*animation:\s*none/s);
+  assert.match(desktopCss, /\.briefing-detail-metrics\s*\{[^}]*grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/s);
+  assert.match(desktopCss, /\.briefing-detail-metrics\s*>\s*span\s*\{[^}]*height:\s*clamp\(42px, 4\.8vh, 56px\)/s);
+  assert.match(desktopCss, /\.briefing-event-references\s*>\s*button\s*\{[^}]*border:\s*0[^}]*background:\s*transparent/s);
 });
 
 test('history and detail requests use independent abortable request lifecycles', () => {
@@ -76,19 +108,19 @@ test('briefing detail groups topic summaries and navigates referenced event butt
   assert.match(page, /aria-pressed=\{item\.id === selectedId\}/);
 });
 
-test('list, detail, and generation errors stay retryable and metrics stay in the bottom status box', () => {
+test('list, detail, and generation errors stay retryable and metrics stay below the detail title', () => {
   assert.match(page, /listError[\s\S]*onClick=\{\(\) => void loadBriefings/);
   assert.match(page, /detailError[\s\S]*onClick=\{\(\) => void loadBriefingDetail/);
   assert.match(page, /generateError[\s\S]*onClick=\{handleGenerate\}/);
   assert.match(page, /const metrics = briefingMetrics\(detail\)/);
-  assert.match(page, /className="briefing-status-box"/);
+  assert.match(page, /className="ingest-detail-tabs briefing-detail-metrics"/);
   assert.match(page, /metrics\.typeLabel/);
   assert.match(page, /metrics\.generatedAt/);
   assert.match(page, /metrics\.topicCount/);
   assert.match(page, /metrics\.eventCount/);
 });
 
-test('history, detail, and bottom status timestamps use the shared Beijing formatter', () => {
+test('history, detail, and metric timestamps use the shared Beijing formatter', () => {
   assert.match(page, /import \{ formatTimeBeijing \} from '\.\.\/utils'/);
   assert.doesNotMatch(page, /function formatTime\(/);
   assert.match(page, /formatTimeBeijing\(item\.created_at\)/);
@@ -98,8 +130,8 @@ test('history, detail, and bottom status timestamps use the shared Beijing forma
 
 test('briefing workspace has responsive stable panes and no duplicate independent scene', () => {
   assert.equal(existsSync(cssUrl), true, 'CinematicBriefings.css should exist');
-  assert.match(css, /\.briefing-split-stage\s*\{[^}]*grid-template-columns:/s);
-  assert.match(css, /@media \(max-width: 1440px\)/);
+  assert.match(sharedShellCss, /\.ki-ingest-split-stage\s*\{[^}]*grid-template-columns:\s*minmax\(320px, 38%\) minmax\(0, 1fr\)[^}]*column-gap:\s*72px/s);
+  assert.match(sharedShellCss, /@media \(max-width: 1280px\)[\s\S]*\.ki-ingest-split-stage\s*\{[^}]*grid-template-columns:\s*minmax\(260px, 34%\) minmax\(0, 1fr\)[^}]*column-gap:\s*58px/s);
   assert.match(css, /@media \(max-width: 1180px\)/);
   assert.match(css, /min-height:\s*0/);
   assert.match(css, /overflow:\s*hidden/);
