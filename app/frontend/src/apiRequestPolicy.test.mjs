@@ -11,6 +11,21 @@ function abortAwareFetch(_input, init = {}) {
   });
 }
 
+function responseWithStalledBody(signal) {
+  return new Response(new ReadableStream({
+    start(controller) {
+      signal?.addEventListener('abort', () => controller.error(signal.reason), { once: true });
+    },
+  }));
+}
+
+function rejectIfStillPending(promise, timeoutMs = 100) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('body remained pending')), timeoutMs)),
+  ]);
+}
+
 test('request policy exposes the approved runtime interface', async () => {
   assert.equal(typeof policy.ApiRequestError, 'function');
   assert.equal(typeof policy.fetchWithPolicy, 'function');
@@ -39,7 +54,39 @@ test('request policy preserves caller cancellation', async () => {
 
   await assert.rejects(
     pending,
-    (error) => error instanceof policy.ApiRequestError && error.kind === 'cancelled',
+    (error) => error instanceof policy.ApiRequestError
+      && error.kind === 'cancelled'
+      && error.name === 'AbortError',
+  );
+});
+
+test('caller cancellation remains attached while a response body is streaming', async () => {
+  const controller = new AbortController();
+  const response = await policy.fetchWithPolicy(
+    '/stream',
+    { signal: controller.signal, timeoutMs: 1_000 },
+    async (_input, init) => responseWithStalledBody(init.signal),
+  );
+
+  const body = response.text();
+  controller.abort();
+
+  await assert.rejects(
+    rejectIfStillPending(body),
+    (error) => error?.name === 'AbortError',
+  );
+});
+
+test('request deadline remains attached while a response body is streaming', async () => {
+  const response = await policy.fetchWithPolicy(
+    '/stream-timeout',
+    { timeoutMs: 5 },
+    async (_input, init) => responseWithStalledBody(init.signal),
+  );
+
+  await assert.rejects(
+    rejectIfStillPending(response.text()),
+    (error) => error?.name === 'TimeoutError',
   );
 });
 

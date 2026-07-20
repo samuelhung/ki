@@ -11,7 +11,7 @@ export class ApiRequestError extends Error {
 
   constructor(kind: ApiRequestErrorKind, message: string, options: { status?: number; cause?: unknown } = {}) {
     super(message);
-    this.name = 'ApiRequestError';
+    this.name = kind === 'cancelled' ? 'AbortError' : 'ApiRequestError';
     this.kind = kind;
     this.status = options.status;
     this.cause = options.cause;
@@ -36,31 +36,24 @@ export async function fetchWithPolicy(
     throw new ApiRequestError('cancelled', '请求已取消', { cause: callerSignal.reason });
   }
 
-  const controller = new AbortController();
   const timeoutMs = resolveRequestTimeoutMs(init);
-  let timedOut = false;
-  const timeoutId = globalThis.setTimeout(() => {
-    timedOut = true;
-    controller.abort(new DOMException('Request timed out', 'TimeoutError'));
-  }, timeoutMs);
-  const onCallerAbort = () => controller.abort(callerSignal?.reason);
-  callerSignal?.addEventListener('abort', onCallerAbort, { once: true });
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const requestSignal = callerSignal
+    ? AbortSignal.any([callerSignal, timeoutSignal])
+    : timeoutSignal;
 
   const { timeoutMs: _timeoutMs, ...requestInit } = init;
   try {
-    return await fetchImpl(input, { ...requestInit, signal: controller.signal });
+    return await fetchImpl(input, { ...requestInit, signal: requestSignal });
   } catch (cause) {
     if (callerSignal?.aborted) {
       throw new ApiRequestError('cancelled', '请求已取消', { cause });
     }
-    if (timedOut) {
+    if (timeoutSignal.aborted) {
       throw new ApiRequestError('timeout', `请求超时（${timeoutMs}ms）`, { cause });
     }
     if (cause instanceof ApiRequestError) throw cause;
     throw new ApiRequestError('network', '网络请求失败', { cause });
-  } finally {
-    globalThis.clearTimeout(timeoutId);
-    callerSignal?.removeEventListener('abort', onCallerAbort);
   }
 }
 

@@ -12,8 +12,9 @@ const study = readFileSync(new URL('./pages/CinematicStudy.tsx', import.meta.url
 test('apiFetch preserves its Response contract while applying the shared policy', () => {
   assert.match(api, /import \{[^}]*fetchWithPolicy[^}]*type ApiRequestInit[^}]*\} from '\.\/apiRequestPolicy'/s);
   assert.match(api, /apiFetch\(input: RequestInfo \| URL, init\?: ApiRequestInit\): Promise<Response>/);
-  assert.match(api, /const response = await fetchWithPolicy\(getBackendUrl\(\) \+ input, requestInit\)/);
-  assert.match(api, /if \(!await bootstrapViteRemoteSession\(\)\) return response;\s*return fetchWithPolicy\(getBackendUrl\(\) \+ input, requestInit\)/s);
+  assert.match(api, /const runtimeApiFetch = createApiFetch\(\{/);
+  assert.match(api, /request: fetchWithPolicy/);
+  assert.match(api, /return runtimeApiFetch\(input, init\)/);
 });
 
 test('health polling and connection tests use bounded shared requests', () => {
