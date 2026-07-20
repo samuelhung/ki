@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { Check, ExternalLink, Layers, Lightbulb, Loader2, PenTool, Plus, Search, Zap } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { apiFetch } from '../api';
@@ -7,25 +7,70 @@ import { RequestLifecycle } from '../components/ingest/requestLifecycle';
 import SpotlightListRow from '../components/react-bits/SpotlightListRow';
 import type { DualNavigationActionItem } from './DualNavigationActionMenu';
 import KiNavigationShell from './KiNavigationShell';
-import LegacySeriesDetail from './SeriesDetail';
+import LegacySeriesDetail, { type SeriesDetailData } from './SeriesDetail';
 import '../components/cinematic-ingest/cinematic-ingest.css';
 import '../components/cinematic-series/cinematic-series.css';
 import '../components/cinematic-series/cinematic-series-detail.css';
 
 type Mode = 'choose' | 'global1' | 'global2' | 'topic' | 'results' | 'manual' | 'suggest';
 type Member = { id: string; title: string; overview?: string };
-type SeriesItem = { id: string; name: string; description?: string; member_ids: string; status: string; created_at: string; updated_at?: string; intro?: string; summary?: string; paper?: string; members?: Member[] };
+type SeriesItem = { id: string; name: string; description?: string | null; member_ids: string; status: string; created_at: string; updated_at?: string; intro?: string; summary?: string; paper?: string; members?: Member[] };
 type Group = { name: string; description: string; event_ids: string[]; event_titles?: string[]; count: number };
 type Candidate = { name: string; description: string; member_ids: string[]; member_titles?: string[]; rationale?: string; _duplicate_of?: { id: string; name: string; status: string } };
 type EventItem = { id: string; title: string; overview?: string; ai_summary?: string; topic?: string; content_type?: string; status?: string; created_at?: string };
-type SeriesDetailData = SeriesItem & { members: Member[]; sort_order?: string; unscanned_count?: number };
+
+interface SeriesDialogProps {
+  mode: Mode;
+  setMode: Dispatch<SetStateAction<Mode>>;
+  busy: boolean;
+  message: string;
+  groups: Group[];
+  selectedGroups: Set<number>;
+  setSelectedGroups: Dispatch<SetStateAction<Set<number>>>;
+  candidates: Candidate[];
+  duplicates: Candidate[];
+  topic: string;
+  setTopic: Dispatch<SetStateAction<string>>;
+  events: EventItem[];
+  eventQuery: string;
+  setEventQuery: Dispatch<SetStateAction<string>>;
+  eventsHasMore: boolean;
+  eventsLoadingMore: boolean;
+  onLoadMoreEvents: () => void;
+  manualTitle: string;
+  setManualTitle: Dispatch<SetStateAction<string>>;
+  selectedEvents: Set<string>;
+  setSelectedEvents: Dispatch<SetStateAction<Set<string>>>;
+  savingIndex: number | null;
+  suggestion: { name: string; description: string } | null;
+  createdName: string;
+  onClose: () => void;
+  onGlobal1: () => void;
+  onGlobal2: () => void;
+  onTopic: () => void;
+  onSave: (index: number) => void;
+  onManualOpen: () => void;
+  onManual: () => void;
+  onAdopt: () => void;
+  onOpenCreated: () => void;
+}
+
+const MODE_TITLES: Record<Mode, string> = {
+  choose: '发现专题',
+  global1: '选择主题领域',
+  global2: '候选专题',
+  topic: '按主题发现',
+  results: '主题候选',
+  manual: '自由组题',
+  suggest: 'AI 命名建议',
+};
 
 export default function CinematicSeries() {
   const navigate = useNavigate();
   const { id: routeId = '' } = useParams<{ id?: string }>();
   const [items, setItems] = useState<SeriesItem[]>([]);
   const [selectedId, setSelectedId] = useState('');
-  const [selectedDetail, setSelectedDetail] = useState<SeriesItem | null>(null);
+  const [selectedDetail, setSelectedDetail] = useState<SeriesDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [dialog, setDialog] = useState(false);
@@ -290,7 +335,7 @@ export default function CinematicSeries() {
                       <LegacySeriesDetail
                         embedded
                         seriesId={selected.id}
-                        initialSeries={selectedDetail?.id === selected.id ? selectedDetail as SeriesDetailData : null}
+                        initialSeries={selectedDetail?.id === selected.id ? selectedDetail : null}
                         onSeriesChange={handleSeriesChange}
                         onDeleted={handleSeriesDeleted}
                       />
@@ -307,14 +352,14 @@ export default function CinematicSeries() {
   );
 }
 
-function SeriesDialog(props: any) {
+function SeriesDialog(props: SeriesDialogProps) {
   const validEvents = props.events.filter((event: EventItem) => event.content_type === 'event' && event.status !== 'pending' && event.status !== 'error' && !event.title.includes('孤儿视频恢复'));
-  const toggle = (set: Set<any>, value: any, setter: (next: Set<any>) => void) => { const next = new Set(set); next.has(value) ? next.delete(value) : next.add(value); setter(next); };
-  return <div className="series-dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && props.onClose()}><section className="series-dialog" role="dialog" aria-modal="true"><button className="series-dialog-close" onClick={props.onClose}>×</button><header><span>SERIES DISCOVERY</span><h2>{({ choose: '发现专题', global1: '选择主题领域', global2: '候选专题', topic: '按主题发现', results: '主题候选', manual: '自由组题', suggest: 'AI 命名建议' } as any)[props.mode]}</h2></header><div className="series-dialog-body">
+  const toggle = <T,>(set: Set<T>, value: T, setter: Dispatch<SetStateAction<Set<T>>>) => { const next = new Set(set); next.has(value) ? next.delete(value) : next.add(value); setter(next); };
+  return <div className="series-dialog-backdrop" onMouseDown={(event) => event.target === event.currentTarget && props.onClose()}><section className="series-dialog" role="dialog" aria-modal="true"><button className="series-dialog-close" onClick={props.onClose}>×</button><header><span>SERIES DISCOVERY</span><h2>{MODE_TITLES[props.mode]}</h2></header><div className="series-dialog-body">
     {props.busy && <div className="series-dialog-loading"><Loader2 className="animate-spin" /><span>AI 正在整理专题脉络...</span></div>}
     {!props.busy && props.mode === 'choose' && <div className="series-choice"><button onClick={props.onGlobal1}><Zap /><b>全局发现</b><span>扫描全部内容并进行两阶段聚类</span></button><button onClick={() => props.setMode('topic')}><Search /><b>按主题发现</b><span>围绕关键词定向组织专题</span></button><button onClick={props.onManualOpen}><PenTool /><b>自由组题</b><span>手选内容并请求 AI 优化命名</span></button></div>}
     {!props.busy && props.mode === 'global1' && <><div className="series-dialog-tools"><span>已选 {props.selectedGroups.size} / {props.groups.length} 个领域</span><button onClick={() => props.setSelectedGroups(new Set(props.groups.map((_: Group, i: number) => i)))}>全选</button><button onClick={() => props.setSelectedGroups(new Set())}>清空</button></div><div className="series-selection-list">{props.groups.map((group: Group, index: number) => <button className={props.selectedGroups.has(index) ? 'is-active' : ''} onClick={() => toggle(props.selectedGroups, index, props.setSelectedGroups)} key={`${group.name}-${index}`}><Check /><span><b>{group.name}</b><small>{group.description}</small></span><em>{group.count} 条</em></button>)}</div><footer><button className="series-primary" onClick={props.onGlobal2}>精细发现 <Lightbulb size={14} /></button></footer></>}
-    {!props.busy && (props.mode === 'global2' || props.mode === 'results') && <><p className="series-dialog-message">{props.message}</p><div className="series-candidates">{props.candidates.map((candidate: Candidate, index: number) => <article key={`${candidate.name}-${index}`}><div><b>{candidate.name}</b><p>{candidate.description}</p><small>{candidate.rationale}</small></div><button disabled={props.savingIndex === index || candidate._duplicate_of} onClick={() => props.onSave(index)}>{candidate._duplicate_of ? '已存在' : props.savingIndex === index ? '保存中' : '保存'}</button></article>)}</div>{props.duplicates.length > 0 && <p className="series-dialog-message">已过滤 {props.duplicates.length} 个重复候选</p>}</>}
+    {!props.busy && (props.mode === 'global2' || props.mode === 'results') && <><p className="series-dialog-message">{props.message}</p><div className="series-candidates">{props.candidates.map((candidate: Candidate, index: number) => <article key={`${candidate.name}-${index}`}><div><b>{candidate.name}</b><p>{candidate.description}</p><small>{candidate.rationale}</small></div><button disabled={props.savingIndex === index || Boolean(candidate._duplicate_of)} onClick={() => props.onSave(index)}>{candidate._duplicate_of ? '已存在' : props.savingIndex === index ? '保存中' : '保存'}</button></article>)}</div>{props.duplicates.length > 0 && <p className="series-dialog-message">已过滤 {props.duplicates.length} 个重复候选</p>}</>}
     {!props.busy && props.mode === 'topic' && <div className="series-topic-form"><label><span>主题或关键词</span><input autoFocus value={props.topic} onChange={(event) => props.setTopic(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && props.onTopic()} placeholder="例如：AI 监管、台海局势、消费趋势" /></label><button className="series-primary" onClick={props.onTopic} disabled={!props.topic.trim()}><Search size={14} />开始发现</button></div>}
     {!props.busy && props.mode === 'manual' && <><div className="series-topic-form"><label><span>专题标题</span><input value={props.manualTitle} onChange={(event) => props.setManualTitle(event.target.value)} placeholder="输入临时标题" /></label><label><span>搜索可用内容</span><input value={props.eventQuery} onChange={(event) => props.setEventQuery(event.target.value)} placeholder="搜索标题" /></label></div><div className="series-event-list">{validEvents.map((event: EventItem) => <button className={props.selectedEvents.has(event.id) ? 'is-active' : ''} key={event.id} onClick={() => toggle(props.selectedEvents, event.id, props.setSelectedEvents)}><Check /><span><b>{event.title}</b><small>{event.topic || '未分类'} · {event.created_at?.slice(0, 10)}</small></span></button>)}{props.eventsHasMore && <button className="series-load-more" disabled={props.eventsLoadingMore} onClick={props.onLoadMoreEvents}>{props.eventsLoadingMore ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}加载更多</button>}</div><footer><span>已选 {props.selectedEvents.size} 条</span><button className="series-primary" disabled={!props.manualTitle.trim() || props.selectedEvents.size < 2} onClick={props.onManual}><Plus size={14} />创建专题</button></footer></>}
     {!props.busy && props.mode === 'suggest' && <div className="series-suggestion"><p><Check />专题已创建：<b>{props.createdName}</b></p>{props.suggestion ? <article><span>AI 建议</span><b>{props.suggestion.name}</b><p>{props.suggestion.description}</p><button className="series-primary" onClick={props.onAdopt}>采用建议</button></article> : <p>AI 未返回新的命名建议，可保留当前名称。</p>}<button onClick={props.onOpenCreated}>进入专题详情 <ExternalLink size={13} /></button></div>}

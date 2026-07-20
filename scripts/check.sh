@@ -1261,6 +1261,9 @@ done
 echo "== Frontend unit tests =="
 (cd app/frontend && npm run test:cinematic-scene && npm run test:cinematic-ingest)
 
+echo "== Frontend typecheck =="
+(cd app/frontend && npm run typecheck)
+
 echo "== Frontend build =="
 (cd app/frontend && npm run build)
 

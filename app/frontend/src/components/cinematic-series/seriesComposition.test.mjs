@@ -131,9 +131,8 @@ test('series memoizes generated long-form html and coalesces scroll state writes
 
 test('series no longer ships the retired knowledge graph surface or graph libraries', () => {
   assert.doesNotMatch(detail, /SeriesKnowledgeNetwork|vis-network|vis-data|知识网络/);
-  assert.doesNotMatch(packageJson, /"vis-network"|"vis-data"/);
-  assert.match(viteConfig, /id\.includes\('@xyflow'\)[^\n]*return 'xyflow-vendor'/);
-  assert.doesNotMatch(viteConfig, /vis-network|vis-data|vis-vendor/);
+  assert.doesNotMatch(packageJson, /"vis-network"|"vis-data"|"@xyflow\/react"|"react-markdown"|"remark-gfm"/);
+  assert.doesNotMatch(viteConfig, /vis-network|vis-data|vis-vendor|@xyflow|xyflow-vendor|react-markdown|remark-gfm|markdown-vendor/);
 });
 
 test('series member expansion does not nest the open-detail button inside another button', () => {

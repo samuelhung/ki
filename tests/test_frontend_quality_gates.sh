@@ -10,13 +10,25 @@ SYSTEM_CENTER_PANELS="$ROOT/app/frontend/src/components/cinematic-system/SystemC
 APP_TSX="$ROOT/app/frontend/src/App.tsx"
 INGEST_TSX="$ROOT/app/frontend/src/pages/Ingest.tsx"
 INSTALL_SH="$ROOT/scripts/install.sh"
+PACKAGE_JSON="$ROOT/app/frontend/package.json"
+CHECK_SH="$ROOT/scripts/check.sh"
 
-for path in "$WORKFLOW" "$VITE_CONFIG" "$SYSTEM_DOC_DATA" "$SYSTEM_CENTER_PANELS" "$APP_TSX" "$INGEST_TSX" "$INSTALL_SH"; do
+for path in "$WORKFLOW" "$VITE_CONFIG" "$SYSTEM_DOC_DATA" "$SYSTEM_CENTER_PANELS" "$APP_TSX" "$INGEST_TSX" "$INSTALL_SH" "$PACKAGE_JSON" "$CHECK_SH"; do
   if [[ ! -f "$path" ]]; then
     echo "missing frontend quality gate file: $path" >&2
     exit 1
   fi
 done
+
+if ! grep -q '"typecheck":"tsc --noEmit"' "$PACKAGE_JSON"; then
+  echo "frontend package must expose a strict typecheck script" >&2
+  exit 1
+fi
+
+if ! grep -q 'npm run typecheck' "$CHECK_SH"; then
+  echo "unified check must run the frontend typecheck gate" >&2
+  exit 1
+fi
 
 if grep -Eq '^[[:space:]]*[0-9]+\|' "$INSTALL_SH"; then
   echo "install.sh must not contain line-number prefixes" >&2
