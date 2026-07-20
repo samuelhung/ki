@@ -9,7 +9,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { EventCacheProvider } from './components/EventCache';
 import { CurtainProvider, useCurtain } from './CurtainContext';
 import { CinematicBackdropProvider } from './components/cinematic/CinematicBackdropContext';
-import { getBackendUrl } from './api';
+import { apiFetch } from './api';
 
 const CinematicHome = lazy(() => import('./pages/CinematicHome'));
 const CinematicBriefings = lazy(() => import('./pages/CinematicBriefings'));
@@ -119,8 +119,8 @@ function Layout() {
     let mounted = true;
     const check = async () => {
       try {
-        const resp = await fetch(getBackendUrl() + '/api/health', {
-          signal: AbortSignal.timeout(5000)
+        const resp = await apiFetch('/api/health', {
+          timeoutMs: 5_000,
         });
         if (mounted) {
           setIsOnline(resp.ok);
@@ -193,8 +193,9 @@ function Layout() {
       const formData = new FormData();
       formData.append('file', file);
       try {
-        await fetch(getBackendUrl() + '/api/ingest/file', {
+        await apiFetch('/api/ingest/file', {
           method: 'POST',
+          timeoutMs: 900_000,
           body: formData,
         });
       } catch (err) {

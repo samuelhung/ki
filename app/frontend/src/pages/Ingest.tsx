@@ -373,7 +373,7 @@ export default function Ingest({ embedded = false, actionRequest = null }: Inges
       fd.append('file', selectedFile);
       fd.append('title', fileTitle);
       fd.append('topic', fileTopic || 'uncategorized');
-      const r = await apiFetch('/api/ingest/file', { method: 'POST', body: fd });
+      const r = await apiFetch('/api/ingest/file', { method: 'POST', timeoutMs: 900_000, body: fd });
       if (!r.ok) { const d = await r.json(); throw new Error(d.detail || '上传失败'); }
       const d = await r.json();
       setPollId(d.event_id); setPollStatus({ event_id: d.event_id, status: 'processing' });
