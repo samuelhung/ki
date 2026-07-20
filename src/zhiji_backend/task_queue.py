@@ -240,7 +240,10 @@ def _record_shutdown_signal(
     with _active_process_lock:
         if _shutdown_interrupted != (task_id, proc):
             return
-        if leader_returncode_after_send is None:
+        if not used_fallback:
+            _shutdown_signals_sent.add(int(sig))
+            _shutdown_signal_delivery_confirmed = True
+        elif leader_returncode_after_send is None:
             _shutdown_signals_sent.add(int(sig))
             _shutdown_signal_delivery_confirmed = True
         elif leader_returncode_after_send == -int(sig):

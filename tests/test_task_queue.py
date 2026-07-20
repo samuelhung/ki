@@ -287,6 +287,27 @@ class _HandledShutdownSignalProcess(_BlockingProcess):
         return "", "handled shutdown"
 
 
+class _ImmediateHandledGroupSignalProcess(_BlockingProcess):
+    def __init__(self, returncode: int):
+        super().__init__()
+        self.pid = 4545
+        self.handled_returncode = returncode
+        self.group_alive = True
+
+    def receive_group_signal(self, sig):
+        if sig == signal.SIGTERM:
+            self.terminated = True
+            self.returncode = self.handled_returncode
+            self.group_alive = False
+            self.exited.set()
+
+    def communicate(self, timeout=None):
+        self.started.set()
+        if not self.exited.wait(timeout=2):
+            raise AssertionError("handled process-group result was not released")
+        return "", "handled process-group shutdown"
+
+
 class _JoinableWorker:
     def __init__(self):
         self.alive = True
@@ -949,6 +970,50 @@ def test_handled_exit_after_confirmed_shutdown_signal_restores_pending(
         ).fetchone()
         event = conn.execute(
             "SELECT status, last_error FROM events WHERE id = 'evt-handled-signal'"
+        ).fetchone()
+    assert tuple(task) == ("pending", None, None, None)
+    assert tuple(event) == ("pending", None)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process groups only")
+@pytest.mark.parametrize("returncode", [0, 1])
+def test_process_group_signal_immediate_handled_exit_restores_pending(
+    tmp_path, monkeypatch, returncode
+):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    init_db()
+    task_id = _insert_processing_task(
+        event_id=f"evt-group-handled-{returncode}",
+        task_id=f"task-group-handled-{returncode}",
+    )
+    process = _ImmediateHandledGroupSignalProcess(returncode)
+    monkeypatch.setattr(task_queue.subprocess, "Popen", lambda *args, **kwargs: process)
+    monkeypatch.setattr(task_queue.os, "getpgrp", lambda: 9999)
+
+    def kill_group(group_id, sig):
+        assert group_id == process.pid
+        if sig == 0:
+            if process.group_alive:
+                return
+            raise ProcessLookupError
+        process.receive_group_signal(sig)
+
+    monkeypatch.setattr(task_queue.os, "killpg", kill_group)
+    worker = threading.Thread(target=task_queue._process_one, args=(task_id,))
+    task_queue._worker = worker
+    worker.start()
+    assert process.started.wait(timeout=1)
+
+    assert task_queue.stop_worker() is True
+
+    with connect() as conn:
+        task = conn.execute(
+            "SELECT status, started_at, finished_at, error FROM ingest_tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
+        event = conn.execute(
+            "SELECT status, last_error FROM events WHERE id = ?",
+            (f"evt-group-handled-{returncode}",),
         ).fetchone()
     assert tuple(task) == ("pending", None, None, None)
     assert tuple(event) == ("pending", None)
