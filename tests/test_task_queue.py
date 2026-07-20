@@ -263,6 +263,30 @@ class _UnrelatedSignalProcess(_BlockingProcess):
         return "", "unrelated signal"
 
 
+class _HandledShutdownSignalProcess(_BlockingProcess):
+    def __init__(self, returncode: int):
+        super().__init__()
+        self.handled_returncode = returncode
+
+    def terminate(self):
+        self.terminated = True
+
+    def wait(self, timeout=None):
+        if not self.terminated:
+            raise task_queue.subprocess.TimeoutExpired(
+                cmd=["runner"], timeout=timeout or 0
+            )
+        self.returncode = self.handled_returncode
+        self.exited.set()
+        return self.returncode
+
+    def communicate(self, timeout=None):
+        self.started.set()
+        if not self.exited.wait(timeout=2):
+            raise AssertionError("handled shutdown result was not released")
+        return "", "handled shutdown"
+
+
 class _JoinableWorker:
     def __init__(self):
         self.alive = True
@@ -290,6 +314,8 @@ def _reset_worker_state():
         task_queue._shutdown_interrupted = None
     if hasattr(task_queue, "_shutdown_signals_sent"):
         task_queue._shutdown_signals_sent.clear()
+    if hasattr(task_queue, "_shutdown_signal_delivery_confirmed"):
+        task_queue._shutdown_signal_delivery_confirmed = False
     if hasattr(task_queue, "_shutdown_fallback_causation"):
         task_queue._shutdown_fallback_causation = False
     if hasattr(task_queue, "_shutdown_signal_resolved"):
@@ -896,6 +922,72 @@ def test_unrelated_negative_exit_is_not_shutdown_interruption_and_clears_state(
     assert not task_queue._shutdown_signals_sent
     assert task_queue._shutdown_fallback_causation is False
     assert task_queue._shutdown_signal_resolved.is_set() is False
+
+
+@pytest.mark.parametrize("returncode", [0, 1])
+def test_handled_exit_after_confirmed_shutdown_signal_restores_pending(
+    tmp_path, monkeypatch, returncode
+):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    init_db()
+    task_id = _insert_processing_task(
+        event_id="evt-handled-signal", task_id="task-handled-signal"
+    )
+    process = _HandledShutdownSignalProcess(returncode=returncode)
+    monkeypatch.setattr(task_queue.subprocess, "Popen", lambda *args, **kwargs: process)
+    worker = threading.Thread(target=task_queue._process_one, args=(task_id,))
+    task_queue._worker = worker
+    worker.start()
+    assert process.started.wait(timeout=1)
+
+    assert task_queue.stop_worker() is True
+
+    with connect() as conn:
+        task = conn.execute(
+            "SELECT status, started_at, finished_at, error FROM ingest_tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
+        event = conn.execute(
+            "SELECT status, last_error FROM events WHERE id = 'evt-handled-signal'"
+        ).fetchone()
+    assert tuple(task) == ("pending", None, None, None)
+    assert tuple(event) == ("pending", None)
+
+
+def test_completed_event_during_shutdown_child_tail_finalizes_task_done(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    init_db()
+    task_id = _insert_processing_task(
+        event_id="evt-completed-tail", task_id="task-completed-tail"
+    )
+    with connect() as conn:
+        conn.execute(
+            "UPDATE events SET status = 'completed' WHERE id = 'evt-completed-tail'"
+        )
+    process = _HandledShutdownSignalProcess(returncode=1)
+    monkeypatch.setattr(task_queue.subprocess, "Popen", lambda *args, **kwargs: process)
+    worker = threading.Thread(target=task_queue._process_one, args=(task_id,))
+    task_queue._worker = worker
+    worker.start()
+    assert process.started.wait(timeout=1)
+
+    assert task_queue.stop_worker() is True
+
+    with connect() as conn:
+        task = conn.execute(
+            "SELECT status, started_at, finished_at, error FROM ingest_tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
+        event = conn.execute(
+            "SELECT status, last_error FROM events WHERE id = 'evt-completed-tail'"
+        ).fetchone()
+    assert task["status"] == "done"
+    assert task["started_at"] is not None
+    assert task["finished_at"] is not None
+    assert task["error"] is None
+    assert tuple(event) == ("completed", None)
 
 
 def test_shutdown_before_spawn_restores_claimed_task_without_starting_child(tmp_path, monkeypatch):

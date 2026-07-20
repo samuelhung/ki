@@ -38,6 +38,7 @@ _active_process_group_id: int | None = None
 _shutdown_interrupted: tuple[str, subprocess.Popen[str]] | None = None
 _shutdown_signal_resolved = threading.Event()
 _shutdown_signals_sent: set[int] = set()
+_shutdown_signal_delivery_confirmed = False
 _shutdown_fallback_causation = False
 
 
@@ -144,9 +145,20 @@ def _restore_shutdown_interrupted_task(task_id: str) -> None:
     """Return an exact shutdown-interrupted task to its recoverable state."""
     with connect() as conn:
         row = conn.execute(
-            "SELECT event_id FROM ingest_tasks WHERE id = ?", (task_id,)
+            "SELECT t.event_id, e.status AS event_status "
+            "FROM ingest_tasks t JOIN events e ON e.id = t.event_id "
+            "WHERE t.id = ?",
+            (task_id,),
         ).fetchone()
         if not row:
+            return
+        if row["event_status"] == "completed":
+            conn.execute(
+                "UPDATE ingest_tasks SET status = 'done', "
+                "finished_at = datetime('now'), error = NULL "
+                "WHERE id = ? AND status = 'running'",
+                (task_id,),
+            )
             return
         restored = conn.execute(
             "UPDATE ingest_tasks SET status = 'pending', started_at = NULL, "
@@ -181,11 +193,13 @@ def _release_active_process(task_id: str, proc: subprocess.Popen[str]) -> bool:
 
 
 def _clear_shutdown_interrupted(task_id: str, proc: subprocess.Popen[str]) -> None:
-    global _shutdown_interrupted, _shutdown_fallback_causation
+    global _shutdown_interrupted, _shutdown_signal_delivery_confirmed
+    global _shutdown_fallback_causation
     with _active_process_lock:
         if _shutdown_interrupted == (task_id, proc):
             _shutdown_interrupted = None
             _shutdown_signals_sent.clear()
+            _shutdown_signal_delivery_confirmed = False
             _shutdown_fallback_causation = False
             _shutdown_signal_resolved.clear()
 
@@ -220,13 +234,22 @@ def _record_shutdown_signal(
     proc: subprocess.Popen[str],
     sig: signal.Signals,
     used_fallback: bool,
+    leader_returncode_after_send: int | None,
 ) -> None:
-    global _shutdown_fallback_causation
+    global _shutdown_signal_delivery_confirmed, _shutdown_fallback_causation
     with _active_process_lock:
         if _shutdown_interrupted != (task_id, proc):
             return
-        _shutdown_signals_sent.add(int(sig))
-        if used_fallback and os.name != "posix":
+        if leader_returncode_after_send is None:
+            _shutdown_signals_sent.add(int(sig))
+            _shutdown_signal_delivery_confirmed = True
+        elif leader_returncode_after_send == -int(sig):
+            _shutdown_signals_sent.add(int(sig))
+        if (
+            used_fallback
+            and os.name != "posix"
+            and leader_returncode_after_send is None
+        ):
             _shutdown_fallback_causation = True
 
 
@@ -234,9 +257,11 @@ def _matches_shutdown_causation(
     task_id: str, proc: subprocess.Popen[str], returncode: int | None
 ) -> bool:
     with _active_process_lock:
-        if _shutdown_interrupted != (task_id, proc) or returncode in (None, 0):
+        if _shutdown_interrupted != (task_id, proc) or returncode is None:
             return False
         if returncode < 0 and -returncode in _shutdown_signals_sent:
+            return True
+        if returncode >= 0 and _shutdown_signal_delivery_confirmed:
             return True
         return _shutdown_fallback_causation
 
@@ -731,7 +756,8 @@ def start_worker() -> None:
 
 def stop_worker() -> bool:
     """Stop the worker and its exact active child, returning quiescence status."""
-    global _shutdown_interrupted, _shutdown_fallback_causation
+    global _shutdown_interrupted, _shutdown_signal_delivery_confirmed
+    global _shutdown_fallback_causation
     _shutdown_flag.set()
     with _active_process_lock:
         proc = _active_process
@@ -749,6 +775,7 @@ def stop_worker() -> bool:
             if leader_alive:
                 _shutdown_interrupted = (task_id, proc)
                 _shutdown_signals_sent.clear()
+                _shutdown_signal_delivery_confirmed = False
                 _shutdown_fallback_causation = False
                 _shutdown_signal_resolved.clear()
             elif not group_alive:
@@ -763,8 +790,15 @@ def stop_worker() -> bool:
             proc, process_group_id, signal.SIGTERM, "terminate", task_id
         )
         if sent:
+            returncode_after_send = _observe_process_returncode(
+                proc, task_id, "after terminate"
+            )
             _record_shutdown_signal(
-                task_id, proc, signal.SIGTERM, used_fallback
+                task_id,
+                proc,
+                signal.SIGTERM,
+                used_fallback,
+                returncode_after_send,
             )
 
         if sent:
@@ -787,8 +821,15 @@ def stop_worker() -> bool:
                 proc, process_group_id, signal.SIGKILL, "kill", task_id
             )
             if sent:
+                returncode_after_send = _observe_process_returncode(
+                    proc, task_id, "after kill"
+                )
                 _record_shutdown_signal(
-                    task_id, proc, signal.SIGKILL, used_fallback
+                    task_id,
+                    proc,
+                    signal.SIGKILL,
+                    used_fallback,
+                    returncode_after_send,
                 )
             returncode, process_tree_quiesced = _wait_for_process_tree_exit(
                 proc,

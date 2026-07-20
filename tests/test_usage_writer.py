@@ -55,7 +55,7 @@ def test_db_connect_defaults_to_5000ms_and_accepts_keyword_override(
     assert overridden_timeout == 0
 
 
-def test_usage_writer_uses_nonblocking_database_connection(tmp_path, monkeypatch):
+def test_usage_writer_uses_short_bounded_database_connection(tmp_path, monkeypatch):
     monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "writer-policy.sqlite"))
     init_db()
     observed_timeouts: list[int] = []
@@ -72,7 +72,33 @@ def test_usage_writer_uses_nonblocking_database_connection(tmp_path, monkeypatch
 
     _UsageWriter()._write_once(_record())
 
-    assert observed_timeouts == [0]
+    assert observed_timeouts == [250]
+
+
+def test_usage_writer_survives_lock_longer_than_backoff_window(tmp_path, monkeypatch):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "writer-lock.sqlite"))
+    init_db()
+    writer = _UsageWriter()
+    result: list[bool] = []
+
+    with connect() as blocker:
+        blocker.execute("BEGIN IMMEDIATE")
+        thread = threading.Thread(
+            target=lambda: result.append(writer._write_with_retry(_record()))
+        )
+        started = time.monotonic()
+        thread.start()
+        time.sleep(0.45)
+        blocker.commit()
+        thread.join(timeout=4)
+
+    elapsed = time.monotonic() - started
+    assert thread.is_alive() is False
+    assert result == [True]
+    assert elapsed < 5
+    with connect() as conn:
+        count = conn.execute("SELECT COUNT(*) FROM ai_usage").fetchone()[0]
+    assert count == 1
 
 
 def test_usage_dashboard_connections_keep_default_busy_timeout(tmp_path, monkeypatch):
