@@ -6,13 +6,17 @@ per-call overrides on top of the module-level settings from this config.
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
+import stat
 import tempfile
 import threading
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from . import credential_store
 
@@ -24,6 +28,13 @@ DEFAULT_AI_BASE_URL = "http://10.8.0.13:3000/v1"
 from .paths import CONFIG_PATH
 _config: dict[str, Any] = {}
 _config_lock = threading.RLock()
+
+
+@dataclass(frozen=True)
+class _ConfigFileSnapshot:
+    exists: bool
+    data: bytes
+    mode: int
 
 
 def _defaults() -> dict:
@@ -83,6 +94,7 @@ def load_config(*, persist_normalization: bool = True) -> dict[str, Any]:
 
 def _load_config_unlocked(*, persist_normalization: bool = True) -> dict[str, Any]:
     global _config
+    _reject_config_symlink()
     if CONFIG_PATH.exists():
         os.chmod(CONFIG_PATH, 0o600)
         try:
@@ -96,18 +108,18 @@ def _load_config_unlocked(*, persist_normalization: bool = True) -> dict[str, An
         general = raw.get("general")
         had_legacy_key = isinstance(general, dict) and "api_key" in general
         raw, legacy_key = _scrub_api_key(raw)
-        if legacy_key and persist_normalization:
-            credential_store.set_api_key(legacy_key)
         if had_legacy_key and persist_normalization:
-            structure_changed = True
+            with _config_credential_transaction():
+                if legacy_key and not credential_store.resolve_api_key():
+                    credential_store.set_api_key(legacy_key)
+                _write_config(raw)
+            structure_changed = False
 
         active = _deep_merge(_defaults(), raw)
         if structure_changed and persist_normalization:
             try:
                 _write_config(raw)
             except Exception:
-                if legacy_key:
-                    raise
                 logger.exception("Failed to persist normalized system config at %s", CONFIG_PATH)
         _config = active
         logger.info("Loaded system config from %s", CONFIG_PATH)
@@ -127,10 +139,59 @@ def get_config() -> dict[str, Any]:
     return _config
 
 
+def get_config_and_credential() -> tuple[dict[str, Any], str]:
+    """Return a coherent config and credential snapshot for AI consumers."""
+    with _config_lock:
+        with credential_store.locked():
+            return copy.deepcopy(_config), credential_store.resolve_api_key()
+
+
 def save_config(config: dict | None = None) -> None:
     """Persist config to disk. If config is None, saves the current in-memory copy."""
     with _config_lock:
         _save_config_unlocked(config)
+
+
+def update_config_and_credential(
+    config: dict,
+    requested_api_key: str | None,
+) -> None:
+    """Commit config and credential changes as one serialized transaction."""
+    with _config_credential_transaction():
+        if (
+            requested_api_key is not None
+            and not credential_store.preserves_api_key(requested_api_key)
+        ):
+            credential_store.set_api_key(requested_api_key)
+        _save_config_unlocked(config)
+
+
+@contextmanager
+def _config_credential_transaction() -> Iterator[None]:
+    global _config
+    with _config_lock:
+        with credential_store.locked():
+            config_snapshot = _snapshot_config_file()
+            credential_snapshot = credential_store.snapshot_state()
+            active_before = _config
+            try:
+                yield
+            except BaseException as exc:
+                rollback_errors: list[BaseException] = []
+                try:
+                    if not _config_file_matches(config_snapshot):
+                        _restore_config_file(config_snapshot)
+                except BaseException as rollback_exc:
+                    rollback_errors.append(rollback_exc)
+                try:
+                    if not credential_store.state_matches(credential_snapshot):
+                        credential_store.restore_state(credential_snapshot)
+                except BaseException as rollback_exc:
+                    rollback_errors.append(rollback_exc)
+                _config = active_before
+                if rollback_errors:
+                    raise RuntimeError("system config transaction rollback failed") from exc
+                raise
 
 
 def _save_config_unlocked(config: dict | None = None) -> None:
@@ -148,6 +209,7 @@ def _save_config_unlocked(config: dict | None = None) -> None:
 
 def _write_config(config: dict) -> None:
     """Atomically write a config payload without changing in-memory state."""
+    _reject_config_symlink()
     config, _ = _scrub_api_key(config)
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     temp_path: Path | None = None
@@ -168,12 +230,71 @@ def _write_config(config: dict) -> None:
         os.chmod(temp_path, 0o600)
         os.replace(temp_path, CONFIG_PATH)
         temp_path = None
-        os.chmod(CONFIG_PATH, 0o600)
         _fsync_parent_directory()
         logger.info("Saved system config to %s", CONFIG_PATH)
     finally:
         if temp_path is not None:
             temp_path.unlink(missing_ok=True)
+
+
+def _snapshot_config_file() -> _ConfigFileSnapshot:
+    _reject_config_symlink()
+    exists = CONFIG_PATH.exists()
+    return _ConfigFileSnapshot(
+        exists=exists,
+        data=CONFIG_PATH.read_bytes() if exists else b"",
+        mode=stat.S_IMODE(CONFIG_PATH.stat().st_mode) if exists else 0o600,
+    )
+
+
+def _config_file_matches(snapshot: _ConfigFileSnapshot) -> bool:
+    _reject_config_symlink()
+    exists = CONFIG_PATH.exists()
+    if exists != snapshot.exists:
+        return False
+    if not exists:
+        return True
+    return (
+        CONFIG_PATH.read_bytes() == snapshot.data
+        and stat.S_IMODE(CONFIG_PATH.stat().st_mode) == snapshot.mode
+    )
+
+
+def _restore_config_file(snapshot: _ConfigFileSnapshot) -> None:
+    _reject_config_symlink()
+    if not snapshot.exists:
+        CONFIG_PATH.unlink(missing_ok=True)
+        return
+
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=CONFIG_PATH.parent,
+            prefix=f".{CONFIG_PATH.name}.rollback.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+            os.fchmod(temp_file.fileno(), snapshot.mode)
+            temp_file.write(snapshot.data)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+        os.replace(temp_path, CONFIG_PATH)
+        temp_path = None
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+
+
+def _reject_config_symlink() -> None:
+    try:
+        mode = os.lstat(CONFIG_PATH).st_mode
+    except FileNotFoundError:
+        return
+    if stat.S_ISLNK(mode):
+        raise OSError(f"refusing to use symlink system config: {CONFIG_PATH}")
 
 
 def _fsync_parent_directory() -> None:

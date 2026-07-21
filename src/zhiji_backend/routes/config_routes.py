@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from .. import credential_store
-from ..config_manager import get_config, save_config
+from ..config_manager import get_config_and_credential, update_config_and_credential
 from ..provider_policy import validate_allowed_base_url
 from ..system_config_schema import SystemConfigUpdate
 
@@ -13,16 +13,13 @@ router = APIRouter(prefix="/api/system-config", tags=["system-config"])
 
 
 def _mask_key(key: str) -> str:
-    return key[:4] + "****" + key[-4:] if len(key) > 8 else "****"
+    return credential_store.mask_api_key(key)
 
 
 @router.get("")
 def read_config():
     """Return the full system config, masking the API key."""
-    cfg = get_config()
-    import copy
-    result = copy.deepcopy(cfg)
-    key = credential_store.resolve_api_key()
+    result, key = get_config_and_credential()
     result["general"]["api_key"] = _mask_key(key) if key and key != "***" else ""
     return result
 
@@ -39,18 +36,13 @@ def write_config(config: SystemConfigUpdate):
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    if "api_key" in new_general:
-        api_key = new_general["api_key"]
-        existing_key = credential_store.resolve_api_key()
-        existing_mask = _mask_key(existing_key) if existing_key and existing_key != "***" else ""
-        if api_key not in {"", existing_mask}:
-            try:
-                credential_store.set_api_key(api_key)
-            except ValueError as exc:
-                raise HTTPException(status_code=422, detail=str(exc)) from exc
+    requested_api_key = new_general.get("api_key") if "api_key" in new_general else None
     new_general.pop("api_key", None)
     if not new_general:
         payload.pop("general", None)
 
-    save_config(payload)
+    try:
+        update_config_and_credential(payload, requested_api_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"status": "ok"}

@@ -2,20 +2,34 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import stat
 import tempfile
 import threading
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterator
 
 from .paths import ZHIJI_HOME
 
 
+logger = logging.getLogger(__name__)
 ENV_PATH = ZHIJI_HOME / ".env"
 _ENV_KEY = "AI_API_KEY"
 _write_lock = threading.RLock()
 _key_line = re.compile(r"^\s*(?:export\s+)?AI_API_KEY\s*=")
+
+
+@dataclass(frozen=True)
+class _CredentialSnapshot:
+    file_exists: bool
+    file_bytes: bytes
+    file_mode: int
+    env_present: bool
+    env_value: str
 
 
 def resolve_api_key() -> str:
@@ -25,6 +39,16 @@ def resolve_api_key() -> str:
         or os.getenv("OPENAI_API_KEY", "")
         or os.getenv("DEEPSEEK_API_KEY", "")
     )
+
+
+def mask_api_key(key: str) -> str:
+    return key[:4] + "****" + key[-4:] if len(key) > 8 else "****"
+
+
+def preserves_api_key(value: str) -> bool:
+    existing = resolve_api_key()
+    existing_mask = mask_api_key(existing) if existing and existing != "***" else ""
+    return value in {"", existing_mask}
 
 
 def _validate_key(key: str) -> None:
@@ -73,6 +97,77 @@ def _reject_symlink(path: Path) -> None:
         raise OSError(f"refusing to write symlink credential file: {path}")
 
 
+@contextmanager
+def locked() -> Iterator[None]:
+    with _write_lock:
+        yield
+
+
+def snapshot_state() -> _CredentialSnapshot:
+    _reject_symlink(ENV_PATH)
+    exists = ENV_PATH.exists()
+    return _CredentialSnapshot(
+        file_exists=exists,
+        file_bytes=ENV_PATH.read_bytes() if exists else b"",
+        file_mode=stat.S_IMODE(ENV_PATH.stat().st_mode) if exists else 0o600,
+        env_present=_ENV_KEY in os.environ,
+        env_value=os.environ.get(_ENV_KEY, ""),
+    )
+
+
+def state_matches(snapshot: _CredentialSnapshot) -> bool:
+    _reject_symlink(ENV_PATH)
+    exists = ENV_PATH.exists()
+    if exists != snapshot.file_exists:
+        return False
+    if exists:
+        if ENV_PATH.read_bytes() != snapshot.file_bytes:
+            return False
+        if stat.S_IMODE(ENV_PATH.stat().st_mode) != snapshot.file_mode:
+            return False
+    env_present = _ENV_KEY in os.environ
+    return (
+        env_present == snapshot.env_present
+        and os.environ.get(_ENV_KEY, "") == snapshot.env_value
+    )
+
+
+def _restore_file(snapshot: _CredentialSnapshot) -> None:
+    _reject_symlink(ENV_PATH)
+    if not snapshot.file_exists:
+        ENV_PATH.unlink(missing_ok=True)
+        return
+
+    ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=ENV_PATH.parent,
+            prefix=f".{ENV_PATH.name}.rollback.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+            os.fchmod(temp_file.fileno(), snapshot.file_mode)
+            temp_file.write(snapshot.file_bytes)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+        os.replace(temp_path, ENV_PATH)
+        temp_path = None
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+
+
+def restore_state(snapshot: _CredentialSnapshot) -> None:
+    _restore_file(snapshot)
+    if snapshot.env_present:
+        os.environ[_ENV_KEY] = snapshot.env_value
+    else:
+        os.environ.pop(_ENV_KEY, None)
+
+
 def set_api_key(key: str) -> None:
     """Atomically persist the canonical AI key and publish it to this process."""
     _validate_key(key)
@@ -100,10 +195,14 @@ def set_api_key(key: str) -> None:
             os.chmod(temp_path, 0o600)
             os.replace(temp_path, ENV_PATH)
             temp_path = None
-            os.chmod(ENV_PATH, 0o600)
-            with ENV_PATH.open("rb") as env_file:
-                os.fsync(env_file.fileno())
-            _fsync_parent(ENV_PATH)
+            try:
+                _fsync_parent(ENV_PATH)
+            except OSError:
+                logger.warning(
+                    "credential directory fsync failed after commit for %s",
+                    ENV_PATH,
+                    exc_info=True,
+                )
         finally:
             if temp_path is not None:
                 temp_path.unlink(missing_ok=True)

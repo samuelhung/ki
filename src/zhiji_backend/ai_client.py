@@ -12,7 +12,11 @@ import time
 import urllib.request
 from typing import Any
 
-from .config_manager import DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, get_config
+from .config_manager import (
+    DEFAULT_AI_BASE_URL,
+    DEFAULT_AI_MODEL,
+    get_config_and_credential,
+)
 from .credential_store import resolve_api_key
 from .usage_writer import UsageRecord, enqueue_usage
 
@@ -92,7 +96,7 @@ def chat(
     All parameters are optional — falls back to system_config.json defaults, then
     project defaults.
     """
-    cfg = get_config()
+    cfg, _api_key = get_config_and_credential()
     general = cfg.get("general", {})
 
     mod_defaults: dict = {}
@@ -108,7 +112,6 @@ def chat(
     _thinking = thinking if thinking is not None else mod_defaults.get("thinking", general.get("default_thinking", False))
     _reasoning_effort = reasoning_effort or general.get("reasoning_effort", "high")
 
-    _api_key = _resolve_api_key(general)
     if not _api_key or _api_key == "***":
         logger.warning("AI API key not configured")
         return None

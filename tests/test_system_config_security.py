@@ -91,6 +91,44 @@ def test_credential_store_failed_replace_rolls_back_file_and_process_env(
     assert list(env_path.parent.iterdir()) == [env_path]
 
 
+def test_credential_store_never_chmods_destination_after_replace(env_path, monkeypatch):
+    real_chmod = credential_store.os.chmod
+
+    def chmod(path, mode):
+        if os.fspath(path) == os.fspath(env_path):
+            raise AssertionError("destination chmod occurred after replace")
+        real_chmod(path, mode)
+
+    monkeypatch.setattr(credential_store.os, "chmod", chmod)
+
+    credential_store.set_api_key("committed-secret")
+
+    assert env_path.read_text(encoding="utf-8") == "AI_API_KEY=committed-secret\n"
+    assert os.environ["AI_API_KEY"] == "committed-secret"
+    assert stat.S_IMODE(env_path.stat().st_mode) == 0o600
+
+
+def test_credential_store_parent_fsync_failure_is_post_commit_warning(
+    env_path, monkeypatch, caplog
+):
+    env_path.parent.mkdir(parents=True)
+    env_path.write_text("AI_API_KEY=old-secret\n", encoding="utf-8")
+    os.chmod(env_path, 0o600)
+    monkeypatch.setenv("AI_API_KEY", "old-secret")
+    monkeypatch.setattr(
+        credential_store,
+        "_fsync_parent",
+        lambda _path: (_ for _ in ()).throw(OSError("directory fsync failed")),
+    )
+
+    credential_store.set_api_key("committed-secret")
+
+    assert env_path.read_text(encoding="utf-8") == "AI_API_KEY=committed-secret\n"
+    assert os.environ["AI_API_KEY"] == "committed-secret"
+    assert "credential directory fsync failed after commit" in caplog.text
+    assert "committed-secret" not in caplog.text
+
+
 def test_credential_store_rejects_symlink_env(env_path, tmp_path):
     env_path.parent.mkdir(parents=True)
     target = tmp_path / "target.env"
@@ -353,6 +391,241 @@ def test_api_key_update_is_immediately_visible_to_ai_client(config_client):
     assert ai_client._resolve_api_key({}) == "immediate-secret"
 
 
+def test_config_and_credential_updates_are_serialized_as_one_transaction(
+    config_client, monkeypatch
+):
+    _client, config_path = config_client
+    monkeypatch.setenv(
+        "KI_AI_BASE_URL_ALLOWLIST",
+        "https://provider-a.example/v1,https://provider-b.example/v1",
+    )
+    config_manager.save_config()
+    real_write_config = config_manager._write_config
+    real_set_api_key = credential_store.set_api_key
+    first_config_write = threading.Event()
+    release_first = threading.Event()
+    second_credential_write = threading.Event()
+    write_count = 0
+    count_lock = threading.Lock()
+    responses: dict[str, int] = {}
+    errors: list[BaseException] = []
+
+    def blocking_write(config):
+        nonlocal write_count
+        with count_lock:
+            index = write_count
+            write_count += 1
+        if index == 0:
+            first_config_write.set()
+            assert release_first.wait(2)
+        real_write_config(config)
+
+    def tracking_set_api_key(key):
+        if key == "key-b":
+            second_credential_write.set()
+        real_set_api_key(key)
+
+    monkeypatch.setattr(config_manager, "_write_config", blocking_write)
+    monkeypatch.setattr(credential_store, "set_api_key", tracking_set_api_key)
+
+    def update(name, base_url, key):
+        try:
+            response = TestClient(app).put(
+                "/api/system-config",
+                json={"general": {"base_url": base_url, "api_key": key}},
+            )
+            responses[name] = response.status_code
+        except BaseException as exc:
+            errors.append(exc)
+
+    first = threading.Thread(
+        target=update,
+        args=("a", "https://provider-a.example/v1", "key-a"),
+    )
+    second = threading.Thread(
+        target=update,
+        args=("b", "https://provider-b.example/v1", "key-b"),
+    )
+
+    first.start()
+    assert first_config_write.wait(2)
+    second.start()
+    second_entered_while_first_blocked = second_credential_write.wait(0.2)
+    release_first.set()
+    first.join(2)
+    second.join(2)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    assert errors == []
+    assert responses == {"a": 200, "b": 200}
+    assert second_entered_while_first_blocked is False
+    assert os.environ["AI_API_KEY"] == "key-b"
+    assert credential_store.ENV_PATH.read_text(encoding="utf-8") == "AI_API_KEY=key-b\n"
+    persisted = json.loads(config_path.read_text(encoding="utf-8"))
+    assert persisted["general"]["base_url"] == "https://provider-b.example/v1"
+    assert config_manager.get_config()["general"]["base_url"] == "https://provider-b.example/v1"
+
+
+def test_config_get_waits_for_transaction_and_returns_matching_credential(
+    config_client, monkeypatch
+):
+    _client, _config_path = config_client
+    monkeypatch.setenv(
+        "KI_AI_BASE_URL_ALLOWLIST",
+        "https://provider-a.example/v1",
+    )
+    config_manager.save_config()
+    credential_store.set_api_key("old-secret")
+    real_write_config = config_manager._write_config
+    config_write_blocked = threading.Event()
+    release_write = threading.Event()
+    get_done = threading.Event()
+    results: dict[str, object] = {}
+
+    def blocking_write(config):
+        config_write_blocked.set()
+        assert release_write.wait(2)
+        real_write_config(config)
+
+    monkeypatch.setattr(config_manager, "_write_config", blocking_write)
+
+    def update():
+        results["put"] = TestClient(app).put(
+            "/api/system-config",
+            json={
+                "general": {
+                    "base_url": "https://provider-a.example/v1",
+                    "api_key": "new-secret",
+                }
+            },
+        )
+
+    def read():
+        results["get"] = TestClient(app).get("/api/system-config")
+        get_done.set()
+
+    writer = threading.Thread(target=update)
+    reader = threading.Thread(target=read)
+    writer.start()
+    assert config_write_blocked.wait(2)
+    reader.start()
+    get_completed_while_write_blocked = get_done.wait(0.2)
+    release_write.set()
+    writer.join(2)
+    reader.join(2)
+
+    assert not writer.is_alive()
+    assert not reader.is_alive()
+    assert get_completed_while_write_blocked is False
+    assert results["put"].status_code == 200
+    assert results["get"].status_code == 200
+    payload = results["get"].json()
+    assert payload["general"]["base_url"] == "https://provider-a.example/v1"
+    assert payload["general"]["api_key"] == "new-****cret"
+
+
+def test_config_write_failure_rolls_back_credential_disk_memory_and_env(
+    config_client, monkeypatch
+):
+    client, config_path = config_client
+    config_manager.save_config()
+    credential_store.set_api_key("old-secret")
+    before_config_bytes = config_path.read_bytes()
+    before_env_bytes = credential_store.ENV_PATH.read_bytes()
+    before_memory = config_manager.get_config()
+    monkeypatch.setattr(
+        config_manager,
+        "_write_config",
+        lambda _config: (_ for _ in ()).throw(OSError("config replace failed")),
+    )
+
+    with pytest.raises(OSError, match="config replace failed"):
+        client.put(
+            "/api/system-config",
+            json={
+                "general": {
+                    "default_temperature": 0.81,
+                    "api_key": "new-secret",
+                }
+            },
+        )
+
+    assert config_path.read_bytes() == before_config_bytes
+    assert credential_store.ENV_PATH.read_bytes() == before_env_bytes
+    assert config_manager.get_config() is before_memory
+    assert os.environ["AI_API_KEY"] == "old-secret"
+
+
+def test_partial_credential_failure_rolls_back_both_transaction_states(
+    config_client, monkeypatch
+):
+    client, config_path = config_client
+    config_manager.save_config()
+    credential_store.set_api_key("old-secret")
+    before_config_bytes = config_path.read_bytes()
+    before_env_bytes = credential_store.ENV_PATH.read_bytes()
+    before_memory = config_manager.get_config()
+
+    def partial_credential_write(_key):
+        credential_store.ENV_PATH.write_text(
+            "AI_API_KEY=partial-secret\n",
+            encoding="utf-8",
+        )
+        os.environ["AI_API_KEY"] = "partial-secret"
+        raise OSError("credential commit failed")
+
+    monkeypatch.setattr(credential_store, "set_api_key", partial_credential_write)
+
+    with pytest.raises(OSError, match="credential commit failed"):
+        client.put(
+            "/api/system-config",
+            json={
+                "general": {
+                    "default_temperature": 0.82,
+                    "api_key": "new-secret",
+                }
+            },
+        )
+
+    assert config_path.read_bytes() == before_config_bytes
+    assert credential_store.ENV_PATH.read_bytes() == before_env_bytes
+    assert config_manager.get_config() is before_memory
+    assert os.environ["AI_API_KEY"] == "old-secret"
+
+
+def test_precommit_credential_replace_failure_does_not_rewrite_snapshots(
+    config_client, monkeypatch
+):
+    client, config_path = config_client
+    config_manager.save_config()
+    credential_store.set_api_key("old-secret")
+    before_config_bytes = config_path.read_bytes()
+    before_env_bytes = credential_store.ENV_PATH.read_bytes()
+    before_memory = config_manager.get_config()
+    monkeypatch.setattr(
+        credential_store.os,
+        "replace",
+        lambda *_args: (_ for _ in ()).throw(OSError("credential replace failed")),
+    )
+
+    with pytest.raises(OSError, match="credential replace failed"):
+        client.put(
+            "/api/system-config",
+            json={
+                "general": {
+                    "default_temperature": 0.83,
+                    "api_key": "new-secret",
+                }
+            },
+        )
+
+    assert config_path.read_bytes() == before_config_bytes
+    assert credential_store.ENV_PATH.read_bytes() == before_env_bytes
+    assert config_manager.get_config() is before_memory
+    assert os.environ["AI_API_KEY"] == "old-secret"
+
+
 def test_ai_client_resolves_only_server_environment_in_priority_order(monkeypatch):
     monkeypatch.delenv("AI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -411,6 +684,8 @@ def test_legacy_json_key_migrates_to_env_before_json_scrub(tmp_path, monkeypatch
     monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
     monkeypatch.setattr(credential_store, "ENV_PATH", env_path)
     monkeypatch.delenv("AI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     config_manager._config = {}
 
     loaded = config_manager.load_config()
@@ -425,12 +700,48 @@ def test_legacy_json_key_migrates_to_env_before_json_scrub(tmp_path, monkeypatch
     assert os.environ["AI_API_KEY"] == "legacy-secret"
 
 
+def test_legacy_json_key_does_not_override_existing_server_credential(
+    tmp_path, monkeypatch
+):
+    config_path = tmp_path / "system_config.json"
+    env_path = tmp_path / ".env"
+    config_path.write_text(
+        json.dumps(
+            {
+                "general": {
+                    "api_key": "legacy-secret",
+                    "default_temperature": 0.23,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(credential_store, "ENV_PATH", env_path)
+    monkeypatch.delenv("AI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "server-secret")
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    config_manager._config = {}
+
+    loaded = config_manager.load_config()
+
+    assert "api_key" not in loaded["general"]
+    assert credential_store.resolve_api_key() == "server-secret"
+    assert "AI_API_KEY" not in os.environ
+    assert os.environ["OPENAI_API_KEY"] == "server-secret"
+    assert not env_path.exists()
+    assert "api_key" not in json.loads(config_path.read_text(encoding="utf-8"))["general"]
+
+
 def test_legacy_migration_failure_is_fail_closed_without_key_loss(tmp_path, monkeypatch):
     config_path = tmp_path / "system_config.json"
     original = json.dumps({"general": {"api_key": "legacy-secret"}})
     config_path.write_text(original, encoding="utf-8")
     before_memory = {"sentinel": True}
     monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
+    monkeypatch.delenv("AI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     monkeypatch.setattr(
         credential_store,
         "set_api_key",
@@ -442,6 +753,37 @@ def test_legacy_migration_failure_is_fail_closed_without_key_loss(tmp_path, monk
         config_manager.load_config()
 
     assert config_path.read_text(encoding="utf-8") == original
+    assert config_manager.get_config() is before_memory
+
+
+def test_legacy_config_scrub_failure_rolls_back_migrated_credential(
+    tmp_path, monkeypatch
+):
+    config_path = tmp_path / "system_config.json"
+    env_path = tmp_path / ".env"
+    original = json.dumps(
+        {"general": {"api_key": "legacy-secret", "default_temperature": 0.24}}
+    )
+    config_path.write_text(original, encoding="utf-8")
+    before_memory = {"sentinel": True}
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(credential_store, "ENV_PATH", env_path)
+    monkeypatch.delenv("AI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.setattr(
+        config_manager,
+        "_write_config",
+        lambda _config: (_ for _ in ()).throw(OSError("config scrub failed")),
+    )
+    config_manager._config = before_memory
+
+    with pytest.raises(OSError, match="config scrub failed"):
+        config_manager.load_config()
+
+    assert config_path.read_text(encoding="utf-8") == original
+    assert not env_path.exists()
+    assert "AI_API_KEY" not in os.environ
     assert config_manager.get_config() is before_memory
 
 
@@ -477,6 +819,51 @@ def test_config_write_and_existing_config_load_enforce_0600(tmp_path, monkeypatc
 
     config_manager.save_config({"general": {"default_temperature": 0.33}})
     assert stat.S_IMODE(config_path.stat().st_mode) == 0o600
+
+
+def test_config_load_rejects_symlink_without_touching_target(tmp_path, monkeypatch):
+    target = tmp_path / "target.json"
+    target.write_text(
+        json.dumps({"general": {"default_temperature": 0.44}}),
+        encoding="utf-8",
+    )
+    os.chmod(target, 0o644)
+    config_path = tmp_path / "system_config.json"
+    config_path.symlink_to(target)
+    original_bytes = target.read_bytes()
+    original_mode = stat.S_IMODE(target.stat().st_mode)
+    before_memory = {"sentinel": True}
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
+    config_manager._config = before_memory
+
+    with pytest.raises(OSError, match="symlink"):
+        config_manager.load_config()
+
+    assert config_path.is_symlink()
+    assert target.read_bytes() == original_bytes
+    assert stat.S_IMODE(target.stat().st_mode) == original_mode
+    assert config_manager.get_config() is before_memory
+
+
+def test_config_save_rejects_symlink_without_touching_target(tmp_path, monkeypatch):
+    target = tmp_path / "target.json"
+    target.write_text('{"target": true}', encoding="utf-8")
+    os.chmod(target, 0o644)
+    config_path = tmp_path / "system_config.json"
+    config_path.symlink_to(target)
+    original_bytes = target.read_bytes()
+    original_mode = stat.S_IMODE(target.stat().st_mode)
+    before_memory = config_manager._defaults()
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
+    config_manager._config = before_memory
+
+    with pytest.raises(OSError, match="symlink"):
+        config_manager.save_config({"general": {"default_temperature": 0.45}})
+
+    assert config_path.is_symlink()
+    assert target.read_bytes() == original_bytes
+    assert stat.S_IMODE(target.stat().st_mode) == original_mode
+    assert config_manager.get_config() is before_memory
 
 
 def test_cli_init_creates_env_and_config_with_0600_permissions(tmp_path):
