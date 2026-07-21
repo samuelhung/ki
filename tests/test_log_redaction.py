@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from zhiji_backend.security import redaction as redaction_module
 from zhiji_backend.security.redaction import (
     MAX_REDACTED_TEXT_LENGTH,
     REDACTED,
@@ -80,8 +81,8 @@ def test_redact_text_scrubs_json_dumped_message_content_and_preserves_roles():
 
     assert "system prompt secret" not in redacted
     assert "user prompt secret" not in redacted
-    assert '"role":"system"' in redacted
-    assert '"role":"user"' in redacted
+    assert '"role": "system"' in redacted
+    assert '"role": "user"' in redacted
     assert redacted.count(REDACTED) == 2
 
 
@@ -104,7 +105,7 @@ def test_redact_text_scrubs_prefixed_json_exception_without_losing_adjacent_fiel
     ):
         assert secret not in redacted
     assert "req-visible-123" in redacted
-    assert '"status":503' in redacted
+    assert '"status": 503' in redacted
     assert "retryable=True" in redacted
 
 
@@ -135,7 +136,53 @@ def test_redact_text_bounds_large_serialized_payload_output():
     redacted = redact_text(f"failure payload={json.dumps(payload)}")
 
     assert "private" not in redacted
-    assert "req-visible-bounded" in redacted
+    assert "req-visible-bounded" not in redacted
+    assert "[TRUNCATED]" in redacted
+    assert len(redacted) <= MAX_REDACTED_TEXT_LENGTH
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "secret"),
+    [
+        (
+            "messages",
+            "[{'role': 'user', 'content': 'late messages secret'}]",
+            "late messages secret",
+        ),
+        ("content", repr("late content secret"), "late content secret"),
+        ("body", repr("late body secret"), "late body secret"),
+        ("input", repr("late input secret"), "late input secret"),
+        ("output", repr("late output secret"), "late output secret"),
+        ("completion", repr("late completion secret"), "late completion secret"),
+    ],
+)
+def test_redact_text_has_no_delimiter_attempt_bypass(key, value, secret):
+    malformed_prefix = "[broken " * 80
+    text = f"{malformed_prefix}{key}={value}; status=503"
+
+    redacted = redact_text(text)
+
+    assert secret not in redacted
+    assert REDACTED in redacted
+    assert "status=503" in redacted
+
+
+def test_redact_text_bounds_input_before_structural_scanning(monkeypatch):
+    observed_lengths = []
+    original = redaction_module._balanced_structure_end
+
+    def observe_length(text, start):
+        observed_lengths.append(len(text))
+        return original(text, start)
+
+    monkeypatch.setattr(redaction_module, "_balanced_structure_end", observe_length)
+    text = "content=[" + ("malformed" * 200_000)
+
+    redacted = redact_text(text)
+
+    assert observed_lengths == [redaction_module.MAX_REDACTION_INPUT_LENGTH]
+    assert "malformed" not in redacted
+    assert "[TRUNCATED]" in redacted
     assert len(redacted) <= MAX_REDACTED_TEXT_LENGTH
 
 
@@ -243,6 +290,47 @@ def test_secure_log_handler_hardens_existing_regular_log_files(tmp_path):
     assert stat.S_IMODE(rotated.stat().st_mode) == 0o600
 
 
+def test_secure_log_handler_tolerates_old_rotated_chmod_failure(
+    tmp_path, monkeypatch, caplog
+):
+    current = tmp_path / "ki.log"
+    rotated = tmp_path / "ki.log.2026-07-20"
+    current.write_text("current", encoding="utf-8")
+    rotated.write_text("rotated", encoding="utf-8")
+    original_chmod = Path.chmod
+
+    def fail_rotated(self, *args, **kwargs):
+        if self == rotated:
+            raise PermissionError("read-only rotated log")
+        return original_chmod(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "chmod", fail_rotated)
+
+    with caplog.at_level("WARNING"):
+        handler = SecureTimedRotatingFileHandler(current, when="midnight", backupCount=30)
+        handler.close()
+
+    assert stat.S_IMODE(current.stat().st_mode) == 0o600
+    assert "rotated log" in caplog.text
+    assert "PermissionError" in caplog.text
+
+
+def test_secure_log_handler_keeps_active_log_chmod_failure_fatal(tmp_path, monkeypatch):
+    current = tmp_path / "ki.log"
+    current.write_text("current", encoding="utf-8")
+    original_chmod = Path.chmod
+
+    def fail_current(self, *args, **kwargs):
+        if self == current:
+            raise PermissionError("active log chmod failed")
+        return original_chmod(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "chmod", fail_current)
+
+    with pytest.raises(PermissionError, match="active log chmod failed"):
+        SecureTimedRotatingFileHandler(current, when="midnight", backupCount=30)
+
+
 def test_secure_log_handler_rejects_symlink_target(tmp_path):
     target = tmp_path / "outside.log"
     target.write_text("do not touch", encoding="utf-8")
@@ -307,6 +395,66 @@ def test_log_api_reredacts_historical_serialized_payloads(tmp_path, monkeypatch)
     assert "historical repr secret" not in response.text
     assert "req-historical-json" in response.text
     assert "model-historical-visible" in response.text
+
+
+def test_log_reader_rejects_symlink_swap_before_open(tmp_path, monkeypatch):
+    from zhiji_backend.routes import log_routes
+
+    log_path = tmp_path / "ki.log"
+    secret_path = tmp_path / "secret.log"
+    log_path.write_text(
+        "2026-07-21 10:00:00 [INFO   ] worker:1 | safe message\n",
+        encoding="utf-8",
+    )
+    secret_path.write_text(
+        "2026-07-21 10:00:01 [ERROR  ] worker:2 | secret message\n",
+        encoding="utf-8",
+    )
+    original_open = os.open
+    observed_flags = []
+
+    def swap_before_open(path, flags, *args, **kwargs):
+        observed_flags.append(flags)
+        log_path.unlink()
+        log_path.symlink_to(secret_path)
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(log_routes.os, "open", swap_before_open)
+
+    entries = log_routes._parse_log_lines(log_path, "INFO", 10)
+
+    assert entries == []
+    assert observed_flags
+    assert observed_flags[0] & os.O_NOFOLLOW
+
+
+def test_log_reader_reads_pinned_fd_when_path_swapped_after_open(tmp_path, monkeypatch):
+    from zhiji_backend.routes import log_routes
+
+    log_path = tmp_path / "ki.log"
+    secret_path = tmp_path / "secret.log"
+    log_path.write_text(
+        "2026-07-21 10:00:00 [INFO   ] worker:1 | pinned safe message\n",
+        encoding="utf-8",
+    )
+    secret_path.write_text(
+        "2026-07-21 10:00:01 [ERROR  ] worker:2 | swapped secret message\n",
+        encoding="utf-8",
+    )
+    original_open = os.open
+
+    def swap_after_open(path, flags, *args, **kwargs):
+        fd = original_open(path, flags, *args, **kwargs)
+        log_path.unlink()
+        log_path.symlink_to(secret_path)
+        return fd
+
+    monkeypatch.setattr(log_routes.os, "open", swap_after_open)
+
+    entries = log_routes._parse_log_lines(log_path, "INFO", 10)
+
+    assert [entry["message"] for entry in entries] == ["pinned safe message"]
+    assert "swapped secret message" not in repr(entries)
 
 
 @pytest.mark.parametrize(

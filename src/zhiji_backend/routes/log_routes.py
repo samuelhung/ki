@@ -1,6 +1,7 @@
 """System log viewer API — reads ki.log with level filter and pagination."""
 from __future__ import annotations
 
+import os
 import re
 import stat
 from pathlib import Path
@@ -30,18 +31,25 @@ def _parse_log_lines(filepath: Path, min_level: str, limit: int) -> list[dict]:
     min_rank = LEVEL_ORDER.get(min_level.upper(), 0)
     entries: list[dict] = []
 
+    fd: int | None = None
     try:
-        mode = filepath.lstat().st_mode
-    except OSError:
-        return entries
-    if not stat.S_ISREG(mode):
-        return entries
-
-    try:
-        with open(filepath, "r", encoding="utf-8") as f:
+        nofollow = getattr(os, "O_NOFOLLOW", None)
+        if nofollow is None:
+            return entries
+        flags = os.O_RDONLY | nofollow
+        if hasattr(os, "O_CLOEXEC"):
+            flags |= os.O_CLOEXEC
+        fd = os.open(filepath, flags)
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return entries
+        with os.fdopen(fd, "r", encoding="utf-8", closefd=True) as f:
+            fd = None
             lines = f.readlines()
     except OSError:
         return entries
+    finally:
+        if fd is not None:
+            os.close(fd)
 
     # Walk backwards for newest-first
     for line in reversed(lines):

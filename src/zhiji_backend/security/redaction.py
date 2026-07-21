@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import ast
 import copy
-import json
 import logging
 import logging.handlers
 import os
@@ -14,10 +12,12 @@ from urllib.parse import unquote_plus, urlsplit, urlunsplit
 
 
 REDACTED = "[REDACTED]"
+MAX_REDACTION_INPUT_LENGTH = 65_536
 MAX_REDACTED_TEXT_LENGTH = 16_384
 MAX_TASK_ERROR_LENGTH = 200
-_MAX_STRUCTURE_ATTEMPTS = 64
 _TRUNCATED = "...[TRUNCATED]"
+
+logger = logging.getLogger(__name__)
 
 _SENSITIVE_KEYS = {
     "authorization",
@@ -74,7 +74,8 @@ _HEADER_RE = re.compile(
 _LABELED_SECRET_RE = re.compile(
     r"(?i)([\"']?\b(?:[A-Z0-9_]*(?:API[_-]?KEY)|api[_-]?key|access[_-]?token|"
     r"refresh[_-]?token|token|signature|sig|secret|password|passwd)\b[\"']?"
-    r"\s*[:=]\s*)(?:\"[^\"\r\n]*\"|'[^'\r\n]*'|[^\s,;&}\]]+)"
+    r"\s*[:=]\s*)(?!\[REDACTED\])"
+    r"(?:\"[^\"\r\n]*\"|'[^'\r\n]*'|[^\s,;&}\]]+)"
 )
 _BODY_RE = re.compile(
     r"(?i)([\"']?\b(?:prompt|response(?:_body)?|request_body)\b[\"']?"
@@ -89,6 +90,11 @@ _SECRET_PATH_RE = re.compile(
     r"secrets?(?:\.[^\s\"']+)?|id_(?:rsa|ed25519)|\.pem|\.key)"
 )
 _BODY_CONTEXT_RE = re.compile(r"(?i)\b(?:prompt|response|request[_ -]?body)\b")
+_KEY_ASSIGNMENT_RE = re.compile(
+    r"(?:(?P<quote>[\"'])(?P<quoted_key>[A-Za-z_][A-Za-z0-9_.-]{0,127})(?P=quote)"
+    r"|(?<![A-Za-z0-9_.-])(?P<bare_key>[A-Za-z_][A-Za-z0-9_.-]{0,127}))"
+    r"\s*[:=]\s*"
+)
 
 _TASK_MESSAGES = {
     "timeout": "任务处理超时，请稍后重试。",
@@ -162,48 +168,55 @@ def _balanced_structure_end(text: str, start: int) -> int | None:
     return None
 
 
-def _serialize_redacted_structure(value: Any, *, json_style: bool) -> str:
-    redacted = _redact_value(value)
-    if json_style:
-        return json.dumps(redacted, ensure_ascii=False, separators=(",", ":"))
-    return repr(redacted)
+def _sensitive_value_end(text: str, start: int) -> int:
+    if start >= len(text):
+        return start
+    if text[start] in ("\"", "'"):
+        quote = text[start]
+        escaped = False
+        for index in range(start + 1, len(text)):
+            char = text[index]
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                return index + 1
+        return len(text)
+    if text[start] in "[{(":
+        return _balanced_structure_end(text, start) or len(text)
+
+    index = start
+    while index < len(text):
+        char = text[index]
+        if char in ",;&}]\r\n":
+            return index
+        if char.isspace():
+            next_index = index
+            while next_index < len(text) and text[next_index].isspace():
+                next_index += 1
+            if _KEY_ASSIGNMENT_RE.match(text, next_index):
+                return index
+        index += 1
+    return len(text)
 
 
-def _redact_embedded_structures(text: str) -> str:
-    decoder = json.JSONDecoder()
+def _redact_sensitive_assignments(text: str) -> str:
     parts: list[str] = []
     cursor = 0
     search_from = 0
-    attempts = 0
 
-    while attempts < _MAX_STRUCTURE_ATTEMPTS:
-        match = re.search(r"[\[{(]", text[search_from:])
+    while True:
+        match = _KEY_ASSIGNMENT_RE.search(text, search_from)
         if match is None:
             break
-        start = search_from + match.start()
-        attempts += 1
-
-        try:
-            value, end = decoder.raw_decode(text, start)
-        except (json.JSONDecodeError, RecursionError, ValueError):
-            end = _balanced_structure_end(text, start)
-            if end is None:
-                search_from = start + 1
-                continue
-            try:
-                value = ast.literal_eval(text[start:end])
-            except (MemoryError, RecursionError, SyntaxError, TypeError, ValueError):
-                search_from = start + 1
-                continue
-            json_style = False
-        else:
-            json_style = True
-
-        if not isinstance(value, (dict, list, tuple)):
-            search_from = start + 1
+        key = match.group("quoted_key") or match.group("bare_key")
+        if not _is_sensitive_key(key):
+            search_from = match.end()
             continue
-        parts.append(text[cursor:start])
-        parts.append(_serialize_redacted_structure(value, json_style=json_style))
+        end = _sensitive_value_end(text, match.end())
+        parts.append(text[cursor:match.end()])
+        parts.append(REDACTED)
         cursor = end
         search_from = end
 
@@ -221,7 +234,10 @@ def _bound_redacted_text(text: str) -> str:
 
 
 def redact_text(value: Any) -> str:
-    text = _redact_embedded_structures(str(value))
+    raw_text = str(value)
+    input_truncated = len(raw_text) > MAX_REDACTION_INPUT_LENGTH
+    text = raw_text[:MAX_REDACTION_INPUT_LENGTH]
+    text = _redact_sensitive_assignments(text)
     text = _URL_RE.sub(_redact_url, text)
     text = _AUTH_RE.sub(lambda match: match.group(1) + REDACTED, text)
     text = _HEADER_RE.sub(lambda match: match.group(1) + REDACTED, text)
@@ -229,6 +245,8 @@ def redact_text(value: Any) -> str:
     text = _LABELED_SECRET_RE.sub(lambda match: match.group(1) + REDACTED, text)
     text = _RAW_KEY_RE.sub(REDACTED, text)
     text = _SECRET_PATH_RE.sub(REDACTED, text)
+    if input_truncated:
+        text += _TRUNCATED
     return _bound_redacted_text(text)
 
 
@@ -289,7 +307,16 @@ def _harden_existing_logs(log_path: Path) -> None:
         except OSError:
             continue
         if stat.S_ISREG(mode):
-            path.chmod(0o600, follow_symlinks=False)
+            try:
+                path.chmod(0o600, follow_symlinks=False)
+            except OSError as exc:
+                if path == log_path:
+                    raise
+                logger.warning(
+                    "Unable to harden rotated log file=%s error_class=%s",
+                    path.name,
+                    type(exc).__name__,
+                )
 
 
 class SecureTimedRotatingFileHandler(logging.handlers.TimedRotatingFileHandler):
