@@ -60,8 +60,10 @@ class _PinnedResponse:
         if self._closed:
             return
         self._closed = True
-        self._response.close()
-        self._pool.close()
+        try:
+            self._response.close()
+        finally:
+            self._pool.close()
 
 
 class _PinnedConnection:

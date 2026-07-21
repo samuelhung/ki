@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app" / "backend"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from zhiji_backend.ingest.douyin import (
+    _PinnedResponse,
     download_video,
     extract_first_url,
     is_trusted_365yg_url,
@@ -231,6 +232,19 @@ class TestParseShareText:
 
 
 class TestDownloadVideo:
+    def test_pinned_response_closes_pool_once_when_response_close_raises(self):
+        response = MagicMock(status=200, headers={})
+        response.close.side_effect = OSError("close failed")
+        pool = MagicMock()
+        pinned = _PinnedResponse(response, pool)
+
+        with pytest.raises(OSError, match="close failed"):
+            pinned.close()
+        pinned.close()
+
+        response.close.assert_called_once_with()
+        pool.close.assert_called_once_with()
+
     @patch("zhiji_backend.ingest.douyin.HTTPSConnectionPool")
     def test_https_pinned_connection_preserves_certificate_hostname_and_sni(self, pool_cls):
         create_pinned_connection("https", "93.184.216.34", 443, "video.example.com")
