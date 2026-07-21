@@ -186,6 +186,30 @@ def test_redact_text_bounds_input_before_structural_scanning(monkeypatch):
     assert len(redacted) <= MAX_REDACTED_TEXT_LENGTH
 
 
+def test_unquoted_sensitive_value_scans_trailing_whitespace_once(monkeypatch):
+    class CountingPattern:
+        def __init__(self, delegate):
+            self.delegate = delegate
+            self.match_calls = 0
+
+        def search(self, *args, **kwargs):
+            return self.delegate.search(*args, **kwargs)
+
+        def match(self, *args, **kwargs):
+            self.match_calls += 1
+            return self.delegate.match(*args, **kwargs)
+
+    pattern = CountingPattern(redaction_module._KEY_ASSIGNMENT_RE)
+    monkeypatch.setattr(redaction_module, "_KEY_ASSIGNMENT_RE", pattern)
+    text = "content=plain-secret" + (" " * 4096)
+
+    redacted = redact_text(text)
+
+    assert "plain-secret" not in redacted
+    assert redacted == f"content={REDACTED}"
+    assert pattern.match_calls <= 1
+
+
 def test_formatter_redacts_structured_args_without_mutating_record():
     formatter = RedactingFormatter("%(message)s")
     record = logging.LogRecord(

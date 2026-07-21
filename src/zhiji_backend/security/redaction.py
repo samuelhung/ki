@@ -192,11 +192,12 @@ def _sensitive_value_end(text: str, start: int) -> int:
         if char in ",;&}]\r\n":
             return index
         if char.isspace():
-            next_index = index
-            while next_index < len(text) and text[next_index].isspace():
-                next_index += 1
-            if _KEY_ASSIGNMENT_RE.match(text, next_index):
-                return index
+            whitespace_start = index
+            while index < len(text) and text[index].isspace():
+                index += 1
+            if index < len(text) and _KEY_ASSIGNMENT_RE.match(text, index):
+                return whitespace_start
+            continue
         index += 1
     return len(text)
 
