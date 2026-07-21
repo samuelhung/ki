@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import os
 import re
 import stat
@@ -18,7 +17,6 @@ from dotenv import load_dotenv
 from .paths import ZHIJI_HOME
 
 
-logger = logging.getLogger(__name__)
 ENV_PATH = ZHIJI_HOME / ".env"
 _ENV_KEY = "AI_API_KEY"
 _BASE_URL_KEY = "AI_BASE_URL"
@@ -219,7 +217,10 @@ def restore_state(snapshot: _CredentialSnapshot) -> None:
             os.environ.pop(name, None)
 
 
-def _replace_env(updated: str) -> None:
+def _replace_env(
+    updated: str,
+    committed_env: tuple[tuple[str, str], ...],
+) -> None:
     ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
     _reject_symlink(ENV_PATH)
     temp_path: Path | None = None
@@ -241,14 +242,9 @@ def _replace_env(updated: str) -> None:
         os.chmod(temp_path, 0o600)
         os.replace(temp_path, ENV_PATH)
         temp_path = None
-        try:
-            _fsync_parent(ENV_PATH)
-        except OSError:
-            logger.warning(
-                "credential directory fsync failed after commit for %s",
-                ENV_PATH,
-                exc_info=True,
-            )
+        for name, value in committed_env:
+            os.environ[name] = value
+        _fsync_parent(ENV_PATH)
     finally:
         if temp_path is not None:
             temp_path.unlink(missing_ok=True)
@@ -259,8 +255,10 @@ def set_api_key(key: str) -> None:
     _validate_key(key)
     with _write_lock:
         existing = ENV_PATH.read_text(encoding="utf-8") if ENV_PATH.exists() else ""
-        _replace_env(_updated_env_text(existing, key))
-        os.environ[_ENV_KEY] = key
+        _replace_env(
+            _updated_env_text(existing, key),
+            ((_ENV_KEY, key),),
+        )
 
 
 def set_provider_bundle(key: str, base_url: str) -> None:
@@ -269,6 +267,7 @@ def set_provider_bundle(key: str, base_url: str) -> None:
     _validate_base_url(base_url)
     with _write_lock:
         existing = ENV_PATH.read_text(encoding="utf-8") if ENV_PATH.exists() else ""
-        _replace_env(_updated_bundle_text(existing, key, base_url))
-        os.environ[_BASE_URL_KEY] = base_url
-        os.environ[_ENV_KEY] = key
+        _replace_env(
+            _updated_bundle_text(existing, key, base_url),
+            ((_BASE_URL_KEY, base_url), (_ENV_KEY, key)),
+        )

@@ -109,12 +109,17 @@ def test_credential_store_never_chmods_destination_after_replace(env_path, monke
     assert stat.S_IMODE(env_path.stat().st_mode) == 0o600
 
 
-def test_credential_store_parent_fsync_failure_is_post_commit_warning(
-    env_path, monkeypatch, caplog
+def test_credential_store_parent_fsync_failure_propagates_with_coherent_bundle(
+    env_path, monkeypatch
 ):
     env_path.parent.mkdir(parents=True)
-    env_path.write_text("AI_API_KEY=old-secret\n", encoding="utf-8")
+    env_path.write_text(
+        f"AI_BASE_URL={config_manager.DEFAULT_AI_BASE_URL}\n"
+        "AI_API_KEY=old-secret\n",
+        encoding="utf-8",
+    )
     os.chmod(env_path, 0o600)
+    monkeypatch.setenv("AI_BASE_URL", config_manager.DEFAULT_AI_BASE_URL)
     monkeypatch.setenv("AI_API_KEY", "old-secret")
     monkeypatch.setattr(
         credential_store,
@@ -122,12 +127,18 @@ def test_credential_store_parent_fsync_failure_is_post_commit_warning(
         lambda _path: (_ for _ in ()).throw(OSError("directory fsync failed")),
     )
 
-    credential_store.set_api_key("committed-secret")
+    with pytest.raises(OSError, match="directory fsync failed"):
+        credential_store.set_provider_bundle(
+            "committed-secret",
+            "https://provider-new.example/v1",
+        )
 
-    assert env_path.read_text(encoding="utf-8") == "AI_API_KEY=committed-secret\n"
+    assert env_path.read_text(encoding="utf-8") == (
+        "AI_BASE_URL=https://provider-new.example/v1\n"
+        "AI_API_KEY=committed-secret\n"
+    )
+    assert os.environ["AI_BASE_URL"] == "https://provider-new.example/v1"
     assert os.environ["AI_API_KEY"] == "committed-secret"
-    assert "credential directory fsync failed after commit" in caplog.text
-    assert "committed-secret" not in caplog.text
 
 
 def test_credential_store_rejects_symlink_env(env_path, tmp_path):
@@ -569,6 +580,73 @@ def test_config_write_failure_rolls_back_credential_disk_memory_and_env(
     assert credential_store.ENV_PATH.read_bytes() == before_env_bytes
     assert config_manager.get_config() is before_memory
     assert os.environ["AI_API_KEY"] == "old-secret"
+
+
+def test_env_directory_fsync_failure_skips_json_and_restarts_with_paired_bundle(
+    config_client, monkeypatch
+):
+    client, config_path = config_client
+    new_url = "https://provider-new.example/v1"
+    monkeypatch.setenv("KI_AI_BASE_URL_ALLOWLIST", new_url)
+    config_manager.save_config()
+    credential_store.set_provider_bundle(
+        "old-secret",
+        config_manager.DEFAULT_AI_BASE_URL,
+    )
+    env_path = credential_store.ENV_PATH
+    before_config = config_path.read_bytes()
+    real_write_config = config_manager._write_config
+    real_fsync_parent = credential_store._fsync_parent
+    config_writes: list[dict] = []
+
+    def tracking_write_config(config):
+        config_writes.append(config)
+        real_write_config(config)
+
+    monkeypatch.setattr(config_manager, "_write_config", tracking_write_config)
+    monkeypatch.setattr(
+        credential_store,
+        "_fsync_parent",
+        lambda _path: (_ for _ in ()).throw(OSError("directory fsync failed")),
+    )
+
+    with pytest.raises(OSError, match="directory fsync failed"):
+        client.put(
+            "/api/system-config",
+            json={"general": {"base_url": new_url, "api_key": "new-secret"}},
+        )
+
+    assert config_writes == []
+    assert config_path.read_bytes() == before_config
+    env_values = dict(
+        line.split("=", 1)
+        for line in credential_store.ENV_PATH.read_text(encoding="utf-8").splitlines()
+        if "=" in line
+    )
+    disk_bundle = (env_values["AI_BASE_URL"], env_values["AI_API_KEY"])
+    assert disk_bundle in {
+        (config_manager.DEFAULT_AI_BASE_URL, "old-secret"),
+        (new_url, "new-secret"),
+    }
+    assert (os.environ["AI_BASE_URL"], os.environ["AI_API_KEY"]) == disk_bundle
+
+    monkeypatch.setattr(config_manager, "_write_config", real_write_config)
+    monkeypatch.setattr(credential_store, "_fsync_parent", real_fsync_parent)
+    monkeypatch.delenv("AI_BASE_URL", raising=False)
+    monkeypatch.delenv("AI_API_KEY", raising=False)
+    credential_store.load_hardened_env(env_path)
+    config_manager._config = {}
+
+    config_manager.load_config()
+    restarted_config, restarted_key = config_manager.get_config_and_credential()
+
+    assert (
+        restarted_config["general"]["base_url"],
+        restarted_key,
+    ) == disk_bundle
+    assert json.loads(config_path.read_text(encoding="utf-8"))["general"][
+        "base_url"
+    ] == disk_bundle[0]
 
 
 def test_partial_credential_failure_rolls_back_both_transaction_states(
