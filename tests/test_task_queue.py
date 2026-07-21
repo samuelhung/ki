@@ -386,7 +386,7 @@ def test_timeout_marks_task_error_and_event_error_after_retry_exhausted(tmp_path
         event = conn.execute("SELECT status, last_error FROM events WHERE id = 'evt-timeout'").fetchone()
 
     assert task["status"] == "error"
-    assert "任务超时" in task["error"]
+    assert task["error"] == "任务处理超时，请稍后重试。"
     assert event["status"] == "error"
     assert event["last_error"] == task["error"]
     assert task_queue._active_process is None
@@ -501,10 +501,10 @@ def test_timeout_orphaned_process_tree_is_not_requeued(
             (f"evt-timeout-orphan-{leader_exits_after_term}",),
         ).fetchone()
     assert task["status"] == "error"
-    assert "SIGKILL" in task["error"]
+    assert task["error"] == "任务处理超时，请稍后重试。"
     assert task["retry_count"] == 0
     assert tuple(event) == ("error", task["error"])
-    assert "阻止自动重试" in caplog.text
+    assert "error_code=timeout" in caplog.text
 
 
 def test_child_process_failure_marks_processing_event_error(tmp_path, monkeypatch):
@@ -521,9 +521,50 @@ def test_child_process_failure_marks_processing_event_error(tmp_path, monkeypatc
         event = conn.execute("SELECT status, last_error FROM events WHERE id = 'evt-failed'").fetchone()
 
     assert task["status"] == "error"
-    assert task["error"] == "runner failed"
+    assert task["error"] == "任务处理失败，请稍后重试。"
     assert event["status"] == "error"
     assert event["last_error"] == task["error"]
+
+
+def test_child_stderr_secret_is_not_persisted_or_logged(tmp_path, monkeypatch, caplog):
+    class SecretFailingProcess:
+        returncode = 1
+
+        def communicate(self, timeout=None):
+            return "prompt=private user prompt", (
+                "api_key=child-secret stderr=/Users/alice/private.txt "
+                "https://user:pass@example.test?token=query-secret"
+            )
+
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    init_db()
+    task_id = _insert_processing_task(
+        event_id="evt-secret-failed", task_id="task-secret-failed"
+    )
+    monkeypatch.setattr(
+        task_queue.subprocess, "Popen", lambda *args, **kwargs: SecretFailingProcess()
+    )
+
+    with caplog.at_level("ERROR"):
+        task_queue._process_one(task_id)
+
+    with connect() as conn:
+        task = conn.execute(
+            "SELECT status, error FROM ingest_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        event = conn.execute(
+            "SELECT status, last_error FROM events WHERE id = 'evt-secret-failed'"
+        ).fetchone()
+
+    assert tuple(task) == ("error", "任务处理失败，请稍后重试。")
+    assert tuple(event) == ("error", task["error"])
+    for secret in (
+        "child-secret",
+        "private user prompt",
+        "/Users/alice/private.txt",
+        "query-secret",
+    ):
+        assert secret not in caplog.text
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX process sessions only")
@@ -913,8 +954,8 @@ def test_failed_terminate_does_not_reclassify_ordinary_child_failure(
         event = conn.execute(
             "SELECT status, last_error FROM events WHERE id = 'evt-terminate-failed'"
         ).fetchone()
-    assert tuple(task) == ("error", "ordinary child failure")
-    assert tuple(event) == ("error", "ordinary child failure")
+    assert tuple(task) == ("error", "任务处理失败，请稍后重试。")
+    assert tuple(event) == ("error", "任务处理失败，请稍后重试。")
 
 
 def test_unrelated_negative_exit_is_not_shutdown_interruption_and_clears_state(
@@ -938,7 +979,7 @@ def test_unrelated_negative_exit_is_not_shutdown_interruption_and_clears_state(
         task = conn.execute(
             "SELECT status, error FROM ingest_tasks WHERE id = ?", (task_id,)
         ).fetchone()
-    assert tuple(task) == ("error", "unrelated signal")
+    assert tuple(task) == ("error", "任务处理失败，请稍后重试。")
     assert task_queue._shutdown_interrupted is None
     assert not task_queue._shutdown_signals_sent
     assert task_queue._shutdown_fallback_causation is False
@@ -1303,8 +1344,8 @@ def test_worker_rejects_malicious_content_path_before_spawning(tmp_path, monkeyp
         event = conn.execute(
             "SELECT status, last_error FROM events WHERE id = 'evt-worker-malicious'"
         ).fetchone()
-    assert tuple(task) == ("error", "invalid queued content path")
-    assert tuple(event) == ("error", "invalid queued content path")
+    assert tuple(task) == ("error", "不支持的输入格式。")
+    assert tuple(event) == ("error", "不支持的输入格式。")
     assert str(outside) not in task["error"]
 
 

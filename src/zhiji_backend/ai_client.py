@@ -19,6 +19,7 @@ from .config_manager import (
 )
 from .credential_store import resolve_api_key
 from .usage_writer import UsageRecord, enqueue_usage
+from .security.redaction import classify_task_error
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +169,12 @@ def chat(
         return content
     except Exception as e:
         elapsed = int((time.monotonic() - t0) * 1000)
-        logger.warning("AI API call failed: %s", e)
+        logger.warning(
+            "module=%s task=%s status=error error_class=%s error_code=%s",
+            module,
+            task,
+            type(e).__name__,
+            classify_task_error(e),
+        )
         _record_usage(module, task, _model, "error", None, elapsed, str(e)[:200])
         return None

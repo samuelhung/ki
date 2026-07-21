@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import os
 import logging
-import logging.handlers
 import hmac
 from pathlib import Path
 from .paths import ZHIJI_HOME, FRONTEND_DIST, LOG_DIR, INGEST_ROOT, RELEASES_DIR, ensure_data_dirs
 from .credential_store import load_hardened_env
+from .security.redaction import RedactingFormatter, SecureTimedRotatingFileHandler
 
 # ---- 数据目录初始化 ----
 ensure_data_dirs()
@@ -30,14 +30,14 @@ _root.setLevel(logging.DEBUG)
 # Console handler: INFO+ to stderr (visible in uvicorn output)
 _console = logging.StreamHandler()
 _console.setLevel(logging.INFO)
-_console.setFormatter(logging.Formatter(
+_console.setFormatter(RedactingFormatter(
     "%(asctime)s [%(levelname)-7s] %(name)s | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 ))
 _root.addHandler(_console)
 
 # File handler: DEBUG+ with daily rotation, keep 30 days
-_file = logging.handlers.TimedRotatingFileHandler(
+_file = SecureTimedRotatingFileHandler(
     str(_LOG_DIR / "ki.log"),
     when="midnight",
     interval=1,
@@ -45,7 +45,7 @@ _file = logging.handlers.TimedRotatingFileHandler(
     encoding="utf-8",
 )
 _file.setLevel(logging.DEBUG)
-_file.setFormatter(logging.Formatter(
+_file.setFormatter(RedactingFormatter(
     "%(asctime)s [%(levelname)-7s] %(name)s:%(lineno)d | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 ))

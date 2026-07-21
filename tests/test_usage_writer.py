@@ -75,6 +75,31 @@ def test_usage_writer_uses_short_bounded_database_connection(tmp_path, monkeypat
     assert observed_timeouts == [250]
 
 
+def test_usage_writer_sanitizes_persisted_provider_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "writer-redaction.sqlite"))
+    init_db()
+    raw = UsageRecord(
+        module="ingest_pipeline",
+        task="summarize",
+        model="model",
+        status="error",
+        prompt_tokens=0,
+        completion_tokens=0,
+        total_tokens=0,
+        cached_tokens=0,
+        reasoning_tokens=0,
+        cost_rmb=0.0,
+        duration_ms=10,
+        error="provider unavailable api_key=provider-secret https://example.test?token=secret",
+    )
+
+    _UsageWriter()._write_once(raw)
+
+    with connect() as conn:
+        persisted = conn.execute("SELECT error FROM ai_usage").fetchone()[0]
+    assert persisted == "服务暂时不可用，请稍后重试。"
+
+
 def test_usage_writer_survives_lock_longer_than_backoff_window(tmp_path, monkeypatch):
     monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "writer-lock.sqlite"))
     init_db()

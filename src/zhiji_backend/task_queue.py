@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 from .paths import INGEST_ROOT
 from .security.constraints import safe_identifier
 from .security.paths import PathSecurityError, resolve_under, safe_unlink_under
+from .security.redaction import classify_task_error, sanitize_task_error
 PENDING_DIR = INGEST_ROOT / "pending"
 
 _worker: threading.Thread | None = None
@@ -444,7 +445,8 @@ def _process_one(task_id: str) -> None:
                 PENDING_DIR, Path(payload["content_path"]), expected="file"
             )
         except (PathSecurityError, TypeError, ValueError):
-            error = "invalid queued content path"
+            raw_error = "invalid queued content path"
+            error = sanitize_task_error(raw_error)
             with connect() as conn:
                 conn.execute(
                     "UPDATE ingest_tasks SET status = 'error', error = ?, "
@@ -456,7 +458,13 @@ def _process_one(task_id: str) -> None:
                     "WHERE id = ? AND status = 'processing'",
                     (error, event_id),
                 )
-            logger.error("Rejected unsafe queued content path for task %s", task_id)
+            logger.error(
+                "module=%s task=%s status=error error_class=%s error_code=%s",
+                __name__,
+                task_id,
+                "PathSecurityError",
+                classify_task_error(raw_error),
+            )
             return
     else:
         content = payload.get("content_text", "")
@@ -563,9 +571,10 @@ def _process_one(task_id: str) -> None:
                 return
 
             if not process_tree_quiesced:
-                error_msg = (
+                raw_error = (
                     "内部超时：采集进程组在 SIGKILL 后仍未退出，已阻止自动重试"
                 )
+                error_msg = sanitize_task_error(raw_error)
                 with connect() as conn:
                     conn.execute(
                         "UPDATE ingest_tasks SET status = 'error', error = ?, "
@@ -576,7 +585,13 @@ def _process_one(task_id: str) -> None:
                         "UPDATE events SET status = 'error', last_error = ? WHERE id = ?",
                         (error_msg, event_id),
                     )
-                logger.error("Task %s %s", task_id, error_msg)
+                logger.error(
+                    "module=%s task=%s status=error error_class=%s error_code=%s",
+                    __name__,
+                    task_id,
+                    "TimeoutError",
+                    classify_task_error(raw_error),
+                )
                 return
 
             # Pipeline may have actually completed but the child process did not
@@ -618,7 +633,10 @@ def _process_one(task_id: str) -> None:
                         )
                     else:
                         # Already retried once — permanent error
-                        error_msg = f"任务超时（{_TASK_TIMEOUT_SECONDS}s），已自动重试1次仍失败，可能卡在下载或转写步骤"
+                        raw_error = TimeoutError(
+                            f"任务超时（{_TASK_TIMEOUT_SECONDS}s），已自动重试1次仍失败"
+                        )
+                        error_msg = sanitize_task_error(raw_error)
                         conn.execute(
                             "UPDATE ingest_tasks SET status = 'error', error = ?, finished_at = datetime('now') WHERE id = ?",
                             (error_msg, task_id),
@@ -628,7 +646,13 @@ def _process_one(task_id: str) -> None:
                             "WHERE id = ? AND status = 'processing'",
                             (error_msg, event_id),
                         )
-                        logger.error("Task %s timed out after %ds + 1 retry — permanent error", task_id, _TASK_TIMEOUT_SECONDS)
+                        logger.error(
+                            "module=%s task=%s status=error error_class=%s error_code=%s",
+                            __name__,
+                            task_id,
+                            type(raw_error).__name__,
+                            classify_task_error(raw_error),
+                        )
             return
 
         interrupted_by_shutdown = _release_active_process(task_id, proc)
@@ -637,7 +661,8 @@ def _process_one(task_id: str) -> None:
             return
 
         if proc.returncode != 0:
-            error_msg = (stderr or stdout or f"ingest child exited with {proc.returncode}")[-500:]
+            raw_error = stderr or stdout or f"ingest child exited with {proc.returncode}"
+            error_msg = sanitize_task_error(raw_error)
             with connect() as conn:
                 conn.execute(
                     "UPDATE ingest_tasks SET status = 'error', error = ?, finished_at = datetime('now') WHERE id = ?",
@@ -648,7 +673,13 @@ def _process_one(task_id: str) -> None:
                     "WHERE id = ? AND status = 'processing'",
                     (error_msg, event_id),
                 )
-            logger.error("Task %s failed for event %s: %s", task_id, event_id, error_msg)
+            logger.error(
+                "module=%s task=%s status=error error_class=%s error_code=%s",
+                __name__,
+                task_id,
+                "ChildProcessError",
+                classify_task_error(raw_error),
+            )
             return
 
         # Success

@@ -21,6 +21,7 @@ from ..security.file_intake import (
 )
 from ..security.constraints import MAX_PAGE_SIZE, SafeIdentifier, safe_identifier
 from ..security.paths import resolve_under
+from ..security.redaction import classify_task_error, sanitize_task_error
 from ..task_queue import enqueue as enqueue_task
 
 logger = logging.getLogger(__name__)
@@ -632,7 +633,13 @@ def _process_ingest(event_id: str, ingest_type: str, content, topic: str, title:
                 else:
                     logger.warning("AI summarization returned None for %s — API may be unavailable", event_id)
             except Exception as e:
-                logger.warning("AI summarization failed for %s (%s): %s", event_id, ingest_type, e)
+                logger.warning(
+                    "module=%s task=%s status=degraded error_class=%s error_code=%s",
+                    __name__,
+                    event_id,
+                    type(e).__name__,
+                    classify_task_error(e),
+                )
 
         # Mark summarization done, activate write-db stage
         if ingest_type == "douyin_share":
@@ -704,13 +711,19 @@ def _process_ingest(event_id: str, ingest_type: str, content, topic: str, title:
         _set_progress(event_id, stages)
 
     except Exception as e:
-        logger.exception("Ingest pipeline failed for %s (%s): %s", event_id, ingest_type, e)
-        error_msg = str(e)[:500] if str(e) else "unknown error"
+        error_msg = sanitize_task_error(e)
         with connect() as conn:
             conn.execute(
                 "UPDATE events SET status = 'error', last_error = ? WHERE id = ?",
                 (error_msg, event_id),
             )
+        logger.error(
+            "module=%s task=%s status=error error_class=%s error_code=%s",
+            __name__,
+            event_id,
+            type(e).__name__,
+            classify_task_error(e),
+        )
         raise
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
