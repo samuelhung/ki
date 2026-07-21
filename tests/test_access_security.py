@@ -141,6 +141,24 @@ def test_trusted_host_accepts_ipv6_loopback_with_port():
     assert response.json() == {"ok": True}
 
 
+@pytest.mark.parametrize(
+    "host_header",
+    [
+        "[::1].evil.example",
+        "[::1]evil.example",
+        "[::1]:9120.evil",
+        "[::1]:not-a-port",
+        "[::1]:",
+    ],
+)
+def test_trusted_host_rejects_malformed_ipv6_suffix(host_header):
+    client = TestClient(app, client=("::1", 50000))
+
+    response = client.get("/api/health", headers={"Host": host_header})
+
+    assert response.status_code == 400
+
+
 def test_host_and_cors_environment_values_replace_defaults(monkeypatch):
     monkeypatch.setenv("KI_ALLOWED_HOSTS", "ki.example, 10.8.0.105")
     monkeypatch.setenv("KI_CORS_ORIGINS", "https://ki.example, http://10.8.0.105:5173")

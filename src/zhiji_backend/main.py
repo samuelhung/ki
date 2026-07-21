@@ -160,7 +160,13 @@ class TrustedHostMiddleware(StarletteTrustedHostMiddleware):
 
         host_header = Headers(scope=scope).get("host", "")
         if host_header.startswith("[") and "]" in host_header:
-            host = host_header[1:host_header.index("]")]
+            closing_bracket = host_header.index("]")
+            suffix = host_header[closing_bracket + 1:]
+            valid_suffix = not suffix
+            if suffix.startswith(":") and suffix[1:].isdigit():
+                port = int(suffix[1:])
+                valid_suffix = 1 <= port <= 65535
+            host = host_header[1:closing_bracket] if valid_suffix else ""
         else:
             host = host_header.split(":", 1)[0]
 
