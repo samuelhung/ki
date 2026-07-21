@@ -1,7 +1,10 @@
 const MEDIA_ROUTE_PREFIX = '/__ki_media/';
 const ALLOWED_PATH_PREFIXES = ['/ingest/', '/releases/'];
 const FORWARDED_HEADERS = ['range', 'if-range', 'if-none-match', 'if-modified-since', 'if-unmodified-since'];
+const CONFIG_ACK_TIMEOUT_MS = 1500;
 const clientConfigs = new Map();
+const pendingConfigRequests = new Map();
+let configRequestSequence = 0;
 
 function normalizeBackendOrigin(value) {
   if (typeof value !== 'string' || !value) return null;
@@ -53,9 +56,51 @@ function decodeMediaRoute(requestUrl) {
   }
 }
 
+function acceptClientConfig(clientId, data) {
+  const backendOrigin = normalizeBackendOrigin(data.backendOrigin);
+  const token = typeof data.token === 'string' ? data.token : '';
+  if (!backendOrigin || !token) {
+    clientConfigs.delete(clientId);
+    return null;
+  }
+  const config = { backendOrigin, token };
+  clientConfigs.set(clientId, config);
+  return config;
+}
+
+function requestClientConfig(clientId) {
+  const existing = pendingConfigRequests.get(clientId);
+  if (existing) return existing.promise;
+
+  const requestId = `ki-media-config-${++configRequestSequence}`;
+  let finish;
+  const promise = new Promise((resolve) => {
+    finish = (config) => {
+      const pending = pendingConfigRequests.get(clientId);
+      if (!pending || pending.requestId !== requestId) return;
+      if (pending.timeoutId !== null) clearTimeout(pending.timeoutId);
+      pendingConfigRequests.delete(clientId);
+      resolve(config);
+    };
+  });
+  const pending = { requestId, promise, finish, timeoutId: null };
+  pendingConfigRequests.set(clientId, pending);
+
+  self.clients.get(clientId).then((client) => {
+    if (!client || pendingConfigRequests.get(clientId) !== pending) {
+      finish(null);
+      return;
+    }
+    pending.timeoutId = setTimeout(() => finish(null), CONFIG_ACK_TIMEOUT_MS);
+    client.postMessage({ type: 'ki-media-config-request', requestId });
+  }).catch(() => finish(null));
+
+  return promise;
+}
+
 async function handleMediaRequest(request, clientId) {
   if (!['GET', 'HEAD'].includes(request.method)) return new Response('Method Not Allowed', { status: 405 });
-  const config = clientConfigs.get(clientId);
+  const config = clientConfigs.get(clientId) || await requestClientConfig(clientId);
   if (!config?.token) return new Response('Media transport is not configured', { status: 401 });
   const protectedPath = decodeMediaRoute(request.url);
   const upstreamUrl = protectedPath ? resolveUpstreamUrl(config.backendOrigin, protectedPath) : null;
@@ -81,13 +126,12 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('message', (event) => {
   if (event.data?.type !== 'ki-media-config' || !event.source?.id) return;
-  const backendOrigin = normalizeBackendOrigin(event.data.backendOrigin);
-  const token = typeof event.data.token === 'string' ? event.data.token : '';
-  if (!backendOrigin || !token) {
-    clientConfigs.delete(event.source.id);
-    return;
+  const clientId = event.source.id;
+  const config = acceptClientConfig(clientId, event.data);
+  const pending = pendingConfigRequests.get(clientId);
+  if (pending && event.data.requestId === pending.requestId) {
+    pending.finish(config);
   }
-  clientConfigs.set(event.source.id, { backendOrigin, token });
 });
 
 self.addEventListener('fetch', (event) => {
@@ -97,4 +141,4 @@ self.addEventListener('fetch', (event) => {
   }
 });
 
-self.__kiMediaTransportTest = { buildUpstreamHeaders, decodeMediaRoute, resolveUpstreamUrl };
+self.__kiMediaTransportTest = { buildUpstreamHeaders, decodeMediaRoute, handleMediaRequest, resolveUpstreamUrl };

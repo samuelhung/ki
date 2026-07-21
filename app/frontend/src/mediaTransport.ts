@@ -11,9 +11,21 @@ interface RegistrationLike {
   installing?: WorkerLike | null;
 }
 
+interface MediaTransportMessageEvent {
+  data?: {
+    type?: string;
+    requestId?: string;
+  };
+  source?: WorkerLike | null;
+}
+
 export interface MediaTransportRuntime {
   origin: string;
   register(): Promise<RegistrationLike>;
+  addEventListener?(type: 'controllerchange', listener: () => void): void;
+  addEventListener?(type: 'message', listener: (event: MediaTransportMessageEvent) => void): void;
+  removeEventListener?(type: 'controllerchange', listener: () => void): void;
+  removeEventListener?(type: 'message', listener: (event: MediaTransportMessageEvent) => void): void;
 }
 
 export interface MediaTransportConnection {
@@ -42,6 +54,12 @@ function browserRuntime(): MediaTransportRuntime {
       }
       return browserRegistration;
     },
+    addEventListener(type, listener) {
+      navigator.serviceWorker.addEventListener(type, listener as EventListener);
+    },
+    removeEventListener(type, listener) {
+      navigator.serviceWorker.removeEventListener(type, listener as EventListener);
+    },
   };
 }
 
@@ -69,6 +87,16 @@ function protectedMediaPath(path: string): boolean {
   return path.startsWith('/ingest/') || path.startsWith('/releases/');
 }
 
+function normalizedConnection(
+  connection: MediaTransportConnection,
+  origin: string,
+): { backendOrigin: string; token: string } {
+  return {
+    backendOrigin: new URL(connection.backendUrl || origin, origin).origin,
+    token: connection.token,
+  };
+}
+
 export function mediaTransportUrl(path: string): string {
   if (!protectedMediaPath(path)) throw new Error('Unsupported media path');
   return MEDIA_ROUTE_PREFIX + encodeURIComponent(path);
@@ -82,10 +110,38 @@ export async function synchronizeMediaTransport(
   const registration = await waitWithAbort(runtime.register(), signal);
   const worker = registration.active || registration.waiting || registration.installing;
   if (!worker) throw new Error('Media service worker is not active');
-  const backendOrigin = new URL(connection.backendUrl || runtime.origin, runtime.origin).origin;
+  const config = normalizedConnection(connection, runtime.origin);
   if (signal.aborted) throw abortError();
-  worker.postMessage({ type: 'ki-media-config', backendOrigin, token: connection.token });
+  worker.postMessage({ type: 'ki-media-config', ...config });
   return connection.path ? mediaTransportUrl(connection.path) : '';
+}
+
+export function attachMediaTransportRecovery(
+  getConnection: () => MediaTransportConnection,
+  runtime: MediaTransportRuntime = browserRuntime(),
+): () => void {
+  let controller: AbortController | null = null;
+  const resend = () => {
+    controller?.abort();
+    controller = new AbortController();
+    void synchronizeMediaTransport(getConnection(), controller.signal, runtime).catch(() => {});
+  };
+  const respond = (event: MediaTransportMessageEvent) => {
+    if (event.data?.type !== 'ki-media-config-request' || !event.data.requestId || !event.source) return;
+    event.source.postMessage({
+      type: 'ki-media-config',
+      requestId: event.data.requestId,
+      ...normalizedConnection(getConnection(), runtime.origin),
+    });
+  };
+
+  runtime.addEventListener?.('controllerchange', resend);
+  runtime.addEventListener?.('message', respond);
+  return () => {
+    runtime.removeEventListener?.('controllerchange', resend);
+    runtime.removeEventListener?.('message', respond);
+    controller?.abort();
+  };
 }
 
 export function notifyMediaTransportConnectionChanged(): void {

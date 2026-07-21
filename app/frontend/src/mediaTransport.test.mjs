@@ -13,15 +13,30 @@ async function loadClientModule() {
   return import(moduleUrl.href);
 }
 
-function loadWorkerPolicy() {
+function loadWorkerPolicy(options = {}) {
   assert.equal(existsSync(workerUrl), true, 'ki-media-sw.js must exist');
   const source = readFileSync(workerUrl, 'utf8');
+  const handlers = new Map();
   const self = {
     location: { origin: 'http://frontend.test' },
-    addEventListener() {},
+    clients: {
+      claim: async () => {},
+      get: async () => options.client || null,
+    },
+    skipWaiting: async () => {},
+    addEventListener(type, handler) { handlers.set(type, handler); },
   };
-  vm.runInNewContext(source, { self, URL, Headers, Response, Request, fetch: async () => {} });
-  return { policy: self.__kiMediaTransportTest, source };
+  vm.runInNewContext(source, {
+    self,
+    URL,
+    Headers,
+    Response,
+    Request,
+    fetch: options.fetch || (async () => {}),
+    setTimeout: options.setTimeout || setTimeout,
+    clearTimeout: options.clearTimeout || clearTimeout,
+  });
+  return { handlers, policy: self.__kiMediaTransportTest, source };
 }
 
 test('service-worker route accepts only ingest and release paths on the configured origin', () => {
@@ -85,6 +100,101 @@ test('aborted service-worker setup posts no stale configuration', async () => {
   resolveRegistration({ active: { postMessage: (message) => messages.push(message) } });
   await assert.rejects(pending, { name: 'AbortError' });
   assert.deepEqual(messages, []);
+});
+
+test('controller changes resend current config and config requests receive bounded acknowledgments', async () => {
+  const media = await loadClientModule();
+  assert.equal(typeof media.attachMediaTransportRecovery, 'function');
+  const listeners = new Map();
+  const messages = [];
+  let connection = { backendUrl: 'http://backend-one.test', token: 'first-secret' };
+  const runtime = {
+    origin: 'http://frontend.test',
+    register: async () => ({ active: { postMessage: (message) => messages.push(message) } }),
+    addEventListener: (type, listener) => listeners.set(type, listener),
+    removeEventListener: (type, listener) => {
+      if (listeners.get(type) === listener) listeners.delete(type);
+    },
+  };
+  const detach = media.attachMediaTransportRecovery(() => connection, runtime);
+
+  listeners.get('controllerchange')();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  connection = { backendUrl: 'https://backend-two.test', token: 'second-secret' };
+  const responseMessages = [];
+  listeners.get('message')({
+    data: { type: 'ki-media-config-request', requestId: 'request-1' },
+    source: { postMessage: (message) => responseMessages.push(message) },
+  });
+
+  assert.deepEqual(messages, [
+    { type: 'ki-media-config', backendOrigin: 'http://backend-one.test', token: 'first-secret' },
+  ]);
+  assert.deepEqual(responseMessages, [
+    { type: 'ki-media-config', requestId: 'request-1', backendOrigin: 'https://backend-two.test', token: 'second-secret' },
+  ]);
+  detach();
+  assert.deepEqual([...listeners.keys()], []);
+});
+
+test('missing worker config requests one acknowledgment then streams one upstream response', async () => {
+  let messageHandler;
+  let requestMessage;
+  let fetchCalls = 0;
+  const client = {
+    postMessage(message) {
+      requestMessage = message;
+      queueMicrotask(() => messageHandler({
+        data: {
+          type: 'ki-media-config',
+          requestId: message.requestId,
+          backendOrigin: 'http://backend.test',
+          token: 'secret-token',
+        },
+        source: { id: 'client-1' },
+      }));
+    },
+  };
+  const harness = loadWorkerPolicy({
+    client,
+    fetch: async () => {
+      fetchCalls += 1;
+      return new Response('partial-stream', { status: 206, headers: { 'Content-Range': 'bytes 0-13/100' } });
+    },
+  });
+  assert.equal(typeof harness.policy.handleMediaRequest, 'function');
+  messageHandler = harness.handlers.get('message');
+
+  const response = await harness.policy.handleMediaRequest(
+    new Request('http://frontend.test/__ki_media/%2Fingest%2Fvideo.mp4', { headers: { Range: 'bytes=0-13' } }),
+    'client-1',
+  );
+
+  assert.equal(requestMessage.type, 'ki-media-config-request');
+  assert.equal(fetchCalls, 1);
+  assert.equal(response.status, 206);
+  assert.equal(response.headers.get('Content-Range'), 'bytes 0-13/100');
+});
+
+test('missing worker config times out after one request without fetching upstream', async () => {
+  let requestCount = 0;
+  let fetchCalls = 0;
+  const harness = loadWorkerPolicy({
+    client: { postMessage: () => { requestCount += 1; } },
+    fetch: async () => { fetchCalls += 1; },
+    setTimeout: (callback) => { queueMicrotask(callback); return 1; },
+    clearTimeout: () => {},
+  });
+  assert.equal(typeof harness.policy.handleMediaRequest, 'function');
+
+  const response = await harness.policy.handleMediaRequest(
+    new Request('http://frontend.test/__ki_media/%2FIngest%2Fvideo.mp4'.replace('Ingest', 'ingest')),
+    'client-timeout',
+  );
+
+  assert.equal(requestCount, 1);
+  assert.equal(fetchCalls, 0);
+  assert.equal(response.status, 401);
 });
 
 test('service-worker source never persists tokens or buffers media bodies', () => {

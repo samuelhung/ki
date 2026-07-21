@@ -71,6 +71,10 @@ test('connection setters notify the media transport and the app owns a cleaned-u
   assert.match(mediaHook, /removeEventListener\(MEDIA_CONNECTION_CHANGE_EVENT/);
   assert.match(mediaHook, /controller\.abort\(\)/);
   assert.match(app, /useMediaTransportConnection\(\)/);
+  assert.match(mediaTransport, /controllerchange/);
+  assert.match(mediaTransport, /ki-media-config-request/);
+  assert.match(mediaWorker, /ki-media-config-request/);
+  assert.match(mediaWorker, /CONFIG_ACK_TIMEOUT_MS/);
 });
 
 test('health polling and connection tests use bounded shared requests', () => {

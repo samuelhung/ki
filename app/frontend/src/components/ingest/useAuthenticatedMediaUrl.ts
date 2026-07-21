@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { backendUrl, getApiToken, getBackendUrl } from '../../api';
-import { MEDIA_CONNECTION_CHANGE_EVENT, synchronizeMediaTransport } from '../../mediaTransport';
+import { attachMediaTransportRecovery, MEDIA_CONNECTION_CHANGE_EVENT, synchronizeMediaTransport } from '../../mediaTransport';
 
 function useConnectionRevision(): number {
   const [revision, setRevision] = useState(0);
@@ -15,18 +15,21 @@ function useConnectionRevision(): number {
 export function useMediaTransportConnection(): void {
   useEffect(() => {
     let controller: AbortController | null = null;
+    const getConnection = () => ({ backendUrl: getBackendUrl(), token: getApiToken() });
     const synchronize = () => {
       controller?.abort();
       controller = new AbortController();
       void synchronizeMediaTransport(
-        { backendUrl: getBackendUrl(), token: getApiToken() },
+        getConnection(),
         controller.signal,
       ).catch(() => {});
     };
+    const detachRecovery = attachMediaTransportRecovery(getConnection);
     synchronize();
     window.addEventListener(MEDIA_CONNECTION_CHANGE_EVENT, synchronize);
     return () => {
       window.removeEventListener(MEDIA_CONNECTION_CHANGE_EVENT, synchronize);
+      detachRecovery();
       controller?.abort();
     };
   }, []);
