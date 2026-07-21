@@ -72,7 +72,7 @@ from .migrations import ensure_migrations
 from .task_queue import start_worker, stop_worker
 from .usage_writer import start_usage_writer, stop_usage_writer
 from .security.constraints import safe_identifier
-from .security.paths import PathSecurityError, resolve_under
+from .security.artifacts import ArtifactOpenError, PinnedFileResponse, open_regular_under
 
 # Route modules
 from .routes.dashboard_routes import router as dashboard_router
@@ -345,14 +345,18 @@ async def serve_ingest_artifact(kind: str, filename: str):
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="Invalid artifact path") from exc
     try:
-        file_path = resolve_under(INGEST_ROOT, kind, filename, expected="file")
-    except PathSecurityError:
+        opened = open_regular_under(INGEST_ROOT, kind, filename)
+    except ArtifactOpenError:
         raise HTTPException(status_code=404, detail="Not Found") from None
-    return FileResponse(file_path)
+    try:
+        return PinnedFileResponse(opened, filename=filename)
+    except BaseException:
+        opened.close()
+        raise
 
 RELEASES_DIR.mkdir(parents=True, exist_ok=True)
 # Use direct route to avoid conflict with root SPA mount (html=True intercepts everything)
-@app.get("/releases/{filename:path}")
+@app.api_route("/releases/{filename:path}", methods=["GET", "HEAD"])
 async def serve_release(filename: str):
     requested = Path(filename)
     if any(part in {".", ".."} for part in requested.parts):
@@ -364,10 +368,14 @@ async def serve_release(filename: str):
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="Invalid release path") from exc
     try:
-        file_path = resolve_under(RELEASES_DIR, filename, expected="file")
-    except PathSecurityError:
+        opened = open_regular_under(RELEASES_DIR, filename)
+    except ArtifactOpenError:
         raise HTTPException(status_code=404, detail="Not Found") from None
-    return FileResponse(file_path)
+    try:
+        return PinnedFileResponse(opened, filename=filename)
+    except BaseException:
+        opened.close()
+        raise
 
 if _HAS_FRONTEND:
     app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
