@@ -8,7 +8,11 @@ from unittest.mock import patch
 
 import pytest
 
-from zhiji_backend.ingest.media import extract_audio
+from zhiji_backend.ingest.media import (
+    FFMPEG_MAX_OUTPUT_BYTES,
+    FFMPEG_TIMEOUT_SECONDS,
+    extract_audio,
+)
 
 
 def _make_test_video(tmp_path: Path) -> Path:
@@ -63,6 +67,9 @@ def test_extract_audio_uses_hardened_ffmpeg_argv(mock_run, mock_which, tmp_path:
     assert argv.index("-protocol_whitelist") < input_index
     assert argv.index("-probesize") < input_index
     assert argv.index("-analyzeduration") < input_index
+    assert argv[argv.index("-fs") + 1] == str(FFMPEG_MAX_OUTPUT_BYTES)
+    assert argv.index("-fs") > input_index
+    assert mock_run.call_args.kwargs["timeout"] == FFMPEG_TIMEOUT_SECONDS
 
 
 @patch("zhiji_backend.ingest.media.shutil.which", return_value="/opt/local/bin/ffmpeg")
@@ -78,5 +85,38 @@ def test_extract_audio_removes_partial_destination_on_failure(mock_which, tmp_pa
     with patch("zhiji_backend.ingest.media.subprocess.run", side_effect=fail):
         with pytest.raises(subprocess.CalledProcessError):
             extract_audio(video, dest)
+
+    assert not dest.exists()
+
+
+@patch("zhiji_backend.ingest.media.shutil.which", return_value="/opt/local/bin/ffmpeg")
+def test_extract_audio_removes_partial_destination_on_timeout(mock_which, tmp_path: Path):
+    video = tmp_path / "input.mp4"
+    video.write_bytes(b"video")
+    dest = tmp_path / "output.wav"
+
+    def timeout(*args, **kwargs):
+        dest.write_bytes(b"partial")
+        raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+
+    with patch("zhiji_backend.ingest.media.subprocess.run", side_effect=timeout):
+        with pytest.raises(subprocess.TimeoutExpired):
+            extract_audio(video, dest, timeout_seconds=7, max_output_bytes=10)
+
+    assert not dest.exists()
+
+
+@patch("zhiji_backend.ingest.media.shutil.which", return_value="/opt/local/bin/ffmpeg")
+def test_extract_audio_rejects_and_removes_oversized_output(mock_which, tmp_path: Path):
+    video = tmp_path / "input.mp4"
+    video.write_bytes(b"video")
+    dest = tmp_path / "output.wav"
+
+    def oversize(*args, **kwargs):
+        dest.write_bytes(b"12345")
+
+    with patch("zhiji_backend.ingest.media.subprocess.run", side_effect=oversize):
+        with pytest.raises(ValueError, match="大小"):
+            extract_audio(video, dest, timeout_seconds=7, max_output_bytes=4)
 
     assert not dest.exists()

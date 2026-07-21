@@ -17,6 +17,7 @@ from zhiji_backend.security.file_intake import (
     stream_upload_to_temp,
     validate_epub,
     validate_file,
+    validate_mp3,
 )
 
 
@@ -32,6 +33,10 @@ class RecordingStream(io.BytesIO):
 
 def make_upload(filename: str, data: bytes, content_type: str = "application/octet-stream") -> UploadFile:
     return UploadFile(filename=filename, file=RecordingStream(data), headers={"content-type": content_type})
+
+
+def synchsafe(value: int) -> bytes:
+    return bytes((value >> shift) & 0x7F for shift in (21, 14, 7, 0))
 
 
 def test_stream_upload_accepts_exact_limit_and_reads_fixed_chunks(tmp_path: Path):
@@ -126,6 +131,39 @@ def test_validate_file_rejects_spoofed_or_malformed_input(tmp_path: Path, filena
         validate_file(path, filename=filename)
 
     assert exc_info.value.status_code == 422
+
+
+def test_validate_mp3_accepts_frame_after_large_id3_tag(tmp_path: Path):
+    tag_size = 5000
+    path = tmp_path / "large-tag.mp3"
+    path.write_bytes(b"ID3\x04\x00\x00" + synchsafe(tag_size) + b"x" * tag_size + b"\xff\xfb\x90\x64")
+
+    assert validate_file(path, filename=path.name) is FileKind.AUDIO
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        b"ID3\x04\x00\x00\x80\x00\x00\x00" + b"\xff\xfb\x90\x64",
+        b"ID3\x04\x00\x00" + synchsafe(5000) + b"x" * 100 + b"\xff\xfb\x90\x64",
+    ],
+)
+def test_validate_mp3_rejects_malformed_or_truncated_id3(tmp_path: Path, data: bytes):
+    path = tmp_path / "bad-tag.mp3"
+    path.write_bytes(data)
+
+    with pytest.raises(HTTPException) as exc_info:
+        validate_file(path, filename=path.name)
+
+    assert exc_info.value.status_code == 422
+
+
+def test_validate_mp3_rejects_tag_over_injected_cap(tmp_path: Path):
+    tag_size = 33
+    path = tmp_path / "oversized-tag.mp3"
+    path.write_bytes(b"ID3\x04\x00\x00" + synchsafe(tag_size) + b"x" * tag_size + b"\xff\xfb\x90\x64")
+
+    assert not validate_mp3(path, max_id3_tag_bytes=32)
 
 
 def write_epub(path: Path, entries: list[tuple[str, bytes, int | None]]) -> None:

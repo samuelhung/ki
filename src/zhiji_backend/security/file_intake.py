@@ -23,6 +23,7 @@ IMAGE_MAX_BYTES = 25 * MIB
 OCR_PDF_MAX_BYTES = 100 * MIB
 OCR_PDF_MAX_PAGES = 300
 REMOTE_VIDEO_MAX_BYTES = 2 * GIB
+MAX_ID3_TAG_BYTES = 16 * MIB
 
 
 @dataclass(frozen=True)
@@ -134,10 +135,10 @@ def _ftyp_brands(data: bytes) -> set[bytes]:
     return brands
 
 
-def _is_mp3_frame(data: bytes, offset: int = 0) -> bool:
-    if len(data) < offset + 4:
+def _is_mp3_frame(data: bytes) -> bool:
+    if len(data) < 4:
         return False
-    first, second, third = data[offset:offset + 3]
+    first, second, third = data[:3]
     return (
         first == 0xFF
         and second & 0xE0 == 0xE0
@@ -148,16 +149,32 @@ def _is_mp3_frame(data: bytes, offset: int = 0) -> bool:
     )
 
 
-def _is_mp3(data: bytes) -> bool:
-    if _is_mp3_frame(data):
-        return True
-    if len(data) < 10 or not data.startswith(b"ID3"):
-        return False
-    size_bytes = data[6:10]
-    if any(byte & 0x80 for byte in size_bytes):
-        return False
-    tag_size = sum(byte << shift for byte, shift in zip(size_bytes, (21, 14, 7, 0)))
-    return _is_mp3_frame(data, 10 + tag_size)
+def validate_mp3(path: Path, *, max_id3_tag_bytes: int = MAX_ID3_TAG_BYTES) -> bool:
+    """Validate an MP3 frame directly or after a bounded ID3v2 tag."""
+    file_size = path.stat().st_size
+    with path.open("rb") as handle:
+        header = handle.read(10)
+        if _is_mp3_frame(header):
+            return True
+        if len(header) < 10 or not header.startswith(b"ID3"):
+            return False
+
+        version = header[3]
+        if version not in {2, 3, 4}:
+            return False
+        size_bytes = header[6:10]
+        if any(byte & 0x80 for byte in size_bytes):
+            return False
+        tag_size = sum(byte << shift for byte, shift in zip(size_bytes, (21, 14, 7, 0)))
+        if tag_size > max_id3_tag_bytes:
+            return False
+
+        footer_size = 10 if version == 4 and header[5] & 0x10 else 0
+        frame_offset = 10 + tag_size + footer_size
+        if frame_offset + 4 > file_size:
+            return False
+        handle.seek(frame_offset)
+        return _is_mp3_frame(handle.read(4))
 
 
 def _validate_text(path: Path, suffix: str) -> None:
@@ -275,7 +292,7 @@ def validate_file(path: Path, *, filename: str) -> FileKind:
         else:
             valid = bool(brands) and not is_quicktime and not is_m4a
     elif suffix == ".mp3":
-        valid = _is_mp3(head)
+        valid = validate_mp3(path)
     elif suffix == ".aac":
         valid = len(head) >= 2 and head[0] == 0xFF and head[1] & 0xF6 in {0xF0, 0xF4}
     elif suffix == ".flac":
