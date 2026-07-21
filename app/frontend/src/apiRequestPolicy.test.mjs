@@ -81,7 +81,9 @@ test('request policy uses an embedded Request method unless init overrides it', 
 
 test('request policy reports its own deadline as a timeout', async () => {
   await assert.rejects(
-    policy.fetchWithPolicy('/slow', { timeoutMs: 5 }, abortAwareFetch),
+    rejectIfStillPending(
+      policy.fetchWithPolicy('/slow', { timeoutMs: 5 }, abortAwareFetch),
+    ),
     (error) => error instanceof policy.ApiRequestError && error.kind === 'timeout',
   );
 });
