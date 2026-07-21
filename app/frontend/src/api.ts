@@ -27,17 +27,17 @@ export function setBackendUrl(url: string): void {
 
 export function getApiToken(): string {
   try {
-    return localStorage.getItem('ki_api_token')?.trim() || '';
-  } catch { /* localStorage blocked */ }
+    return sessionStorage.getItem('ki_api_token')?.trim() || '';
+  } catch { /* sessionStorage blocked */ }
   return '';
 }
 
 export function setApiToken(token: string): void {
   try {
     const value = token.trim();
-    if (value) localStorage.setItem('ki_api_token', value);
-    else localStorage.removeItem('ki_api_token');
-  } catch { /* localStorage blocked */ }
+    if (value) sessionStorage.setItem('ki_api_token', value);
+    else sessionStorage.removeItem('ki_api_token');
+  } catch { /* sessionStorage blocked */ }
 }
 
 function withAuth(init?: ApiRequestInit): ApiRequestInit | undefined {
@@ -50,33 +50,9 @@ function withAuth(init?: ApiRequestInit): ApiRequestInit | undefined {
   return { ...init, headers };
 }
 
-let viteSessionBootstrap: Promise<boolean> | null = null;
-
-async function bootstrapViteRemoteSession(): Promise<boolean> {
-  if (!isViteDev) return false;
-  if (!viteSessionBootstrap) {
-    viteSessionBootstrap = fetchWithPolicy('/__ki_remote_session', {
-      cache: 'no-store',
-      credentials: 'include',
-      timeoutMs: 10_000,
-    })
-      .then((response) => response.ok)
-      .catch(() => false)
-      .finally(() => { viteSessionBootstrap = null; });
-  }
-  return viteSessionBootstrap;
-}
-
-function shouldBootstrapViteRemoteSession(response: Response): boolean {
-  if (!isViteDev || response.status !== 401 || getApiToken()) return false;
-  return true;
-}
-
 const runtimeApiFetch = createApiFetch({
   getBackendUrl,
   prepareInit: withAuth,
-  shouldBootstrap: shouldBootstrapViteRemoteSession,
-  bootstrapViteRemoteSession,
   request: fetchWithPolicy,
 });
 

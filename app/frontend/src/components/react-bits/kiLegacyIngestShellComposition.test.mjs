@@ -290,13 +290,11 @@ test('ingest shell promotes brand and search while keeping the stage transparent
   assert.match(shellCss, /\.ki-ingest-list-type-icon svg\s*\{[^}]*width:\s*11px[^}]*height:\s*11px/s);
 });
 
-test('vite dev automatically bootstraps a remote session before retrying protected api calls', () => {
-  assert.match(vite, /'\/__ki_remote_session'/);
-  assert.match(vite, /cookieDomainRewrite/);
-  assert.match(vite, /rewrite:\s*\(\)\s*=>\s*'\/'/);
-  assert.match(api, /bootstrapViteRemoteSession/);
-  assert.match(api, /response\.status !== 401/);
-  assert.match(api, /fetchWithPolicy\('\/__ki_remote_session'/);
+test('vite dev authenticates remote api calls without exposing a session endpoint', () => {
+  assert.doesNotMatch(vite, /__ki_remote_session|cookieDomainRewrite/);
+  assert.match(vite, /KI_REMOTE_API_TOKEN/);
+  assert.match(vite, /proxyReq\.setHeader\('Authorization'/);
+  assert.doesNotMatch(api, /bootstrapViteRemoteSession|__ki_remote_session/);
 });
 
 test('formal ingest visual QA waits for the split workspace instead of retired cinematic modules', () => {

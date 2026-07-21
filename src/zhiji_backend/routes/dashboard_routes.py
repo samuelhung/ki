@@ -15,7 +15,12 @@ _start_time = time.time()
 
 
 @router.get("/api/health")
-def health() -> dict[str, object]:
+def health() -> dict[str, bool]:
+    return {"ok": True}
+
+
+@router.get("/api/system/health")
+def system_health() -> dict[str, object]:
     uptime_sec = time.time() - _start_time
     db_ok = True
     db_error = None
@@ -32,9 +37,9 @@ def health() -> dict[str, object]:
             db_event_count = conn.execute(
                 "SELECT COUNT(*) FROM events"
             ).fetchone()[0]
-    except Exception as e:
+    except Exception:
         db_ok = False
-        db_error = str(e)
+        db_error = "database unavailable"
 
     return {
         "ok": db_ok,

@@ -3,7 +3,10 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 
 const api = readFileSync(new URL('./api.ts', import.meta.url), 'utf8');
+const apiRuntime = readFileSync(new URL('./apiFetchRuntime.ts', import.meta.url), 'utf8');
+const vite = readFileSync(new URL('../vite.config.ts', import.meta.url), 'utf8');
 const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
+const systemHealth = readFileSync(new URL('./components/cinematic-system/useSystemHealth.ts', import.meta.url), 'utf8');
 const systemConnection = readFileSync(new URL('./components/cinematic-system/useSystemConnection.ts', import.meta.url), 'utf8');
 const dockAccess = readFileSync(new URL('./pages/GlobalDockAccessOverlay.tsx', import.meta.url), 'utf8');
 const ingest = readFileSync(new URL('./pages/Ingest.tsx', import.meta.url), 'utf8');
@@ -15,16 +18,35 @@ test('apiFetch preserves its Response contract while applying the shared policy'
   assert.match(api, /const runtimeApiFetch = createApiFetch\(\{/);
   assert.match(api, /request: fetchWithPolicy/);
   assert.match(api, /return runtimeApiFetch\(input, init\)/);
-  assert.match(api, /viteSessionBootstrap = fetchWithPolicy\('\/__ki_remote_session', \{[\s\S]*?timeoutMs: 10_000/);
-  assert.doesNotMatch(api, /fetch\('\/__ki_remote_session'/);
+  assert.doesNotMatch(api, /__ki_remote_session|bootstrapViteRemoteSession|viteSessionBootstrap/);
+  assert.doesNotMatch(apiRuntime, /shouldBootstrap|bootstrapViteRemoteSession/);
+});
+
+test('browser tokens use session storage while backend URLs remain persistent', () => {
+  assert.match(api, /localStorage\.getItem\('ki_backend_url'\)/);
+  assert.match(api, /localStorage\.setItem\('ki_backend_url'/);
+  assert.match(api, /sessionStorage\.getItem\('ki_api_token'\)/);
+  assert.match(api, /sessionStorage\.setItem\('ki_api_token'/);
+  assert.doesNotMatch(api, /localStorage\.(?:getItem|setItem|removeItem)\('ki_api_token'/);
+});
+
+test('vite injects the remote token only in the server-side proxy', () => {
+  assert.doesNotMatch(vite, /__ki_remote_session|cookieDomainRewrite/);
+  assert.match(vite, /loadEnv\(mode, process\.cwd\(\), 'KI_'\)/);
+  assert.match(vite, /KI_REMOTE_API_TOKEN/);
+  assert.match(vite, /proxyReq\.setHeader\('Authorization', `Bearer \$\{remoteApiToken\}`\)/);
+  assert.doesNotMatch(api, /KI_REMOTE_API_TOKEN|import\.meta\.env\.[A-Z_]*TOKEN/);
 });
 
 test('health polling and connection tests use bounded shared requests', () => {
   assert.doesNotMatch(app, /fetch\(getBackendUrl\(\) \+ '\/api\/health'/);
   assert.match(app, /apiFetch\('\/api\/health', \{\s*timeoutMs: 5_000/s);
+  assert.match(systemHealth, /apiFetch\('\/api\/system\/health'/);
+  assert.doesNotMatch(systemHealth, /apiFetch\('\/api\/health'/);
   assert.doesNotMatch(systemConnection, /await fetch\(/);
   assert.match(systemConnection, /fetchWithPolicy\(target \+ '\/api\/health', \{ timeoutMs: 10_000 \}\)/);
   assert.match(systemConnection, /if \(!healthRes\.ok\) throw new Error\('健康检查失败'\);\s*const json = await readApiJson/s);
+  assert.match(systemConnection, /fetchWithPolicy\(target \+ '\/api\/system\/health'/);
   assert.match(systemConnection, /protectedRes\.status === 401\) throw new Error\('业务接口未授权，请填写后端 KI_API_TOKEN'\)/);
 });
 

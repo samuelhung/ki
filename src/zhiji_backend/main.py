@@ -4,7 +4,6 @@ import os
 import logging
 import logging.handlers
 import hmac
-import hashlib
 from pathlib import Path
 from dotenv import load_dotenv
 from .paths import ZHIJI_HOME, FRONTEND_DIST, LOG_DIR, INGEST_ROOT, RELEASES_DIR, ensure_data_dirs
@@ -64,6 +63,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import __version__
 from .db import get_db_path, init_db, seed_default_sources
@@ -123,19 +123,39 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="知几", version=__version__, lifespan=lifespan)
 
+_DEFAULT_ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]", "testserver"]
+_DEFAULT_CORS_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:9120",
+    "http://127.0.0.1:9120",
+    "tauri://localhost",
+    "https://tauri.localhost",
+]
+
+
+def _csv_env(name: str, defaults: list[str]) -> list[str]:
+    value = os.getenv(name, "").strip()
+    if not value:
+        return defaults.copy()
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _allowed_hosts() -> list[str]:
+    return _csv_env("KI_ALLOWED_HOSTS", _DEFAULT_ALLOWED_HOSTS)
+
+
+def _cors_origins() -> list[str]:
+    return _csv_env("KI_CORS_ORIGINS", _DEFAULT_CORS_ORIGINS)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://127.0.0.1:5173",
-        "http://localhost:5173",
-        "http://127.0.0.1:9120",
-        "http://localhost:9120",
-        *([f"http://{ip}:9120" for ip in os.getenv("KI_EXTRA_ORIGINS", "").split(",") if ip.strip()]),
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_cors_origins(),
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-API-Key"],
 )
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=_allowed_hosts())
 
 # ---- 前端静态文件服务 ----
 # FRONTEND_DIST 随包分发（pip install 时一起安装到 site-packages）
@@ -183,16 +203,6 @@ def _request_token(request: Request) -> str:
     return api_key_header
 
 
-def _session_cookie_value(api_token: str) -> str:
-    digest = hmac.new(api_token.encode("utf-8"), b"zhiji-remote-session", hashlib.sha256).hexdigest()
-    return digest
-
-
-def _has_valid_session_cookie(request: Request, api_token: str) -> bool:
-    cookie = request.cookies.get("ki_session", "")
-    return bool(cookie) and hmac.compare_digest(cookie, _session_cookie_value(api_token))
-
-
 @app.middleware("http")
 async def api_auth(request: Request, call_next):
     """Protect API and sensitive file paths.
@@ -207,7 +217,7 @@ async def api_auth(request: Request, call_next):
             return await call_next(request)
         if not api_token:
             return JSONResponse({"error": "unauthorized"}, status_code=401)
-        if _request_token(request) != api_token and not _has_valid_session_cookie(request, api_token):
+        if not hmac.compare_digest(_request_token(request), api_token):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
     return await call_next(request)
 
@@ -225,14 +235,6 @@ async def spa_fallback(request: Request, call_next):
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
-        if _api_token() and (path in ("", "/") or path.endswith(".html") or "." not in Path(path).name):
-            response.set_cookie(
-                "ki_session",
-                _session_cookie_value(_api_token()),
-                httponly=True,
-                samesite="lax",
-                max_age=60 * 60 * 24 * 30,
-            )
     return response
 
 

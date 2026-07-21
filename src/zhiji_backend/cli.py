@@ -14,6 +14,7 @@ import subprocess as sp
 import sys
 import os
 import tempfile
+import ipaddress
 from pathlib import Path
 from urllib.request import urlopen, Request
 from urllib.error import URLError
@@ -21,6 +22,18 @@ from urllib.error import URLError
 
 GITHUB_API = "https://api.github.com/repos/samuelhung/ki/releases/latest"
 LAUNCHD_LABEL = "com.zhiji.backend"
+
+
+def _validate_serve_host(host: str) -> None:
+    normalized = host.strip().strip("[]").split("%", 1)[0]
+    is_loopback = normalized.lower() == "localhost"
+    if not is_loopback:
+        try:
+            is_loopback = ipaddress.ip_address(normalized).is_loopback
+        except ValueError:
+            is_loopback = False
+    if not is_loopback and not os.getenv("KI_API_TOKEN", "").strip():
+        raise SystemExit("KI_API_TOKEN must be set when serving on a non-loopback host")
 
 
 def _get_current_version() -> str:
@@ -205,6 +218,7 @@ def cmd_init(args: argparse.Namespace) -> None:
 
 def cmd_serve(args: argparse.Namespace) -> None:
     """启动 FastAPI 服务。"""
+    _validate_serve_host(args.host)
     if args.data_dir:
         os.environ["ZHIJI_HOME"] = args.data_dir
     elif not os.getenv("ZHIJI_HOME"):
@@ -266,7 +280,7 @@ def main() -> None:
 
     # zhiji serve
     serve_p = sub.add_parser("serve", help="启动服务")
-    serve_p.add_argument("--host", default="0.0.0.0")
+    serve_p.add_argument("--host", default="127.0.0.1")
     serve_p.add_argument("--port", type=int, default=9120)
     serve_p.add_argument("--data-dir", default=None, help="数据目录，默认 ~/.zhiji/")
     serve_p.set_defaults(func=cmd_serve)

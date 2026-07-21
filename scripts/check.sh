@@ -1229,7 +1229,7 @@ if 'version=__version__' not in main:
     raise SystemExit('FAIL FastAPI app must use zhiji_backend.__version__')
 dashboard = Path('src/zhiji_backend/routes/dashboard_routes.py').read_text()
 if '"version": __version__' not in dashboard:
-    raise SystemExit('FAIL /api/health must use zhiji_backend.__version__')
+  raise SystemExit('FAIL /api/system/health must use zhiji_backend.__version__')
 print('version consistency ok')
 PY
 
@@ -1249,6 +1249,11 @@ if grep -R "__TAURI_INTERNALS__\|@tauri-apps\|check_updates\|tauriInvoke\|tauriL
 fi
 if grep -R "patch_.*\.bsdiff\|bsdiff .*zhiji\|bspatch .*zhiji\|manifest.json.*gh release\|install_helper\.sh\|10\.8\.0\.105:9120/releases\|后端 DMG 分发\|BACKEND_DMG_URL\|RELEASES_DIR_LOCAL" scripts/build_release.py scripts/release-check.py 2>/dev/null; then
   echo "FAIL: stale patch-update implementation found in active release scripts" >&2
+  exit 1
+fi
+if [[ -d desktop/macos/Helper ]] || grep -R "com.zhiji.zhijiDesktop.helper\|ZhijiHelperPlugin\|com.apple.security.temporary-exception.mach-lookup.global-name\|build_helper.sh" \
+  desktop/macos/Runner desktop/macos/Runner.xcodeproj/project.pbxproj 2>/dev/null; then
+  echo "FAIL: retired privileged Helper integration found" >&2
   exit 1
 fi
 run_retired_feature_scan

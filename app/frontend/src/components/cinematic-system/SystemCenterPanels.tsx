@@ -56,7 +56,7 @@ const FEATURE_VISUALS: Array<{ icon: LucideIcon; accent: string }> = [
 ];
 
 const ENGINEERING_CONTRACTS = [
-  { label: '访问边界', value: '同源会话 / KI_API_TOKEN', icon: CheckCircle, accent: 'cyan' },
+  { label: '访问边界', value: 'Bearer / X-API-Key', icon: CheckCircle, accent: 'cyan' },
   { label: '数据保全', value: 'SQLite + 文件系统双写', icon: HardDrive, accent: 'gold' },
   { label: '运行托管', value: 'launchd + 健康检查', icon: Server, accent: 'blue' },
   { label: '配置归属', value: '参数与 Prompt 归 AI 模块', icon: Settings, accent: 'violet' },
