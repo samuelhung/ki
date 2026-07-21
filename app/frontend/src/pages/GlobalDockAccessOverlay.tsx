@@ -54,7 +54,7 @@ export default function GlobalDockAccessOverlay({ action, onClose }: { action: D
       body.append('file', file);
       body.append('title', title);
       body.append('topic', topic || 'uncategorized');
-      const response = await apiFetch('/api/ingest/file', { method: 'POST', body });
+      const response = await apiFetch('/api/ingest/file', { method: 'POST', timeoutMs: 900_000, body });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail || '上传失败');
       setFile(null);

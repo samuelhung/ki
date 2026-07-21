@@ -123,7 +123,7 @@ export default function CinematicStudy() {
       const body = new FormData();
       body.append('file', file);
       Object.entries(buildStudyUploadFields(form)).forEach(([key, value]) => body.append(key, value));
-      const response = await apiFetch('/api/study/upload', { method: 'POST', body });
+      const response = await apiFetch('/api/study/upload', { method: 'POST', timeoutMs: 900_000, body });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || '上传失败');
       if (data.auto_created) { setDialog(false); await loadData(); selectItem(data.material_id); }

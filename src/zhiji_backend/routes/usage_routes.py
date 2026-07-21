@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter
 
-from ..db import get_db_path
-import sqlite3
+from ..db import connect
 
 router = APIRouter(prefix="/api/usage", tags=["usage"])
 
@@ -33,23 +32,15 @@ def _today() -> str:
 
 
 def _query(sql: str, params: tuple = ()) -> list[dict]:
-    conn = sqlite3.connect(str(get_db_path()))
-    conn.row_factory = sqlite3.Row
-    try:
+    with connect() as conn:
         rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
-    finally:
-        conn.close()
 
 
 def _query_one(sql: str, params: tuple = ()) -> dict | None:
-    conn = sqlite3.connect(str(get_db_path()))
-    conn.row_factory = sqlite3.Row
-    try:
+    with connect() as conn:
         row = conn.execute(sql, params).fetchone()
         return dict(row) if row else None
-    finally:
-        conn.close()
 
 
 @router.get("/dashboard")

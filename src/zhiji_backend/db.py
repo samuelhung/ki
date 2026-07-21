@@ -86,20 +86,21 @@ def get_db_path() -> Path:
     return DEFAULT_DB_PATH
 
 
-def _open_connection() -> sqlite3.Connection:
+def _open_connection(*, busy_timeout_ms: int = 5000) -> sqlite3.Connection:
     path = get_db_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    normalized_timeout_ms = max(0, busy_timeout_ms)
+    conn = sqlite3.connect(path, timeout=normalized_timeout_ms / 1000)
     conn.row_factory = sqlite3.Row
+    conn.execute(f"PRAGMA busy_timeout={normalized_timeout_ms}")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
 
 @contextmanager
-def connect() -> Iterator[sqlite3.Connection]:
-    conn = _open_connection()
+def connect(*, busy_timeout_ms: int = 5000) -> Iterator[sqlite3.Connection]:
+    conn = _open_connection(busy_timeout_ms=busy_timeout_ms)
     try:
         yield conn
         conn.commit()

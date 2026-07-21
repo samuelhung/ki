@@ -70,6 +70,7 @@ from .db import get_db_path, init_db, seed_default_sources
 from .config_manager import load_config
 from .migrations import ensure_migrations
 from .task_queue import start_worker, stop_worker
+from .usage_writer import start_usage_writer, stop_usage_writer
 
 # Route modules
 from .routes.dashboard_routes import router as dashboard_router
@@ -99,11 +100,25 @@ async def lifespan(app: FastAPI):
     load_config()
     init_db()
     seed_default_sources()
-    start_worker()
-    logging.getLogger("main").info("KI server ready")
-    yield
-    logging.getLogger("main").info("KI server shutting down")
-    stop_worker()
+    start_usage_writer()
+    worker_started = False
+    worker_quiesced = False
+    try:
+        start_worker()
+        worker_started = True
+        logging.getLogger("main").info("KI server ready")
+        try:
+            yield
+        finally:
+            logging.getLogger("main").info("KI server shutting down")
+            worker_quiesced = stop_worker() is True
+    finally:
+        if not worker_started or worker_quiesced:
+            stop_usage_writer()
+        else:
+            logging.getLogger("main").error(
+                "Ingest worker is still active; keeping usage writer available until process exit"
+            )
 
 
 app = FastAPI(title="知几", version=__version__, lifespan=lifespan)

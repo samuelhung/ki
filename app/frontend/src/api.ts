@@ -1,3 +1,6 @@
+import { fetchWithPolicy, type ApiRequestInit } from './apiRequestPolicy';
+import { createApiFetch } from './apiFetchRuntime';
+
 const origin = window.location.origin;
 const isViteDev = import.meta.env.DEV;
 const sameOrigin = origin.endsWith(':9120') || origin === 'tauri://localhost' || origin === 'https://tauri.localhost';
@@ -37,7 +40,7 @@ export function setApiToken(token: string): void {
   } catch { /* localStorage blocked */ }
 }
 
-function withAuth(init?: RequestInit): RequestInit | undefined {
+function withAuth(init?: ApiRequestInit): ApiRequestInit | undefined {
   const token = getApiToken();
   if (!token) return init;
   const headers = new Headers(init?.headers || {});
@@ -52,9 +55,10 @@ let viteSessionBootstrap: Promise<boolean> | null = null;
 async function bootstrapViteRemoteSession(): Promise<boolean> {
   if (!isViteDev) return false;
   if (!viteSessionBootstrap) {
-    viteSessionBootstrap = fetch('/__ki_remote_session', {
+    viteSessionBootstrap = fetchWithPolicy('/__ki_remote_session', {
       cache: 'no-store',
       credentials: 'include',
+      timeoutMs: 10_000,
     })
       .then((response) => response.ok)
       .catch(() => false)
@@ -63,15 +67,21 @@ async function bootstrapViteRemoteSession(): Promise<boolean> {
   return viteSessionBootstrap;
 }
 
-export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-  if (typeof input === 'string' && input.startsWith('/api/')) {
-    const requestInit = withAuth(init);
-    const response = await fetch(getBackendUrl() + input, requestInit);
-    if (!isViteDev || response.status !== 401 || getApiToken()) return response;
-    if (!await bootstrapViteRemoteSession()) return response;
-    return fetch(getBackendUrl() + input, requestInit);
-  }
-  return fetch(input, init);
+function shouldBootstrapViteRemoteSession(response: Response): boolean {
+  if (!isViteDev || response.status !== 401 || getApiToken()) return false;
+  return true;
+}
+
+const runtimeApiFetch = createApiFetch({
+  getBackendUrl,
+  prepareInit: withAuth,
+  shouldBootstrap: shouldBootstrapViteRemoteSession,
+  bootstrapViteRemoteSession,
+  request: fetchWithPolicy,
+});
+
+export async function apiFetch(input: RequestInfo | URL, init?: ApiRequestInit): Promise<Response> {
+  return runtimeApiFetch(input, init);
 }
 
 export function backendUrl(path: string): string {
