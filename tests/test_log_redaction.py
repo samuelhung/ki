@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import logging
 import os
 import stat
@@ -11,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from zhiji_backend.security.redaction import (
+    MAX_REDACTED_TEXT_LENGTH,
     REDACTED,
     RedactingFormatter,
     SecureTimedRotatingFileHandler,
@@ -66,6 +68,75 @@ def test_redact_text_is_deterministic_and_preserves_non_sensitive_query_values()
 
     assert redact_text(text) == redact_text(text)
     assert "limit=20" in redact_text(text)
+
+
+def test_redact_text_scrubs_json_dumped_message_content_and_preserves_roles():
+    messages = [
+        {"role": "system", "content": "system prompt secret"},
+        {"role": "user", "content": "user prompt secret"},
+    ]
+
+    redacted = redact_text(json.dumps(messages))
+
+    assert "system prompt secret" not in redacted
+    assert "user prompt secret" not in redacted
+    assert '"role":"system"' in redacted
+    assert '"role":"user"' in redacted
+    assert redacted.count(REDACTED) == 2
+
+
+def test_redact_text_scrubs_prefixed_json_exception_without_losing_adjacent_fields():
+    payload = {
+        "input": "private request input",
+        "output": "private provider output",
+        "completion": "private completion",
+        "status": 503,
+        "request_id": "req-visible-123",
+    }
+    error = RuntimeError(f"ProviderError payload={json.dumps(payload)} retryable=True")
+
+    redacted = redact_text(error)
+
+    for secret in (
+        "private request input",
+        "private provider output",
+        "private completion",
+    ):
+        assert secret not in redacted
+    assert "req-visible-123" in redacted
+    assert '"status":503' in redacted
+    assert "retryable=True" in redacted
+
+
+def test_redact_text_scrubs_python_repr_payload_and_nested_message_content():
+    payload = {
+        "body": "private response body",
+        "messages": [{"role": "user", "content": "nested message secret"}],
+        "model": "model-visible",
+        "usage": {"total_tokens": 42},
+    }
+
+    redacted = redact_text(f"provider failed: {payload!r}; attempt=2")
+
+    assert "private response body" not in redacted
+    assert "nested message secret" not in redacted
+    assert "model-visible" in redacted
+    assert "total_tokens" in redacted
+    assert "42" in redacted
+    assert "attempt=2" in redacted
+
+
+def test_redact_text_bounds_large_serialized_payload_output():
+    payload = {
+        "content": "private" * (MAX_REDACTED_TEXT_LENGTH * 2),
+        "request_id": "req-visible-bounded",
+    }
+
+    redacted = redact_text(f"failure payload={json.dumps(payload)}")
+
+    assert "private" not in redacted
+    assert "req-visible-bounded" in redacted
+    assert len(redacted) <= MAX_REDACTED_TEXT_LENGTH
 
 
 def test_formatter_redacts_structured_args_without_mutating_record():
@@ -200,6 +271,42 @@ def test_log_api_reredacts_historical_messages(tmp_path, monkeypatch):
     assert response.status_code == 200
     assert response.json()["entries"][0]["message"] == f"api_key={REDACTED}"
     assert "historical-secret" not in response.text
+
+
+def test_log_api_reredacts_historical_serialized_payloads(tmp_path, monkeypatch):
+    from zhiji_backend.main import app
+    from zhiji_backend.routes import log_routes
+
+    json_payload = json.dumps(
+        {
+            "messages": [{"role": "user", "content": "historical json secret"}],
+            "request_id": "req-historical-json",
+        }
+    )
+    repr_payload = repr(
+        {
+            "output": "historical repr secret",
+            "status": 502,
+            "model": "model-historical-visible",
+        }
+    )
+    log_path = tmp_path / "ki.log"
+    log_path.write_text(
+        "2026-07-21 10:00:00 [ERROR  ] worker:42 | provider failed "
+        f"payload={json_payload}\n"
+        "2026-07-21 10:00:01 [ERROR  ] worker:43 | provider failed "
+        f"payload={repr_payload}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(log_routes, "LOG_FILE", log_path)
+
+    response = TestClient(app).get("/api/logs?limit=10")
+
+    assert response.status_code == 200
+    assert "historical json secret" not in response.text
+    assert "historical repr secret" not in response.text
+    assert "req-historical-json" in response.text
+    assert "model-historical-visible" in response.text
 
 
 @pytest.mark.parametrize(

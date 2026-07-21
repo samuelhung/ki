@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ast
 import copy
+import json
 import logging
 import logging.handlers
 import os
@@ -12,7 +14,10 @@ from urllib.parse import unquote_plus, urlsplit, urlunsplit
 
 
 REDACTED = "[REDACTED]"
+MAX_REDACTED_TEXT_LENGTH = 16_384
 MAX_TASK_ERROR_LENGTH = 200
+_MAX_STRUCTURE_ATTEMPTS = 64
+_TRUNCATED = "...[TRUNCATED]"
 
 _SENSITIVE_KEYS = {
     "authorization",
@@ -38,6 +43,10 @@ _SENSITIVE_KEYS = {
     "request_body",
     "body",
     "content",
+    "messages",
+    "input",
+    "output",
+    "completion",
 }
 _SENSITIVE_QUERY_KEYS = {
     "api_key",
@@ -127,8 +136,92 @@ def _redact_url(match: re.Match[str]) -> str:
     return redacted_url + trailing
 
 
+def _balanced_structure_end(text: str, start: int) -> int | None:
+    pairs = {"{": "}", "[": "]", "(": ")"}
+    stack = [pairs[text[start]]]
+    quote: str | None = None
+    escaped = False
+    for index in range(start + 1, len(text)):
+        char = text[index]
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            continue
+        if char in ("\"", "'"):
+            quote = char
+        elif char in pairs:
+            stack.append(pairs[char])
+        elif stack and char == stack[-1]:
+            stack.pop()
+            if not stack:
+                return index + 1
+    return None
+
+
+def _serialize_redacted_structure(value: Any, *, json_style: bool) -> str:
+    redacted = _redact_value(value)
+    if json_style:
+        return json.dumps(redacted, ensure_ascii=False, separators=(",", ":"))
+    return repr(redacted)
+
+
+def _redact_embedded_structures(text: str) -> str:
+    decoder = json.JSONDecoder()
+    parts: list[str] = []
+    cursor = 0
+    search_from = 0
+    attempts = 0
+
+    while attempts < _MAX_STRUCTURE_ATTEMPTS:
+        match = re.search(r"[\[{(]", text[search_from:])
+        if match is None:
+            break
+        start = search_from + match.start()
+        attempts += 1
+
+        try:
+            value, end = decoder.raw_decode(text, start)
+        except (json.JSONDecodeError, RecursionError, ValueError):
+            end = _balanced_structure_end(text, start)
+            if end is None:
+                search_from = start + 1
+                continue
+            try:
+                value = ast.literal_eval(text[start:end])
+            except (MemoryError, RecursionError, SyntaxError, TypeError, ValueError):
+                search_from = start + 1
+                continue
+            json_style = False
+        else:
+            json_style = True
+
+        if not isinstance(value, (dict, list, tuple)):
+            search_from = start + 1
+            continue
+        parts.append(text[cursor:start])
+        parts.append(_serialize_redacted_structure(value, json_style=json_style))
+        cursor = end
+        search_from = end
+
+    if not parts:
+        return text
+    parts.append(text[cursor:])
+    return "".join(parts)
+
+
+def _bound_redacted_text(text: str) -> str:
+    if len(text) <= MAX_REDACTED_TEXT_LENGTH:
+        return text
+    keep = MAX_REDACTED_TEXT_LENGTH - len(_TRUNCATED)
+    return text[:keep] + _TRUNCATED
+
+
 def redact_text(value: Any) -> str:
-    text = str(value)
+    text = _redact_embedded_structures(str(value))
     text = _URL_RE.sub(_redact_url, text)
     text = _AUTH_RE.sub(lambda match: match.group(1) + REDACTED, text)
     text = _HEADER_RE.sub(lambda match: match.group(1) + REDACTED, text)
@@ -136,7 +229,7 @@ def redact_text(value: Any) -> str:
     text = _LABELED_SECRET_RE.sub(lambda match: match.group(1) + REDACTED, text)
     text = _RAW_KEY_RE.sub(REDACTED, text)
     text = _SECRET_PATH_RE.sub(REDACTED, text)
-    return text
+    return _bound_redacted_text(text)
 
 
 def _redact_value(value: Any) -> Any:
