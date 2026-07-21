@@ -59,6 +59,32 @@ def test_query_bounds_reject_overflow_with_422(client, path):
     assert response.status_code == 422
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/study/list?page=5001&page_size=200",
+        "/api/study/mistakes/list?page=5001&page_size=200",
+    ],
+)
+def test_study_pagination_accepts_exact_maximum_derived_offset(client, path):
+    response = client.get(path)
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/study/list?page=5002&page_size=200",
+        "/api/study/mistakes/list?page=5002&page_size=200",
+    ],
+)
+def test_study_pagination_rejects_derived_offset_overflow(client, path):
+    response = client.get(path)
+
+    assert response.status_code == 422
+
+
 def test_event_batch_delete_accepts_100_ids_and_rejects_101(client):
     accepted = client.post(
         "/api/events/batch-delete",

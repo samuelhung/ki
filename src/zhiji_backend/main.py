@@ -334,7 +334,7 @@ PUBLIC_INGEST_ARTIFACTS = frozenset(
 )
 
 
-@app.get("/ingest/{kind}/{filename:path}")
+@app.api_route("/ingest/{kind}/{filename:path}", methods=["GET", "HEAD"])
 async def serve_ingest_artifact(kind: str, filename: str):
     if kind not in PUBLIC_INGEST_ARTIFACTS:
         raise HTTPException(status_code=404, detail="Not Found")

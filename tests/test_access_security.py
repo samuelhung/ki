@@ -218,6 +218,51 @@ def test_ingest_artifact_route_serves_allowlisted_regular_file_with_range(
     assert response.headers["accept-ranges"] == "bytes"
 
 
+def test_ingest_artifact_head_matches_get_headers_without_body(tmp_path, monkeypatch):
+    ingest_root = tmp_path / "ingest"
+    documents = ingest_root / "documents"
+    documents.mkdir(parents=True)
+    (documents / "evt-1.pdf").write_bytes(b"0123456789")
+    monkeypatch.setattr(main, "INGEST_ROOT", ingest_root)
+    client = TestClient(app)
+
+    get_response = client.get("/ingest/documents/evt-1.pdf")
+    head_response = client.head("/ingest/documents/evt-1.pdf")
+
+    assert get_response.status_code == 200
+    assert head_response.status_code == 200
+    assert head_response.content == b""
+    for header in (
+        "accept-ranges",
+        "content-length",
+        "content-type",
+        "etag",
+        "last-modified",
+    ):
+        assert head_response.headers[header] == get_response.headers[header]
+
+
+def test_remote_ingest_artifact_head_uses_existing_token_auth(tmp_path, monkeypatch):
+    ingest_root = tmp_path / "ingest"
+    videos = ingest_root / "videos"
+    videos.mkdir(parents=True)
+    (videos / "evt-1.mp4").write_bytes(b"video")
+    monkeypatch.setattr(main, "INGEST_ROOT", ingest_root)
+    monkeypatch.setenv("KI_API_TOKEN", "secret-token")
+    client = TestClient(app, client=("10.8.0.2", 50000))
+
+    denied = client.head("/ingest/videos/evt-1.mp4")
+    allowed = client.head(
+        "/ingest/videos/evt-1.mp4",
+        headers={"Authorization": "Bearer secret-token"},
+    )
+
+    assert denied.status_code == 401
+    assert allowed.status_code == 200
+    assert allowed.content == b""
+    assert allowed.headers["content-length"] == "5"
+
+
 @pytest.mark.parametrize("kind", ["pending", "internal", "concepts"])
 def test_ingest_artifact_route_denies_non_public_directories(tmp_path, monkeypatch, kind):
     ingest_root = tmp_path / "ingest"
