@@ -18,6 +18,8 @@ macOS 知几.app
 - Web 与 API 在生产形态共用 `:9120`；远程后端地址可配置为 `http://10.8.0.105:9120`。
 - 后端默认只监听 `127.0.0.1`，本地回环访问保持零配置。非回环监听必须配置非空 `KI_API_TOKEN`，远程受保护请求只接受 `Authorization: Bearer ...` 或 `X-API-Key: ...`。
 - `KI_ALLOWED_HOSTS` 与 `KI_CORS_ORIGINS` 使用逗号分隔的精确列表覆盖桌面默认值；Vite 远程代理可通过服务端环境变量 `KI_REMOTE_API_TOKEN` 注入认证头，令牌不会下发到浏览器。
+- AI 凭据只从服务端环境解析，优先级为 `AI_API_KEY`、`OPENAI_API_KEY`、`DEEPSEEK_API_KEY`。系统设置只返回掩码；新凭据原子写入 `ZHIJI_HOME/.env`，配置文件和 `.env` 均强制为 `0600`，`system_config.json` 不保存明文密钥。
+- AI 接口地址默认只允许 `http://10.8.0.13:3000/v1`。服务端可用逗号分隔的 `KI_AI_BASE_URL_ALLOWLIST` 增加精确地址；请求体不能覆盖该策略，地址末尾 `/` 会被规范化。
 - 自动更新使用 Sparkle 2：appcast 走 `raw.githubusercontent.com`，DMG 只走 GitHub Release 全量包。
 - 发布物只保留全量 DMG：不再使用特权 Helper、bsdiff、manifest.json、install_helper.sh，也不再把 Sparkle 下载入口指向内网后端。旧安装可先运行 `scripts/remove_legacy_helper.sh --check`，再使用 `sudo scripts/remove_legacy_helper.sh --remove` 清理。
 

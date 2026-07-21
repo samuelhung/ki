@@ -14,6 +14,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from . import credential_store
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_AI_MODEL = "deepseek-v4-pro-max"
@@ -29,7 +31,6 @@ def _defaults() -> dict:
         "general": {
             "model": DEFAULT_AI_MODEL,
             "base_url": DEFAULT_AI_BASE_URL,
-            "api_key": "",
             "disk_cache": True,
             "default_temperature": 0.3,
             "default_max_tokens": 2048,
@@ -83,6 +84,7 @@ def load_config(*, persist_normalization: bool = True) -> dict[str, Any]:
 def _load_config_unlocked(*, persist_normalization: bool = True) -> dict[str, Any]:
     global _config
     if CONFIG_PATH.exists():
+        os.chmod(CONFIG_PATH, 0o600)
         try:
             raw = json.loads(CONFIG_PATH.read_text("utf-8"))
             raw, structure_changed = _normalize_persisted_config(raw)
@@ -91,12 +93,23 @@ def _load_config_unlocked(*, persist_normalization: bool = True) -> dict[str, An
             _config = _defaults()
             return _config
 
-        _config = _deep_merge(_defaults(), raw)
+        general = raw.get("general")
+        had_legacy_key = isinstance(general, dict) and "api_key" in general
+        raw, legacy_key = _scrub_api_key(raw)
+        if legacy_key and persist_normalization:
+            credential_store.set_api_key(legacy_key)
+        if had_legacy_key and persist_normalization:
+            structure_changed = True
+
+        active = _deep_merge(_defaults(), raw)
         if structure_changed and persist_normalization:
             try:
                 _write_config(raw)
             except Exception:
+                if legacy_key:
+                    raise
                 logger.exception("Failed to persist normalized system config at %s", CONFIG_PATH)
+        _config = active
         logger.info("Loaded system config from %s", CONFIG_PATH)
     else:
         _config = _defaults()
@@ -123,9 +136,11 @@ def save_config(config: dict | None = None) -> None:
 def _save_config_unlocked(config: dict | None = None) -> None:
     global _config
     current, _ = _normalize_persisted_config(_config)
+    current, _ = _scrub_api_key(current)
     active = _deep_merge(_defaults(), current)
     if config is not None:
         incoming, _ = _normalize_persisted_config(config)
+        incoming, _ = _scrub_api_key(incoming)
         active = _deep_merge(active, incoming)
     _write_config(active)
     _config = active
@@ -133,6 +148,7 @@ def _save_config_unlocked(config: dict | None = None) -> None:
 
 def _write_config(config: dict) -> None:
     """Atomically write a config payload without changing in-memory state."""
+    config, _ = _scrub_api_key(config)
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     temp_path: Path | None = None
     try:
@@ -145,11 +161,14 @@ def _write_config(config: dict) -> None:
             delete=False,
         ) as temp_file:
             temp_path = Path(temp_file.name)
+            os.fchmod(temp_file.fileno(), 0o600)
             json.dump(config, temp_file, ensure_ascii=False, indent=2)
             temp_file.flush()
             os.fsync(temp_file.fileno())
+        os.chmod(temp_path, 0o600)
         os.replace(temp_path, CONFIG_PATH)
         temp_path = None
+        os.chmod(CONFIG_PATH, 0o600)
         _fsync_parent_directory()
         logger.info("Saved system config to %s", CONFIG_PATH)
     finally:
@@ -191,7 +210,6 @@ def get_module_config(module: str, task: str) -> dict:
         "disk_cache": g.get("disk_cache", True),
         "temperature": t.get("temperature", g.get("default_temperature", 0.3)),
         "max_tokens": t.get("max_tokens", g.get("default_max_tokens", 2048)),
-        "api_key": g.get("api_key", ""),
     }
 
 
@@ -235,6 +253,18 @@ def _normalize_persisted_config(raw: dict) -> tuple[dict, bool]:
         normalized.pop("briefing")
 
     return normalized, normalized != raw
+
+
+def _scrub_api_key(raw: dict) -> tuple[dict, str]:
+    """Return a copy without the retired plaintext credential field."""
+    scrubbed = dict(raw)
+    general = scrubbed.get("general")
+    if not isinstance(general, dict) or "api_key" not in general:
+        return scrubbed, ""
+    clean_general = dict(general)
+    legacy_key = clean_general.pop("api_key")
+    scrubbed["general"] = clean_general
+    return scrubbed, legacy_key if isinstance(legacy_key, str) else ""
 
 
 # Import-time consumers get active in-memory defaults without mutating legacy files.

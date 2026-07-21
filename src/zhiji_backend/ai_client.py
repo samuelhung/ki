@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import time
 import urllib.request
 from typing import Any
 
 from .config_manager import DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, get_config
+from .credential_store import resolve_api_key
 from .usage_writer import UsageRecord, enqueue_usage
 
 logger = logging.getLogger(__name__)
@@ -69,14 +69,9 @@ def _record_usage(
         )
 
 
-def _resolve_api_key(general: dict[str, Any]) -> str:
-    """Resolve API key with generic names first, keeping legacy env compatibility."""
-    return (
-        os.getenv("AI_API_KEY", "")
-        or os.getenv("OPENAI_API_KEY", "")
-        or os.getenv("DEEPSEEK_API_KEY", "")
-        or general.get("api_key", "")
-    )
+def _resolve_api_key(_general: dict[str, Any] | None = None) -> str:
+    """Resolve API key exclusively from the server environment."""
+    return resolve_api_key()
 
 
 def chat(

@@ -205,14 +205,17 @@ def cmd_init(args: argparse.Namespace) -> None:
         print(f"  已创建默认配置: {env_path}")
     else:
         print(f"  .env 已存在，跳过: {env_path}")
+    os.chmod(env_path, 0o600)
 
     # 创建默认系统配置（如果不存在）
     if not CONFIG_PATH.exists():
-        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        CONFIG_PATH.write_text('{"version": "1.0", "sources": []}', encoding="utf-8")
+        from zhiji_backend.config_manager import save_config
+
+        save_config()
         print(f"  已创建默认系统配置: {CONFIG_PATH}")
     else:
         print(f"  系统配置已存在，跳过: {CONFIG_PATH}")
+    os.chmod(CONFIG_PATH, 0o600)
 
     print("\n✅ 初始化完成。运行 zhiji serve 启动服务。")
 
