@@ -68,7 +68,7 @@ class TestFileIngest:
     @patch("zhiji_backend.routes.ingest_routes._process_ingest")
     def test_accepts_audio_file_upload(self, mock_process):
         """POST /api/ingest/file with type=audio_file creates an event."""
-        file_content = b"fake audio data"
+        file_content = b"RIFF\x10\x00\x00\x00WAVEfmt " + b"x" * 8
         response = client.post(
             "/api/ingest/file",
             data={"type": "audio_file", "title": "录音", "topic": "meeting"},
@@ -84,11 +84,32 @@ class TestFileIngest:
         response = client.post(
             "/api/ingest/file",
             data={"type": "video_file", "title": "视频", "topic": "test"},
-            files={"file": ("clip.mp4", b"fake video data", "video/mp4")},
+            files={"file": ("clip.mp4", b"\x00\x00\x00\x18ftypisom" + b"x" * 16, "video/mp4")},
         )
 
         assert response.status_code == 200
         assert response.json()["type"] == "video_file"
+
+    @patch("zhiji_backend.routes.ingest_routes._process_ingest")
+    def test_rejects_spoofed_extension_with_422(self, mock_process):
+        response = client.post(
+            "/api/ingest/file",
+            files={"file": ("clip.mp4", b"not an mp4", "video/mp4")},
+        )
+
+        assert response.status_code == 422
+        mock_process.assert_not_called()
+
+    @patch("zhiji_backend.routes.ingest_routes.max_bytes_for_kind", return_value=4)
+    @patch("zhiji_backend.routes.ingest_routes._process_ingest")
+    def test_rejects_actual_upload_bytes_over_limit_with_413(self, mock_process, mock_limit):
+        response = client.post(
+            "/api/ingest/file",
+            files={"file": ("notes.txt", b"12345", "text/plain")},
+        )
+
+        assert response.status_code == 413
+        mock_process.assert_not_called()
 
 
 class TestIngestStatus:

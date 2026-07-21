@@ -13,6 +13,12 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from ..db import connect, init_db
+from ..security.file_intake import (
+    kind_for_filename,
+    max_bytes_for_kind,
+    stream_upload_to_temp,
+    validate_file,
+)
 from ..task_queue import enqueue as enqueue_task
 
 logger = logging.getLogger(__name__)
@@ -87,15 +93,20 @@ def ingest_file(
                    f"音频 {', '.join(sorted(_FILE_TYPE_MAP['audio_file']))}，"
                    f"文档 {', '.join(sorted(_FILE_TYPE_MAP['document']))}",
         )
-    suffix = Path(file.filename or "upload.bin").suffix or ".bin"
-    tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+    filename = file.filename or "upload.bin"
+    kind = kind_for_filename(filename)
+    if kind is None:
+        raise HTTPException(status_code=422, detail="文件内容与扩展名不匹配或文件已损坏")
+    tmp_path = stream_upload_to_temp(
+        file,
+        max_bytes=max_bytes_for_kind(kind),
+        suffix=Path(filename).suffix,
+    )
     try:
-        tmp.write(file.file.read())
-        tmp.close()
-        return _create_event(ingest_type, Path(tmp.name), topic, title=title)
-    except Exception:
-        Path(tmp.name).unlink(missing_ok=True)
-        raise
+        validate_file(tmp_path, filename=filename)
+        return _create_event(ingest_type, tmp_path, topic, title=title)
+    finally:
+        tmp_path.unlink(missing_ok=True)
 
 
 # ── Queue endpoint ──

@@ -6,8 +6,11 @@ import json
 import re
 from html import unescape
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import requests  # type: ignore
+
+from ..security.file_intake import REMOTE_VIDEO_MAX_BYTES
 
 MOBILE_UA = (
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) "
@@ -141,22 +144,57 @@ def parse_share_text(share_text: str) -> dict:
     }
 
 
-def _download_whole(url: str, dest: Path, headers: dict, s: requests.Session) -> bool:
+def _declared_size(response) -> int | None:
+    headers = getattr(response, "headers", None)
+    value = headers.get("Content-Length") if hasattr(headers, "get") else None
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _download_whole(
+    url: str,
+    dest: Path,
+    headers: dict,
+    s: requests.Session,
+    *,
+    max_bytes: int,
+) -> bool:
     """Fallback: download the whole file in a single GET without Range headers.
     Returns True on success, False on failure.
     """
     try:
         resp = s.get(url, headers=headers, stream=True, timeout=(30, 600))
         resp.raise_for_status()
+        declared = _declared_size(resp)
+        if declared is not None and declared > max_bytes:
+            raise ValueError("远程视频大小超过限制")
+        downloaded = 0
         with open(dest, "wb") as f:
             for chunk in resp.iter_content(chunk_size=65536):
+                if not chunk:
+                    continue
+                downloaded += len(chunk)
+                if downloaded > max_bytes:
+                    raise ValueError("远程视频大小超过限制")
                 f.write(chunk)
         return True
+    except ValueError:
+        dest.unlink(missing_ok=True)
+        raise
     except Exception:
+        dest.unlink(missing_ok=True)
         return False
 
 
-def download_video(url: str, dest: Path, session: requests.Session | None = None) -> Path:
+def download_video(
+    url: str,
+    dest: Path,
+    session: requests.Session | None = None,
+    *,
+    max_bytes: int = REMOTE_VIDEO_MAX_BYTES,
+) -> Path:
     """Download a video from url and save to dest path.
 
     Uses HTTP Range requests to download in 1 MB segments,
@@ -165,6 +203,9 @@ def download_video(url: str, dest: Path, session: requests.Session | None = None
     If session is provided, reuses its cookies (from parse_share_text).
     Returns dest path on success.
     """
+
+    if urlsplit(url).scheme.lower() not in {"http", "https"}:
+        raise ValueError("不支持的远程视频协议")
 
     headers = {
         "User-Agent": MOBILE_UA,
@@ -182,47 +223,59 @@ def download_video(url: str, dest: Path, session: requests.Session | None = None
 
     dest.parent.mkdir(parents=True, exist_ok=True)
 
-    # If total_size is unknown or server rejects Range, skip straight to whole-file
-    if total_size == 0 or not range_supported:
-        if _download_whole(url, dest, headers, s):
-            return dest
-        # Fall through to segmented — maybe HEAD lied
-        total_size = 0
+    try:
+        # If total_size is unknown or server rejects Range, skip straight to whole-file
+        if total_size == 0 or not range_supported:
+            if _download_whole(url, dest, headers, s, max_bytes=max_bytes):
+                return dest
+            # Fall through to segmented — maybe the direct request was transient.
+            total_size = 0
 
-    SEGMENT = 1 * 1024 * 1024  # 1 MB per segment
-    downloaded = 0
-    range_rejected = False
+        segment_size = 1 * 1024 * 1024
+        downloaded = 0
+        range_rejected = False
 
-    with open(dest, "wb") as f:
-        while True:
-            if total_size > 0 and downloaded >= total_size:
-                break
+        with open(dest, "wb") as f:
+            while True:
+                if total_size > 0 and downloaded >= total_size:
+                    break
 
-            range_start = downloaded
-            range_end = (downloaded + SEGMENT - 1) if total_size == 0 else min(downloaded + SEGMENT, total_size - 1)
-            seg_headers = {**headers, "Range": f"bytes={range_start}-{range_end}"}
+                range_start = downloaded
+                range_end = (
+                    downloaded + segment_size - 1
+                    if total_size == 0
+                    else min(downloaded + segment_size, total_size - 1)
+                )
+                seg_headers = {**headers, "Range": f"bytes={range_start}-{range_end}"}
+                seg = s.get(url, headers=seg_headers, stream=True, timeout=(30, 120))
+                if seg.status_code not in (200, 206):
+                    range_rejected = True
+                else:
+                    declared = _declared_size(seg)
+                    if declared is not None and declared > max_bytes:
+                        raise ValueError("远程视频大小超过限制")
+                    seg_len = 0
+                    for chunk in seg.iter_content(chunk_size=65536):
+                        if not chunk:
+                            continue
+                        seg_len += len(chunk)
+                        downloaded += len(chunk)
+                        if downloaded > max_bytes:
+                            raise ValueError("远程视频大小超过限制")
+                        f.write(chunk)
 
-            # One-shot: if Range fails, fall back to whole-file immediately
-            seg = s.get(url, headers=seg_headers, stream=True, timeout=(30, 120))
-            if seg.status_code not in (200, 206):
-                # CDN rejects Range → fall back to whole-file download
-                range_rejected = True
-            else:
-                seg_len = 0
-                for chunk in seg.iter_content(chunk_size=65536):
-                    f.write(chunk)
-                    seg_len += len(chunk)
-                downloaded += seg_len
+                if range_rejected:
+                    f.close()
+                    if _download_whole(url, dest, headers, s, max_bytes=max_bytes):
+                        return dest
+                    raise RuntimeError("Whole-file fallback download failed")
 
-            if range_rejected:
-                # Close current file handle and re-download whole
-                f.close()
-                if _download_whole(url, dest, headers, s):
-                    return dest
-                raise RuntimeError("Whole-file fallback download failed")
+                if seg.status_code == 200:
+                    break
+                if total_size == 0 and seg_len < segment_size * 0.9:
+                    break
 
-            # When no total_size hint, stop after empty segment
-            if total_size == 0 and seg_len < SEGMENT * 0.9:
-                break
-
-    return dest
+        return dest
+    except BaseException:
+        dest.unlink(missing_ok=True)
+        raise

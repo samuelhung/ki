@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -23,17 +24,32 @@ def extract_audio(video_path: Path, dest_audio: Path) -> Path:
     if not video_path.exists():
         raise FileNotFoundError(f"Video file not found: {video_path}")
 
-    subprocess.run(
-        [
-            "ffmpeg", "-y",
-            "-i", str(video_path),
-            "-vn",                # no video
-            "-acodec", "pcm_s16le",
-            "-ar", "16000",       # 16kHz sample rate
-            "-ac", "1",           # mono
-            str(dest_audio),
-        ],
-        check=True,
-        capture_output=True,
-    )
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise RuntimeError("ffmpeg executable not found")
+
+    try:
+        subprocess.run(
+            [
+                ffmpeg,
+                "-nostdin",
+                "-hide_banner",
+                "-loglevel", "error",
+                "-y",
+                "-probesize", "10M",
+                "-analyzeduration", "10M",
+                "-protocol_whitelist", "file,pipe",
+                "-i", str(video_path),
+                "-vn",
+                "-acodec", "pcm_s16le",
+                "-ar", "16000",
+                "-ac", "1",
+                str(dest_audio),
+            ],
+            check=True,
+            capture_output=True,
+        )
+    except BaseException:
+        dest_audio.unlink(missing_ok=True)
+        raise
     return dest_audio

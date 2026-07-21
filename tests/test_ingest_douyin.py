@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from collections import UserDict
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
@@ -182,3 +183,73 @@ class TestDownloadVideo:
         assert result == dest
         assert dest.exists()
         assert dest.read_bytes() == b"fake-video-data"
+
+    @patch("zhiji_backend.ingest.douyin.requests")
+    def test_rejects_content_length_over_limit_and_removes_partial(self, mock_requests, tmp_path: Path):
+        resp = MagicMock()
+        resp.headers = {"Content-Length": "6"}
+        resp.raise_for_status = lambda: None
+        mock_requests.Session.return_value.get.return_value = resp
+        dest = tmp_path / "large.mp4"
+
+        with pytest.raises(ValueError, match="大小"):
+            download_video("https://example.com/video.mp4", dest, max_bytes=5)
+
+        assert not dest.exists()
+
+    @patch("zhiji_backend.ingest.douyin.requests")
+    def test_rejects_actual_bytes_over_limit_and_removes_partial(self, mock_requests, tmp_path: Path):
+        resp = MagicMock()
+        resp.headers = {}
+        resp.raise_for_status = lambda: None
+        resp.iter_content = lambda chunk_size: [b"abc", b"def"]
+        mock_requests.Session.return_value.get.return_value = resp
+        dest = tmp_path / "large.mp4"
+
+        with pytest.raises(ValueError, match="大小"):
+            download_video("https://example.com/video.mp4", dest, max_bytes=5)
+
+        assert not dest.exists()
+
+    @patch("zhiji_backend.ingest.douyin.requests")
+    def test_range_fallback_remains_bounded(self, mock_requests, tmp_path: Path):
+        range_resp = MagicMock(status_code=206)
+        range_resp.headers = {"Content-Length": "3"}
+        range_resp.iter_content = lambda chunk_size: [b"abc"]
+        session = mock_requests.Session.return_value
+        session.get.side_effect = [OSError("whole failed"), range_resp]
+        dest = tmp_path / "fallback.mp4"
+
+        result = download_video("https://example.com/video.mp4", dest, max_bytes=3)
+
+        assert result == dest
+        assert dest.read_bytes() == b"abc"
+
+    @patch("zhiji_backend.ingest.douyin.requests")
+    def test_range_fallback_stops_when_server_ignores_range(self, mock_requests, tmp_path: Path):
+        whole = b"x" * (1024 * 1024)
+        range_resp = MagicMock(status_code=200)
+        range_resp.headers = {"Content-Length": str(len(whole))}
+        range_resp.iter_content = lambda chunk_size: [whole]
+        session = mock_requests.Session.return_value
+        session.get.side_effect = [OSError("whole failed"), range_resp]
+        dest = tmp_path / "fallback.mp4"
+
+        download_video("https://example.com/video.mp4", dest, max_bytes=len(whole))
+
+        assert dest.read_bytes() == whole
+        assert session.get.call_count == 2
+
+    @patch("zhiji_backend.ingest.douyin.requests")
+    def test_content_length_mapping_is_enforced(self, mock_requests, tmp_path: Path):
+        resp = MagicMock()
+        resp.headers = UserDict({"Content-Length": "6"})
+        resp.raise_for_status = lambda: None
+        mock_requests.Session.return_value.get.return_value = resp
+
+        with pytest.raises(ValueError, match="大小"):
+            download_video("https://example.com/video.mp4", tmp_path / "large.mp4", max_bytes=5)
+
+    def test_rejects_non_http_download_protocol(self, tmp_path: Path):
+        with pytest.raises(ValueError, match="协议"):
+            download_video("file:///tmp/video.mp4", tmp_path / "video.mp4", max_bytes=5)

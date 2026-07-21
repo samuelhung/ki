@@ -13,6 +13,14 @@ from pydantic import BaseModel
 
 from ..db import connect, init_db
 from ..paths import STUDY_DATA_DIR
+from ..security.file_intake import (
+    FileKind,
+    OCR_PDF_MAX_BYTES,
+    kind_for_filename,
+    max_bytes_for_kind,
+    stream_upload_to_temp,
+    validate_file,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/study", tags=["study"])
@@ -209,14 +217,23 @@ def upload_and_ocr(
 ):
     """上传 PDF/图片。教材类保留原文件；其他类型 OCR 提取文字。"""
     import base64
-    import tempfile
-
     ext = Path(file.filename or "upload.pdf").suffix.lower()
     if ext not in (".pdf", ".png", ".jpg", ".jpeg", ".webp"):
         raise HTTPException(status_code=400, detail=f"不支持的文件类型: {ext}")
 
-    # 保存文件
-    raw_bytes = file.file.read()
+    filename = file.filename or f"upload{ext}"
+    kind = kind_for_filename(filename)
+    if kind not in {FileKind.DOCUMENT, FileKind.IMAGE}:
+        raise HTTPException(status_code=422, detail="文件内容与扩展名不匹配或文件已损坏")
+    max_bytes = max_bytes_for_kind(kind)
+    if ext == ".pdf" and category != "教材/课本":
+        max_bytes = min(max_bytes, OCR_PDF_MAX_BYTES)
+    tmp_path = stream_upload_to_temp(file, max_bytes=max_bytes, suffix=ext)
+    try:
+        validate_file(tmp_path, filename=filename)
+    except BaseException:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
     # 教材类：直接保存原文件 + 自动创建记录
     if category == "教材/课本":
@@ -226,7 +243,7 @@ def upload_and_ocr(
         raw_dir = material_dir / "raw"
         raw_dir.mkdir(exist_ok=True)
         dest = raw_dir / f"original{ext}"
-        dest.write_bytes(raw_bytes)
+        tmp_path.replace(dest)
 
         init_db()
         with connect() as conn:
@@ -246,12 +263,6 @@ def upload_and_ocr(
             "auto_created": True,
         }
 
-    # 其他类型：OCR 提取文字
-    tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
-    tmp.write(raw_bytes)
-    tmp.close()
-    tmp_path = Path(tmp.name)
-
     try:
         text = ""
         if ext == ".pdf":
@@ -263,7 +274,7 @@ def upload_and_ocr(
                 raise HTTPException(status_code=400, detail=f"PDF 解析失败: {e}")
         else:
             from ..ingest.pdf_ocr import ocr_page
-            b64 = base64.b64encode(raw_bytes).decode()
+            b64 = base64.b64encode(tmp_path.read_bytes()).decode()
             text = ocr_page(b64)
 
         # 存到 data/study/ 下
@@ -397,16 +408,20 @@ def upload_image(
     grade: str = Form(""),
 ):
     """上传题目图片 → OCR → 创建学习资料"""
-    import tempfile
-    suffix = Path(file.filename or "upload.jpg").suffix
-    tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
-    tmp.write(file.file.read())
-    tmp.close()
-    tmp_path = Path(tmp.name)
+    filename = file.filename or "upload.jpg"
+    suffix = Path(filename).suffix.lower()
+    kind = kind_for_filename(filename)
+    if kind is not FileKind.IMAGE:
+        raise HTTPException(status_code=422, detail="文件内容与扩展名不匹配或文件已损坏")
+    tmp_path = stream_upload_to_temp(
+        file,
+        max_bytes=max_bytes_for_kind(kind),
+        suffix=suffix,
+    )
 
     try:
-        from ..study.pipeline import ocr_image
-        raw_content = ocr_image(tmp_path)
+        validate_file(tmp_path, filename=filename)
+        raw_content = _ocr_image_path(tmp_path)
         if not raw_content:
             raise HTTPException(status_code=400, detail="OCR 未提取到文字，请确认图片清晰")
     finally:
@@ -421,6 +436,14 @@ def upload_image(
         grade=grade,
         source_type="photo",
     ))
+
+
+def _ocr_image_path(path: Path) -> str:
+    import base64
+
+    from ..ingest.pdf_ocr import ocr_page
+
+    return ocr_page(base64.b64encode(path.read_bytes()).decode("ascii"))
 
 
 # ── 错题本列表 ──

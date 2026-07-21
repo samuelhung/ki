@@ -19,6 +19,8 @@ import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
+from ..security.file_intake import EpubLimits, validate_epub
+
 logger = logging.getLogger(__name__)
 
 # EPUB namespace map
@@ -149,9 +151,15 @@ def _find_dc(root: ET.Element, tag_suffix: str) -> ET.Element | None:
     return None
 
 
-def _extract_chapters(zf: zipfile.ZipFile, chapter_paths: list[str]) -> str:
+def _extract_chapters(
+    zf: zipfile.ZipFile,
+    chapter_paths: list[str],
+    *,
+    max_text_bytes: int = EpubLimits().max_text,
+) -> str:
     """Read and strip HTML from each chapter, returning concatenated text."""
     parts: list[str] = []
+    text_bytes = 0
     for i, cpath in enumerate(chapter_paths, 1):
         try:
             html = zf.read(cpath).decode("utf-8", errors="replace")
@@ -160,7 +168,11 @@ def _extract_chapters(zf: zipfile.ZipFile, chapter_paths: list[str]) -> str:
             continue
         text = _strip_html(html)
         if text.strip():
-            parts.append(f"--- 第 {i} 章 ---\n{text}")
+            part = f"--- 第 {i} 章 ---\n{text}"
+            text_bytes += len(part.encode("utf-8")) + (2 if parts else 0)
+            if text_bytes > max_text_bytes:
+                raise RuntimeError("EPUB 提取文字大小超过限制")
+            parts.append(part)
     return "\n\n".join(parts)
 
 
@@ -169,6 +181,7 @@ def process_epub(path: Path, *, title: str = "") -> dict:
 
     Returns dict with keys: title, topic, text
     """
+    validate_epub(path)
     try:
         zf = zipfile.ZipFile(str(path), "r")
     except zipfile.BadZipFile:
