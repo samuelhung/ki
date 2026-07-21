@@ -1,4 +1,5 @@
 import asyncio
+import email.utils
 import os
 
 import pytest
@@ -237,6 +238,9 @@ def test_if_range_controls_partial_or_full_response_and_closes_fd(tmp_path, monk
     initial = client.get("/releases/zhiji.dmg")
     etag = initial.headers["etag"]
     last_modified = initial.headers["last-modified"]
+    modified_second = int(email.utils.parsedate_to_datetime(last_modified).timestamp())
+    past_modified = email.utils.formatdate(modified_second - 1, usegmt=True)
+    future_modified = email.utils.formatdate(modified_second + 1, usegmt=True)
     _assert_fd_closed(captured_fds.pop())
 
     cases = [
@@ -244,7 +248,8 @@ def test_if_range_controls_partial_or_full_response_and_closes_fd(tmp_path, monk
         (f"W/{etag}", 200, b"0123456789"),
         ('"different"', 200, b"0123456789"),
         (last_modified, 206, b"2345"),
-        ("Thu, 01 Jan 1970 00:00:00 GMT", 200, b"0123456789"),
+        (past_modified, 200, b"0123456789"),
+        (future_modified, 200, b"0123456789"),
         ("not-a-date", 200, b"0123456789"),
     ]
     for if_range, status, body in cases:

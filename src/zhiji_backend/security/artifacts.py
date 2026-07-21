@@ -171,7 +171,7 @@ def _if_range_matches(value: str, *, etag: str, modified_at: float) -> bool:
     if candidate.startswith('"'):
         return candidate == etag
     timestamp = _http_date_timestamp(candidate)
-    return timestamp is not None and int(modified_at) <= int(timestamp)
+    return timestamp is not None and int(modified_at) == int(timestamp)
 
 
 class PinnedFileResponse(Response):
