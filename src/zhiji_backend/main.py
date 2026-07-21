@@ -189,13 +189,6 @@ class TrustedHostMiddleware(StarletteTrustedHostMiddleware):
             response = PlainTextResponse("Invalid host header", status_code=400)
             await response(scope, receive, send)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=_cors_origins(),
-    allow_credentials=False,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-API-Key"],
-)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=_allowed_hosts())
 
 # ---- 前端静态文件服务 ----
@@ -277,6 +270,33 @@ async def spa_fallback(request: Request, call_next):
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
     return response
+
+
+# Added last so CORS wraps authentication and decorates early 401 responses.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins(),
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "X-API-Key",
+        "Range",
+        "If-Range",
+        "If-None-Match",
+        "If-Modified-Since",
+        "If-Unmodified-Since",
+    ],
+    expose_headers=[
+        "Accept-Ranges",
+        "Content-Length",
+        "Content-Range",
+        "Content-Type",
+        "ETag",
+        "Last-Modified",
+    ],
+)
 
 
 # ---- Register route modules ----

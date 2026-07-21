@@ -9,6 +9,10 @@ const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 const systemHealth = readFileSync(new URL('./components/cinematic-system/useSystemHealth.ts', import.meta.url), 'utf8');
 const mediaHookUrl = new URL('./components/ingest/useAuthenticatedMediaUrl.ts', import.meta.url);
 const mediaHook = existsSync(mediaHookUrl) ? readFileSync(mediaHookUrl, 'utf8') : '';
+const mediaTransportUrl = new URL('./mediaTransport.ts', import.meta.url);
+const mediaTransport = existsSync(mediaTransportUrl) ? readFileSync(mediaTransportUrl, 'utf8') : '';
+const mediaWorkerUrl = new URL('../public/ki-media-sw.js', import.meta.url);
+const mediaWorker = existsSync(mediaWorkerUrl) ? readFileSync(mediaWorkerUrl, 'utf8') : '';
 const eventDetail = readFileSync(new URL('./pages/EventDetailPage.tsx', import.meta.url), 'utf8');
 const ingestDetail = readFileSync(new URL('./pages/panels/IngestDetailPanel.tsx', import.meta.url), 'utf8');
 const systemConnection = readFileSync(new URL('./components/cinematic-system/useSystemConnection.ts', import.meta.url), 'utf8');
@@ -45,14 +49,28 @@ test('vite injects the remote token only in the server-side proxy', () => {
   assert.doesNotMatch(api, /KI_REMOTE_API_TOKEN|import\.meta\.env\.[A-Z_]*TOKEN/);
 });
 
-test('protected ingest media uses authenticated object URLs in every native video consumer', () => {
-  assert.match(mediaHook, /loadAuthenticatedObjectUrl/);
-  assert.match(mediaHook, /URL\.revokeObjectURL|asset\.revoke\(\)/);
+test('protected ingest media uses the streaming service-worker route in every native video consumer', () => {
+  assert.match(mediaHook, /synchronizeMediaTransport/);
+  assert.match(mediaTransport, /mediaTransportUrl/);
+  assert.match(mediaHook, /AbortController|signal/);
+  assert.match(mediaTransport, /navigator\.serviceWorker[\s\S]*?\.register\('\/ki-media-sw\.js'/);
+  assert.match(mediaTransport, /postMessage/);
+  assert.match(mediaWorker, /request\.headers/);
+  assert.match(mediaWorker, /fetch\(upstreamUrl/);
+  assert.doesNotMatch(mediaHook + mediaTransport + mediaWorker, /createObjectURL|response\.blob\(|caches\.(?:open|match)|cache\.put/);
   assert.match(eventDetail, /useAuthenticatedMediaUrl\(toMediaPath\(detail\?\.video_path\)\)/);
   assert.match(ingestDetail, /useAuthenticatedMediaUrl\(toMediaPath\(detail\?\.video_path\)\)/);
   assert.doesNotMatch(eventDetail, /<video[^>]*src=\{toMediaUrl/s);
   assert.doesNotMatch(ingestDetail, /<video[^>]*src=\{toMediaUrl/s);
   assert.doesNotMatch(eventDetail + ingestDetail, /[?&](?:token|api_key)=/i);
+});
+
+test('connection setters notify the media transport and the app owns a cleaned-up synchronizer', () => {
+  assert.match(api, /notifyMediaTransportConnectionChanged\(\)/);
+  assert.match(mediaHook, /addEventListener\(MEDIA_CONNECTION_CHANGE_EVENT/);
+  assert.match(mediaHook, /removeEventListener\(MEDIA_CONNECTION_CHANGE_EVENT/);
+  assert.match(mediaHook, /controller\.abort\(\)/);
+  assert.match(app, /useMediaTransportConnection\(\)/);
 });
 
 test('health polling and connection tests use bounded shared requests', () => {

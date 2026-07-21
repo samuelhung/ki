@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const api = await import('./apiFetchRuntime.ts');
@@ -79,27 +80,7 @@ test('apiFetch authenticates every protected backend path', async () => {
   assert.equal(harness.prepared.length, 3);
 });
 
-test('authenticated media blobs expose an idempotent object URL cleanup', async () => {
-  assert.equal(typeof api.loadAuthenticatedObjectUrl, 'function');
-  const revoked = [];
-  const asset = await api.loadAuthenticatedObjectUrl(
-    '/ingest/videos/example.mp4',
-    async () => new Response(new Blob(['video-bytes'], { type: 'video/mp4' })),
-    {
-      createObjectURL: (blob) => `blob:test-${blob.type}`,
-      revokeObjectURL: (url) => revoked.push(url),
-    },
-  );
-
-  assert.equal(asset.url, 'blob:test-video/mp4');
-  asset.revoke();
-  asset.revoke();
-  assert.deepEqual(revoked, ['blob:test-video/mp4']);
-});
-
-test('object URL loading is limited to protected media that needs a browser token', () => {
-  assert.equal(typeof api.shouldLoadAuthenticatedObjectUrl, 'function');
-  assert.equal(api.shouldLoadAuthenticatedObjectUrl('/ingest/videos/example.mp4', ''), false);
-  assert.equal(api.shouldLoadAuthenticatedObjectUrl('/ingest/videos/example.mp4', 'secret-token'), true);
-  assert.equal(api.shouldLoadAuthenticatedObjectUrl('https://cdn.example/video.mp4', 'secret-token'), false);
+test('api runtime does not buffer protected media into whole-file blobs', () => {
+  assert.equal(api.loadAuthenticatedObjectUrl, undefined);
+  assert.doesNotMatch(readFileSync(new URL('./apiFetchRuntime.ts', import.meta.url), 'utf8'), /response\.blob\(|createObjectURL/);
 });

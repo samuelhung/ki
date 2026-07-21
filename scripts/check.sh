@@ -1264,7 +1264,7 @@ for shell_test in tests/*.sh; do
 done
 
 echo "== Frontend unit tests =="
-(cd app/frontend && npm run test:cinematic-scene && npm run test:cinematic-ingest)
+(cd app/frontend && npm run test:cinematic-scene && npm run test:cinematic-ingest && npm run test:media-transport)
 
 echo "== Frontend typecheck =="
 (cd app/frontend && npm run typecheck)

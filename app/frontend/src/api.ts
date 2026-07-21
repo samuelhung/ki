@@ -1,5 +1,6 @@
 import { fetchWithPolicy, type ApiRequestInit } from './apiRequestPolicy';
 import { createApiFetch } from './apiFetchRuntime';
+import { notifyMediaTransportConnectionChanged } from './mediaTransport';
 
 const origin = window.location.origin;
 const isViteDev = import.meta.env.DEV;
@@ -23,6 +24,7 @@ export function setBackendUrl(url: string): void {
       localStorage.removeItem('ki_backend_url');
     }
   } catch { /* localStorage blocked */ }
+  notifyMediaTransportConnectionChanged();
 }
 
 export function getApiToken(): string {
@@ -38,6 +40,7 @@ export function setApiToken(token: string): void {
     if (value) sessionStorage.setItem('ki_api_token', value);
     else sessionStorage.removeItem('ki_api_token');
   } catch { /* sessionStorage blocked */ }
+  notifyMediaTransportConnectionChanged();
 }
 
 function withAuth(init?: ApiRequestInit): ApiRequestInit | undefined {

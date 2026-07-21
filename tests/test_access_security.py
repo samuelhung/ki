@@ -42,6 +42,20 @@ def test_remote_auth_accepts_only_matching_bearer_or_api_key(monkeypatch, header
     assert response.status_code == expected_status
 
 
+def test_allowed_cross_origin_auth_failure_includes_cors_headers(monkeypatch):
+    monkeypatch.setenv("KI_API_TOKEN", "secret-token")
+    client = TestClient(app, client=("10.8.0.2", 50000))
+
+    response = client.get(
+        "/api/dashboard/summary",
+        headers={"Origin": "http://localhost:5173"},
+    )
+
+    assert response.status_code == 401
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert response.headers["vary"] == "Origin"
+
+
 def test_remote_auth_uses_constant_time_comparison(monkeypatch):
     calls = []
 
@@ -129,7 +143,24 @@ def test_trusted_hosts_and_cors_are_narrow_and_have_desktop_defaults():
         "https://tauri.localhost",
     ]
     assert cors["allow_methods"] == ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
-    assert cors["allow_headers"] == ["Authorization", "Content-Type", "X-API-Key"]
+    assert cors["allow_headers"] == [
+        "Authorization",
+        "Content-Type",
+        "X-API-Key",
+        "Range",
+        "If-Range",
+        "If-None-Match",
+        "If-Modified-Since",
+        "If-Unmodified-Since",
+    ]
+    assert cors["expose_headers"] == [
+        "Accept-Ranges",
+        "Content-Length",
+        "Content-Range",
+        "Content-Type",
+        "ETag",
+        "Last-Modified",
+    ]
 
 
 def test_trusted_host_accepts_ipv6_loopback_with_port():
