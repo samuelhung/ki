@@ -142,7 +142,15 @@ def test_trusted_hosts_and_cors_are_narrow_and_have_desktop_defaults():
         "tauri://localhost",
         "https://tauri.localhost",
     ]
-    assert cors["allow_methods"] == ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+    assert cors["allow_methods"] == [
+        "GET",
+        "HEAD",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "OPTIONS",
+    ]
     assert cors["allow_headers"] == [
         "Authorization",
         "Content-Type",
@@ -161,6 +169,24 @@ def test_trusted_hosts_and_cors_are_narrow_and_have_desktop_defaults():
         "ETag",
         "Last-Modified",
     ]
+
+
+def test_allowed_origin_head_preflight_accepts_authorization_header():
+    client = TestClient(app, client=("10.8.0.2", 50000))
+
+    response = client.options(
+        "/ingest/videos/evt-1.mp4",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "HEAD",
+            "Access-Control-Request-Headers": "Authorization",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert "HEAD" in response.headers["access-control-allow-methods"].split(", ")
+    assert "Authorization" in response.headers["access-control-allow-headers"]
 
 
 def test_trusted_host_accepts_ipv6_loopback_with_port():
