@@ -1182,6 +1182,41 @@ def test_safe_pending_unlink_refuses_paths_outside_pending(tmp_path, monkeypatch
     assert outside.exists()
 
 
+def test_enqueue_db_failure_cleans_large_pending_copy_and_processing_event(tmp_path, monkeypatch):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    monkeypatch.setattr(task_queue, "PENDING_DIR", tmp_path / "pending")
+    init_db()
+    event_id = "evt-enqueue-failure"
+    with connect() as conn:
+        conn.execute(
+            """INSERT OR IGNORE INTO sources (id, name, type, url, topic, priority)
+               VALUES ('user-upload', '用户上传', 'manual', '', 'test', 'medium')"""
+        )
+        conn.execute(
+            """INSERT INTO events (id, source_id, title, url, topic,
+               importance, actionability, decision, status, content_type)
+               VALUES (?, 'user-upload', '待处理', '', 'test', 4, 4, 'digest', 'processing', 'event')""",
+            (event_id,),
+        )
+        conn.execute(
+            """CREATE TRIGGER fail_enqueue BEFORE INSERT ON ingest_tasks
+               BEGIN SELECT RAISE(FAIL, 'raw database failure'); END"""
+        )
+    source = tmp_path / "large.mp4"
+    source.write_bytes(b"x" * (2 * 1024 * 1024))
+
+    with pytest.raises(task_queue.EnqueueError, match="加入处理队列") as exc_info:
+        task_queue.enqueue(event_id, "video_file", source, "test", "待处理")
+
+    assert "raw database failure" not in str(exc_info.value)
+    assert list((tmp_path / "pending").glob("*")) == []
+    with connect() as conn:
+        event = conn.execute("SELECT status FROM events WHERE id = ?", (event_id,)).fetchone()
+        task = conn.execute("SELECT id FROM ingest_tasks WHERE event_id = ?", (event_id,)).fetchone()
+    assert event is None
+    assert task is None
+
+
 def test_start_worker_does_not_start_duplicate_thread(monkeypatch):
     class _AliveWorker:
         def is_alive(self):

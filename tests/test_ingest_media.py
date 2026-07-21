@@ -9,6 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from zhiji_backend.ingest.media import (
+    FFMPEG_MAX_ALLOC_BYTES,
     FFMPEG_MAX_OUTPUT_BYTES,
     FFMPEG_TIMEOUT_SECONDS,
     extract_audio,
@@ -67,9 +68,16 @@ def test_extract_audio_uses_hardened_ffmpeg_argv(mock_run, mock_which, tmp_path:
     assert argv.index("-protocol_whitelist") < input_index
     assert argv.index("-probesize") < input_index
     assert argv.index("-analyzeduration") < input_index
+    assert argv[argv.index("-max_alloc") + 1] == str(FFMPEG_MAX_ALLOC_BYTES)
+    assert argv.index("-max_alloc") < input_index
+    assert argv[argv.index("-threads") + 1] == "1"
+    assert argv[argv.index("-filter_threads") + 1] == "1"
+    assert argv[argv.index("-filter_complex_threads") + 1] == "1"
     assert argv[argv.index("-fs") + 1] == str(FFMPEG_MAX_OUTPUT_BYTES)
     assert argv.index("-fs") > input_index
     assert mock_run.call_args.kwargs["timeout"] == FFMPEG_TIMEOUT_SECONDS
+    assert mock_run.call_args.kwargs["start_new_session"] is True
+    assert "preexec_fn" not in mock_run.call_args.kwargs
 
 
 @patch("zhiji_backend.ingest.media.shutil.which", return_value="/opt/local/bin/ffmpeg")
@@ -120,3 +128,27 @@ def test_extract_audio_rejects_and_removes_oversized_output(mock_which, tmp_path
             extract_audio(video, dest, timeout_seconds=7, max_output_bytes=4)
 
     assert not dest.exists()
+
+
+def test_extract_audio_uses_linux_prlimit_wrapper_when_available(tmp_path: Path):
+    video = tmp_path / "input.mp4"
+    video.write_bytes(b"video")
+    dest = tmp_path / "output.wav"
+
+    def resolve(name: str):
+        return {"ffmpeg": "/usr/bin/ffmpeg", "prlimit": "/usr/bin/prlimit"}.get(name)
+
+    with patch("zhiji_backend.ingest.media.sys.platform", "linux"):
+        with patch("zhiji_backend.ingest.media.shutil.which", side_effect=resolve):
+            with patch("zhiji_backend.ingest.media.subprocess.run") as run:
+                extract_audio(video, dest)
+
+    argv = run.call_args.args[0]
+    assert argv[:4] == [
+        "/usr/bin/prlimit",
+        "--as=2147483648",
+        "--cpu=300",
+        "--",
+    ]
+    assert argv[4] == "/usr/bin/ffmpeg"
+    assert "preexec_fn" not in run.call_args.kwargs

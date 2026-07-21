@@ -78,6 +78,11 @@ def validate_pdf_safety(
 
 def detect_pdf_type(path: Path) -> str:
     """Return 'text' or 'scan' by sampling first pages."""
+    validate_pdf_safety(
+        path,
+        max_bytes=DOCUMENT_MAX_BYTES,
+        max_pages=OCR_PDF_MAX_PAGES,
+    )
     fitz = _import_pymupdf()
     doc = fitz.open(str(path))
     try:
@@ -94,6 +99,11 @@ def detect_pdf_type(path: Path) -> str:
 
 def extract_text_pdf(path: Path) -> str:
     """Extract full text from a text-based PDF."""
+    validate_pdf_safety(
+        path,
+        max_bytes=DOCUMENT_MAX_BYTES,
+        max_pages=OCR_PDF_MAX_PAGES,
+    )
     fitz = _import_pymupdf()
     doc = fitz.open(str(path))
     try:
@@ -269,7 +279,11 @@ def process_pdf(
 
     Auto-detects text vs scanned and chooses extraction method.
     """
-    validate_pdf_safety(path, max_bytes=DOCUMENT_MAX_BYTES, max_pages=None)
+    validate_pdf_safety(
+        path,
+        max_bytes=DOCUMENT_MAX_BYTES,
+        max_pages=OCR_PDF_MAX_PAGES,
+    )
     pdf_type = detect_pdf_type(path)
     logger.info("PDF type: %s (%s)", pdf_type, path.name)
 

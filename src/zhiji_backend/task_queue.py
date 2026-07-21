@@ -42,6 +42,10 @@ _shutdown_signal_delivery_confirmed = False
 _shutdown_fallback_causation = False
 
 
+class EnqueueError(RuntimeError):
+    """Raised when a task cannot be persisted after compensation."""
+
+
 def _safe_pending_unlink(path_value: str) -> None:
     try:
         pending_root = PENDING_DIR.resolve()
@@ -54,31 +58,54 @@ def _safe_pending_unlink(path_value: str) -> None:
         logger.warning("Failed to delete pending file safely: %s", path_value, exc_info=True)
 
 
+def _compensate_failed_enqueue(event_id: str, task_id: str) -> None:
+    try:
+        with connect() as conn:
+            conn.execute("DELETE FROM ingest_tasks WHERE id = ?", (task_id,))
+            event = conn.execute(
+                "SELECT status FROM events WHERE id = ?", (event_id,)
+            ).fetchone()
+            if event and event["status"] == "processing":
+                surviving_task = conn.execute(
+                    "SELECT 1 FROM ingest_tasks WHERE event_id = ? LIMIT 1",
+                    (event_id,),
+                ).fetchone()
+                if not surviving_task:
+                    conn.execute("DELETE FROM events WHERE id = ?", (event_id,))
+    except Exception:
+        logger.exception("Failed to compensate enqueue failure for event %s", event_id)
+
+
 def enqueue(event_id: str, ingest_type: str, content, topic: str, title: str) -> str:
     """Enqueue an ingest task. Returns the task ID.
 
     For file uploads (content is a Path), the file is copied to a persistent
     pending directory so it survives temp dir cleanup.
     """
-    init_db()
     task_id = f"task-{uuid.uuid4().hex[:12]}"
+    persistent: Path | None = None
+    try:
+        init_db()
+        if isinstance(content, Path):
+            PENDING_DIR.mkdir(parents=True, exist_ok=True)
+            persistent = PENDING_DIR / f"{event_id}{content.suffix}"
+            shutil.copy2(content, persistent)
+            payload = {"content_path": str(persistent), "topic": topic, "title": title}
+        else:
+            payload = {"content_text": str(content), "topic": topic, "title": title}
 
-    if isinstance(content, Path):
-        # File upload — persist to pending dir
-        PENDING_DIR.mkdir(parents=True, exist_ok=True)
-        persistent = PENDING_DIR / f"{event_id}{content.suffix}"
-        shutil.copy2(content, persistent)
-        payload = {"content_path": str(persistent), "topic": topic, "title": title}
-    else:
-        # String content (douyin share text)
-        payload = {"content_text": str(content), "topic": topic, "title": title}
-
-    with connect() as conn:
-        conn.execute(
-            """INSERT INTO ingest_tasks (id, event_id, ingest_type, payload_json)
-               VALUES (?, ?, ?, ?)""",
-            (task_id, event_id, ingest_type, json.dumps(payload, ensure_ascii=False)),
-        )
+        with connect() as conn:
+            conn.execute(
+                """INSERT INTO ingest_tasks (id, event_id, ingest_type, payload_json)
+                   VALUES (?, ?, ?, ?)""",
+                (task_id, event_id, ingest_type, json.dumps(payload, ensure_ascii=False)),
+            )
+    except Exception:
+        logger.exception("Failed to enqueue task for event %s", event_id)
+        if persistent is not None:
+            _safe_pending_unlink(str(persistent))
+        _compensate_failed_enqueue(event_id, task_id)
+        raise EnqueueError("任务无法加入处理队列") from None
     logger.info("Enqueued task %s for event %s (%s)", task_id, event_id, ingest_type)
     return task_id
 

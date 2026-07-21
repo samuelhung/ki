@@ -13,7 +13,16 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app" / "backend"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from zhiji_backend.ingest.douyin import parse_share_text, download_video, extract_first_url
+from zhiji_backend.ingest.douyin import (
+    download_video,
+    extract_first_url,
+    is_trusted_365yg_url,
+    parse_share_text,
+)
+
+
+def public_resolver(host: str, port: int) -> list[str]:
+    return ["93.184.216.34"]
 
 
 class TestExtractFirstUrl:
@@ -167,6 +176,12 @@ class TestParseShareText:
         with pytest.raises(RuntimeError, match="videoInfoRes"):
             parse_share_text("https://v.douyin.com/abc123/")
 
+    def test_365yg_trust_uses_exact_hostname_boundaries(self):
+        assert is_trusted_365yg_url("https://365yg.com/video")
+        assert is_trusted_365yg_url("https://v3.365yg.com/video")
+        assert not is_trusted_365yg_url("https://365yg.com.evil.example/video")
+        assert not is_trusted_365yg_url("https://evil365yg.com/video")
+
 
 class TestDownloadVideo:
     @patch("zhiji_backend.ingest.douyin.requests")
@@ -178,7 +193,7 @@ class TestDownloadVideo:
         mock_requests.Session.return_value.get.return_value = resp
 
         dest = tmp_path / "video.mp4"
-        result = download_video("https://example.com/video.mp4", dest)
+        result = download_video("https://example.com/video.mp4", dest, resolver=public_resolver)
 
         assert result == dest
         assert dest.exists()
@@ -193,7 +208,7 @@ class TestDownloadVideo:
         dest = tmp_path / "large.mp4"
 
         with pytest.raises(ValueError, match="大小"):
-            download_video("https://example.com/video.mp4", dest, max_bytes=5)
+            download_video("https://example.com/video.mp4", dest, max_bytes=5, resolver=public_resolver)
 
         assert not dest.exists()
 
@@ -207,7 +222,7 @@ class TestDownloadVideo:
         dest = tmp_path / "large.mp4"
 
         with pytest.raises(ValueError, match="大小"):
-            download_video("https://example.com/video.mp4", dest, max_bytes=5)
+            download_video("https://example.com/video.mp4", dest, max_bytes=5, resolver=public_resolver)
 
         assert not dest.exists()
 
@@ -220,7 +235,12 @@ class TestDownloadVideo:
         session.get.side_effect = [OSError("whole failed"), range_resp]
         dest = tmp_path / "fallback.mp4"
 
-        result = download_video("https://example.com/video.mp4", dest, max_bytes=3)
+        result = download_video(
+            "https://example.com/video.mp4",
+            dest,
+            max_bytes=3,
+            resolver=public_resolver,
+        )
 
         assert result == dest
         assert dest.read_bytes() == b"abc"
@@ -235,7 +255,12 @@ class TestDownloadVideo:
         session.get.side_effect = [OSError("whole failed"), range_resp]
         dest = tmp_path / "fallback.mp4"
 
-        download_video("https://example.com/video.mp4", dest, max_bytes=len(whole))
+        download_video(
+            "https://example.com/video.mp4",
+            dest,
+            max_bytes=len(whole),
+            resolver=public_resolver,
+        )
 
         assert dest.read_bytes() == whole
         assert session.get.call_count == 2
@@ -248,8 +273,59 @@ class TestDownloadVideo:
         mock_requests.Session.return_value.get.return_value = resp
 
         with pytest.raises(ValueError, match="大小"):
-            download_video("https://example.com/video.mp4", tmp_path / "large.mp4", max_bytes=5)
+            download_video(
+                "https://example.com/video.mp4",
+                tmp_path / "large.mp4",
+                max_bytes=5,
+                resolver=public_resolver,
+            )
 
     def test_rejects_non_http_download_protocol(self, tmp_path: Path):
         with pytest.raises(ValueError, match="协议"):
-            download_video("file:///tmp/video.mp4", tmp_path / "video.mp4", max_bytes=5)
+            download_video(
+                "file:///tmp/video.mp4",
+                tmp_path / "video.mp4",
+                max_bytes=5,
+                resolver=public_resolver,
+            )
+
+    @patch("zhiji_backend.ingest.douyin.requests")
+    def test_rejects_redirect_to_private_host(self, mock_requests, tmp_path: Path):
+        redirect = MagicMock(status_code=302)
+        redirect.headers = {"Location": "http://internal.example/video.mp4"}
+        session = mock_requests.Session.return_value
+        session.get.return_value = redirect
+
+        def resolver(host: str, port: int) -> list[str]:
+            return ["127.0.0.1"] if host == "internal.example" else ["93.184.216.34"]
+
+        with pytest.raises(ValueError, match="公网"):
+            download_video("https://example.com/video.mp4", tmp_path / "video.mp4", resolver=resolver)
+
+        assert session.get.call_count == 1
+
+    @patch("zhiji_backend.ingest.douyin.requests")
+    def test_rejects_redirect_loop(self, mock_requests, tmp_path: Path):
+        redirect = MagicMock(status_code=302)
+        redirect.headers = {"Location": "/video.mp4"}
+        session = mock_requests.Session.return_value
+        session.get.return_value = redirect
+
+        with pytest.raises(ValueError, match="重定向"):
+            download_video(
+                "https://example.com/video.mp4",
+                tmp_path / "video.mp4",
+                resolver=public_resolver,
+                max_redirects=2,
+            )
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://user:pass@example.com/video.mp4",
+            "https://example.com:99999/video.mp4",
+        ],
+    )
+    def test_rejects_credentials_and_invalid_ports(self, tmp_path: Path, url: str):
+        with pytest.raises(ValueError):
+            download_video(url, tmp_path / "video.mp4", resolver=public_resolver)

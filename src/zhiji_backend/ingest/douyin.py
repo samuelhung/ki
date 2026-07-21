@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import ipaddress
 import re
+import socket
 from html import unescape
 from pathlib import Path
-from urllib.parse import urlsplit
+from typing import Callable
+from urllib.parse import urljoin, urlsplit
 
 import requests  # type: ignore
 
@@ -16,6 +19,23 @@ MOBILE_UA = (
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) "
     "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
 )
+MAX_VIDEO_REDIRECTS = 5
+_REDIRECT_STATUSES = {301, 302, 303, 307, 308}
+
+
+def is_trusted_365yg_url(url: str) -> bool:
+    try:
+        parsed = urlsplit(url)
+        _ = parsed.port
+    except ValueError:
+        return False
+    host = (parsed.hostname or "").rstrip(".").lower()
+    return (
+        parsed.scheme.lower() in {"http", "https"}
+        and parsed.username is None
+        and parsed.password is None
+        and (host == "365yg.com" or host.endswith(".365yg.com"))
+    )
 
 
 def extract_first_url(text: str) -> str:
@@ -126,7 +146,7 @@ def parse_share_text(share_text: str) -> dict:
     play_url = ""
     for u in url_list:
         u_str = str(u)
-        if "365yg.com" in u_str:
+        if is_trusted_365yg_url(u_str):
             play_url = u_str
             break
     if not play_url:
@@ -153,6 +173,84 @@ def _declared_size(response) -> int | None:
         return None
 
 
+def _resolve_host(host: str, port: int) -> list[str]:
+    addresses = {
+        sockaddr[0]
+        for _family, _type, _proto, _canonname, sockaddr in socket.getaddrinfo(
+            host,
+            port,
+            type=socket.SOCK_STREAM,
+        )
+    }
+    return sorted(addresses)
+
+
+def _validate_remote_url(
+    url: str,
+    *,
+    resolver: Callable[[str, int], list[str]],
+) -> None:
+    try:
+        parsed = urlsplit(url)
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("远程视频端口无效") from exc
+    if parsed.scheme.lower() not in {"http", "https"}:
+        raise ValueError("不支持的远程视频协议")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("远程视频地址不得包含凭据")
+    host = (parsed.hostname or "").rstrip(".").lower()
+    if not host:
+        raise ValueError("远程视频地址缺少主机名")
+    resolved = resolver(host, port or (443 if parsed.scheme.lower() == "https" else 80))
+    if not resolved:
+        raise ValueError("远程视频主机无法解析")
+    try:
+        addresses = [ipaddress.ip_address(value) for value in resolved]
+    except ValueError as exc:
+        raise ValueError("远程视频主机解析结果无效") from exc
+    if any(not address.is_global for address in addresses):
+        raise ValueError("远程视频地址必须解析到公网 IP")
+
+
+def _safe_get(
+    session: requests.Session,
+    url: str,
+    *,
+    headers: dict,
+    timeout,
+    resolver: Callable[[str, int], list[str]],
+    max_redirects: int,
+):
+    current = url
+    visited: set[str] = set()
+    redirects = 0
+    while True:
+        if current in visited:
+            raise ValueError("远程视频重定向循环")
+        visited.add(current)
+        _validate_remote_url(current, resolver=resolver)
+        response = session.get(
+            current,
+            headers=headers,
+            stream=True,
+            timeout=timeout,
+            allow_redirects=False,
+        )
+        if response.status_code not in _REDIRECT_STATUSES:
+            return response
+        if redirects >= max_redirects:
+            raise ValueError("远程视频重定向次数超过限制")
+        location = response.headers.get("Location") if hasattr(response.headers, "get") else None
+        if not location:
+            raise ValueError("远程视频重定向缺少 Location")
+        close = getattr(response, "close", None)
+        if callable(close):
+            close()
+        current = urljoin(current, location)
+        redirects += 1
+
+
 def _download_whole(
     url: str,
     dest: Path,
@@ -160,12 +258,21 @@ def _download_whole(
     s: requests.Session,
     *,
     max_bytes: int,
+    resolver: Callable[[str, int], list[str]],
+    max_redirects: int,
 ) -> bool:
     """Fallback: download the whole file in a single GET without Range headers.
     Returns True on success, False on failure.
     """
     try:
-        resp = s.get(url, headers=headers, stream=True, timeout=(30, 600))
+        resp = _safe_get(
+            s,
+            url,
+            headers=headers,
+            timeout=(30, 600),
+            resolver=resolver,
+            max_redirects=max_redirects,
+        )
         resp.raise_for_status()
         declared = _declared_size(resp)
         if declared is not None and declared > max_bytes:
@@ -194,6 +301,8 @@ def download_video(
     session: requests.Session | None = None,
     *,
     max_bytes: int = REMOTE_VIDEO_MAX_BYTES,
+    resolver: Callable[[str, int], list[str]] = _resolve_host,
+    max_redirects: int = MAX_VIDEO_REDIRECTS,
 ) -> Path:
     """Download a video from url and save to dest path.
 
@@ -203,9 +312,6 @@ def download_video(
     If session is provided, reuses its cookies (from parse_share_text).
     Returns dest path on success.
     """
-
-    if urlsplit(url).scheme.lower() not in {"http", "https"}:
-        raise ValueError("不支持的远程视频协议")
 
     headers = {
         "User-Agent": MOBILE_UA,
@@ -226,7 +332,15 @@ def download_video(
     try:
         # If total_size is unknown or server rejects Range, skip straight to whole-file
         if total_size == 0 or not range_supported:
-            if _download_whole(url, dest, headers, s, max_bytes=max_bytes):
+            if _download_whole(
+                url,
+                dest,
+                headers,
+                s,
+                max_bytes=max_bytes,
+                resolver=resolver,
+                max_redirects=max_redirects,
+            ):
                 return dest
             # Fall through to segmented — maybe the direct request was transient.
             total_size = 0
@@ -247,7 +361,14 @@ def download_video(
                     else min(downloaded + segment_size, total_size - 1)
                 )
                 seg_headers = {**headers, "Range": f"bytes={range_start}-{range_end}"}
-                seg = s.get(url, headers=seg_headers, stream=True, timeout=(30, 120))
+                seg = _safe_get(
+                    s,
+                    url,
+                    headers=seg_headers,
+                    timeout=(30, 120),
+                    resolver=resolver,
+                    max_redirects=max_redirects,
+                )
                 if seg.status_code not in (200, 206):
                     range_rejected = True
                 else:
@@ -266,7 +387,15 @@ def download_video(
 
                 if range_rejected:
                     f.close()
-                    if _download_whole(url, dest, headers, s, max_bytes=max_bytes):
+                    if _download_whole(
+                        url,
+                        dest,
+                        headers,
+                        s,
+                        max_bytes=max_bytes,
+                        resolver=resolver,
+                        max_redirects=max_redirects,
+                    ):
                         return dest
                     raise RuntimeError("Whole-file fallback download failed")
 
