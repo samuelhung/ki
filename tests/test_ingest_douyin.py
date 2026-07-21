@@ -34,6 +34,7 @@ class PinnedResponse:
         self.headers = headers or {}
         self._chunks = chunks
         self.closed = False
+        self.close_calls = 0
 
     def raise_for_status(self):
         if self.status_code >= 400:
@@ -43,6 +44,7 @@ class PinnedResponse:
         yield from self._chunks
 
     def close(self):
+        self.close_calls += 1
         self.closed = True
 
 
@@ -243,6 +245,17 @@ class TestDownloadVideo:
             block=True,
         )
 
+    @patch("zhiji_backend.ingest.douyin.HTTPConnectionPool")
+    def test_pinned_connection_closes_pool_once_when_urlopen_raises(self, pool_cls):
+        pool = pool_cls.return_value
+        pool.urlopen.side_effect = OSError("connect failed")
+        connection = create_pinned_connection("http", "93.184.216.34", 80, "video.example.com")
+
+        with pytest.raises(OSError, match="connect failed"):
+            connection.get("/video.mp4", headers={"Host": "video.example.com"}, timeout=(1, 1))
+
+        pool.close.assert_called_once_with()
+
     def test_dns_rebinding_private_result_is_never_connected(self, tmp_path: Path):
         resolutions = iter([["93.184.216.34"], ["127.0.0.1"]])
         resolver_calls = []
@@ -440,6 +453,34 @@ class TestDownloadVideo:
                 max_redirects=2,
                 connection_factory=factory,
             )
+
+    @pytest.mark.parametrize(
+        ("headers", "max_redirects", "message"),
+        [
+            ({"Location": "/next.mp4"}, 0, "次数"),
+            ({}, 5, "Location"),
+        ],
+    )
+    def test_redirect_failure_closes_response_once(
+        self,
+        tmp_path: Path,
+        headers: dict,
+        max_redirects: int,
+        message: str,
+    ):
+        redirect = PinnedResponse([], status_code=302, headers=headers)
+        factory = pinned_factory([redirect])
+
+        with pytest.raises(ValueError, match=message):
+            download_video(
+                "https://example.com/video.mp4",
+                tmp_path / "video.mp4",
+                resolver=public_resolver,
+                max_redirects=max_redirects,
+                connection_factory=factory,
+            )
+
+        assert redirect.close_calls == 1
 
     @pytest.mark.parametrize(
         "url",

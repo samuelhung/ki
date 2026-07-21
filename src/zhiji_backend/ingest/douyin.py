@@ -71,16 +71,20 @@ class _PinnedConnection:
     def get(self, target: str, *, headers: dict, timeout):
         if isinstance(timeout, tuple):
             timeout = Timeout(connect=timeout[0], read=timeout[1])
-        response = self._pool.urlopen(
-            "GET",
-            target,
-            headers=headers,
-            timeout=timeout,
-            redirect=False,
-            retries=False,
-            preload_content=False,
-            decode_content=False,
-        )
+        try:
+            response = self._pool.urlopen(
+                "GET",
+                target,
+                headers=headers,
+                timeout=timeout,
+                redirect=False,
+                retries=False,
+                preload_content=False,
+                decode_content=False,
+            )
+        except BaseException:
+            self._pool.close()
+            raise
         return _PinnedResponse(response, self._pool)
 
 
@@ -350,9 +354,11 @@ def _safe_get(
         if response.status_code not in _REDIRECT_STATUSES:
             return response
         if redirects >= max_redirects:
+            response.close()
             raise ValueError("远程视频重定向次数超过限制")
         location = response.headers.get("Location") if hasattr(response.headers, "get") else None
         if not location:
+            response.close()
             raise ValueError("远程视频重定向缺少 Location")
         close = getattr(response, "close", None)
         if callable(close):
