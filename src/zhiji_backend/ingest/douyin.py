@@ -6,12 +6,17 @@ import json
 import ipaddress
 import re
 import socket
+import ssl
+from dataclasses import dataclass
 from html import unescape
 from pathlib import Path
 from typing import Callable
 from urllib.parse import urljoin, urlsplit
 
 import requests  # type: ignore
+from requests.cookies import get_cookie_header
+from urllib3 import HTTPConnectionPool, HTTPSConnectionPool
+from urllib3.util import Timeout
 
 from ..security.file_intake import REMOTE_VIDEO_MAX_BYTES
 
@@ -21,6 +26,78 @@ MOBILE_UA = (
 )
 MAX_VIDEO_REDIRECTS = 5
 _REDIRECT_STATUSES = {301, 302, 303, 307, 308}
+
+
+@dataclass(frozen=True)
+class _RemoteTarget:
+    scheme: str
+    hostname: str
+    port: int
+    host_header: str
+    request_target: str
+    public_ips: tuple[str, ...]
+
+
+class _PinnedResponse:
+    def __init__(self, response, pool) -> None:
+        self._response = response
+        self._pool = pool
+        self.status_code = response.status
+        self.headers = response.headers
+        self._closed = False
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise requests.HTTPError(f"HTTP {self.status_code}")
+
+    def iter_content(self, chunk_size: int):
+        try:
+            yield from self._response.stream(chunk_size, decode_content=False)
+        finally:
+            self.close()
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self._response.close()
+        self._pool.close()
+
+
+class _PinnedConnection:
+    def __init__(self, pool) -> None:
+        self._pool = pool
+
+    def get(self, target: str, *, headers: dict, timeout):
+        if isinstance(timeout, tuple):
+            timeout = Timeout(connect=timeout[0], read=timeout[1])
+        response = self._pool.urlopen(
+            "GET",
+            target,
+            headers=headers,
+            timeout=timeout,
+            redirect=False,
+            retries=False,
+            preload_content=False,
+            decode_content=False,
+        )
+        return _PinnedResponse(response, self._pool)
+
+
+def create_pinned_connection(scheme: str, ip: str, port: int, hostname: str):
+    if scheme == "https":
+        pool = HTTPSConnectionPool(
+            ip,
+            port=port,
+            assert_hostname=hostname,
+            server_hostname=hostname,
+            cert_reqs=ssl.CERT_REQUIRED,
+            maxsize=1,
+            block=True,
+        )
+    else:
+        pool = HTTPConnectionPool(ip, port=port, maxsize=1, block=True)
+    return _PinnedConnection(pool)
 
 
 def is_trusted_365yg_url(url: str) -> bool:
@@ -189,7 +266,7 @@ def _validate_remote_url(
     url: str,
     *,
     resolver: Callable[[str, int], list[str]],
-) -> None:
+) -> _RemoteTarget:
     try:
         parsed = urlsplit(url)
         port = parsed.port
@@ -202,25 +279,50 @@ def _validate_remote_url(
     host = (parsed.hostname or "").rstrip(".").lower()
     if not host:
         raise ValueError("远程视频地址缺少主机名")
-    resolved = resolver(host, port or (443 if parsed.scheme.lower() == "https" else 80))
+    scheme = parsed.scheme.lower()
+    effective_port = port or (443 if scheme == "https" else 80)
+    resolved = resolver(host, effective_port)
     if not resolved:
         raise ValueError("远程视频主机无法解析")
     try:
         addresses = [ipaddress.ip_address(value) for value in resolved]
     except ValueError as exc:
         raise ValueError("远程视频主机解析结果无效") from exc
-    if any(not address.is_global for address in addresses):
+    public_ips = tuple(sorted({str(address) for address in addresses if address.is_global}))
+    if not public_ips:
         raise ValueError("远程视频地址必须解析到公网 IP")
+    host_header = f"[{host}]" if ":" in host else host
+    if port is not None:
+        host_header = f"{host_header}:{port}"
+    request_target = parsed.path or "/"
+    if parsed.query:
+        request_target = f"{request_target}?{parsed.query}"
+    return _RemoteTarget(
+        scheme=scheme,
+        hostname=host,
+        port=effective_port,
+        host_header=host_header,
+        request_target=request_target,
+        public_ips=public_ips,
+    )
+
+
+def _session_cookie_header(session: requests.Session | None, url: str) -> str | None:
+    if session is None:
+        return None
+    prepared = requests.Request("GET", url).prepare()
+    return get_cookie_header(session.cookies, prepared)
 
 
 def _safe_get(
-    session: requests.Session,
+    session: requests.Session | None,
     url: str,
     *,
     headers: dict,
     timeout,
     resolver: Callable[[str, int], list[str]],
     max_redirects: int,
+    connection_factory,
 ):
     current = url
     visited: set[str] = set()
@@ -229,13 +331,21 @@ def _safe_get(
         if current in visited:
             raise ValueError("远程视频重定向循环")
         visited.add(current)
-        _validate_remote_url(current, resolver=resolver)
-        response = session.get(
-            current,
-            headers=headers,
-            stream=True,
+        target = _validate_remote_url(current, resolver=resolver)
+        request_headers = {**headers, "Host": target.host_header}
+        cookie_header = _session_cookie_header(session, current)
+        if cookie_header:
+            request_headers["Cookie"] = cookie_header
+        connection = connection_factory(
+            target.scheme,
+            target.public_ips[0],
+            target.port,
+            target.hostname,
+        )
+        response = connection.get(
+            target.request_target,
+            headers=request_headers,
             timeout=timeout,
-            allow_redirects=False,
         )
         if response.status_code not in _REDIRECT_STATUSES:
             return response
@@ -255,15 +365,17 @@ def _download_whole(
     url: str,
     dest: Path,
     headers: dict,
-    s: requests.Session,
+    s: requests.Session | None,
     *,
     max_bytes: int,
     resolver: Callable[[str, int], list[str]],
     max_redirects: int,
+    connection_factory,
 ) -> bool:
     """Fallback: download the whole file in a single GET without Range headers.
     Returns True on success, False on failure.
     """
+    resp = None
     try:
         resp = _safe_get(
             s,
@@ -272,6 +384,7 @@ def _download_whole(
             timeout=(30, 600),
             resolver=resolver,
             max_redirects=max_redirects,
+            connection_factory=connection_factory,
         )
         resp.raise_for_status()
         declared = _declared_size(resp)
@@ -293,6 +406,9 @@ def _download_whole(
     except Exception:
         dest.unlink(missing_ok=True)
         return False
+    finally:
+        if resp is not None:
+            resp.close()
 
 
 def download_video(
@@ -303,6 +419,7 @@ def download_video(
     max_bytes: int = REMOTE_VIDEO_MAX_BYTES,
     resolver: Callable[[str, int], list[str]] = _resolve_host,
     max_redirects: int = MAX_VIDEO_REDIRECTS,
+    connection_factory=create_pinned_connection,
 ) -> Path:
     """Download a video from url and save to dest path.
 
@@ -319,7 +436,7 @@ def download_video(
         "Accept": "*/*",
     }
 
-    s = session or requests.Session()
+    s = session
 
     # Probe total size via HEAD (抖音 365yg CDN usually honours Content-Length)
     # Skip HEAD if it might consume a one-time signed URL — go segmented first,
@@ -340,6 +457,7 @@ def download_video(
                 max_bytes=max_bytes,
                 resolver=resolver,
                 max_redirects=max_redirects,
+                connection_factory=connection_factory,
             ):
                 return dest
             # Fall through to segmented — maybe the direct request was transient.
@@ -368,22 +486,26 @@ def download_video(
                     timeout=(30, 120),
                     resolver=resolver,
                     max_redirects=max_redirects,
+                    connection_factory=connection_factory,
                 )
-                if seg.status_code not in (200, 206):
-                    range_rejected = True
-                else:
-                    declared = _declared_size(seg)
-                    if declared is not None and declared > max_bytes:
-                        raise ValueError("远程视频大小超过限制")
-                    seg_len = 0
-                    for chunk in seg.iter_content(chunk_size=65536):
-                        if not chunk:
-                            continue
-                        seg_len += len(chunk)
-                        downloaded += len(chunk)
-                        if downloaded > max_bytes:
+                try:
+                    if seg.status_code not in (200, 206):
+                        range_rejected = True
+                    else:
+                        declared = _declared_size(seg)
+                        if declared is not None and declared > max_bytes:
                             raise ValueError("远程视频大小超过限制")
-                        f.write(chunk)
+                        seg_len = 0
+                        for chunk in seg.iter_content(chunk_size=65536):
+                            if not chunk:
+                                continue
+                            seg_len += len(chunk)
+                            downloaded += len(chunk)
+                            if downloaded > max_bytes:
+                                raise ValueError("远程视频大小超过限制")
+                            f.write(chunk)
+                finally:
+                    seg.close()
 
                 if range_rejected:
                     f.close()
@@ -395,6 +517,7 @@ def download_video(
                         max_bytes=max_bytes,
                         resolver=resolver,
                         max_redirects=max_redirects,
+                        connection_factory=connection_factory,
                     ):
                         return dest
                     raise RuntimeError("Whole-file fallback download failed")
