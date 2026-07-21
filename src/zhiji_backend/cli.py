@@ -15,6 +15,7 @@ import sys
 import os
 import tempfile
 import ipaddress
+from dotenv import load_dotenv
 from pathlib import Path
 from urllib.request import urlopen, Request
 from urllib.error import URLError
@@ -218,14 +219,22 @@ def cmd_init(args: argparse.Namespace) -> None:
 
 def cmd_serve(args: argparse.Namespace) -> None:
     """启动 FastAPI 服务。"""
-    _validate_serve_host(args.host)
     if args.data_dir:
-        os.environ["ZHIJI_HOME"] = args.data_dir
+        home = Path(args.data_dir).expanduser()
     elif not os.getenv("ZHIJI_HOME"):
         # 默认 ~/.zhiji/，如果不存在则自动初始化
-        default = str(Path.home() / ".zhiji")
-        os.environ["ZHIJI_HOME"] = default
+        home = Path.home() / ".zhiji"
+    else:
+        home = Path(os.environ["ZHIJI_HOME"]).expanduser()
 
+    os.environ["ZHIJI_HOME"] = str(home)
+    env_path = home / ".env"
+    if env_path.exists():
+        load_dotenv(env_path, override=True)
+
+    _validate_serve_host(args.host)
+
+    if not args.data_dir and home == Path.home() / ".zhiji":
         # 自动初始化数据目录
         from zhiji_backend.paths import ensure_data_dirs
         ensure_data_dirs()

@@ -396,5 +396,9 @@ test('vite previews keep api requests same-origin so port 5188 uses the 9120 pro
   assert.match(api, /const isViteDev = import\.meta\.env\.DEV/);
   assert.match(api, /const DEFAULT_BACKEND = sameOrigin \|\| isViteDev \? '' : 'http:\/\/127\.0\.0\.1:9120'/);
   assert.match(vite, /const remoteBackend = 'http:\/\/10\.8\.0\.105:9120'/);
-  assert.match(vite, /'\/api':\s*\{[^}]*target:\s*remoteBackend/s);
+  assert.match(vite, /const protectedProxy:[\s\S]*?target:\s*remoteBackend/);
+  assert.match(vite, /'\/api': protectedProxy/);
+  assert.match(vite, /'\/ingest': protectedProxy/);
+  assert.match(vite, /'\/releases': protectedProxy/);
+  assert.match(vite, /preview:\s*\{\s*proxy: apiProxy/s);
 });

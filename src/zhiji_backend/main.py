@@ -60,10 +60,11 @@ logging.getLogger("urllib3").setLevel(logging.WARNING)
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import Headers, URL
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware as StarletteTrustedHostMiddleware
 
 from . import __version__
 from .db import get_db_path, init_db, seed_default_sources
@@ -123,7 +124,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="知几", version=__version__, lifespan=lifespan)
 
-_DEFAULT_ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]", "testserver"]
+_DEFAULT_ALLOWED_HOSTS = ["localhost", "127.0.0.1", "::1", "testserver"]
 _DEFAULT_CORS_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -147,6 +148,40 @@ def _allowed_hosts() -> list[str]:
 
 def _cors_origins() -> list[str]:
     return _csv_env("KI_CORS_ORIGINS", _DEFAULT_CORS_ORIGINS)
+
+
+class TrustedHostMiddleware(StarletteTrustedHostMiddleware):
+    """TrustedHostMiddleware with bracketed IPv6 Host parsing."""
+
+    async def __call__(self, scope, receive, send) -> None:
+        if self.allow_any or scope["type"] not in ("http", "websocket"):
+            await self.app(scope, receive, send)
+            return
+
+        host_header = Headers(scope=scope).get("host", "")
+        if host_header.startswith("[") and "]" in host_header:
+            host = host_header[1:host_header.index("]")]
+        else:
+            host = host_header.split(":", 1)[0]
+
+        is_valid_host = False
+        found_www_redirect = False
+        for pattern in self.allowed_hosts:
+            if host == pattern or (pattern.startswith("*") and host.endswith(pattern[1:])):
+                is_valid_host = True
+                break
+            if "www." + host == pattern:
+                found_www_redirect = True
+
+        if is_valid_host:
+            await self.app(scope, receive, send)
+        elif found_www_redirect and self.www_redirect:
+            url = URL(scope=scope)
+            response = RedirectResponse(url=str(url.replace(netloc="www." + url.netloc)))
+            await response(scope, receive, send)
+        else:
+            response = PlainTextResponse("Invalid host header", status_code=400)
+            await response(scope, receive, send)
 
 app.add_middleware(
     CORSMiddleware,

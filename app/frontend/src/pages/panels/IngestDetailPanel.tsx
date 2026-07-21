@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Maximize2, Trash2, Loader2, Sparkles, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { renderMarkdown } from '../../components/MarkdownRenderer';
+import { useAuthenticatedMediaUrl } from '../../components/ingest/useAuthenticatedMediaUrl';
 import { formatTimeBeijing, sourceLabel, statusLabel } from '../../utils';
-import { apiFetch, backendUrl } from '../../api';
+import { apiFetch } from '../../api';
 
 const API_BASE = '/api/events';
 const eventCache = new Map<string, Event>();
@@ -26,11 +27,11 @@ async function getEvent(id: string): Promise<Event | null> {
   return d;
 }
 
-function toMediaUrl(absolutePath: string | undefined): string | null {
+function toMediaPath(absolutePath: string | undefined): string | null {
   if (!absolutePath) return null;
   const idx = absolutePath.indexOf('/data/ingest/');
   if (idx === -1) return null;
-  return backendUrl('/ingest' + absolutePath.substring(idx + '/data/ingest'.length));
+  return '/ingest' + absolutePath.substring(idx + '/data/ingest'.length);
 }
 
 interface Props {
@@ -52,6 +53,7 @@ export default function IngestDetailPanel({ eventId, onClose }: Props) {
   const [linkedQuestionsLoading, setLinkedQuestionsLoading] = useState(false);
   const headerRef = useRef<HTMLDivElement>(null);
   const closingRef = useRef(false);
+  const mediaUrl = useAuthenticatedMediaUrl(toMediaPath(detail?.video_path));
 
   // Intercept browser back to close panel instead of navigating away
   useEffect(() => {
@@ -384,9 +386,9 @@ export default function IngestDetailPanel({ eventId, onClose }: Props) {
             </div>
           </div>
           {/* Video player */}
-          {toMediaUrl(detail.video_path) && (
+          {mediaUrl && (
             <div className="mt-3">
-              <video controls playsInline className="w-full rounded-lg max-h-[240px] bg-black" src={toMediaUrl(detail.video_path)!}>
+              <video controls playsInline className="w-full rounded-lg max-h-[240px] bg-black" src={mediaUrl}>
                 您的浏览器不支持视频播放
               </video>
             </div>

@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -114,12 +115,11 @@ def test_detailed_health_does_not_expose_raw_database_errors(monkeypatch):
 
 def test_trusted_hosts_and_cors_are_narrow_and_have_desktop_defaults():
     from fastapi.middleware.cors import CORSMiddleware
-    from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-    trusted = _middleware_options(TrustedHostMiddleware)
+    trusted = _middleware_options(main.TrustedHostMiddleware)
     cors = _middleware_options(CORSMiddleware)
 
-    assert trusted["allowed_hosts"] == ["localhost", "127.0.0.1", "[::1]", "testserver"]
+    assert trusted["allowed_hosts"] == ["localhost", "127.0.0.1", "::1", "testserver"]
     assert cors["allow_origins"] == [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
@@ -130,6 +130,15 @@ def test_trusted_hosts_and_cors_are_narrow_and_have_desktop_defaults():
     ]
     assert cors["allow_methods"] == ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
     assert cors["allow_headers"] == ["Authorization", "Content-Type", "X-API-Key"]
+
+
+def test_trusted_host_accepts_ipv6_loopback_with_port():
+    client = TestClient(app, client=("::1", 50000))
+
+    response = client.get("/api/health", headers={"Host": "[::1]:9120"})
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
 
 
 def test_host_and_cors_environment_values_replace_defaults(monkeypatch):
@@ -159,6 +168,24 @@ def test_non_loopback_serve_host_is_allowed_with_api_token(monkeypatch):
     monkeypatch.setenv("KI_API_TOKEN", "secret-token")
 
     cli._validate_serve_host("0.0.0.0")
+
+
+def test_non_loopback_serve_loads_token_from_selected_data_dir(tmp_path, monkeypatch):
+    import uvicorn
+
+    data_dir = tmp_path / "selected-home"
+    data_dir.mkdir()
+    (data_dir / ".env").write_text("KI_API_TOKEN=persisted-token\n", encoding="utf-8")
+    calls = []
+    monkeypatch.delenv("KI_API_TOKEN", raising=False)
+    monkeypatch.delenv("ZHIJI_HOME", raising=False)
+    monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: calls.append((args, kwargs)))
+
+    cli.cmd_serve(argparse.Namespace(data_dir=str(data_dir), host="0.0.0.0", port=9120))
+
+    assert os.environ["ZHIJI_HOME"] == str(data_dir)
+    assert os.environ["KI_API_TOKEN"] == "persisted-token"
+    assert calls[0][1]["host"] == "0.0.0.0"
 
 
 def test_serve_parser_defaults_to_loopback(monkeypatch):

@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const api = readFileSync(new URL('./api.ts', import.meta.url), 'utf8');
 const apiRuntime = readFileSync(new URL('./apiFetchRuntime.ts', import.meta.url), 'utf8');
 const vite = readFileSync(new URL('../vite.config.ts', import.meta.url), 'utf8');
 const app = readFileSync(new URL('./App.tsx', import.meta.url), 'utf8');
 const systemHealth = readFileSync(new URL('./components/cinematic-system/useSystemHealth.ts', import.meta.url), 'utf8');
+const mediaHookUrl = new URL('./components/ingest/useAuthenticatedMediaUrl.ts', import.meta.url);
+const mediaHook = existsSync(mediaHookUrl) ? readFileSync(mediaHookUrl, 'utf8') : '';
+const eventDetail = readFileSync(new URL('./pages/EventDetailPage.tsx', import.meta.url), 'utf8');
+const ingestDetail = readFileSync(new URL('./pages/panels/IngestDetailPanel.tsx', import.meta.url), 'utf8');
 const systemConnection = readFileSync(new URL('./components/cinematic-system/useSystemConnection.ts', import.meta.url), 'utf8');
 const dockAccess = readFileSync(new URL('./pages/GlobalDockAccessOverlay.tsx', import.meta.url), 'utf8');
 const ingest = readFileSync(new URL('./pages/Ingest.tsx', import.meta.url), 'utf8');
@@ -35,7 +39,20 @@ test('vite injects the remote token only in the server-side proxy', () => {
   assert.match(vite, /loadEnv\(mode, process\.cwd\(\), 'KI_'\)/);
   assert.match(vite, /KI_REMOTE_API_TOKEN/);
   assert.match(vite, /proxyReq\.setHeader\('Authorization', `Bearer \$\{remoteApiToken\}`\)/);
+  for (const prefix of ['/api', '/ingest', '/releases']) {
+    assert.match(vite, new RegExp(`'${prefix.replace('/', '\\/')}'`));
+  }
   assert.doesNotMatch(api, /KI_REMOTE_API_TOKEN|import\.meta\.env\.[A-Z_]*TOKEN/);
+});
+
+test('protected ingest media uses authenticated object URLs in every native video consumer', () => {
+  assert.match(mediaHook, /loadAuthenticatedObjectUrl/);
+  assert.match(mediaHook, /URL\.revokeObjectURL|asset\.revoke\(\)/);
+  assert.match(eventDetail, /useAuthenticatedMediaUrl\(toMediaPath\(detail\?\.video_path\)\)/);
+  assert.match(ingestDetail, /useAuthenticatedMediaUrl\(toMediaPath\(detail\?\.video_path\)\)/);
+  assert.doesNotMatch(eventDetail, /<video[^>]*src=\{toMediaUrl/s);
+  assert.doesNotMatch(ingestDetail, /<video[^>]*src=\{toMediaUrl/s);
+  assert.doesNotMatch(eventDetail + ingestDetail, /[?&](?:token|api_key)=/i);
 });
 
 test('health polling and connection tests use bounded shared requests', () => {

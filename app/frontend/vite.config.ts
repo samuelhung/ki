@@ -1,6 +1,6 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig, loadEnv, type ProxyOptions } from 'vite';
 
 const appVersion = '2.0.0';
 const remoteBackend = 'http://10.8.0.105:9120';
@@ -8,18 +8,21 @@ const remoteBackend = 'http://10.8.0.105:9120';
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'KI_');
   const remoteApiToken = env.KI_REMOTE_API_TOKEN?.trim();
-  const apiProxy = {
-    '/api': {
-      target: remoteBackend,
-      changeOrigin: true,
-      configure(proxy) {
-        proxy.on('proxyReq', (proxyReq) => {
-          if (remoteApiToken) {
-            proxyReq.setHeader('Authorization', `Bearer ${remoteApiToken}`);
-          }
-        });
-      },
+  const protectedProxy: ProxyOptions = {
+    target: remoteBackend,
+    changeOrigin: true,
+    configure(proxy) {
+      proxy.on('proxyReq', (proxyReq) => {
+        if (remoteApiToken) {
+          proxyReq.setHeader('Authorization', `Bearer ${remoteApiToken}`);
+        }
+      });
     },
+  };
+  const apiProxy = {
+    '/api': protectedProxy,
+    '/ingest': protectedProxy,
+    '/releases': protectedProxy,
   };
 
   return {

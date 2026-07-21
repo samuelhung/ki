@@ -8,12 +8,46 @@ export interface ApiFetchRuntime {
   request(input: RequestInfo | URL, init?: ApiFetchRuntimeInit): Promise<Response>;
 }
 
+const PROTECTED_BACKEND_PREFIXES = ['/api/', '/ingest/', '/releases/'];
+
+function isProtectedBackendPath(input: string): boolean {
+  return PROTECTED_BACKEND_PREFIXES.some((prefix) => input.startsWith(prefix));
+}
+
+export function shouldLoadAuthenticatedObjectUrl(input: string, token: string): boolean {
+  return Boolean(token) && (input.startsWith('/ingest/') || input.startsWith('/releases/'));
+}
+
+interface ObjectUrlApi {
+  createObjectURL(blob: Blob): string;
+  revokeObjectURL(url: string): void;
+}
+
+export async function loadAuthenticatedObjectUrl(
+  input: string,
+  request: (input: string) => Promise<Response>,
+  objectUrls: ObjectUrlApi = URL,
+) {
+  const response = await request(input);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const url = objectUrls.createObjectURL(await response.blob());
+  let revoked = false;
+  return {
+    url,
+    revoke() {
+      if (revoked) return;
+      revoked = true;
+      objectUrls.revokeObjectURL(url);
+    },
+  };
+}
+
 export function createApiFetch(runtime: ApiFetchRuntime) {
   return async function apiFetch(
     input: RequestInfo | URL,
     init?: ApiFetchRuntimeInit,
   ): Promise<Response> {
-    if (typeof input === 'string' && input.startsWith('/api/')) {
+    if (typeof input === 'string' && isProtectedBackendPath(input)) {
       const requestInit = runtime.prepareInit(init);
       return runtime.request(runtime.getBackendUrl() + input, requestInit);
     }
