@@ -129,7 +129,7 @@ self.addEventListener('message', (event) => {
   const clientId = event.source.id;
   const config = acceptClientConfig(clientId, event.data);
   const pending = pendingConfigRequests.get(clientId);
-  if (pending && event.data.requestId === pending.requestId) {
+  if (pending && (config || event.data.requestId === pending.requestId)) {
     pending.finish(config);
   }
 });

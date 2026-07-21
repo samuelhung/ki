@@ -176,6 +176,48 @@ test('missing worker config requests one acknowledgment then streams one upstrea
   assert.equal(response.headers.get('Content-Range'), 'bytes 0-13/100');
 });
 
+test('unsolicited config resolves only the matching client pending handshake', async () => {
+  let messageHandler;
+  let timeoutCallback;
+  let requestCount = 0;
+  const upstreamRequests = [];
+  const client = {
+    postMessage() {
+      requestCount += 1;
+      messageHandler({
+        data: { type: 'ki-media-config', backendOrigin: 'http://wrong-backend.test', token: 'wrong-token' },
+        source: { id: 'client-2' },
+      });
+      messageHandler({
+        data: { type: 'ki-media-config', backendOrigin: 'http://backend.test', token: 'secret-token' },
+        source: { id: 'client-1' },
+      });
+      queueMicrotask(() => timeoutCallback?.());
+    },
+  };
+  const harness = loadWorkerPolicy({
+    client,
+    fetch: async (url, init) => {
+      upstreamRequests.push({ url, authorization: init.headers.get('Authorization') });
+      return new Response('stream', { status: 206 });
+    },
+    setTimeout: (callback) => { timeoutCallback = callback; return 1; },
+    clearTimeout: () => { timeoutCallback = undefined; },
+  });
+  messageHandler = harness.handlers.get('message');
+
+  const response = await harness.policy.handleMediaRequest(
+    new Request('http://frontend.test/__ki_media/%2Fingest%2Fvideo.mp4'),
+    'client-1',
+  );
+
+  assert.equal(requestCount, 1);
+  assert.equal(response.status, 206);
+  assert.deepEqual(upstreamRequests, [
+    { url: 'http://backend.test/ingest/video.mp4', authorization: 'Bearer secret-token' },
+  ]);
+});
+
 test('missing worker config times out after one request without fetching upstream', async () => {
   let requestCount = 0;
   let fetchCalls = 0;
