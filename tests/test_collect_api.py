@@ -89,7 +89,7 @@ def test_collect_api_rejects_empty_source_ids_without_collecting(tmp_path, monke
 
     response = client.post("/api/collect", json={"source_ids": []})
 
-    assert response.status_code == 400
+    assert response.status_code == 422
     assert called is False
     with connect() as conn:
         assert conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0

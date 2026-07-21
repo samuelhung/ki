@@ -5,7 +5,11 @@ import sys
 from pathlib import Path
 
 from .db import connect
+from .paths import INGEST_ROOT
+from .security.paths import PathSecurityError, resolve_under
 from .usage_writer import start_usage_writer, stop_usage_writer
+
+PENDING_DIR = INGEST_ROOT / "pending"
 
 
 def run_task(task_id: str) -> None:
@@ -21,7 +25,15 @@ def run_task(task_id: str) -> None:
     event_id = row["event_id"]
     ingest_type = row["ingest_type"]
     payload = json.loads(row["payload_json"])
-    content = Path(payload["content_path"]) if payload.get("content_path") else payload.get("content_text", "")
+    if payload.get("content_path"):
+        try:
+            content = resolve_under(
+                PENDING_DIR, Path(payload["content_path"]), expected="file"
+            )
+        except (PathSecurityError, TypeError, ValueError):
+            raise SystemExit("invalid queued content path") from None
+    else:
+        content = payload.get("content_text", "")
     topic = payload.get("topic", "uncategorized")
     title = payload.get("title", "")
 

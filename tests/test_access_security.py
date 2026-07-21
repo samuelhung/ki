@@ -198,6 +198,76 @@ def test_host_and_cors_environment_values_replace_defaults(monkeypatch):
     assert main._cors_origins() == ["https://ki.example", "http://10.8.0.105:5173"]
 
 
+def test_ingest_artifact_route_serves_allowlisted_regular_file_with_range(
+    tmp_path, monkeypatch
+):
+    ingest_root = tmp_path / "ingest"
+    videos = ingest_root / "videos"
+    videos.mkdir(parents=True)
+    (videos / "evt-1.mp4").write_bytes(b"0123456789")
+    monkeypatch.setattr(main, "INGEST_ROOT", ingest_root)
+    client = TestClient(app)
+
+    response = client.get(
+        "/ingest/videos/evt-1.mp4", headers={"Range": "bytes=2-5"}
+    )
+
+    assert response.status_code == 206
+    assert response.content == b"2345"
+    assert response.headers["content-range"] == "bytes 2-5/10"
+    assert response.headers["accept-ranges"] == "bytes"
+
+
+@pytest.mark.parametrize("kind", ["pending", "internal", "concepts"])
+def test_ingest_artifact_route_denies_non_public_directories(tmp_path, monkeypatch, kind):
+    ingest_root = tmp_path / "ingest"
+    directory = ingest_root / kind
+    directory.mkdir(parents=True)
+    (directory / "secret.txt").write_text("secret", encoding="utf-8")
+    monkeypatch.setattr(main, "INGEST_ROOT", ingest_root)
+    client = TestClient(app)
+
+    response = client.get(f"/ingest/{kind}/secret.txt")
+
+    assert response.status_code == 404
+    assert b"secret" not in response.content
+
+
+def test_ingest_artifact_route_rejects_traversal_and_symlink_escape(tmp_path, monkeypatch):
+    ingest_root = tmp_path / "ingest"
+    documents = ingest_root / "documents"
+    documents.mkdir(parents=True)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside-secret", encoding="utf-8")
+    (documents / "linked.txt").symlink_to(outside)
+    monkeypatch.setattr(main, "INGEST_ROOT", ingest_root)
+    client = TestClient(app)
+
+    traversal = client.get("/ingest/documents/..%2F..%2Foutside.txt")
+    symlink = client.get("/ingest/documents/linked.txt")
+
+    assert traversal.status_code == 422
+    assert symlink.status_code == 404
+    assert b"outside-secret" not in traversal.content + symlink.content
+
+
+def test_release_route_rejects_percent_encoded_traversal_and_symlink(tmp_path, monkeypatch):
+    releases = tmp_path / "releases"
+    releases.mkdir()
+    outside = tmp_path / "outside.dmg"
+    outside.write_bytes(b"outside-release")
+    (releases / "linked.dmg").symlink_to(outside)
+    monkeypatch.setattr(main, "RELEASES_DIR", releases)
+    client = TestClient(app)
+
+    traversal = client.get("/releases/..%2Foutside.dmg")
+    symlink = client.get("/releases/linked.dmg")
+
+    assert traversal.status_code == 422
+    assert symlink.status_code == 404
+    assert b"outside-release" not in traversal.content + symlink.content
+
+
 @pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1"])
 def test_loopback_serve_hosts_do_not_require_api_token(monkeypatch, host):
     monkeypatch.delenv("KI_API_TOKEN", raising=False)

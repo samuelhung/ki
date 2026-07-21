@@ -5,15 +5,17 @@ from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from .security.constraints import SafeIdentifierList
+
 
 class CollectRequest(BaseModel):
-    source_ids: Optional[List[str]] = None
+    source_ids: Optional[SafeIdentifierList] = None
 
 
 class TranslateRequest(BaseModel):
-    limit: int = 20
+    limit: int = Field(default=20, ge=1, le=100)
 
 
 class BriefingRequest(BaseModel):
     type: Literal["quick", "daily"] = "quick"
-    limit: int = Field(default=80, ge=1, le=200)
+    limit: int = Field(default=80, ge=1, le=100)

@@ -15,7 +15,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from zhiji_backend import task_queue
+from zhiji_backend import ingest_task_runner, task_queue
 from zhiji_backend.db import connect, init_db
 
 
@@ -1180,6 +1180,132 @@ def test_safe_pending_unlink_refuses_paths_outside_pending(tmp_path, monkeypatch
     task_queue._safe_pending_unlink(str(outside))
 
     assert outside.exists()
+
+
+def test_task_runner_rejects_persisted_content_path_outside_ingest_root(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    ingest_root = tmp_path / "ingest"
+    pending = ingest_root / "pending"
+    pending.mkdir(parents=True)
+    outside = tmp_path / "outside.mp4"
+    outside.write_bytes(b"malicious")
+    init_db()
+    with connect() as conn:
+        conn.execute(
+            """INSERT OR IGNORE INTO sources (id, name, type, url, topic, priority)
+               VALUES ('user-upload', '用户上传', 'manual', '', 'test', 'medium')"""
+        )
+        conn.execute(
+            """INSERT INTO events (id, source_id, title, url, topic,
+               importance, actionability, decision, status, content_type)
+               VALUES ('evt-malicious-path', 'user-upload', '待处理', '', 'test',
+                       4, 4, 'digest', 'processing', 'event')"""
+        )
+        conn.execute(
+            """INSERT INTO ingest_tasks (id, event_id, ingest_type, payload_json)
+               VALUES ('task-malicious-path', 'evt-malicious-path', 'video_file', ?)""",
+            (f'{{"content_path": "{outside}", "topic": "test", "title": "x"}}',),
+        )
+    monkeypatch.setattr(ingest_task_runner, "INGEST_ROOT", ingest_root, raising=False)
+    monkeypatch.setattr(ingest_task_runner, "PENDING_DIR", pending, raising=False)
+    called = False
+
+    def fail_if_called(*args, **kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(
+        "zhiji_backend.routes.ingest_routes._process_ingest", fail_if_called
+    )
+
+    with pytest.raises(SystemExit, match="invalid queued content path") as exc_info:
+        ingest_task_runner.run_task("task-malicious-path")
+
+    assert called is False
+    assert str(outside) not in str(exc_info.value)
+
+
+def test_task_runner_rejects_content_path_in_non_pending_ingest_directory(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    ingest_root = tmp_path / "ingest"
+    pending = ingest_root / "pending"
+    documents = ingest_root / "documents"
+    pending.mkdir(parents=True)
+    documents.mkdir()
+    persisted = documents / "already-published.pdf"
+    persisted.write_bytes(b"published")
+    init_db()
+    with connect() as conn:
+        conn.execute(
+            """INSERT OR IGNORE INTO sources (id, name, type, url, topic, priority)
+               VALUES ('user-upload', '用户上传', 'manual', '', 'test', 'medium')"""
+        )
+        conn.execute(
+            """INSERT INTO events (id, source_id, title, url, topic,
+               importance, actionability, decision, status, content_type)
+               VALUES ('evt-non-pending', 'user-upload', '待处理', '', 'test',
+                       4, 4, 'digest', 'processing', 'event')"""
+        )
+        conn.execute(
+            """INSERT INTO ingest_tasks (id, event_id, ingest_type, payload_json)
+               VALUES ('task-non-pending', 'evt-non-pending', 'document', ?)""",
+            (f'{{"content_path": "{persisted}"}}',),
+        )
+    monkeypatch.setattr(ingest_task_runner, "INGEST_ROOT", ingest_root)
+    monkeypatch.setattr(ingest_task_runner, "PENDING_DIR", pending)
+
+    with pytest.raises(SystemExit, match="invalid queued content path"):
+        ingest_task_runner.run_task("task-non-pending")
+
+
+def test_worker_rejects_malicious_content_path_before_spawning(tmp_path, monkeypatch):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    ingest_root = tmp_path / "ingest"
+    pending = ingest_root / "pending"
+    pending.mkdir(parents=True)
+    outside = tmp_path / "outside.mp4"
+    outside.write_bytes(b"malicious")
+    monkeypatch.setattr(task_queue, "INGEST_ROOT", ingest_root)
+    monkeypatch.setattr(task_queue, "PENDING_DIR", pending)
+    init_db()
+    with connect() as conn:
+        conn.execute(
+            """INSERT OR IGNORE INTO sources (id, name, type, url, topic, priority)
+               VALUES ('user-upload', '用户上传', 'manual', '', 'test', 'medium')"""
+        )
+        conn.execute(
+            """INSERT INTO events (id, source_id, title, url, topic,
+               importance, actionability, decision, status, content_type)
+               VALUES ('evt-worker-malicious', 'user-upload', '待处理', '', 'test',
+                       4, 4, 'digest', 'processing', 'event')"""
+        )
+        conn.execute(
+            """INSERT INTO ingest_tasks (id, event_id, ingest_type, payload_json)
+               VALUES ('task-worker-malicious', 'evt-worker-malicious', 'video_file', ?)""",
+            (f'{{"content_path": "{outside}"}}',),
+        )
+
+    def fail_popen(*args, **kwargs):
+        raise AssertionError("worker must reject before spawning")
+
+    monkeypatch.setattr(task_queue.subprocess, "Popen", fail_popen)
+
+    task_queue._process_one("task-worker-malicious")
+
+    with connect() as conn:
+        task = conn.execute(
+            "SELECT status, error FROM ingest_tasks WHERE id = 'task-worker-malicious'"
+        ).fetchone()
+        event = conn.execute(
+            "SELECT status, last_error FROM events WHERE id = 'evt-worker-malicious'"
+        ).fetchone()
+    assert tuple(task) == ("error", "invalid queued content path")
+    assert tuple(event) == ("error", "invalid queued content path")
+    assert str(outside) not in task["error"]
 
 
 def test_enqueue_db_failure_cleans_large_pending_copy_and_processing_event(tmp_path, monkeypatch):

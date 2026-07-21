@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime, timezone
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from .. import __version__
 from ..db import connect, init_db
 
@@ -93,7 +93,7 @@ def dashboard_summary() -> dict[str, int]:
 
 
 @router.get("/api/dashboard/trend")
-def dashboard_trend(days: int = 7) -> list[dict[str, object]]:
+def dashboard_trend(days: int = Query(7, ge=1, le=365)) -> list[dict[str, object]]:
     """Return daily event counts for the last N days."""
     with connect() as conn:
         rows = conn.execute(

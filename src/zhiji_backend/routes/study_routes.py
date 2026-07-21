@@ -6,6 +6,7 @@ import json
 import logging
 import uuid
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
@@ -21,6 +22,8 @@ from ..security.file_intake import (
     stream_upload_to_temp,
     validate_file,
 )
+from ..security.constraints import MAX_OFFSET, MAX_PAGE_SIZE, SafeIdentifier
+from ..security.paths import PathSecurityError, resolve_under
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/study", tags=["study"])
@@ -73,7 +76,7 @@ def list_materials(
     study_type: str = Query(""),
     status: str = Query(""),
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=MAX_PAGE_SIZE),
 ):
     """列出学习资料，支持按学科/题型/状态筛选"""
     init_db()
@@ -92,6 +95,8 @@ def list_materials(
 
     where = " AND ".join(conditions) if conditions else "1=1"
     offset = (page - 1) * page_size
+    if offset > MAX_OFFSET:
+        raise HTTPException(status_code=422, detail="Pagination offset is too large")
 
     with connect() as conn:
         total = conn.execute(
@@ -119,7 +124,7 @@ def list_materials(
 # ── 详情 ──
 
 @router.get("/{material_id}")
-def get_material(material_id: str):
+def get_material(material_id: SafeIdentifier):
     """获取学习资料完整详情（含孩子版/家长版/格式）"""
     init_db()
     with connect() as conn:
@@ -165,7 +170,7 @@ def create_material(req: StudyCreateRequest):
 # ── 更新 ──
 
 @router.put("/{material_id}")
-def update_material(material_id: str, req: StudyUpdateRequest):
+def update_material(material_id: SafeIdentifier, req: StudyUpdateRequest):
     """更新学习资料（批改、标注对错等）"""
     init_db()
     updates = {}
@@ -196,7 +201,7 @@ def update_material(material_id: str, req: StudyUpdateRequest):
 # ── 删除 ──
 
 @router.delete("/{material_id}")
-def delete_material(material_id: str):
+def delete_material(material_id: SafeIdentifier):
     """删除学习资料"""
     init_db()
     with connect() as conn:
@@ -238,11 +243,15 @@ def upload_and_ocr(
     # 教材类：直接保存原文件 + 自动创建记录
     if category == "教材/课本":
         material_id = str(uuid.uuid4())
-        material_dir = STUDY_DATA_DIR / material_id
+        material_dir = resolve_under(
+            STUDY_DATA_DIR, material_id, must_exist=False
+        )
         material_dir.mkdir(parents=True, exist_ok=True)
-        raw_dir = material_dir / "raw"
+        material_dir = resolve_under(STUDY_DATA_DIR, material_id, expected="dir")
+        raw_dir = resolve_under(material_dir, "raw", must_exist=False)
         raw_dir.mkdir(exist_ok=True)
-        dest = raw_dir / f"original{ext}"
+        raw_dir = resolve_under(material_dir, "raw", expected="dir")
+        dest = resolve_under(raw_dir, f"original{ext}", must_exist=False)
         tmp_path.replace(dest)
 
         init_db()
@@ -279,11 +288,15 @@ def upload_and_ocr(
 
         # 存到 data/study/ 下
         material_id = str(uuid.uuid4())
-        material_dir = STUDY_DATA_DIR / material_id
+        material_dir = resolve_under(
+            STUDY_DATA_DIR, material_id, must_exist=False
+        )
         material_dir.mkdir(parents=True, exist_ok=True)
-        raw_dir = material_dir / "raw"
+        material_dir = resolve_under(STUDY_DATA_DIR, material_id, expected="dir")
+        raw_dir = resolve_under(material_dir, "raw", must_exist=False)
         raw_dir.mkdir(exist_ok=True)
-        dest = raw_dir / f"uploaded{ext}"
+        raw_dir = resolve_under(material_dir, "raw", expected="dir")
+        dest = resolve_under(raw_dir, f"uploaded{ext}", must_exist=False)
         tmp_path.rename(dest)
 
         return {
@@ -299,7 +312,7 @@ def upload_and_ocr(
 # ── AI 生成讲题稿 ──
 
 @router.post("/{material_id}/generate")
-def generate_material(material_id: str, req: GenerateRequest = GenerateRequest()):
+def generate_material(material_id: SafeIdentifier, req: GenerateRequest = GenerateRequest()):
     """AI 生成讲题稿（同步执行）"""
     init_db()
     with connect() as conn:
@@ -328,7 +341,7 @@ def generate_material(material_id: str, req: GenerateRequest = GenerateRequest()
 # ── 错题复盘 ──
 
 @router.post("/{material_id}/review")
-def review_mistake(material_id: str, req: MistakeReviewRequest):
+def review_mistake(material_id: SafeIdentifier, req: MistakeReviewRequest):
     """生成错题复盘讲义"""
     init_db()
     with connect() as conn:
@@ -364,36 +377,40 @@ def review_mistake(material_id: str, req: MistakeReviewRequest):
 # ── 文件下载 ──
 
 @router.get("/{material_id}/file/{fmt}")
-def get_study_file(material_id: str, fmt: str):
+def get_study_file(
+    material_id: SafeIdentifier,
+    fmt: Literal["md", "html", "pdf", "original"],
+):
     """返回讲题稿文件（md/html/pdf）"""
-    md_dir = (STUDY_DATA_DIR / material_id).resolve()
-    root = STUDY_DATA_DIR.resolve()
-    if root not in md_dir.parents and md_dir != root:
-        raise HTTPException(status_code=400, detail="非法资料路径")
+    try:
+        md_dir = resolve_under(STUDY_DATA_DIR, material_id, expected="dir")
+    except PathSecurityError:
+        raise HTTPException(status_code=404, detail="资料文件不存在") from None
     file_map = {
         "md": "讲题稿版.md",
         "html": "讲题稿打印版.html",
         "pdf": "讲题稿版.pdf",
         "original": None,  # 动态查找原始文件
     }
-    if fmt not in file_map:
-        raise HTTPException(status_code=400, detail=f"不支持的格式: {fmt}")
     if fmt == "original":
         # 教材原始PDF：raw_content 存的是文件路径
         with connect() as conn:
             row = conn.execute("SELECT raw_content FROM study_materials WHERE id = ?", (material_id,)).fetchone()
         if not row or not row["raw_content"]:
             raise HTTPException(status_code=404, detail="原始文件不存在")
-        orig_path = (STUDY_DATA_DIR.parent / row["raw_content"]).resolve()
-        if root not in orig_path.parents and orig_path != root:
-            raise HTTPException(status_code=400, detail="非法文件路径")
-        if not orig_path.exists():
+        stored = Path(row["raw_content"])
+        if stored.is_absolute() or not stored.parts or stored.parts[0] != STUDY_DATA_DIR.name:
+            raise HTTPException(status_code=422, detail="非法文件路径")
+        try:
+            orig_path = resolve_under(
+                STUDY_DATA_DIR, *stored.parts[1:], expected="file"
+            )
+        except PathSecurityError:
             raise HTTPException(status_code=404, detail="原始文件已丢失")
         return FileResponse(orig_path)
-    path = (md_dir / file_map[fmt]).resolve()
-    if root not in path.parents and path != root:
-        raise HTTPException(status_code=400, detail="非法文件路径")
-    if not path.exists():
+    try:
+        path = resolve_under(md_dir, file_map[fmt], expected="file")
+    except PathSecurityError:
         raise HTTPException(status_code=404, detail="文件尚未生成")
     return FileResponse(path)
 
@@ -452,7 +469,7 @@ def _ocr_image_path(path: Path) -> str:
 def list_mistakes(
     subject: str = Query(""),
     page: int = Query(1, ge=1),
-    page_size: int = Query(50),
+    page_size: int = Query(50, ge=1, le=MAX_PAGE_SIZE),
 ):
     """列出错题（is_correct = 0）"""
     init_db()
@@ -465,6 +482,8 @@ def list_mistakes(
 
     where = " AND ".join(conditions)
     offset = (page - 1) * page_size
+    if offset > MAX_OFFSET:
+        raise HTTPException(status_code=422, detail="Pagination offset is too large")
 
     with connect() as conn:
         total = conn.execute(

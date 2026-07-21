@@ -6,10 +6,11 @@ import json
 import logging
 import re
 import uuid
-from pydantic import BaseModel
-from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field, field_validator
+from fastapi import APIRouter, HTTPException, Query
 from ..db import connect
 from ..ai_client import chat
+from ..security.constraints import MAX_PAGE_SIZE, SafeIdentifier
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,15 @@ class AnalyzeRequest(BaseModel):
     event_id: str = ""
     event_title: str = ""
     event_summary: str = ""
+
+    @field_validator("event_id")
+    @classmethod
+    def validate_event_id(cls, value: str) -> str:
+        if value:
+            from ..security.constraints import safe_identifier
+
+            safe_identifier(value)
+        return value
 
 class ChainReportRequest(BaseModel):
     chain_name: str
@@ -30,7 +40,7 @@ class NodeUpdate(BaseModel):
     description: str | None = None
     global_shares: list | None = None
     substitutes: list | None = None
-    upstream_names: list[str] | None = None
+    upstream_names: list[str] | None = Field(default=None, max_length=100)
     data_sources: dict | None = None
     sort_order: int | None = None
 
@@ -42,12 +52,12 @@ class NodeCreate(BaseModel):
     description: str = ""
     global_shares: list = []
     substitutes: list = []
-    upstream_names: list[str] = []
+    upstream_names: list[str] = Field(default_factory=list, max_length=100)
     data_sources: dict = {}
 
 
 class AiUpdateRequest(BaseModel):
-    node_id: str
+    node_id: SafeIdentifier
     source_text: str  # 包含新数据的文本（USGS报告摘要、新闻等）
 
 router = APIRouter(prefix="/api/chains", tags=["chains"])
@@ -419,7 +429,7 @@ def _resolve_upstream_ids(conn, upstream_names: list[str]) -> list[str]:
 
 
 @router.put("/nodes/{node_id}")
-def update_node(node_id: str, req: NodeUpdate):
+def update_node(node_id: SafeIdentifier, req: NodeUpdate):
     """更新产业链节点"""
     with connect() as conn:
         existing = conn.execute("SELECT id FROM industry_chain_nodes WHERE id = ?", (node_id,)).fetchone()
@@ -495,7 +505,7 @@ def create_node(req: NodeCreate):
 
 
 @router.delete("/nodes/{node_id}")
-def delete_node(node_id: str):
+def delete_node(node_id: SafeIdentifier):
     """删除产业链节点"""
     with connect() as conn:
         conn.execute("DELETE FROM industry_chain_nodes WHERE id = ?", (node_id,))
@@ -601,7 +611,7 @@ def ai_update_node(req: AiUpdateRequest):
 
 
 class AiCollectRequest(BaseModel):
-    node_id: str
+    node_id: SafeIdentifier
     use_web: bool = False
 
 
@@ -1014,7 +1024,10 @@ class HintResolve(BaseModel):
 
 
 @router.get("/hints")
-def list_hints(status: str = "pending", limit: int = 50):
+def list_hints(
+    status: str = "pending",
+    limit: int = Query(50, ge=1, le=MAX_PAGE_SIZE),
+):
     """列出产业链数据更新提示。status: pending / reviewed / accepted / rejected"""
     with connect() as conn:
         rows = conn.execute(
@@ -1040,7 +1053,7 @@ def count_hints():
 
 
 @router.post("/hints/{hint_id}/resolve")
-def resolve_hint(hint_id: str, req: HintResolve):
+def resolve_hint(hint_id: SafeIdentifier, req: HintResolve):
     """接受或拒绝一个数据更新提示。
     accept: 将 suggested_value 写入对应节点字段
     reject: 标记为已拒绝
@@ -1150,7 +1163,10 @@ def _try_parse_and_set(share: dict, new_value: str, field: str):
 
 
 @router.get("/suggestions")
-def list_suggestions(status: str = "pending", limit: int = 30):
+def list_suggestions(
+    status: str = "pending",
+    limit: int = Query(30, ge=1, le=MAX_PAGE_SIZE),
+):
     """列出AI建议的新产业链。"""
     with connect() as conn:
         rows = conn.execute(
@@ -1179,7 +1195,7 @@ def count_suggestions():
 
 
 @router.post("/suggestions/{sid}/adopt")
-def adopt_suggestion(sid: str):
+def adopt_suggestion(sid: SafeIdentifier):
     """采用一条新链建议：创建链和所有节点 + AI 选图标。"""
     with connect() as conn:
         sug = conn.execute("SELECT * FROM chain_suggestions WHERE id = ?", (sid,)).fetchone()
@@ -1255,7 +1271,7 @@ def _suggest_icon(chain_name: str) -> str:
 
 
 @router.post("/suggestions/{sid}/dismiss")
-def dismiss_suggestion(sid: str):
+def dismiss_suggestion(sid: SafeIdentifier):
     """忽略一条新链建议。"""
     with connect() as conn:
         conn.execute(
@@ -1269,7 +1285,7 @@ def dismiss_suggestion(sid: str):
 
 
 class SyncHintsRequest(BaseModel):
-    hints: list  # [{"node_name":"...", "field":"...", "value":"...", "source_quote":"..."}]
+    hints: list = Field(max_length=100)
 
 
 @router.post("/hints/sync")
@@ -1322,7 +1338,7 @@ def sync_extracted_hints(req: SyncHintsRequest):
 class ChatRequest(BaseModel):
     chain_name: str
     message: str
-    history: list[dict] = []  # [{"role":"user","content":"..."}, ...]
+    history: list[dict] = Field(default_factory=list, max_length=100)
 
 
 class FlowSummaryReq(BaseModel):

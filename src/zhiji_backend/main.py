@@ -57,7 +57,7 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -71,6 +71,8 @@ from .config_manager import load_config
 from .migrations import ensure_migrations
 from .task_queue import start_worker, stop_worker
 from .usage_writer import start_usage_writer, stop_usage_writer
+from .security.constraints import safe_identifier
+from .security.paths import PathSecurityError, resolve_under
 
 # Route modules
 from .routes.dashboard_routes import router as dashboard_router
@@ -327,19 +329,44 @@ async def retired_digest_endpoint():
 
 # ---- Static file mounts ----
 
-INGEST_ROOT.mkdir(parents=True, exist_ok=True)
-app.mount("/ingest", StaticFiles(directory=str(INGEST_ROOT)), name="ingest")
+PUBLIC_INGEST_ARTIFACTS = frozenset(
+    {"videos", "audio", "documents", "transcripts", "summaries"}
+)
+
+
+@app.get("/ingest/{kind}/{filename:path}")
+async def serve_ingest_artifact(kind: str, filename: str):
+    if kind not in PUBLIC_INGEST_ARTIFACTS:
+        raise HTTPException(status_code=404, detail="Not Found")
+    if "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=422, detail="Invalid artifact path")
+    try:
+        safe_identifier(filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid artifact path") from exc
+    try:
+        file_path = resolve_under(INGEST_ROOT, kind, filename, expected="file")
+    except PathSecurityError:
+        raise HTTPException(status_code=404, detail="Not Found") from None
+    return FileResponse(file_path)
 
 RELEASES_DIR.mkdir(parents=True, exist_ok=True)
 # Use direct route to avoid conflict with root SPA mount (html=True intercepts everything)
 @app.get("/releases/{filename:path}")
 async def serve_release(filename: str):
     requested = Path(filename)
+    if any(part in {".", ".."} for part in requested.parts):
+        raise HTTPException(status_code=422, detail="Invalid release path")
     if requested.name != filename or requested.suffix.lower() not in {".dmg", ".xml"}:
-        return JSONResponse({"error": "not found"}, status_code=404)
-    file_path = RELEASES_DIR / filename
-    if not file_path.exists() or not file_path.is_file():
-        return JSONResponse({"error": "not found"}, status_code=404)
+        raise HTTPException(status_code=404, detail="Not Found")
+    try:
+        safe_identifier(filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid release path") from exc
+    try:
+        file_path = resolve_under(RELEASES_DIR, filename, expected="file")
+    except PathSecurityError:
+        raise HTTPException(status_code=404, detail="Not Found") from None
     return FileResponse(file_path)
 
 if _HAS_FRONTEND:

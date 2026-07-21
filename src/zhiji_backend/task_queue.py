@@ -27,6 +27,8 @@ from .db import connect, init_db
 logger = logging.getLogger(__name__)
 
 from .paths import INGEST_ROOT
+from .security.constraints import safe_identifier
+from .security.paths import PathSecurityError, resolve_under, safe_unlink_under
 PENDING_DIR = INGEST_ROOT / "pending"
 
 _worker: threading.Thread | None = None
@@ -48,14 +50,9 @@ class EnqueueError(RuntimeError):
 
 def _safe_pending_unlink(path_value: str) -> None:
     try:
-        pending_root = PENDING_DIR.resolve()
-        path = Path(path_value).expanduser().resolve()
-        if path == pending_root or pending_root in path.parents:
-            path.unlink(missing_ok=True)
-        else:
-            logger.warning("Refusing to delete pending file outside %s: %s", pending_root, path)
+        safe_unlink_under(PENDING_DIR, Path(path_value).expanduser())
     except Exception:
-        logger.warning("Failed to delete pending file safely: %s", path_value, exc_info=True)
+        logger.warning("Refusing to delete unsafe pending file", exc_info=True)
 
 
 def _compensate_failed_enqueue(event_id: str, task_id: str) -> None:
@@ -85,10 +82,13 @@ def enqueue(event_id: str, ingest_type: str, content, topic: str, title: str) ->
     task_id = f"task-{uuid.uuid4().hex[:12]}"
     persistent: Path | None = None
     try:
+        safe_identifier(event_id)
         init_db()
         if isinstance(content, Path):
             PENDING_DIR.mkdir(parents=True, exist_ok=True)
-            persistent = PENDING_DIR / f"{event_id}{content.suffix}"
+            persistent = resolve_under(
+                PENDING_DIR, f"{event_id}{content.suffix}", must_exist=False
+            )
             shutil.copy2(content, persistent)
             payload = {"content_path": str(persistent), "topic": topic, "title": title}
         else:
@@ -439,7 +439,25 @@ def _process_one(task_id: str) -> None:
 
     # Reconstruct content from payload
     if payload.get("content_path"):
-        content = Path(payload["content_path"])
+        try:
+            content = resolve_under(
+                PENDING_DIR, Path(payload["content_path"]), expected="file"
+            )
+        except (PathSecurityError, TypeError, ValueError):
+            error = "invalid queued content path"
+            with connect() as conn:
+                conn.execute(
+                    "UPDATE ingest_tasks SET status = 'error', error = ?, "
+                    "finished_at = datetime('now') WHERE id = ?",
+                    (error, task_id),
+                )
+                conn.execute(
+                    "UPDATE events SET status = 'error', last_error = ? "
+                    "WHERE id = ? AND status = 'processing'",
+                    (error, event_id),
+                )
+            logger.error("Rejected unsafe queued content path for task %s", task_id)
+            return
     else:
         content = payload.get("content_text", "")
 

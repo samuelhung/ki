@@ -3,13 +3,13 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 from ..briefing import (
-    MAX_SQLITE_OFFSET,
     generate_briefing,
     get_briefing,
     latest_briefing,
     list_briefings,
 )
 from ..models import BriefingRequest
+from ..security.constraints import MAX_OFFSET, MAX_PAGE_SIZE, SafeIdentifier
 
 router = APIRouter()
 
@@ -43,15 +43,15 @@ def get_latest_briefing(briefing_type: str = "quick") -> dict[str, object]:
 
 @router.get("/api/briefing")
 def get_briefing_history(
-    limit: int = 30,
-    offset: int = Query(default=0, ge=0, le=MAX_SQLITE_OFFSET),
+    limit: int = Query(30, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(default=0, ge=0, le=MAX_OFFSET),
 ) -> dict[str, object]:
     """List briefings without returning their full topics payloads."""
     return list_briefings(limit=limit, offset=offset)
 
 
 @router.get("/api/briefing/{briefing_id}")
-def get_briefing_detail(briefing_id: str) -> dict[str, object]:
+def get_briefing_detail(briefing_id: SafeIdentifier) -> dict[str, object]:
     """Get one briefing with its parsed topics payload."""
     result = get_briefing(briefing_id)
     if result is None:

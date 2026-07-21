@@ -4,14 +4,22 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from fastapi import APIRouter, BackgroundTasks, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from pydantic import BaseModel, Field
 from ..db import connect, init_db, seed_default_sources
 from ..summarizer import summarize_transcript
 from ..collector import collect_once, fetch_url
 from ..tagger import tag_event
 from ..classifier import classify_event, classify_batch
 from ..models import CollectRequest
+from ..security.constraints import (
+    MAX_OFFSET,
+    MAX_PAGE_SIZE,
+    SafeIdentifier,
+    SafeIdentifierList,
+    parse_bounded_identifier_csv,
+)
+from ..security.paths import resolve_under, safe_unlink_under
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -21,21 +29,18 @@ def _safe_unlink(path_value: str | None, root: Path) -> None:
     if not path_value:
         return
     try:
-        root_resolved = root.resolve()
-        path = Path(path_value).expanduser().resolve()
-        if path == root_resolved or root_resolved in path.parents:
-            path.unlink(missing_ok=True)
-        else:
-            logger.warning("Refusing to delete file outside ingest root: %s", path)
+        safe_unlink_under(root, Path(path_value).expanduser())
     except Exception:
-        logger.warning("Failed to delete ingest file safely: %s", path_value, exc_info=True)
+        logger.warning("Refusing to delete unsafe ingest artifact", exc_info=True)
 
 
 @router.get("/api/events")
 def list_events(
     topic: str | None = None, status: str | None = None,
     source_id: str | None = None, content_type: str | None = None,
-    search: str | None = None, offset: int = 0, limit: int = 50,
+    search: str | None = None,
+    offset: int = Query(0, ge=0, le=MAX_OFFSET),
+    limit: int = Query(50, ge=1, le=MAX_PAGE_SIZE),
     count: int = 0,
 ) -> list[dict[str, object]] | dict[str, object]:
     # Lightweight columns for list views (omit large text fields: raw_summary, ai_summary)
@@ -95,7 +100,10 @@ def list_events(
         query += " AND status = :status"
         params["status"] = status
     if source_id:
-        ids = [s.strip() for s in source_id.split(",") if s.strip()]
+        try:
+            ids = parse_bounded_identifier_csv(source_id) or []
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Invalid source filter") from exc
         if len(ids) == 1:
             query += " AND source_id = :source_id"
             params["source_id"] = ids[0]
@@ -127,7 +135,10 @@ def list_events(
             count_query += " AND content_type = :content_type"
             count_params["content_type"] = params["content_type"]
         if source_id:
-            ids = [s.strip() for s in source_id.split(",") if s.strip()]
+            try:
+                ids = parse_bounded_identifier_csv(source_id) or []
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail="Invalid source filter") from exc
             if len(ids) == 1:
                 count_query += " AND source_id = :source_id"
                 count_params["source_id"] = ids[0]
@@ -163,7 +174,7 @@ def event_topic_counts() -> dict[str, int]:
 
 
 @router.get("/api/events/{event_id}")
-def get_event(event_id: str) -> dict[str, object]:
+def get_event(event_id: SafeIdentifier) -> dict[str, object]:
     """Get full event detail including complete transcript."""
     with connect() as conn:
         row = conn.execute(
@@ -197,7 +208,7 @@ def get_event(event_id: str) -> dict[str, object]:
 
 
 @router.delete("/api/events/{event_id}")
-def delete_event(event_id: str) -> dict[str, object]:
+def delete_event(event_id: SafeIdentifier) -> dict[str, object]:
     """Delete an event and its associated ingest files."""
     with connect() as conn:
         row = conn.execute(
@@ -210,8 +221,8 @@ def delete_event(event_id: str) -> dict[str, object]:
     # Clean up ingest files
     from ..paths import INGEST_ROOT as _ir
     ingest_root = _ir
-    (ingest_root / "transcripts" / f"{event_id}.md").unlink(missing_ok=True)
-    (ingest_root / "summaries" / f"{event_id}.md").unlink(missing_ok=True)
+    _safe_unlink(str(ingest_root / "transcripts" / f"{event_id}.md"), ingest_root)
+    _safe_unlink(str(ingest_root / "summaries" / f"{event_id}.md"), ingest_root)
 
     for path_col in ("video_path", "audio_path", "document_path"):
         p = row[path_col]
@@ -223,23 +234,25 @@ def delete_event(event_id: str) -> dict[str, object]:
     return {"ok": True, "deleted": event_id}
 
 
+class EventBatchRequest(BaseModel):
+    event_ids: SafeIdentifierList
+
+
 @router.post("/api/events/batch-delete")
-def batch_delete_events(payload: dict[str, object]) -> dict[str, object]:
+def batch_delete_events(payload: EventBatchRequest) -> dict[str, object]:
     """Delete multiple events and their associated ingest files."""
-    event_ids = payload.get("event_ids", [])
-    if not isinstance(event_ids, list) or not event_ids:
-        raise HTTPException(status_code=400, detail="event_ids must be a non-empty list")
+    event_ids = payload.event_ids
     from ..paths import INGEST_ROOT as _ir
     ingest_root = _ir
     deleted = 0
     for event_id in event_ids:
-        eid = str(event_id)
+        eid = event_id
         with connect() as conn:
             row = conn.execute("SELECT id, video_path, audio_path, document_path FROM events WHERE id = ?", (eid,)).fetchone()
         if row is None:
             continue
-        (ingest_root / "transcripts" / f"{eid}.md").unlink(missing_ok=True)
-        (ingest_root / "summaries" / f"{eid}.md").unlink(missing_ok=True)
+        _safe_unlink(str(ingest_root / "transcripts" / f"{eid}.md"), ingest_root)
+        _safe_unlink(str(ingest_root / "summaries" / f"{eid}.md"), ingest_root)
         for path_col in ("video_path", "audio_path", "document_path"):
             p = row[path_col]
             if p:
@@ -251,7 +264,7 @@ def batch_delete_events(payload: dict[str, object]) -> dict[str, object]:
 
 
 @router.post("/api/events/{event_id}/summarize")
-def summarize_event(event_id: str, background_tasks: BackgroundTasks, force: bool = False) -> dict[str, object]:
+def summarize_event(event_id: SafeIdentifier, background_tasks: BackgroundTasks, force: bool = False) -> dict[str, object]:
     """Generate an AI summary for a douyin event using the Knowledge template.
 
     Set ?force=true to bypass the cache and regenerate from scratch.
@@ -294,9 +307,15 @@ def summarize_event(event_id: str, background_tasks: BackgroundTasks, force: boo
                     )
                 # Also write to file system
                 from ..paths import INGEST_ROOT as _ir2
-                summaries_dir = _ir2 / "summaries"
+                summaries_dir = resolve_under(
+                    _ir2, "summaries", must_exist=False
+                )
                 summaries_dir.mkdir(parents=True, exist_ok=True)
-                (summaries_dir / f"{event_id}.md").write_text(summary, encoding="utf-8")
+                summaries_dir = resolve_under(_ir2, "summaries", expected="dir")
+                summary_path = resolve_under(
+                    summaries_dir, f"{event_id}.md", must_exist=False
+                )
+                summary_path.write_text(summary, encoding="utf-8")
                 # 触发产业链新链检测
                 try:
                     from ..chain_detector import detect_new_chains
@@ -319,11 +338,11 @@ def collect(request: CollectRequest) -> dict[str, object]:
 
 
 class TagRequest(BaseModel):
-    limit: int = 50
+    limit: int = Field(default=50, ge=1, le=100)
 
 
 @router.post("/api/events/{event_id}/tag")
-def tag_single_event(event_id: str) -> dict[str, object]:
+def tag_single_event(event_id: SafeIdentifier) -> dict[str, object]:
     """Extract tags for a single event using AI NER."""
 
     with connect() as conn:
@@ -354,7 +373,7 @@ def tag_single_event(event_id: str) -> dict[str, object]:
 def tag_batch(request: TagRequest | None = None) -> dict[str, object]:
     """Batch-tag untagged events (max N at a time)."""
 
-    limit = min(request.limit if request else 50, 100)
+    limit = request.limit if request else 50
 
     with connect() as conn:
         rows = conn.execute(
@@ -389,7 +408,10 @@ def tag_batch(request: TagRequest | None = None) -> dict[str, object]:
 
 
 @router.get("/api/events/{event_id}/similar")
-def similar_events(event_id: str, limit: int = 5) -> list[dict[str, object]]:
+def similar_events(
+    event_id: SafeIdentifier,
+    limit: int = Query(5, ge=1, le=MAX_PAGE_SIZE),
+) -> list[dict[str, object]]:
     """Find events similar to the given event by FTS5 + title/content overlap."""
     import difflib
 
@@ -470,14 +492,20 @@ def similar_events(event_id: str, limit: int = 5) -> list[dict[str, object]]:
 
 
 @router.post("/api/classify/batch")
-def batch_classify(source_ids: str | None = None, limit: int = 200) -> dict[str, int]:
+def batch_classify(
+    source_ids: str | None = Query(None, max_length=12_900),
+    limit: int = Query(100, ge=1, le=100),
+) -> dict[str, int]:
     """Classify all unclassified non-RSS events into 4 cognitive layers."""
-    ids = source_ids.split(",") if source_ids else None
+    try:
+        ids = parse_bounded_identifier_csv(source_ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid source filter") from exc
     return classify_batch(source_ids=ids, limit=limit)
 
 
 @router.post("/api/classify/event/{event_id}")
-def classify_single(event_id: str) -> dict[str, object]:
+def classify_single(event_id: SafeIdentifier) -> dict[str, object]:
     """Classify a single event."""
     result = classify_event(event_id)
     return {"event_id": event_id, "classified_as": result}

@@ -7,10 +7,11 @@ import uuid
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from ..db import connect, init_db
+from ..security.constraints import MAX_OFFSET, MAX_PAGE_SIZE, SafeIdentifier
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
@@ -20,7 +21,7 @@ class CreateTaskRequest(BaseModel):
     title: str
     description: str = ""
     source: str = "manual"
-    source_id: str | None = None
+    source_id: SafeIdentifier | None = None
     source_label: str | None = None
     priority: str = "medium"
     due_date: str | None = None
@@ -30,7 +31,7 @@ class UpdateTaskRequest(BaseModel):
     title: str | None = None
     description: str | None = None
     source: str | None = None
-    source_id: str | None = None
+    source_id: SafeIdentifier | None = None
     source_label: str | None = None
     priority: str | None = None
     due_date: str | None = None
@@ -47,8 +48,8 @@ def list_tasks(
     source: str = "",
     priority: str = "",
     search: str = "",
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0, le=MAX_OFFSET),
 ):
     """List tasks with optional filters."""
     init_db()
@@ -134,7 +135,7 @@ def get_task_stats():
 
 
 @router.get("/{task_id}")
-def get_task(task_id: str):
+def get_task(task_id: SafeIdentifier):
     """Get a single task by ID."""
     init_db()
     with connect() as conn:
@@ -164,7 +165,7 @@ def create_task(req: CreateTaskRequest):
 
 
 @router.put("/{task_id}")
-def update_task(task_id: str, req: UpdateTaskRequest):
+def update_task(task_id: SafeIdentifier, req: UpdateTaskRequest):
     """Update a task."""
     init_db()
     with connect() as conn:
@@ -200,7 +201,7 @@ def update_task(task_id: str, req: UpdateTaskRequest):
 
 
 @router.delete("/{task_id}")
-def delete_task(task_id: str):
+def delete_task(task_id: SafeIdentifier):
     """Delete a task."""
     init_db()
     with connect() as conn:
@@ -227,7 +228,7 @@ TASK_JUDGE_SYSTEM_PROMPT = """你是一个事务分析助手。用户提交待�
 
 
 @router.post("/{task_id}/judge")
-def judge_task(task_id: str):
+def judge_task(task_id: SafeIdentifier):
     """Run AI judgment on a task."""
     init_db()
     with connect() as conn:

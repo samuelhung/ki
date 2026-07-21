@@ -9,7 +9,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
 from ..db import connect, init_db
@@ -19,6 +19,8 @@ from ..security.file_intake import (
     stream_upload_to_temp,
     validate_file,
 )
+from ..security.constraints import MAX_PAGE_SIZE, SafeIdentifier, safe_identifier
+from ..security.paths import resolve_under
 from ..task_queue import enqueue as enqueue_task
 
 logger = logging.getLogger(__name__)
@@ -112,7 +114,7 @@ def ingest_file(
 # ── Queue endpoint ──
 
 @router.get("/queue")
-def ingest_queue(limit: int = 30):
+def ingest_queue(limit: int = Query(30, ge=1, le=MAX_PAGE_SIZE)):
     """List recent ingest tasks with event info for the queue UI panel."""
     with connect() as conn:
         count_rows = conn.execute(
@@ -153,7 +155,7 @@ def ingest_queue(limit: int = 30):
 # ── Status endpoint ──
 
 @router.get("/status/{event_id}")
-def ingest_status(event_id: str):
+def ingest_status(event_id: SafeIdentifier):
     """Query the status of an ingest event."""
     init_db()
     with connect() as conn:
@@ -191,7 +193,7 @@ def clear_old_ingest():
 
 
 @router.delete("/queue/{task_id}")
-def delete_queue_task(task_id: str):
+def delete_queue_task(task_id: SafeIdentifier):
     """Delete a single ingest task. Also cleans up its associated event."""
     with connect() as conn:
         # Look up the event_id before deleting
@@ -216,7 +218,7 @@ def delete_queue_task(task_id: str):
 
 
 @router.post("/queue/{task_id}/retry")
-def retry_queue_task(task_id: str):
+def retry_queue_task(task_id: SafeIdentifier):
     """Retry a failed task — reset to pending. Also cleans up stuck event status."""
     init_db()
     with connect() as conn:
@@ -411,6 +413,7 @@ def _create_concept(title: str, topic: str, description: str = "", force_ai: boo
 
 def _process_ingest(event_id: str, ingest_type: str, content, topic: str, title: str):
     """Background task: run the appropriate ingest pipeline."""
+    safe_identifier(event_id)
     work_dir = Path(tempfile.mkdtemp())
     video_md5 = None
     try:
@@ -492,7 +495,9 @@ def _process_ingest(event_id: str, ingest_type: str, content, topic: str, title:
 
             # Persist video file before temp dir is cleaned up
             VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
-            persistent_video = VIDEOS_DIR / f"{event_id}{Path(content).suffix}"
+            persistent_video = resolve_under(
+                VIDEOS_DIR, f"{event_id}{Path(content).suffix}", must_exist=False
+            )
             shutil.copy2(content, persistent_video)
 
             audio_path = work_dir / "extracted.wav"
@@ -539,7 +544,9 @@ def _process_ingest(event_id: str, ingest_type: str, content, topic: str, title:
             
             # Persist video file (temp dir will be cleaned up)
             VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
-            persistent_video = VIDEOS_DIR / f"{event_id}.mp4"
+            persistent_video = resolve_under(
+                VIDEOS_DIR, f"{event_id}.mp4", must_exist=False
+            )
             shutil.copy2(video_path, persistent_video)
             video_md5 = _md5_file(persistent_video)
             
@@ -588,7 +595,9 @@ def _process_ingest(event_id: str, ingest_type: str, content, topic: str, title:
 
         # Save transcription to disk
         TRANSCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
-        (TRANSCRIPTS_DIR / f"{event_id}.md").write_text(text, encoding="utf-8")
+        resolve_under(
+            TRANSCRIPTS_DIR, f"{event_id}.md", must_exist=False
+        ).write_text(text, encoding="utf-8")
 
         # AI summarization for all text-producing ingest types
         ai_summary = None
@@ -617,7 +626,9 @@ def _process_ingest(event_id: str, ingest_type: str, content, topic: str, title:
                         title = result["suggested_title"]
                         logger.info("AI generated title for %s: %s -> %s", event_id, old_title[:40], title)
                     SUMMARIES_DIR.mkdir(parents=True, exist_ok=True)
-                    (SUMMARIES_DIR / f"{event_id}.md").write_text(ai_summary or "", encoding="utf-8")
+                    resolve_under(
+                        SUMMARIES_DIR, f"{event_id}.md", must_exist=False
+                    ).write_text(ai_summary or "", encoding="utf-8")
                 else:
                     logger.warning("AI summarization returned None for %s — API may be unavailable", event_id)
             except Exception as e:
@@ -641,7 +652,9 @@ def _process_ingest(event_id: str, ingest_type: str, content, topic: str, title:
         elif ingest_type == "audio_file":
             video_path = None
             AUDIO_DIR.mkdir(parents=True, exist_ok=True)
-            persistent_audio = AUDIO_DIR / f"{event_id}{Path(content).suffix}"
+            persistent_audio = resolve_under(
+                AUDIO_DIR, f"{event_id}{Path(content).suffix}", must_exist=False
+            )
             shutil.copy2(content, persistent_audio)
             audio_path_col = str(persistent_audio)
             document_path_col = None
@@ -649,7 +662,9 @@ def _process_ingest(event_id: str, ingest_type: str, content, topic: str, title:
             video_path = None
             audio_path_col = None
             DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
-            persistent_doc = DOCUMENTS_DIR / f"{event_id}{Path(content).suffix}"
+            persistent_doc = resolve_under(
+                DOCUMENTS_DIR, f"{event_id}{Path(content).suffix}", must_exist=False
+            )
             shutil.copy2(content, persistent_doc)
             document_path_col = str(persistent_doc)
         else:
