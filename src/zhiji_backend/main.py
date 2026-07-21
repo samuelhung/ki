@@ -5,20 +5,19 @@ import logging
 import logging.handlers
 import hmac
 from pathlib import Path
-from dotenv import load_dotenv
 from .paths import ZHIJI_HOME, FRONTEND_DIST, LOG_DIR, INGEST_ROOT, RELEASES_DIR, ensure_data_dirs
+from .credential_store import load_hardened_env
 
 # ---- 数据目录初始化 ----
 ensure_data_dirs()
 
 # ---- .env loading ----
 _env_path = ZHIJI_HOME / ".env"
-if not _env_path.exists():
+if not _env_path.exists() and not _env_path.is_symlink():
     # fallback: 开发时可能在项目根目录
     _project_root = Path(__file__).resolve().parents[2]
     _env_path = _project_root / ".env"
-if _env_path.exists():
-    load_dotenv(_env_path, override=True)
+load_hardened_env(_env_path, override=True)
 
 # ---- Logging setup ----
 _LOG_DIR = LOG_DIR

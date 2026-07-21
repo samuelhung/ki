@@ -108,10 +108,32 @@ def _load_config_unlocked(*, persist_normalization: bool = True) -> dict[str, An
         general = raw.get("general")
         had_legacy_key = isinstance(general, dict) and "api_key" in general
         raw, legacy_key = _scrub_api_key(raw)
+        env_base_url = credential_store.resolve_base_url()
+        if env_base_url:
+            env_base_url = _validate_provider_base_url(env_base_url)
+            raw_general = raw.get("general")
+            clean_general = dict(raw_general) if isinstance(raw_general, dict) else {}
+            if clean_general.get("base_url") != env_base_url:
+                clean_general["base_url"] = env_base_url
+                raw["general"] = clean_general
+                structure_changed = True
         if had_legacy_key and persist_normalization:
             with _config_credential_transaction():
-                if legacy_key and not credential_store.resolve_api_key():
-                    credential_store.set_api_key(legacy_key)
+                effective_key = credential_store.resolve_api_key() or legacy_key
+                if effective_key:
+                    bundle_base_url = env_base_url or _validate_provider_base_url(
+                        raw.get("general", {}).get("base_url", DEFAULT_AI_BASE_URL)
+                    )
+                    credential_store.set_provider_bundle(
+                        effective_key,
+                        bundle_base_url,
+                    )
+                    raw_general = raw.get("general")
+                    clean_general = (
+                        dict(raw_general) if isinstance(raw_general, dict) else {}
+                    )
+                    clean_general["base_url"] = bundle_base_url
+                    raw["general"] = clean_general
                 _write_config(raw)
             structure_changed = False
 
@@ -143,7 +165,18 @@ def get_config_and_credential() -> tuple[dict[str, Any], str]:
     """Return a coherent config and credential snapshot for AI consumers."""
     with _config_lock:
         with credential_store.locked():
-            return copy.deepcopy(_config), credential_store.resolve_api_key()
+            result = copy.deepcopy(_config)
+            general = result.setdefault("general", {})
+            general["base_url"] = _validate_provider_base_url(
+                credential_store.resolve_base_url()
+                or general.get("base_url", DEFAULT_AI_BASE_URL)
+            )
+            key = (
+                credential_store.resolve_bundle_api_key()
+                if credential_store.resolve_base_url()
+                else credential_store.resolve_api_key()
+            )
+            return result, key
 
 
 def save_config(config: dict | None = None) -> None:
@@ -158,12 +191,20 @@ def update_config_and_credential(
 ) -> None:
     """Commit config and credential changes as one serialized transaction."""
     with _config_credential_transaction():
+        active = _build_active_config(config)
+        base_url = _validate_provider_base_url(
+            active.get("general", {}).get("base_url", DEFAULT_AI_BASE_URL)
+        )
+        effective_key = credential_store.resolve_api_key()
         if (
             requested_api_key is not None
             and not credential_store.preserves_api_key(requested_api_key)
         ):
-            credential_store.set_api_key(requested_api_key)
-        _save_config_unlocked(config)
+            effective_key = requested_api_key
+        credential_store.set_provider_bundle(effective_key, base_url)
+        _write_config(active)
+        global _config
+        _config = active
 
 
 @contextmanager
@@ -196,6 +237,12 @@ def _config_credential_transaction() -> Iterator[None]:
 
 def _save_config_unlocked(config: dict | None = None) -> None:
     global _config
+    active = _build_active_config(config)
+    _write_config(active)
+    _config = active
+
+
+def _build_active_config(config: dict | None = None) -> dict:
     current, _ = _normalize_persisted_config(_config)
     current, _ = _scrub_api_key(current)
     active = _deep_merge(_defaults(), current)
@@ -203,8 +250,7 @@ def _save_config_unlocked(config: dict | None = None) -> None:
         incoming, _ = _normalize_persisted_config(config)
         incoming, _ = _scrub_api_key(incoming)
         active = _deep_merge(active, incoming)
-    _write_config(active)
-    _config = active
+    return active
 
 
 def _write_config(config: dict) -> None:
@@ -319,8 +365,9 @@ def get_module_config(module: str, task: str) -> dict:
 
     Returns a dict ready to unpack into chat() kwargs.
     """
-    g = _config.get("general", {})
-    m = _config.get(module, {})
+    config, _key = get_config_and_credential()
+    g = config.get("general", {})
+    m = config.get(module, {})
     t = m.get(task, {}) if isinstance(m, dict) else {}
 
     return {
@@ -332,6 +379,12 @@ def get_module_config(module: str, task: str) -> dict:
         "temperature": t.get("temperature", g.get("default_temperature", 0.3)),
         "max_tokens": t.get("max_tokens", g.get("default_max_tokens", 2048)),
     }
+
+
+def _validate_provider_base_url(value: str) -> str:
+    from .provider_policy import validate_allowed_base_url
+
+    return validate_allowed_base_url(value)
 
 
 def _deep_merge(base: dict, override: dict) -> dict:

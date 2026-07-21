@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import copy
 import importlib.util
 import json
@@ -184,6 +185,7 @@ def config_client(tmp_path, monkeypatch):
     monkeypatch.setattr(paths, "ZHIJI_HOME", tmp_path)
     monkeypatch.setattr(config_manager, "_config", config_manager._defaults())
     monkeypatch.delenv("KI_AI_BASE_URL_ALLOWLIST", raising=False)
+    monkeypatch.delenv("AI_BASE_URL", raising=False)
     monkeypatch.delenv("AI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
@@ -341,8 +343,6 @@ def test_exact_returned_mask_and_empty_value_preserve_existing_credential(config
     env_path.write_text("AI_API_KEY=abcdefghijklmnop\nOTHER=value\n", encoding="utf-8")
     os.chmod(env_path, 0o600)
     os.environ["AI_API_KEY"] = "abcdefghijklmnop"
-    original = env_path.read_bytes()
-
     get_response = client.get("/api/system-config")
     payload = get_response.json()
     assert payload["general"]["api_key"] == "abcd****mnop"
@@ -353,7 +353,11 @@ def test_exact_returned_mask_and_empty_value_preserve_existing_credential(config
 
     assert masked_response.status_code == 200
     assert empty_response.status_code == 200
-    assert env_path.read_bytes() == original
+    assert env_path.read_text(encoding="utf-8") == (
+        "OTHER=value\n"
+        f"AI_BASE_URL={config_manager.DEFAULT_AI_BASE_URL}\n"
+        "AI_API_KEY=abcdefghijklmnop\n"
+    )
     assert os.environ["AI_API_KEY"] == "abcdefghijklmnop"
 
 
@@ -368,7 +372,10 @@ def test_new_key_replaces_credential_without_plaintext_get_or_json(config_client
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
-    assert env_path.read_text(encoding="utf-8") == "AI_API_KEY=replacement-secret\n"
+    assert env_path.read_text(encoding="utf-8") == (
+        f"AI_BASE_URL={config_manager.DEFAULT_AI_BASE_URL}\n"
+        "AI_API_KEY=replacement-secret\n"
+    )
     assert stat.S_IMODE(env_path.stat().st_mode) == 0o600
     assert os.environ["AI_API_KEY"] == "replacement-secret"
     get_payload = client.get("/api/system-config").json()
@@ -401,7 +408,7 @@ def test_config_and_credential_updates_are_serialized_as_one_transaction(
     )
     config_manager.save_config()
     real_write_config = config_manager._write_config
-    real_set_api_key = credential_store.set_api_key
+    real_set_provider_bundle = credential_store.set_provider_bundle
     first_config_write = threading.Event()
     release_first = threading.Event()
     second_credential_write = threading.Event()
@@ -420,13 +427,17 @@ def test_config_and_credential_updates_are_serialized_as_one_transaction(
             assert release_first.wait(2)
         real_write_config(config)
 
-    def tracking_set_api_key(key):
+    def tracking_set_provider_bundle(key, base_url):
         if key == "key-b":
             second_credential_write.set()
-        real_set_api_key(key)
+        real_set_provider_bundle(key, base_url)
 
     monkeypatch.setattr(config_manager, "_write_config", blocking_write)
-    monkeypatch.setattr(credential_store, "set_api_key", tracking_set_api_key)
+    monkeypatch.setattr(
+        credential_store,
+        "set_provider_bundle",
+        tracking_set_provider_bundle,
+    )
 
     def update(name, base_url, key):
         try:
@@ -461,7 +472,10 @@ def test_config_and_credential_updates_are_serialized_as_one_transaction(
     assert responses == {"a": 200, "b": 200}
     assert second_entered_while_first_blocked is False
     assert os.environ["AI_API_KEY"] == "key-b"
-    assert credential_store.ENV_PATH.read_text(encoding="utf-8") == "AI_API_KEY=key-b\n"
+    assert credential_store.ENV_PATH.read_text(encoding="utf-8") == (
+        "AI_BASE_URL=https://provider-b.example/v1\n"
+        "AI_API_KEY=key-b\n"
+    )
     persisted = json.loads(config_path.read_text(encoding="utf-8"))
     assert persisted["general"]["base_url"] == "https://provider-b.example/v1"
     assert config_manager.get_config()["general"]["base_url"] == "https://provider-b.example/v1"
@@ -567,15 +581,20 @@ def test_partial_credential_failure_rolls_back_both_transaction_states(
     before_env_bytes = credential_store.ENV_PATH.read_bytes()
     before_memory = config_manager.get_config()
 
-    def partial_credential_write(_key):
+    def partial_credential_write(_key, _base_url):
         credential_store.ENV_PATH.write_text(
-            "AI_API_KEY=partial-secret\n",
+            "AI_BASE_URL=https://partial.example/v1\nAI_API_KEY=partial-secret\n",
             encoding="utf-8",
         )
+        os.environ["AI_BASE_URL"] = "https://partial.example/v1"
         os.environ["AI_API_KEY"] = "partial-secret"
         raise OSError("credential commit failed")
 
-    monkeypatch.setattr(credential_store, "set_api_key", partial_credential_write)
+    monkeypatch.setattr(
+        credential_store,
+        "set_provider_bundle",
+        partial_credential_write,
+    )
 
     with pytest.raises(OSError, match="credential commit failed"):
         client.put(
@@ -591,6 +610,7 @@ def test_partial_credential_failure_rolls_back_both_transaction_states(
     assert config_path.read_bytes() == before_config_bytes
     assert credential_store.ENV_PATH.read_bytes() == before_env_bytes
     assert config_manager.get_config() is before_memory
+    assert "AI_BASE_URL" not in os.environ
     assert os.environ["AI_API_KEY"] == "old-secret"
 
 
@@ -638,6 +658,106 @@ def test_ai_client_resolves_only_server_environment_in_priority_order(monkeypatc
     assert ai_client._resolve_api_key({"api_key": "json-secret"}) == "openai-secret"
     monkeypatch.setenv("AI_API_KEY", "ai-secret")
     assert ai_client._resolve_api_key({"api_key": "json-secret"}) == "ai-secret"
+
+
+@pytest.mark.parametrize(
+    ("env_url", "json_url", "expected_url"),
+    [
+        (
+            config_manager.DEFAULT_AI_BASE_URL,
+            config_manager.DEFAULT_AI_BASE_URL,
+            config_manager.DEFAULT_AI_BASE_URL,
+        ),
+        (
+            "https://provider-new.example/v1",
+            config_manager.DEFAULT_AI_BASE_URL,
+            "https://provider-new.example/v1",
+        ),
+        (
+            "https://provider-new.example/v1",
+            "https://provider-new.example/v1",
+            "https://provider-new.example/v1",
+        ),
+    ],
+    ids=["before-env-replace", "after-env-before-json", "after-json-mirror"],
+)
+def test_restart_uses_atomic_env_bundle_at_every_write_boundary(
+    tmp_path, monkeypatch, env_url, json_url, expected_url
+):
+    config_path = tmp_path / "system_config.json"
+    env_path = tmp_path / ".env"
+    config_path.write_text(
+        json.dumps({"general": {"base_url": json_url}}),
+        encoding="utf-8",
+    )
+    env_path.write_text(
+        f"AI_BASE_URL={env_url}\nAI_API_KEY=bundle-secret\n",
+        encoding="utf-8",
+    )
+    os.chmod(env_path, 0o600)
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(credential_store, "ENV_PATH", env_path)
+    monkeypatch.setenv(
+        "KI_AI_BASE_URL_ALLOWLIST",
+        "https://provider-new.example/v1",
+    )
+    monkeypatch.setenv("AI_BASE_URL", env_url)
+    monkeypatch.setenv("AI_API_KEY", "bundle-secret")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    config_manager._config = {}
+
+    config_manager.load_config()
+    snapshot, key = config_manager.get_config_and_credential()
+
+    assert key == "bundle-secret"
+    assert snapshot["general"]["base_url"] == expected_url
+    assert json.loads(config_path.read_text(encoding="utf-8"))["general"]["base_url"] == expected_url
+
+
+def test_existing_install_without_env_url_uses_json_url_and_env_key(
+    tmp_path, monkeypatch
+):
+    config_path = tmp_path / "system_config.json"
+    config_path.write_text(
+        json.dumps({"general": {"base_url": "https://legacy.example/v1"}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
+    monkeypatch.setenv("KI_AI_BASE_URL_ALLOWLIST", "https://legacy.example/v1")
+    monkeypatch.delenv("AI_BASE_URL", raising=False)
+    monkeypatch.delenv("AI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "legacy-env-secret")
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    config_manager._config = {}
+
+    config_manager.load_config()
+    snapshot, key = config_manager.get_config_and_credential()
+
+    assert snapshot["general"]["base_url"] == "https://legacy.example/v1"
+    assert key == "legacy-env-secret"
+
+
+def test_authoritative_env_url_does_not_pair_with_fallback_credential(
+    tmp_path, monkeypatch
+):
+    config_path = tmp_path / "system_config.json"
+    config_path.write_text(
+        json.dumps({"general": {"base_url": config_manager.DEFAULT_AI_BASE_URL}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
+    monkeypatch.setenv("AI_BASE_URL", config_manager.DEFAULT_AI_BASE_URL)
+    monkeypatch.delenv("AI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "unpaired-fallback-secret")
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    config_manager._config = {}
+
+    config_manager.load_config()
+    snapshot, key = config_manager.get_config_and_credential()
+
+    assert snapshot["general"]["base_url"] == config_manager.DEFAULT_AI_BASE_URL
+    assert key == ""
 
 
 def test_defaults_and_module_config_never_expose_api_key(monkeypatch):
@@ -692,7 +812,10 @@ def test_legacy_json_key_migrates_to_env_before_json_scrub(tmp_path, monkeypatch
 
     assert loaded["series"]["paper"]["max_tokens"] == 15000
     assert "api_key" not in loaded["general"]
-    assert env_path.read_text(encoding="utf-8") == "AI_API_KEY=legacy-secret\n"
+    assert env_path.read_text(encoding="utf-8") == (
+        f"AI_BASE_URL={config_manager.DEFAULT_AI_BASE_URL}\n"
+        "AI_API_KEY=legacy-secret\n"
+    )
     assert stat.S_IMODE(env_path.stat().st_mode) == 0o600
     persisted = json.loads(config_path.read_text(encoding="utf-8"))
     assert "api_key" not in persisted["general"]
@@ -727,9 +850,13 @@ def test_legacy_json_key_does_not_override_existing_server_credential(
 
     assert "api_key" not in loaded["general"]
     assert credential_store.resolve_api_key() == "server-secret"
-    assert "AI_API_KEY" not in os.environ
+    assert os.environ["AI_BASE_URL"] == config_manager.DEFAULT_AI_BASE_URL
+    assert os.environ["AI_API_KEY"] == "server-secret"
     assert os.environ["OPENAI_API_KEY"] == "server-secret"
-    assert not env_path.exists()
+    assert env_path.read_text(encoding="utf-8") == (
+        f"AI_BASE_URL={config_manager.DEFAULT_AI_BASE_URL}\n"
+        "AI_API_KEY=server-secret\n"
+    )
     assert "api_key" not in json.loads(config_path.read_text(encoding="utf-8"))["general"]
 
 
@@ -744,8 +871,10 @@ def test_legacy_migration_failure_is_fail_closed_without_key_loss(tmp_path, monk
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     monkeypatch.setattr(
         credential_store,
-        "set_api_key",
-        lambda _key: (_ for _ in ()).throw(OSError("credential write failed")),
+        "set_provider_bundle",
+        lambda _key, _base_url: (_ for _ in ()).throw(
+            OSError("credential write failed")
+        ),
     )
     config_manager._config = before_memory
 
@@ -796,6 +925,10 @@ def test_empty_legacy_key_is_scrubbed_without_creating_env(tmp_path, monkeypatch
     )
     monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
     monkeypatch.setattr(credential_store, "ENV_PATH", env_path)
+    monkeypatch.delenv("AI_BASE_URL", raising=False)
+    monkeypatch.delenv("AI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     config_manager._config = {}
 
     config_manager.load_config()
@@ -894,3 +1027,105 @@ def test_cli_init_creates_env_and_config_with_0600_permissions(tmp_path):
         "concept",
         "study",
     }
+
+
+def test_cli_serve_hardens_existing_env_before_loading_preserved_credentials(
+    tmp_path, monkeypatch
+):
+    from zhiji_backend import cli
+    import uvicorn
+
+    home = tmp_path / "selected-home"
+    home.mkdir()
+    env_path = home / ".env"
+    env_path.write_text(
+        f"AI_BASE_URL={config_manager.DEFAULT_AI_BASE_URL}\n"
+        "AI_API_KEY=preserved-secret\n",
+        encoding="utf-8",
+    )
+    os.chmod(env_path, 0o644)
+    calls = []
+    monkeypatch.delenv("AI_BASE_URL", raising=False)
+    monkeypatch.delenv("AI_API_KEY", raising=False)
+    monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: calls.append((args, kwargs)))
+
+    cli.cmd_serve(argparse.Namespace(data_dir=str(home), host="127.0.0.1", port=9120))
+
+    assert stat.S_IMODE(env_path.stat().st_mode) == 0o600
+    assert os.environ["AI_BASE_URL"] == config_manager.DEFAULT_AI_BASE_URL
+    assert os.environ["AI_API_KEY"] == "preserved-secret"
+    assert len(calls) == 1
+
+
+def test_cli_serve_rejects_symlink_env_without_touching_target(tmp_path, monkeypatch):
+    from zhiji_backend import cli
+    import uvicorn
+
+    home = tmp_path / "selected-home"
+    home.mkdir()
+    target = tmp_path / "target.env"
+    target.write_text("AI_API_KEY=target-secret\n", encoding="utf-8")
+    os.chmod(target, 0o644)
+    env_path = home / ".env"
+    env_path.symlink_to(target)
+    original = target.read_bytes()
+    original_mode = stat.S_IMODE(target.stat().st_mode)
+    monkeypatch.delenv("AI_API_KEY", raising=False)
+    monkeypatch.setattr(uvicorn, "run", lambda *_args, **_kwargs: None)
+
+    with pytest.raises(OSError, match="symlink"):
+        cli.cmd_serve(
+            argparse.Namespace(data_dir=str(home), host="127.0.0.1", port=9120)
+        )
+
+    assert env_path.is_symlink()
+    assert target.read_bytes() == original
+    assert stat.S_IMODE(target.stat().st_mode) == original_mode
+    assert "AI_API_KEY" not in os.environ
+
+
+def test_main_startup_hardens_env_before_loading_credentials(tmp_path):
+    home = tmp_path / "main-home"
+    home.mkdir()
+    env_path = home / ".env"
+    env_path.write_text("AI_API_KEY=main-preserved-secret\n", encoding="utf-8")
+    os.chmod(env_path, 0o644)
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(paths._PACKAGE_DIR.parent)
+    env["ZHIJI_HOME"] = str(home)
+    env.pop("AI_API_KEY", None)
+    env.pop("OPENAI_API_KEY", None)
+    env.pop("DEEPSEEK_API_KEY", None)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import json, os, stat; "
+                "import zhiji_backend.main; "
+                "print(json.dumps({'key': os.environ.get('AI_API_KEY'), "
+                "'mode': stat.S_IMODE(os.stat(os.environ['ZHIJI_HOME'] + '/.env').st_mode)}))"
+            ),
+        ],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout.strip().splitlines()[-1])
+    assert payload == {"key": "main-preserved-secret", "mode": 0o600}
+
+
+def test_main_and_cli_do_not_load_dotenv_before_hardening():
+    root = paths._PACKAGE_DIR
+    main_source = (root / "main.py").read_text(encoding="utf-8")
+    cli_source = (root / "cli.py").read_text(encoding="utf-8")
+
+    assert "load_dotenv(" not in main_source
+    assert "load_dotenv(" not in cli_source
+    assert "load_hardened_env(" in main_source
+    assert "load_hardened_env(" in cli_source

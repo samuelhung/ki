@@ -15,7 +15,6 @@ import sys
 import os
 import tempfile
 import ipaddress
-from dotenv import load_dotenv
 from pathlib import Path
 from urllib.request import urlopen, Request
 from urllib.error import URLError
@@ -232,8 +231,9 @@ def cmd_serve(args: argparse.Namespace) -> None:
 
     os.environ["ZHIJI_HOME"] = str(home)
     env_path = home / ".env"
-    if env_path.exists():
-        load_dotenv(env_path, override=True)
+    from zhiji_backend.credential_store import load_hardened_env
+
+    load_hardened_env(env_path, override=True)
 
     _validate_serve_host(args.host)
 
