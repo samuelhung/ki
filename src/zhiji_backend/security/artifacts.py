@@ -5,6 +5,7 @@ import email.utils
 import errno
 import mimetypes
 import os
+import re
 import stat
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +16,7 @@ from starlette.responses import Response
 
 
 _CHUNK_SIZE = 64 * 1024
+_ASCII_DIGITS = re.compile(r"[0-9]+\Z", re.ASCII)
 
 
 class ArtifactOpenError(ValueError):
@@ -88,10 +90,16 @@ def _single_range(value: str | None, size: int) -> tuple[int, int, int]:
     if not value.startswith("bytes=") or "," in value or size == 0:
         return 416, 0, -1
 
-    spec = value[6:].strip()
+    spec = value[6:]
     if spec.count("-") != 1:
         return 416, 0, -1
     start_text, end_text = spec.split("-", 1)
+    if not start_text and not end_text:
+        return 416, 0, -1
+    if start_text and not _ASCII_DIGITS.fullmatch(start_text):
+        return 416, 0, -1
+    if end_text and not _ASCII_DIGITS.fullmatch(end_text):
+        return 416, 0, -1
     try:
         if not start_text:
             suffix = int(end_text)
@@ -110,6 +118,60 @@ def _single_range(value: str | None, size: int) -> tuple[int, int, int]:
     except ValueError:
         return 416, 0, -1
     return 206, start, end
+
+
+def _http_date_timestamp(value: str) -> float | None:
+    try:
+        parsed = email.utils.parsedate_to_datetime(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        from datetime import timezone
+
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    try:
+        return parsed.timestamp()
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def _weak_etag_value(value: str) -> str:
+    candidate = value.strip()
+    if candidate[:2].lower() == "w/":
+        candidate = candidate[2:].strip()
+    return candidate
+
+
+def _if_none_match_matches(value: str, etag: str) -> bool:
+    for candidate in value.split(","):
+        candidate = candidate.strip()
+        if candidate == "*" or _weak_etag_value(candidate) == etag:
+            return True
+    return False
+
+
+def _not_modified(headers: Headers, *, etag: str, modified_at: float) -> bool:
+    if_none_match = headers.get("if-none-match")
+    if if_none_match is not None:
+        return _if_none_match_matches(if_none_match, etag)
+
+    if_modified_since = headers.get("if-modified-since")
+    if if_modified_since is None:
+        return False
+    timestamp = _http_date_timestamp(if_modified_since)
+    return timestamp is not None and int(modified_at) <= int(timestamp)
+
+
+def _if_range_matches(value: str, *, etag: str, modified_at: float) -> bool:
+    candidate = value.strip()
+    if candidate[:2].lower() == "w/":
+        return False
+    if candidate.startswith('"'):
+        return candidate == etag
+    timestamp = _http_date_timestamp(candidate)
+    return timestamp is not None and int(modified_at) <= int(timestamp)
 
 
 class PinnedFileResponse(Response):
@@ -171,8 +233,35 @@ class PinnedFileResponse(Response):
 
     async def __call__(self, scope, receive, send) -> None:
         try:
-            size = self.opened.stat_result.st_size
-            status, start, end = _single_range(Headers(scope=scope).get("range"), size)
+            file_stat = self.opened.stat_result
+            size = file_stat.st_size
+            request_headers = Headers(scope=scope)
+            etag = self.headers["etag"]
+            if _not_modified(
+                request_headers, etag=etag, modified_at=file_stat.st_mtime
+            ):
+                self.status_code = 304
+                if "content-length" in self.headers:
+                    del self.headers["content-length"]
+                await send(
+                    {
+                        "type": "http.response.start",
+                        "status": self.status_code,
+                        "headers": self.raw_headers,
+                    }
+                )
+                await send({"type": "http.response.body", "body": b""})
+                return
+
+            range_header = request_headers.get("range")
+            if_range = request_headers.get("if-range")
+            if range_header is not None and if_range is not None:
+                if not _if_range_matches(
+                    if_range, etag=etag, modified_at=file_stat.st_mtime
+                ):
+                    range_header = None
+
+            status, start, end = _single_range(range_header, size)
             self.status_code = status
             if status == 416:
                 self.headers["content-length"] = "0"
