@@ -52,7 +52,7 @@ jobs:
         run: bundle check
         working-directory: desktop
       - name: Verify locked macOS pods
-        run: bundle exec ruby -rlogger -S pod install --deployment
+        run: bundle exec ruby -e 'require "logger"; load Gem.bin_path("cocoapods", "pod")' -- install --deployment
         working-directory: desktop/macos
       - name: Install media dependencies
         run: brew install ffmpeg
