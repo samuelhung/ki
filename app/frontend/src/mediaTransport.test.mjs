@@ -250,6 +250,9 @@ test('repository full checks execute the media transport regression suite', () =
   const packageJson = JSON.parse(readFileSync(packageUrl, 'utf8'));
   const checkScript = readFileSync(checkScriptUrl, 'utf8');
 
-  assert.equal(packageJson.scripts['test:media-transport'], 'node --test src/mediaTransport.test.mjs');
+  assert.equal(
+    packageJson.scripts['test:media-transport'],
+    'node --experimental-strip-types --test src/mediaTransport.test.mjs',
+  );
   assert.match(checkScript, /npm run test:media-transport/);
 });

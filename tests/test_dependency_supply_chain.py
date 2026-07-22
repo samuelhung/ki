@@ -65,6 +65,18 @@ def test_frontend_direct_dependencies_are_exact_and_integrity_locked() -> None:
             assert locked["integrity"].startswith("sha512-")
 
 
+def test_frontend_typescript_tests_enable_the_locked_node22_loader() -> None:
+    package = json.loads((ROOT / "app" / "frontend" / "package.json").read_text(encoding="utf-8"))
+    for script_name in (
+        "test:cinematic-scene",
+        "test:cinematic-ingest",
+        "test:media-transport",
+    ):
+        assert package["scripts"][script_name].startswith("node --experimental-strip-types --test ")
+
+    assert "tsx" not in package.get("devDependencies", {})
+
+
 def test_mobile_dependency_and_signing_inputs_are_locked() -> None:
     workflow = (ROOT / ".github" / "workflows" / "zhiji-check.yml").read_text(encoding="utf-8")
     wrapper = (ROOT / "desktop" / "android" / "gradle" / "wrapper" / "gradle-wrapper.properties").read_text(
