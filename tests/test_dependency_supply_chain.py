@@ -83,17 +83,20 @@ def test_mobile_dependency_and_signing_inputs_are_locked() -> None:
         encoding="utf-8"
     )
     android_build = (ROOT / "desktop" / "android" / "app" / "build.gradle.kts").read_text(encoding="utf-8")
+    android_settings = (ROOT / "desktop" / "android" / "settings.gradle.kts").read_text(encoding="utf-8")
     root_android_build = (ROOT / "desktop" / "android" / "build.gradle.kts").read_text(encoding="utf-8")
     gradle_locks = sorted((ROOT / "desktop" / "android").glob("**/gradle.lockfile"))
 
     assert "flutter pub get --enforce-lockfile" in workflow
+    assert 'id("com.android.application") version "9.1.1" apply false' in android_settings
     assert "load Gem.bin_path(\"cocoapods\", \"pod\")" in workflow
     assert "COCOAPODS_VERSION: '1.16.2'" in workflow
     assert "BUNDLE_FROZEN: 'true'" in workflow
     assert "ruby-version: '3.1.6'" in workflow
     assert "bundle check" in workflow
     assert "RUBYOPT: -rlogger" not in workflow
-    assert "distributionSha256Sum=b84e04fa845fecba48551f425957641074fcc00a88a84d2aae5808743b35fc85" in wrapper
+    assert "distributionUrl=https\\://services.gradle.org/distributions/gradle-9.3.1-all.zip" in wrapper
+    assert "distributionSha256Sum=17f277867f6914d61b1aa02efab1ba7bb439ad652ca485cd8ca6842fccec6e43" in wrapper
     assert "lockAllConfigurations()" in root_android_build
     assert "LockMode.STRICT" in root_android_build
     assert "projectDir.toPath().startsWith(repositoryRoot)" in root_android_build
@@ -113,6 +116,31 @@ def test_android_release_task_graph_uses_kotlin_action_overload() -> None:
 
     assert "object : Action<TaskExecutionGraph>" in android_build
     assert "override fun execute(taskGraph: TaskExecutionGraph)" in android_build
+
+
+def test_android_build_tool_security_overrides_are_scoped_and_locked() -> None:
+    android_build = (ROOT / "desktop" / "android" / "build.gradle.kts").read_text(encoding="utf-8")
+    gradle_lock = (ROOT / "desktop" / "android" / "app" / "gradle.lockfile").read_text(encoding="utf-8")
+
+    assert 'name.startsWith("_internal-unified-test-platform")' in android_build
+    assert 'requested.group == "io.netty"' in android_build
+    assert 'requested.version in setOf("4.1.93.Final", "4.1.110.Final")' in android_build
+    assert 'useVersion("4.1.135.Final")' in android_build
+    assert 'requested.group == "com.google.protobuf"' in android_build
+    assert 'requested.version?.startsWith("3.") == true' in android_build
+    assert 'useVersion("3.25.5")' in android_build
+    assert 'requested.group == "org.bouncycastle"' in android_build
+    assert 'requested.version == "1.79"' in android_build
+    assert 'useVersion("1.80.2")' in android_build
+    assert "io.netty:netty-handler:4.1.135.Final=" in gradle_lock
+    assert "com.google.protobuf:protobuf-java:4.28.3=" in gradle_lock
+    assert "com.google.protobuf:protobuf-kotlin:4.28.3=" in gradle_lock
+    assert "org.bouncycastle:bcprov-jdk18on:1.80.2=" in gradle_lock
+    assert "io.netty:netty-handler:4.1.110.Final=" not in gradle_lock
+    assert "io.netty:netty-handler:4.1.93.Final=" not in gradle_lock
+    assert "com.google.protobuf:protobuf-java:3.24.4=" not in gradle_lock
+    assert "com.google.protobuf:protobuf-kotlin:3.24.4=" not in gradle_lock
+    assert "org.bouncycastle:bcprov-jdk18on:1.79=" not in gradle_lock
 
 
 def test_ci_executes_locked_android_graph_and_generates_gradle_sbom() -> None:
