@@ -80,6 +80,7 @@ def test_mobile_dependency_and_signing_inputs_are_locked() -> None:
     assert "BUNDLE_FROZEN: 'true'" in workflow
     assert "ruby-version: '3.1.6'" in workflow
     assert "bundle check" in workflow
+    assert "RUBYOPT: -rlogger" in workflow
     assert "distributionSha256Sum=b84e04fa845fecba48551f425957641074fcc00a88a84d2aae5808743b35fc85" in wrapper
     assert "lockAllConfigurations()" in root_android_build
     assert "LockMode.STRICT" in root_android_build

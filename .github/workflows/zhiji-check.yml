@@ -54,6 +54,8 @@ jobs:
       - name: Verify locked macOS pods
         run: bundle exec pod install --deployment
         working-directory: desktop/macos
+        env:
+          RUBYOPT: -rlogger
       - name: Install media dependencies
         run: brew install ffmpeg
       - name: Install backend test dependencies
