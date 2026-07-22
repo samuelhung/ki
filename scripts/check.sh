@@ -4,21 +4,21 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-PYTHON_BIN="${PYTHON_BIN:-}"
-if [[ -z "$PYTHON_BIN" ]]; then
-  if command -v python >/dev/null 2>&1; then
-    PYTHON_BIN="python"
-  elif command -v python3.12 >/dev/null 2>&1; then
-    PYTHON_BIN="python3.12"
-  else
-    echo "FAIL: Python 3.12 is required; set PYTHON_BIN=/path/to/python3.12" >&2
-    exit 1
-  fi
+UV_BIN="${UV_BIN:-uv}"
+if ! command -v "$UV_BIN" >/dev/null 2>&1; then
+  echo "FAIL: uv is required; install the pinned project environment with uv sync --frozen" >&2
+  exit 1
 fi
+
+echo "== Frozen Python environment =="
+"$UV_BIN" lock --check
+"$UV_BIN" sync --frozen --group dev
+PYTHON_BIN=("$UV_BIN" run --frozen python)
+"${PYTHON_BIN[@]}" scripts/check_frontend_toolchain.py
 
 run_retired_feature_scan() {
   local mode="${1:-scan}"
-  PYTHONPATH=src "$PYTHON_BIN" - "$ROOT" "$mode" <<'PY'
+  PYTHONPATH=src "${PYTHON_BIN[@]}" - "$ROOT" "$mode" <<'PY'
 from __future__ import annotations
 
 import ast
@@ -1177,19 +1177,19 @@ if [[ "${1:-}" == "--self-test-retired-feature-scan" ]]; then
   exit 0
 fi
 
-PYTHON_VERSION="$($PYTHON_BIN - <<'PY'
+PYTHON_VERSION="$("${PYTHON_BIN[@]}" - <<'PY'
 import sys
 print(f"{sys.version_info.major}.{sys.version_info.minor}")
 PY
 )"
 if [[ "$PYTHON_VERSION" != "3.12" ]]; then
-  echo "FAIL: Python 3.12 is required, got $PYTHON_VERSION from $PYTHON_BIN" >&2
+  echo "FAIL: Python 3.12 is required, got $PYTHON_VERSION from uv.lock" >&2
   exit 1
 fi
 
 VERSION="${1:-}"
 if [[ -z "$VERSION" ]]; then
-  VERSION=$($PYTHON_BIN - <<'PY'
+  VERSION=$("${PYTHON_BIN[@]}" - <<'PY'
 from pathlib import Path
 ns = {}
 exec(Path('src/zhiji_backend/__init__.py').read_text(), ns)
@@ -1201,10 +1201,10 @@ fi
 echo "== 知几检查: v$VERSION =="
 
 echo "== Python syntax =="
-PYTHONPATH=src $PYTHON_BIN -m compileall -q src/zhiji_backend
+PYTHONPATH=src "${PYTHON_BIN[@]}" -m compileall -q src/zhiji_backend
 
 echo "== Version consistency =="
-PYTHONPATH=src $PYTHON_BIN - "$VERSION" <<'PY'
+PYTHONPATH=src "${PYTHON_BIN[@]}" - "$VERSION" <<'PY'
 from pathlib import Path
 import re
 import sys
@@ -1293,7 +1293,7 @@ echo "== Optional release artifact check =="
 if [[ "${ZHIJI_SKIP_RELEASE_CHECK:-}" == "1" ]]; then
   echo "skip release-check: ZHIJI_SKIP_RELEASE_CHECK=1"
 elif [[ -f "desktop/build/release/zhiji_${VERSION}.dmg" ]]; then
-  PYTHONPATH=src $PYTHON_BIN scripts/release-check.py "$VERSION"
+  PYTHONPATH=src "${PYTHON_BIN[@]}" scripts/release-check.py "$VERSION"
 else
   echo "skip release-check: desktop/build/release/zhiji_${VERSION}.dmg not found"
 fi

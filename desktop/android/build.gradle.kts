@@ -1,7 +1,15 @@
+val repositoryRoot = rootDir.toPath()
+
 allprojects {
     repositories {
         google()
         mavenCentral()
+    }
+    if (projectDir.toPath().startsWith(repositoryRoot)) {
+        dependencyLocking {
+            lockAllConfigurations()
+            lockMode.set(org.gradle.api.artifacts.dsl.LockMode.STRICT)
+        }
     }
 }
 

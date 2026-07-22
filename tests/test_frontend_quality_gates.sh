@@ -20,7 +20,7 @@ for path in "$WORKFLOW" "$VITE_CONFIG" "$SYSTEM_DOC_DATA" "$SYSTEM_CENTER_PANELS
   fi
 done
 
-if ! grep -q '"typecheck":"tsc --noEmit"' "$PACKAGE_JSON"; then
+if ! node -e 'const p=require(process.argv[1]); process.exit(p.scripts?.typecheck === "tsc --noEmit" ? 0 : 1)' "$PACKAGE_JSON"; then
   echo "frontend package must expose a strict typecheck script" >&2
   exit 1
 fi

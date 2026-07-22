@@ -81,29 +81,73 @@ def verify_wheel(wheel: Path) -> None:
     print(f"verified frontend files in {wheel.name}")
 
 
+def frozen_build_commands(build_root: Path, outdir: Path) -> list[tuple[list[str], Path]]:
+    return [
+        (["uv", "lock", "--check"], ROOT),
+        (["uv", "sync", "--frozen", "--group", "dev"], ROOT),
+        (
+            [
+                "uv",
+                "run",
+                "--frozen",
+                "python",
+                "-m",
+                "build",
+                "--wheel",
+                "--no-isolation",
+                "--outdir",
+                str(outdir),
+                str(build_root),
+            ],
+            ROOT,
+        ),
+    ]
+
+
+def frontend_build_commands() -> list[tuple[list[str], Path]]:
+    return [
+        ([sys.executable, str(ROOT / "scripts/check_frontend_toolchain.py")], ROOT),
+        (["npm", "ci"], FRONTEND_DIR),
+        (["npm", "run", "build"], FRONTEND_DIR),
+    ]
+
+
+def wheel_snapshot(outdir: Path) -> dict[Path, tuple[int, int]]:
+    return {path: (path.stat().st_mtime_ns, path.stat().st_size) for path in outdir.glob("zhiji_backend-*.whl")}
+
+
+def select_built_wheel(outdir: Path, before: dict[Path, tuple[int, int]]) -> Path:
+    changed = [
+        path
+        for path in outdir.glob("zhiji_backend-*.whl")
+        if before.get(path) != (path.stat().st_mtime_ns, path.stat().st_size)
+    ]
+    if len(changed) != 1:
+        raise SystemExit(f"expected exactly one wheel from this build, found {len(changed)}")
+    return changed[0]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--outdir", default=str(ROOT / "dist"))
-    parser.add_argument("--python", default=sys.executable)
-    parser.add_argument("--skip-frontend-build", action="store_true")
     args = parser.parse_args()
 
     outdir = Path(args.outdir).expanduser().resolve()
     outdir.mkdir(parents=True, exist_ok=True)
+    before = wheel_snapshot(outdir)
 
-    if not args.skip_frontend_build:
-        run(["npm", "run", "build"], FRONTEND_DIR)
+    for command, cwd in frontend_build_commands():
+        run(command, cwd)
 
     with tempfile.TemporaryDirectory(prefix="zhiji-backend-wheel-") as temp:
         build_root = copy_project_to_temp(Path(temp))
         embed_frontend_dist(build_root)
-        run([args.python, "-m", "build", "--wheel", "--no-isolation", "--outdir", str(outdir)], build_root)
+        for command, cwd in frozen_build_commands(build_root, outdir):
+            run(command, cwd)
 
-    wheels = sorted(outdir.glob("zhiji_backend-*.whl"), key=lambda path: path.stat().st_mtime)
-    if not wheels:
-        raise SystemExit(f"no wheel produced in {outdir}")
-    verify_wheel(wheels[-1])
-    print(wheels[-1])
+    wheel = select_built_wheel(outdir, before)
+    verify_wheel(wheel)
+    print(wheel)
     return 0
 
 
