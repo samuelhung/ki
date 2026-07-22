@@ -148,6 +148,13 @@ test('system observation pages have distinct names and semantic responsibilities
   assert.match(assets, /<b>资产台账<\/b>/);
 });
 
+test('system center preserves the established access-boundary copy', async () => {
+  const panels = await readFile(panelsUrl, 'utf8');
+
+  assert.match(panels, /label: '访问边界', value: '同源会话 \/ KI_API_TOKEN'/);
+  assert.doesNotMatch(panels, /label: '访问边界', value: 'Bearer \/ X-API-Key'/);
+});
+
 test('system center keeps focused panels and renders each AI module directly', async () => {
   const [page, panels, assets] = await Promise.all([
     readFile(pageUrl, 'utf8'),

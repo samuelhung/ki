@@ -15,7 +15,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from zhiji_backend import task_queue
+from zhiji_backend import ingest_task_runner, task_queue
 from zhiji_backend.db import connect, init_db
 
 
@@ -386,7 +386,7 @@ def test_timeout_marks_task_error_and_event_error_after_retry_exhausted(tmp_path
         event = conn.execute("SELECT status, last_error FROM events WHERE id = 'evt-timeout'").fetchone()
 
     assert task["status"] == "error"
-    assert "任务超时" in task["error"]
+    assert task["error"] == "任务处理超时，请稍后重试。"
     assert event["status"] == "error"
     assert event["last_error"] == task["error"]
     assert task_queue._active_process is None
@@ -501,10 +501,10 @@ def test_timeout_orphaned_process_tree_is_not_requeued(
             (f"evt-timeout-orphan-{leader_exits_after_term}",),
         ).fetchone()
     assert task["status"] == "error"
-    assert "SIGKILL" in task["error"]
+    assert task["error"] == "任务处理超时，请稍后重试。"
     assert task["retry_count"] == 0
     assert tuple(event) == ("error", task["error"])
-    assert "阻止自动重试" in caplog.text
+    assert "error_code=timeout" in caplog.text
 
 
 def test_child_process_failure_marks_processing_event_error(tmp_path, monkeypatch):
@@ -521,9 +521,50 @@ def test_child_process_failure_marks_processing_event_error(tmp_path, monkeypatc
         event = conn.execute("SELECT status, last_error FROM events WHERE id = 'evt-failed'").fetchone()
 
     assert task["status"] == "error"
-    assert task["error"] == "runner failed"
+    assert task["error"] == "任务处理失败，请稍后重试。"
     assert event["status"] == "error"
     assert event["last_error"] == task["error"]
+
+
+def test_child_stderr_secret_is_not_persisted_or_logged(tmp_path, monkeypatch, caplog):
+    class SecretFailingProcess:
+        returncode = 1
+
+        def communicate(self, timeout=None):
+            return "prompt=private user prompt", (
+                "api_key=child-secret stderr=/Users/alice/private.txt "
+                "https://user:pass@example.test?token=query-secret"
+            )
+
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    init_db()
+    task_id = _insert_processing_task(
+        event_id="evt-secret-failed", task_id="task-secret-failed"
+    )
+    monkeypatch.setattr(
+        task_queue.subprocess, "Popen", lambda *args, **kwargs: SecretFailingProcess()
+    )
+
+    with caplog.at_level("ERROR"):
+        task_queue._process_one(task_id)
+
+    with connect() as conn:
+        task = conn.execute(
+            "SELECT status, error FROM ingest_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        event = conn.execute(
+            "SELECT status, last_error FROM events WHERE id = 'evt-secret-failed'"
+        ).fetchone()
+
+    assert tuple(task) == ("error", "任务处理失败，请稍后重试。")
+    assert tuple(event) == ("error", task["error"])
+    for secret in (
+        "child-secret",
+        "private user prompt",
+        "/Users/alice/private.txt",
+        "query-secret",
+    ):
+        assert secret not in caplog.text
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX process sessions only")
@@ -913,8 +954,8 @@ def test_failed_terminate_does_not_reclassify_ordinary_child_failure(
         event = conn.execute(
             "SELECT status, last_error FROM events WHERE id = 'evt-terminate-failed'"
         ).fetchone()
-    assert tuple(task) == ("error", "ordinary child failure")
-    assert tuple(event) == ("error", "ordinary child failure")
+    assert tuple(task) == ("error", "任务处理失败，请稍后重试。")
+    assert tuple(event) == ("error", "任务处理失败，请稍后重试。")
 
 
 def test_unrelated_negative_exit_is_not_shutdown_interruption_and_clears_state(
@@ -938,7 +979,7 @@ def test_unrelated_negative_exit_is_not_shutdown_interruption_and_clears_state(
         task = conn.execute(
             "SELECT status, error FROM ingest_tasks WHERE id = ?", (task_id,)
         ).fetchone()
-    assert tuple(task) == ("error", "unrelated signal")
+    assert tuple(task) == ("error", "任务处理失败，请稍后重试。")
     assert task_queue._shutdown_interrupted is None
     assert not task_queue._shutdown_signals_sent
     assert task_queue._shutdown_fallback_causation is False
@@ -1180,6 +1221,167 @@ def test_safe_pending_unlink_refuses_paths_outside_pending(tmp_path, monkeypatch
     task_queue._safe_pending_unlink(str(outside))
 
     assert outside.exists()
+
+
+def test_task_runner_rejects_persisted_content_path_outside_ingest_root(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    ingest_root = tmp_path / "ingest"
+    pending = ingest_root / "pending"
+    pending.mkdir(parents=True)
+    outside = tmp_path / "outside.mp4"
+    outside.write_bytes(b"malicious")
+    init_db()
+    with connect() as conn:
+        conn.execute(
+            """INSERT OR IGNORE INTO sources (id, name, type, url, topic, priority)
+               VALUES ('user-upload', '用户上传', 'manual', '', 'test', 'medium')"""
+        )
+        conn.execute(
+            """INSERT INTO events (id, source_id, title, url, topic,
+               importance, actionability, decision, status, content_type)
+               VALUES ('evt-malicious-path', 'user-upload', '待处理', '', 'test',
+                       4, 4, 'digest', 'processing', 'event')"""
+        )
+        conn.execute(
+            """INSERT INTO ingest_tasks (id, event_id, ingest_type, payload_json)
+               VALUES ('task-malicious-path', 'evt-malicious-path', 'video_file', ?)""",
+            (f'{{"content_path": "{outside}", "topic": "test", "title": "x"}}',),
+        )
+    monkeypatch.setattr(ingest_task_runner, "INGEST_ROOT", ingest_root, raising=False)
+    monkeypatch.setattr(ingest_task_runner, "PENDING_DIR", pending, raising=False)
+    called = False
+
+    def fail_if_called(*args, **kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(
+        "zhiji_backend.routes.ingest_routes._process_ingest", fail_if_called
+    )
+
+    with pytest.raises(SystemExit, match="invalid queued content path") as exc_info:
+        ingest_task_runner.run_task("task-malicious-path")
+
+    assert called is False
+    assert str(outside) not in str(exc_info.value)
+
+
+def test_task_runner_rejects_content_path_in_non_pending_ingest_directory(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    ingest_root = tmp_path / "ingest"
+    pending = ingest_root / "pending"
+    documents = ingest_root / "documents"
+    pending.mkdir(parents=True)
+    documents.mkdir()
+    persisted = documents / "already-published.pdf"
+    persisted.write_bytes(b"published")
+    init_db()
+    with connect() as conn:
+        conn.execute(
+            """INSERT OR IGNORE INTO sources (id, name, type, url, topic, priority)
+               VALUES ('user-upload', '用户上传', 'manual', '', 'test', 'medium')"""
+        )
+        conn.execute(
+            """INSERT INTO events (id, source_id, title, url, topic,
+               importance, actionability, decision, status, content_type)
+               VALUES ('evt-non-pending', 'user-upload', '待处理', '', 'test',
+                       4, 4, 'digest', 'processing', 'event')"""
+        )
+        conn.execute(
+            """INSERT INTO ingest_tasks (id, event_id, ingest_type, payload_json)
+               VALUES ('task-non-pending', 'evt-non-pending', 'document', ?)""",
+            (f'{{"content_path": "{persisted}"}}',),
+        )
+    monkeypatch.setattr(ingest_task_runner, "INGEST_ROOT", ingest_root)
+    monkeypatch.setattr(ingest_task_runner, "PENDING_DIR", pending)
+
+    with pytest.raises(SystemExit, match="invalid queued content path"):
+        ingest_task_runner.run_task("task-non-pending")
+
+
+def test_worker_rejects_malicious_content_path_before_spawning(tmp_path, monkeypatch):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    ingest_root = tmp_path / "ingest"
+    pending = ingest_root / "pending"
+    pending.mkdir(parents=True)
+    outside = tmp_path / "outside.mp4"
+    outside.write_bytes(b"malicious")
+    monkeypatch.setattr(task_queue, "INGEST_ROOT", ingest_root)
+    monkeypatch.setattr(task_queue, "PENDING_DIR", pending)
+    init_db()
+    with connect() as conn:
+        conn.execute(
+            """INSERT OR IGNORE INTO sources (id, name, type, url, topic, priority)
+               VALUES ('user-upload', '用户上传', 'manual', '', 'test', 'medium')"""
+        )
+        conn.execute(
+            """INSERT INTO events (id, source_id, title, url, topic,
+               importance, actionability, decision, status, content_type)
+               VALUES ('evt-worker-malicious', 'user-upload', '待处理', '', 'test',
+                       4, 4, 'digest', 'processing', 'event')"""
+        )
+        conn.execute(
+            """INSERT INTO ingest_tasks (id, event_id, ingest_type, payload_json)
+               VALUES ('task-worker-malicious', 'evt-worker-malicious', 'video_file', ?)""",
+            (f'{{"content_path": "{outside}"}}',),
+        )
+
+    def fail_popen(*args, **kwargs):
+        raise AssertionError("worker must reject before spawning")
+
+    monkeypatch.setattr(task_queue.subprocess, "Popen", fail_popen)
+
+    task_queue._process_one("task-worker-malicious")
+
+    with connect() as conn:
+        task = conn.execute(
+            "SELECT status, error FROM ingest_tasks WHERE id = 'task-worker-malicious'"
+        ).fetchone()
+        event = conn.execute(
+            "SELECT status, last_error FROM events WHERE id = 'evt-worker-malicious'"
+        ).fetchone()
+    assert tuple(task) == ("error", "不支持的输入格式。")
+    assert tuple(event) == ("error", "不支持的输入格式。")
+    assert str(outside) not in task["error"]
+
+
+def test_enqueue_db_failure_cleans_large_pending_copy_and_processing_event(tmp_path, monkeypatch):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    monkeypatch.setattr(task_queue, "PENDING_DIR", tmp_path / "pending")
+    init_db()
+    event_id = "evt-enqueue-failure"
+    with connect() as conn:
+        conn.execute(
+            """INSERT OR IGNORE INTO sources (id, name, type, url, topic, priority)
+               VALUES ('user-upload', '用户上传', 'manual', '', 'test', 'medium')"""
+        )
+        conn.execute(
+            """INSERT INTO events (id, source_id, title, url, topic,
+               importance, actionability, decision, status, content_type)
+               VALUES (?, 'user-upload', '待处理', '', 'test', 4, 4, 'digest', 'processing', 'event')""",
+            (event_id,),
+        )
+        conn.execute(
+            """CREATE TRIGGER fail_enqueue BEFORE INSERT ON ingest_tasks
+               BEGIN SELECT RAISE(FAIL, 'raw database failure'); END"""
+        )
+    source = tmp_path / "large.mp4"
+    source.write_bytes(b"x" * (2 * 1024 * 1024))
+
+    with pytest.raises(task_queue.EnqueueError, match="加入处理队列") as exc_info:
+        task_queue.enqueue(event_id, "video_file", source, "test", "待处理")
+
+    assert "raw database failure" not in str(exc_info.value)
+    assert list((tmp_path / "pending").glob("*")) == []
+    with connect() as conn:
+        event = conn.execute("SELECT status FROM events WHERE id = ?", (event_id,)).fetchone()
+        task = conn.execute("SELECT id FROM ingest_tasks WHERE event_id = ?", (event_id,)).fetchone()
+    assert event is None
+    assert task is None
 
 
 def test_start_worker_does_not_start_duplicate_thread(monkeypatch):

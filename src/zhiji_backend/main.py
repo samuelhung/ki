@@ -2,24 +2,22 @@ from __future__ import annotations
 
 import os
 import logging
-import logging.handlers
 import hmac
-import hashlib
 from pathlib import Path
-from dotenv import load_dotenv
 from .paths import ZHIJI_HOME, FRONTEND_DIST, LOG_DIR, INGEST_ROOT, RELEASES_DIR, ensure_data_dirs
+from .credential_store import load_hardened_env
+from .security.redaction import RedactingFormatter, SecureTimedRotatingFileHandler
 
 # ---- 数据目录初始化 ----
 ensure_data_dirs()
 
 # ---- .env loading ----
 _env_path = ZHIJI_HOME / ".env"
-if not _env_path.exists():
+if not _env_path.exists() and not _env_path.is_symlink():
     # fallback: 开发时可能在项目根目录
     _project_root = Path(__file__).resolve().parents[2]
     _env_path = _project_root / ".env"
-if _env_path.exists():
-    load_dotenv(_env_path, override=True)
+load_hardened_env(_env_path, override=True)
 
 # ---- Logging setup ----
 _LOG_DIR = LOG_DIR
@@ -32,14 +30,14 @@ _root.setLevel(logging.DEBUG)
 # Console handler: INFO+ to stderr (visible in uvicorn output)
 _console = logging.StreamHandler()
 _console.setLevel(logging.INFO)
-_console.setFormatter(logging.Formatter(
+_console.setFormatter(RedactingFormatter(
     "%(asctime)s [%(levelname)-7s] %(name)s | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 ))
 _root.addHandler(_console)
 
 # File handler: DEBUG+ with daily rotation, keep 30 days
-_file = logging.handlers.TimedRotatingFileHandler(
+_file = SecureTimedRotatingFileHandler(
     str(_LOG_DIR / "ki.log"),
     when="midnight",
     interval=1,
@@ -47,7 +45,7 @@ _file = logging.handlers.TimedRotatingFileHandler(
     encoding="utf-8",
 )
 _file.setLevel(logging.DEBUG)
-_file.setFormatter(logging.Formatter(
+_file.setFormatter(RedactingFormatter(
     "%(asctime)s [%(levelname)-7s] %(name)s:%(lineno)d | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 ))
@@ -59,11 +57,13 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import Headers, URL
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware as StarletteTrustedHostMiddleware
 
 from . import __version__
 from .db import get_db_path, init_db, seed_default_sources
@@ -71,6 +71,8 @@ from .config_manager import load_config
 from .migrations import ensure_migrations
 from .task_queue import start_worker, stop_worker
 from .usage_writer import start_usage_writer, stop_usage_writer
+from .security.constraints import safe_identifier
+from .security.artifacts import ArtifactOpenError, PinnedFileResponse, open_regular_under
 
 # Route modules
 from .routes.dashboard_routes import router as dashboard_router
@@ -123,19 +125,72 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="知几", version=__version__, lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://127.0.0.1:5173",
-        "http://localhost:5173",
-        "http://127.0.0.1:9120",
-        "http://localhost:9120",
-        *([f"http://{ip}:9120" for ip in os.getenv("KI_EXTRA_ORIGINS", "").split(",") if ip.strip()]),
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+_DEFAULT_ALLOWED_HOSTS = ["localhost", "127.0.0.1", "::1", "testserver"]
+_DEFAULT_CORS_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:9120",
+    "http://127.0.0.1:9120",
+    "tauri://localhost",
+    "https://tauri.localhost",
+]
+
+
+def _csv_env(name: str, defaults: list[str]) -> list[str]:
+    value = os.getenv(name, "").strip()
+    if not value:
+        return defaults.copy()
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _allowed_hosts() -> list[str]:
+    return _csv_env("KI_ALLOWED_HOSTS", _DEFAULT_ALLOWED_HOSTS)
+
+
+def _cors_origins() -> list[str]:
+    return _csv_env("KI_CORS_ORIGINS", _DEFAULT_CORS_ORIGINS)
+
+
+class TrustedHostMiddleware(StarletteTrustedHostMiddleware):
+    """TrustedHostMiddleware with bracketed IPv6 Host parsing."""
+
+    async def __call__(self, scope, receive, send) -> None:
+        if self.allow_any or scope["type"] not in ("http", "websocket"):
+            await self.app(scope, receive, send)
+            return
+
+        host_header = Headers(scope=scope).get("host", "")
+        if host_header.startswith("[") and "]" in host_header:
+            closing_bracket = host_header.index("]")
+            suffix = host_header[closing_bracket + 1:]
+            valid_suffix = not suffix
+            if suffix.startswith(":") and suffix[1:].isdigit():
+                port = int(suffix[1:])
+                valid_suffix = 1 <= port <= 65535
+            host = host_header[1:closing_bracket] if valid_suffix else ""
+        else:
+            host = host_header.split(":", 1)[0]
+
+        is_valid_host = False
+        found_www_redirect = False
+        for pattern in self.allowed_hosts:
+            if host == pattern or (pattern.startswith("*") and host.endswith(pattern[1:])):
+                is_valid_host = True
+                break
+            if "www." + host == pattern:
+                found_www_redirect = True
+
+        if is_valid_host:
+            await self.app(scope, receive, send)
+        elif found_www_redirect and self.www_redirect:
+            url = URL(scope=scope)
+            response = RedirectResponse(url=str(url.replace(netloc="www." + url.netloc)))
+            await response(scope, receive, send)
+        else:
+            response = PlainTextResponse("Invalid host header", status_code=400)
+            await response(scope, receive, send)
+
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=_allowed_hosts())
 
 # ---- 前端静态文件服务 ----
 # FRONTEND_DIST 随包分发（pip install 时一起安装到 site-packages）
@@ -183,16 +238,6 @@ def _request_token(request: Request) -> str:
     return api_key_header
 
 
-def _session_cookie_value(api_token: str) -> str:
-    digest = hmac.new(api_token.encode("utf-8"), b"zhiji-remote-session", hashlib.sha256).hexdigest()
-    return digest
-
-
-def _has_valid_session_cookie(request: Request, api_token: str) -> bool:
-    cookie = request.cookies.get("ki_session", "")
-    return bool(cookie) and hmac.compare_digest(cookie, _session_cookie_value(api_token))
-
-
 @app.middleware("http")
 async def api_auth(request: Request, call_next):
     """Protect API and sensitive file paths.
@@ -207,7 +252,7 @@ async def api_auth(request: Request, call_next):
             return await call_next(request)
         if not api_token:
             return JSONResponse({"error": "unauthorized"}, status_code=401)
-        if _request_token(request) != api_token and not _has_valid_session_cookie(request, api_token):
+        if not hmac.compare_digest(_request_token(request), api_token):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
     return await call_next(request)
 
@@ -225,15 +270,34 @@ async def spa_fallback(request: Request, call_next):
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
-        if _api_token() and (path in ("", "/") or path.endswith(".html") or "." not in Path(path).name):
-            response.set_cookie(
-                "ki_session",
-                _session_cookie_value(_api_token()),
-                httponly=True,
-                samesite="lax",
-                max_age=60 * 60 * 24 * 30,
-            )
     return response
+
+
+# Added last so CORS wraps authentication and decorates early 401 responses.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins(),
+    allow_credentials=False,
+    allow_methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "X-API-Key",
+        "Range",
+        "If-Range",
+        "If-None-Match",
+        "If-Modified-Since",
+        "If-Unmodified-Since",
+    ],
+    expose_headers=[
+        "Accept-Ranges",
+        "Content-Length",
+        "Content-Range",
+        "Content-Type",
+        "ETag",
+        "Last-Modified",
+    ],
+)
 
 
 # ---- Register route modules ----
@@ -265,20 +329,53 @@ async def retired_digest_endpoint():
 
 # ---- Static file mounts ----
 
-INGEST_ROOT.mkdir(parents=True, exist_ok=True)
-app.mount("/ingest", StaticFiles(directory=str(INGEST_ROOT)), name="ingest")
+PUBLIC_INGEST_ARTIFACTS = frozenset(
+    {"videos", "audio", "documents", "transcripts", "summaries"}
+)
+
+
+@app.api_route("/ingest/{kind}/{filename:path}", methods=["GET", "HEAD"])
+async def serve_ingest_artifact(kind: str, filename: str):
+    if kind not in PUBLIC_INGEST_ARTIFACTS:
+        raise HTTPException(status_code=404, detail="Not Found")
+    if "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=422, detail="Invalid artifact path")
+    try:
+        safe_identifier(filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid artifact path") from exc
+    try:
+        opened = open_regular_under(INGEST_ROOT, kind, filename)
+    except ArtifactOpenError:
+        raise HTTPException(status_code=404, detail="Not Found") from None
+    try:
+        return PinnedFileResponse(opened, filename=filename)
+    except BaseException:
+        opened.close()
+        raise
 
 RELEASES_DIR.mkdir(parents=True, exist_ok=True)
 # Use direct route to avoid conflict with root SPA mount (html=True intercepts everything)
-@app.get("/releases/{filename:path}")
+@app.api_route("/releases/{filename:path}", methods=["GET", "HEAD"])
 async def serve_release(filename: str):
     requested = Path(filename)
+    if any(part in {".", ".."} for part in requested.parts):
+        raise HTTPException(status_code=422, detail="Invalid release path")
     if requested.name != filename or requested.suffix.lower() not in {".dmg", ".xml"}:
-        return JSONResponse({"error": "not found"}, status_code=404)
-    file_path = RELEASES_DIR / filename
-    if not file_path.exists() or not file_path.is_file():
-        return JSONResponse({"error": "not found"}, status_code=404)
-    return FileResponse(file_path)
+        raise HTTPException(status_code=404, detail="Not Found")
+    try:
+        safe_identifier(filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Invalid release path") from exc
+    try:
+        opened = open_regular_under(RELEASES_DIR, filename)
+    except ArtifactOpenError:
+        raise HTTPException(status_code=404, detail="Not Found") from None
+    try:
+        return PinnedFileResponse(opened, filename=filename)
+    except BaseException:
+        opened.close()
+        raise
 
 if _HAS_FRONTEND:
     app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")

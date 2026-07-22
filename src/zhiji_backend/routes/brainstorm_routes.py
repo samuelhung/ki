@@ -8,24 +8,46 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, field_validator
 from ..db import connect, init_db
 from ..classifier import classify_content
 from ..translator import translate
 from ..ai_client import chat
 
 from ..paths import BRAINSTORM_DIR
+from ..security.constraints import (
+    BoundedIdentifierList,
+    MAX_OFFSET,
+    MAX_PAGE_SIZE,
+    SafeIdentifier,
+    SafeIdentifierList,
+    safe_identifier,
+)
+from ..security.paths import resolve_under, safe_unlink_under
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 def _brainstorm_md_path(question_id: str) -> Path:
-    return BRAINSTORM_DIR / f"{question_id}.md"
+    safe_identifier(question_id)
+    return resolve_under(BRAINSTORM_DIR, f"{question_id}.md", must_exist=False)
+
+
+def _safe_brainstorm_unlink(question_id: str) -> None:
+    try:
+        safe_unlink_under(BRAINSTORM_DIR, f"{question_id}.md")
+    except Exception:
+        logger.warning("Refusing to delete unsafe brainstorm artifact", exc_info=True)
 
 
 @router.get("/api/brainstorm")
-def list_brainstorm_questions(status: str | None = None, topic: str | None = None, offset: int = 0, limit: int = 200) -> dict[str, object]:
+def list_brainstorm_questions(
+    status: str | None = None,
+    topic: str | None = None,
+    offset: int = Query(0, ge=0, le=MAX_OFFSET),
+    limit: int = Query(200, ge=1, le=MAX_PAGE_SIZE),
+) -> dict[str, object]:
     """List brainstorm questions, newest first. Optional topic filter."""
     query = """
         SELECT b.id, b.event_id, b.question, b.status, b.created_at, b.topic,
@@ -67,7 +89,7 @@ def brainstorm_topic_counts() -> dict[str, int]:
 
 
 @router.get("/api/brainstorm/{question_id}")
-def get_brainstorm_question(question_id: str) -> dict[str, object]:
+def get_brainstorm_question(question_id: SafeIdentifier) -> dict[str, object]:
     """Get a single brainstorm question with its answered_event_ids and latest answer."""
     with connect() as conn:
         row = conn.execute(
@@ -156,7 +178,7 @@ def create_brainstorm_question(request: CreateQuestionRequest) -> dict[str, obje
 
 
 @router.delete("/api/brainstorm/{question_id}")
-def delete_brainstorm_question(question_id: str) -> dict[str, object]:
+def delete_brainstorm_question(question_id: SafeIdentifier) -> dict[str, object]:
     """Delete a brainstorm question and its .md file."""
     with connect() as conn:
         existing = conn.execute("SELECT id FROM brainstorm_questions WHERE id = ?", (question_id,)).fetchone()
@@ -164,33 +186,33 @@ def delete_brainstorm_question(question_id: str) -> dict[str, object]:
             raise HTTPException(status_code=404, detail="Question not found")
         conn.execute("DELETE FROM brainstorm_questions WHERE id = ?", (question_id,))
     # Also delete .md file
-    md = _brainstorm_md_path(question_id)
-    md.unlink(missing_ok=True)
+    _safe_brainstorm_unlink(question_id)
     return {"ok": True, "deleted": question_id}
 
 
+class QuestionBatchRequest(BaseModel):
+    question_ids: SafeIdentifierList
+
+
 @router.post("/api/brainstorm/batch-delete")
-def batch_delete_brainstorm_questions(payload: dict[str, object]) -> dict[str, object]:
+def batch_delete_brainstorm_questions(payload: QuestionBatchRequest) -> dict[str, object]:
     """Delete multiple brainstorm questions and their .md files."""
-    question_ids = payload.get("question_ids", [])
-    if not isinstance(question_ids, list) or not question_ids:
-        raise HTTPException(status_code=400, detail="question_ids must be a non-empty list")
+    question_ids = payload.question_ids
     deleted = 0
     for qid in question_ids:
-        qid_str = str(qid)
+        qid_str = qid
         with connect() as conn:
             existing = conn.execute("SELECT id FROM brainstorm_questions WHERE id = ?", (qid_str,)).fetchone()
             if existing is None:
                 continue
             conn.execute("DELETE FROM brainstorm_questions WHERE id = ?", (qid_str,))
-        md = _brainstorm_md_path(qid_str)
-        md.unlink(missing_ok=True)
+        _safe_brainstorm_unlink(qid_str)
         deleted += 1
     return {"ok": True, "deleted": deleted}
 
 
 @router.post("/api/brainstorm/{question_id}/done")
-def mark_brainstorm_done(question_id: str) -> dict[str, object]:
+def mark_brainstorm_done(question_id: SafeIdentifier) -> dict[str, object]:
     """Mark a brainstorm question as done."""
     with connect() as conn:
         existing = conn.execute("SELECT id FROM brainstorm_questions WHERE id = ?", (question_id,)).fetchone()
@@ -201,9 +223,9 @@ def mark_brainstorm_done(question_id: str) -> dict[str, object]:
 
 
 class AnswerRequest(BaseModel):
-    question_id: str
+    question_id: SafeIdentifier
     question: str
-    event_ids: list[str]
+    event_ids: BoundedIdentifierList
 
 
 @router.post("/api/brainstorm/answer")
@@ -303,7 +325,7 @@ def get_answer_for_question(request: AnswerRequest) -> dict[str, object]:
 # ---------------------------------------------------------------------------
 
 class ConversationStartRequest(BaseModel):
-    event_ids: list[str]
+    event_ids: SafeIdentifierList
     question: str
 
 class ConversationMessageRequest(BaseModel):
@@ -366,7 +388,7 @@ def _parse_refs_from_answer(answer: str, id_to_idx: dict[str, str]) -> list[str]
 
 
 @router.post("/api/brainstorm/{question_id}/conversation/start")
-def start_conversation(question_id: str, request: ConversationStartRequest) -> dict[str, object]:
+def start_conversation(question_id: SafeIdentifier, request: ConversationStartRequest) -> dict[str, object]:
     """Start a new conversation thread: lock reference docs, generate first answer."""
     if not request.event_ids:
         raise HTTPException(status_code=400, detail="至少选择一个参考文档")
@@ -431,7 +453,7 @@ def start_conversation(question_id: str, request: ConversationStartRequest) -> d
 
 
 @router.post("/api/brainstorm/{question_id}/conversation/message")
-def send_conversation_message(question_id: str, request: ConversationMessageRequest) -> dict[str, object]:
+def send_conversation_message(question_id: SafeIdentifier, request: ConversationMessageRequest) -> dict[str, object]:
     """Send a follow-up question in an existing conversation thread."""
     if not request.content.strip():
         raise HTTPException(status_code=400, detail="追问内容不能为空")
@@ -491,7 +513,7 @@ def send_conversation_message(question_id: str, request: ConversationMessageRequ
 
 
 @router.get("/api/brainstorm/{question_id}/conversation")
-def get_conversation(question_id: str) -> dict[str, object]:
+def get_conversation(question_id: SafeIdentifier) -> dict[str, object]:
     """Get the full conversation history + locked event IDs for a question."""
     with connect() as conn:
         # Check question exists
@@ -517,7 +539,7 @@ def get_conversation(question_id: str) -> dict[str, object]:
 
 
 @router.post("/api/brainstorm/{question_id}/conversation/summary")
-def generate_conversation_summary(question_id: str) -> dict[str, object]:
+def generate_conversation_summary(question_id: SafeIdentifier) -> dict[str, object]:
     """Generate a structured summary of the full conversation thread."""
     with connect() as conn:
         q = conn.execute("SELECT id, question FROM brainstorm_questions WHERE id = ?", (question_id,)).fetchone()
@@ -625,6 +647,11 @@ class ContemplateRequest(BaseModel):
     direction: str   # "event_to_questions" or "question_to_events"
     entity_id: str
 
+    @field_validator("entity_id")
+    @classmethod
+    def validate_entity_id(cls, value: str) -> str:
+        return safe_identifier(value)
+
 
 @router.post("/api/brainstorm/contemplate")
 def contemplate(request: ContemplateRequest) -> dict[str, object]:
@@ -642,7 +669,7 @@ def contemplate(request: ContemplateRequest) -> dict[str, object]:
 
 
 @router.get("/api/brainstorm/event/{event_id}/linked-questions")
-def get_linked_questions(event_id: str) -> dict[str, object]:
+def get_linked_questions(event_id: SafeIdentifier) -> dict[str, object]:
     """Return brainstorm questions already linked to this event via brainstorm_event_links."""
     with connect() as conn:
         rows = conn.execute(
@@ -983,13 +1010,13 @@ def _call_contemplate_deepseek(prompt: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 class PrecipitateConceptRequest(BaseModel):
-    question_id: str
+    question_id: SafeIdentifier
     name: str
     description: str = ""
 
 
 @router.get("/api/brainstorm/{question_id}/concepts")
-def list_summary_concepts(question_id: str) -> dict[str, object]:
+def list_summary_concepts(question_id: SafeIdentifier) -> dict[str, object]:
     """Parse concepts from the summary — both primary concepts (概念定义) and related concepts (相关概念).
     Returns each concept with its description and whether it already exists in the system."""
     with connect() as conn:

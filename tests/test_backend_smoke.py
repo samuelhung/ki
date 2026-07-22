@@ -16,8 +16,7 @@ def test_health_endpoint_returns_ok():
     response = client.get("/api/health")
 
     assert response.status_code == 200
-    assert response.json()["ok"] is True
-    assert response.json()["service"] == "knowledge-intelligence"
+    assert response.json() == {"ok": True}
 
 
 def test_dashboard_bootstrap_summary_shape(tmp_path, monkeypatch):

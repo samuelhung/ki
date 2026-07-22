@@ -1229,7 +1229,7 @@ if 'version=__version__' not in main:
     raise SystemExit('FAIL FastAPI app must use zhiji_backend.__version__')
 dashboard = Path('src/zhiji_backend/routes/dashboard_routes.py').read_text()
 if '"version": __version__' not in dashboard:
-    raise SystemExit('FAIL /api/health must use zhiji_backend.__version__')
+  raise SystemExit('FAIL /api/system/health must use zhiji_backend.__version__')
 print('version consistency ok')
 PY
 
@@ -1251,6 +1251,11 @@ if grep -R "patch_.*\.bsdiff\|bsdiff .*zhiji\|bspatch .*zhiji\|manifest.json.*gh
   echo "FAIL: stale patch-update implementation found in active release scripts" >&2
   exit 1
 fi
+if [[ -d desktop/macos/Helper ]] || grep -R "com.zhiji.zhijiDesktop.helper\|ZhijiHelperPlugin\|com.apple.security.temporary-exception.mach-lookup.global-name\|build_helper.sh" \
+  desktop/macos/Runner desktop/macos/Runner.xcodeproj/project.pbxproj 2>/dev/null; then
+  echo "FAIL: retired privileged Helper integration found" >&2
+  exit 1
+fi
 run_retired_feature_scan
 
 echo "== Shell tests =="
@@ -1259,7 +1264,7 @@ for shell_test in tests/*.sh; do
 done
 
 echo "== Frontend unit tests =="
-(cd app/frontend && npm run test:cinematic-scene && npm run test:cinematic-ingest)
+(cd app/frontend && npm run test:cinematic-scene && npm run test:cinematic-ingest && npm run test:media-transport)
 
 echo "== Frontend typecheck =="
 (cd app/frontend && npm run typecheck)

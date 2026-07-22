@@ -8,13 +8,18 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import time
 import urllib.request
 from typing import Any
 
-from .config_manager import DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, get_config
+from .config_manager import (
+    DEFAULT_AI_BASE_URL,
+    DEFAULT_AI_MODEL,
+    get_config_and_credential,
+)
+from .credential_store import resolve_api_key
 from .usage_writer import UsageRecord, enqueue_usage
+from .security.redaction import classify_task_error
 
 logger = logging.getLogger(__name__)
 
@@ -69,14 +74,9 @@ def _record_usage(
         )
 
 
-def _resolve_api_key(general: dict[str, Any]) -> str:
-    """Resolve API key with generic names first, keeping legacy env compatibility."""
-    return (
-        os.getenv("AI_API_KEY", "")
-        or os.getenv("OPENAI_API_KEY", "")
-        or os.getenv("DEEPSEEK_API_KEY", "")
-        or general.get("api_key", "")
-    )
+def _resolve_api_key(_general: dict[str, Any] | None = None) -> str:
+    """Resolve API key exclusively from the server environment."""
+    return resolve_api_key()
 
 
 def chat(
@@ -97,7 +97,7 @@ def chat(
     All parameters are optional — falls back to system_config.json defaults, then
     project defaults.
     """
-    cfg = get_config()
+    cfg, _api_key = get_config_and_credential()
     general = cfg.get("general", {})
 
     mod_defaults: dict = {}
@@ -113,7 +113,6 @@ def chat(
     _thinking = thinking if thinking is not None else mod_defaults.get("thinking", general.get("default_thinking", False))
     _reasoning_effort = reasoning_effort or general.get("reasoning_effort", "high")
 
-    _api_key = _resolve_api_key(general)
     if not _api_key or _api_key == "***":
         logger.warning("AI API key not configured")
         return None
@@ -170,6 +169,12 @@ def chat(
         return content
     except Exception as e:
         elapsed = int((time.monotonic() - t0) * 1000)
-        logger.warning("AI API call failed: %s", e)
+        logger.warning(
+            "module=%s task=%s status=error error_class=%s error_code=%s",
+            module,
+            task,
+            type(e).__name__,
+            classify_task_error(e),
+        )
         _record_usage(module, task, _model, "error", None, elapsed, str(e)[:200])
         return None

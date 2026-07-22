@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
+
+import pytest
 
 from zhiji_backend.ingest.document import process_document
+from zhiji_backend.ingest.epub import _extract_chapters, process_epub
 
 
 def test_process_text_document(tmp_path: Path):
@@ -40,3 +44,23 @@ def test_process_document_preserves_unicode():
 
     assert "这是一篇中文文档" in result["text"]
     assert "包含多行内容" in result["text"]
+
+
+def test_extract_epub_text_enforces_injected_limit():
+    archive = type("Archive", (), {"read": lambda self, name: b"<p>0123456789</p>"})()
+
+    with pytest.raises(RuntimeError, match="文字"):
+        _extract_chapters(archive, ["chapter.xhtml"], max_text_bytes=5)
+
+
+def test_process_epub_validates_archive_before_opening_members(tmp_path: Path):
+    path = tmp_path / "book.epub"
+    path.write_bytes(b"not a zip")
+
+    with patch("zhiji_backend.ingest.epub.validate_epub", side_effect=RuntimeError("blocked")) as validate:
+        with patch("zhiji_backend.ingest.epub.zipfile.ZipFile") as zip_open:
+            with pytest.raises(RuntimeError, match="blocked"):
+                process_epub(path)
+
+    validate.assert_called_once_with(path)
+    zip_open.assert_not_called()

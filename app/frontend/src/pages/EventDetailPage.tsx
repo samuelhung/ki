@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader2, Sparkles, Globe, FileText, Lightbulb, Plus, Link2 } from 'lucide-react';
 import { renderMarkdown } from '../components/MarkdownRenderer';
+import { useAuthenticatedMediaUrl } from '../components/ingest/useAuthenticatedMediaUrl';
 import { formatTimeBeijing, sourceLabel, statusLabel } from '../utils';
-import { apiFetch, backendUrl } from '../api';
+import { apiFetch } from '../api';
 
 const API_BASE = '/api/events';
 
@@ -26,11 +27,11 @@ interface EventDetailPageProps {
   onEventChange?: (event: EventDetailData | null) => void;
 }
 
-function toMediaUrl(absolutePath: string | undefined): string | null {
+function toMediaPath(absolutePath: string | undefined): string | null {
   if (!absolutePath) return null;
   const idx = absolutePath.indexOf('/data/ingest/');
   if (idx === -1) return null;
-  return backendUrl('/ingest' + absolutePath.substring(idx + '/data/ingest'.length));
+  return '/ingest' + absolutePath.substring(idx + '/data/ingest'.length);
 }
 
 function SourceIcon({ sourceId }: { sourceId: string }) {
@@ -65,6 +66,7 @@ export default function EventDetailPage({ embedded = false, eventId, onEventChan
   const [contemplateLinking, setContemplateLinking] = useState(false);
   const [linkedQuestions, setLinkedQuestions] = useState<any[]>([]);
   const [linkedQuestionsLoading, setLinkedQuestionsLoading] = useState(false);
+  const mediaUrl = useAuthenticatedMediaUrl(toMediaPath(detail?.video_path));
 
   useEffect(() => {
     if (!id) return;
@@ -504,9 +506,9 @@ export default function EventDetailPage({ embedded = false, eventId, onEventChan
         </div>
 
         {/* Video player */}
-        {toMediaUrl(detail.video_path) && (
+        {mediaUrl && (
           <div className="mb-6">
-            <video controls playsInline className="w-full rounded-xl max-h-[400px] bg-black" src={toMediaUrl(detail.video_path)!}>
+            <video controls playsInline className="w-full rounded-xl max-h-[400px] bg-black" src={mediaUrl}>
               您的浏览器不支持视频播放
             </video>
           </div>

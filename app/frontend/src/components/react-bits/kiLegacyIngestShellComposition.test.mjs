@@ -290,13 +290,11 @@ test('ingest shell promotes brand and search while keeping the stage transparent
   assert.match(shellCss, /\.ki-ingest-list-type-icon svg\s*\{[^}]*width:\s*11px[^}]*height:\s*11px/s);
 });
 
-test('vite dev automatically bootstraps a remote session before retrying protected api calls', () => {
-  assert.match(vite, /'\/__ki_remote_session'/);
-  assert.match(vite, /cookieDomainRewrite/);
-  assert.match(vite, /rewrite:\s*\(\)\s*=>\s*'\/'/);
-  assert.match(api, /bootstrapViteRemoteSession/);
-  assert.match(api, /response\.status !== 401/);
-  assert.match(api, /fetchWithPolicy\('\/__ki_remote_session'/);
+test('vite dev authenticates remote api calls without exposing a session endpoint', () => {
+  assert.doesNotMatch(vite, /__ki_remote_session|cookieDomainRewrite/);
+  assert.match(vite, /KI_REMOTE_API_TOKEN/);
+  assert.match(vite, /proxyReq\.setHeader\('Authorization'/);
+  assert.doesNotMatch(api, /bootstrapViteRemoteSession|__ki_remote_session/);
 });
 
 test('formal ingest visual QA waits for the split workspace instead of retired cinematic modules', () => {
@@ -398,5 +396,9 @@ test('vite previews keep api requests same-origin so port 5188 uses the 9120 pro
   assert.match(api, /const isViteDev = import\.meta\.env\.DEV/);
   assert.match(api, /const DEFAULT_BACKEND = sameOrigin \|\| isViteDev \? '' : 'http:\/\/127\.0\.0\.1:9120'/);
   assert.match(vite, /const remoteBackend = 'http:\/\/10\.8\.0\.105:9120'/);
-  assert.match(vite, /'\/api':\s*\{[^}]*target:\s*remoteBackend/s);
+  assert.match(vite, /const protectedProxy:[\s\S]*?target:\s*remoteBackend/);
+  assert.match(vite, /'\/api': protectedProxy/);
+  assert.match(vite, /'\/ingest': protectedProxy/);
+  assert.match(vite, /'\/releases': protectedProxy/);
+  assert.match(vite, /preview:\s*\{\s*proxy: apiProxy/s);
 });

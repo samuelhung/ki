@@ -19,6 +19,12 @@ from urllib.parse import quote, urlencode
 
 import requests  # type: ignore
 
+from ..security.file_intake import (
+    DOCUMENT_MAX_BYTES,
+    OCR_PDF_MAX_BYTES,
+    OCR_PDF_MAX_PAGES,
+)
+
 logger = logging.getLogger(__name__)
 
 # ── Config ──
@@ -47,8 +53,36 @@ def _import_pymupdf():
         raise RuntimeError("缺少依赖 pymupdf：pip install pymupdf")
 
 
+def validate_pdf_safety(
+    path: Path,
+    *,
+    max_bytes: int,
+    max_pages: int | None,
+    opener=None,
+) -> int:
+    """Reject oversized, encrypted, or over-page-limit PDFs before processing."""
+    if path.stat().st_size > max_bytes:
+        raise ValueError("PDF 大小超过限制")
+    open_pdf = opener or _import_pymupdf().open
+    doc = open_pdf(str(path))
+    try:
+        if bool(getattr(doc, "needs_pass", False)) or bool(getattr(doc, "is_encrypted", False)):
+            raise ValueError("不支持加密 PDF")
+        pages = len(doc)
+        if max_pages is not None and pages > max_pages:
+            raise ValueError("PDF 页数超过限制")
+        return pages
+    finally:
+        doc.close()
+
+
 def detect_pdf_type(path: Path) -> str:
     """Return 'text' or 'scan' by sampling first pages."""
+    validate_pdf_safety(
+        path,
+        max_bytes=DOCUMENT_MAX_BYTES,
+        max_pages=OCR_PDF_MAX_PAGES,
+    )
     fitz = _import_pymupdf()
     doc = fitz.open(str(path))
     try:
@@ -65,6 +99,11 @@ def detect_pdf_type(path: Path) -> str:
 
 def extract_text_pdf(path: Path) -> str:
     """Extract full text from a text-based PDF."""
+    validate_pdf_safety(
+        path,
+        max_bytes=DOCUMENT_MAX_BYTES,
+        max_pages=OCR_PDF_MAX_PAGES,
+    )
     fitz = _import_pymupdf()
     doc = fitz.open(str(path))
     try:
@@ -196,6 +235,11 @@ def ocr_scanned_pdf(
 
     Returns concatenated text from all pages.
     """
+    validate_pdf_safety(
+        path,
+        max_bytes=OCR_PDF_MAX_BYTES,
+        max_pages=OCR_PDF_MAX_PAGES,
+    )
     fitz = _import_pymupdf()
     doc = fitz.open(str(path))
     total = len(doc)
@@ -235,6 +279,11 @@ def process_pdf(
 
     Auto-detects text vs scanned and chooses extraction method.
     """
+    validate_pdf_safety(
+        path,
+        max_bytes=DOCUMENT_MAX_BYTES,
+        max_pages=OCR_PDF_MAX_PAGES,
+    )
     pdf_type = detect_pdf_type(path)
     logger.info("PDF type: %s (%s)", pdf_type, path.name)
 

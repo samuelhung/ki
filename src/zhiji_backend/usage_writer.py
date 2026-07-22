@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 
 from .db import connect
+from .security.redaction import sanitize_task_error
 
 logger = logging.getLogger(__name__)
 
@@ -189,7 +190,7 @@ class _UsageWriter:
                     record.reasoning_tokens,
                     record.cost_rmb,
                     record.duration_ms,
-                    record.error,
+                    sanitize_task_error(record.error) if record.error else "",
                 ),
             )
 

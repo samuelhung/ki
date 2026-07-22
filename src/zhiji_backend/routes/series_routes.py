@@ -9,12 +9,48 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from ..db import connect, init_db
+from ..security.constraints import (
+    BoundedIdentifierList,
+    SafeIdentifier,
+    SafeIdentifierList,
+    SafeIdentifierListMinTwo,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ingest", tags=["series"])
+
+
+class SeriesDiscoveryRequest(BaseModel):
+    event_ids: SafeIdentifierListMinTwo
+    name_hint: str = ""
+
+
+class SeriesNameRequest(BaseModel):
+    member_ids: SafeIdentifierListMinTwo
+    current_name: str = ""
+
+
+class SeriesCreateRequest(BaseModel):
+    name: str
+    member_ids: SafeIdentifierListMinTwo
+    description: str = ""
+
+
+class SeriesOrderRequest(BaseModel):
+    member_ids: BoundedIdentifierList
+
+
+class SeriesMembersRequest(BaseModel):
+    event_ids: SafeIdentifierList
+
+
+class SeriesMergeRequest(BaseModel):
+    source_id: SafeIdentifier
+    target_id: SafeIdentifier
 
 
 def _call_ai_chat(messages, temperature=0.3, max_tokens=3072, timeout=120, response_format=None,
@@ -476,18 +512,15 @@ def discover_stage1():
 
 
 @router.post("/series/discover/stage2")
-def discover_stage2(data: dict):
+def discover_stage2(data: SeriesDiscoveryRequest):
     """阶段2：精细发现 — 基于用户选中的事件，AI 聚类生成候选专题。
     
     Expects: {event_ids: [...], name_hint: "可选领域名"}
     Returns: {series: [...candidates], duplicates_skipped: N}
     """
     init_db()
-    event_ids = data.get("event_ids", [])
-    if not isinstance(event_ids, list) or len(event_ids) < 2:
-        return {"message": "至少需要 2 条事件", "series": []}
-
-    name_hint = data.get("name_hint", "").strip()
+    event_ids = data.event_ids
+    name_hint = data.name_hint.strip()
 
     with connect() as conn:
         placeholders = ",".join(["?" for _ in event_ids])
@@ -780,7 +813,7 @@ def discover_by_topic(data: dict):
 # ══════════════════════════════════════════════════
 
 @router.post("/series/{series_id}/expand")
-def expand_series(series_id: str):
+def expand_series(series_id: SafeIdentifier):
     """为已有专题寻找新成员 — AI 扫描未归属的新内容，推荐加入。
     
     流程：
@@ -962,18 +995,15 @@ def expand_series(series_id: str):
 # ══════════════════════════════════════════════════
 
 @router.post("/series/suggest-name")
-def suggest_series_name(data: dict):
+def suggest_series_name(data: SeriesNameRequest):
     """自由组题：根据用户选定的文档，AI 建议专题名称和副标题。
 
     Expects: {member_ids: [...], current_name: "用户起的临时名（可选）"}
     Returns: {suggested_name: "AI建议标题", suggested_description: "AI建议副标题"}
     """
     init_db()
-    member_ids = data.get("member_ids", [])
-    if not isinstance(member_ids, list) or len(member_ids) < 2:
-        return {"message": "至少需要 2 条文档", "suggested_name": "", "suggested_description": ""}
-
-    current_name = data.get("current_name", "").strip()
+    member_ids = data.member_ids
+    current_name = data.current_name.strip()
 
     with connect() as conn:
         placeholders = ",".join(["?" for _ in member_ids])
@@ -1035,19 +1065,17 @@ def suggest_series_name(data: dict):
 
 
 @router.post("/series")
-def create_series(data: dict):
+def create_series(data: SeriesCreateRequest):
     """Create a new series from discovered candidates.
 
     If a candidate with the same name exists, upgrades it to 'published' (upsert).
     """
     init_db()
-    name = data.get("name", "").strip()
+    name = data.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="专题名称不能为空")
-    member_ids = data.get("member_ids", [])
-    if not isinstance(member_ids, list) or len(member_ids) < 2:
-        raise HTTPException(status_code=400, detail="至少需要 2 条成员内容")
-    description = data.get("description", "").strip()
+    member_ids = data.member_ids
+    description = data.description.strip()
     now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     with connect() as conn:
@@ -1073,7 +1101,7 @@ def create_series(data: dict):
 
 
 @router.delete("/series/{series_id}")
-def delete_series(series_id: str):
+def delete_series(series_id: SafeIdentifier):
     """Delete a series."""
     init_db()
     with connect() as conn:
@@ -1085,7 +1113,7 @@ def delete_series(series_id: str):
 
 
 @router.put("/series/{series_id}")
-def update_series(series_id: str, data: dict):
+def update_series(series_id: SafeIdentifier, data: dict):
     """Update series metadata (name, description, status)."""
     init_db()
     with connect() as conn:
@@ -1105,7 +1133,7 @@ def update_series(series_id: str, data: dict):
 
 
 @router.post("/series/merge")
-def merge_series(data: dict):
+def merge_series(data: SeriesMergeRequest):
     """Merge a source candidate into a target series.
 
     Expects: {source_id: str, target_id: str}
@@ -1114,10 +1142,8 @@ def merge_series(data: dict):
     - Returns updated target
     """
     init_db()
-    source_id = data.get("source_id", "").strip()
-    target_id = data.get("target_id", "").strip()
-    if not source_id or not target_id:
-        raise HTTPException(status_code=400, detail="source_id 和 target_id 不能为空")
+    source_id = data.source_id
+    target_id = data.target_id
     if source_id == target_id:
         raise HTTPException(status_code=400, detail="不能合并同一个专题")
 
@@ -1170,7 +1196,7 @@ def merge_series(data: dict):
 # ══════════════════════════════════════════════════
 
 @router.get("/series/{series_id}")
-def get_series_detail(series_id: str):
+def get_series_detail(series_id: SafeIdentifier):
     """Return full series detail: metadata + enriched member events."""
     init_db()
     with connect() as conn:
@@ -1245,7 +1271,7 @@ def get_series_detail(series_id: str):
 # ══════════════════════════════════════════════════
 
 @router.put("/series/{series_id}/intro")
-def generate_series_intro(series_id: str):
+def generate_series_intro(series_id: SafeIdentifier):
     """AI generates a narrative intro connecting all member overviews."""
     init_db()
     with connect() as conn:
@@ -1312,7 +1338,7 @@ def generate_series_intro(series_id: str):
 
 
 @router.put("/series/{series_id}/summary")
-def generate_series_summary(series_id: str):
+def generate_series_summary(series_id: SafeIdentifier):
     """AI generates a structured summary of the series — thesis, insights, logic chain, entities, open questions."""
     init_db()
     with connect() as conn:
@@ -1409,7 +1435,7 @@ def generate_series_summary(series_id: str):
 
 
 @router.put("/series/{series_id}/paper")
-def generate_series_paper(series_id: str):
+def generate_series_paper(series_id: SafeIdentifier):
     """AI generates a paper/lecture-style deep analysis of the series.
     Narrative arc: background → analysis → climax (core findings) → conclusion/outlook.
     Paragraph-style writing with thesis-evidence structure and lecture rhythm."""
@@ -1502,12 +1528,10 @@ def generate_series_paper(series_id: str):
 # ══════════════════════════════════════════════════
 
 @router.put("/series/{series_id}/sort")
-def reorder_series(series_id: str, data: dict):
+def reorder_series(series_id: SafeIdentifier, data: SeriesOrderRequest):
     """Update member order via drag-and-drop."""
     init_db()
-    member_ids = data.get("member_ids", [])
-    if not isinstance(member_ids, list):
-        raise HTTPException(status_code=400, detail="member_ids must be a list")
+    member_ids = data.member_ids
     with connect() as conn:
         row = conn.execute("SELECT id FROM series WHERE id = ?", (series_id,)).fetchone()
         if not row:
@@ -1520,7 +1544,7 @@ def reorder_series(series_id: str, data: dict):
 
 
 @router.get("/series/{series_id}/suggestions")
-def get_series_suggestions(series_id: str):
+def get_series_suggestions(series_id: SafeIdentifier):
     """Get pending member suggestions for a series."""
     init_db()
     with connect() as conn:
@@ -1568,12 +1592,10 @@ def get_series_suggestions(series_id: str):
 
 
 @router.post("/series/{series_id}/members")
-def add_series_members(series_id: str, data: dict):
+def add_series_members(series_id: SafeIdentifier, data: SeriesMembersRequest):
     """Add one or more event_ids to a series (non-destructive append)."""
     init_db()
-    new_ids = data.get("event_ids", [])
-    if not isinstance(new_ids, list) or not new_ids:
-        raise HTTPException(status_code=400, detail="event_ids must be a non-empty list")
+    new_ids = data.event_ids
 
     with connect() as conn:
         row = conn.execute("SELECT id, member_ids FROM series WHERE id = ?", (series_id,)).fetchone()

@@ -3,16 +3,74 @@
 from __future__ import annotations
 
 import json
+import ssl
 import sys
+from collections import UserDict
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pytest
+import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app" / "backend"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from zhiji_backend.ingest.douyin import parse_share_text, download_video, extract_first_url
+from zhiji_backend.ingest.douyin import (
+    _PinnedResponse,
+    download_video,
+    extract_first_url,
+    is_trusted_365yg_url,
+    parse_share_text,
+    create_pinned_connection,
+)
+
+
+def public_resolver(host: str, port: int) -> list[str]:
+    return ["93.184.216.34"]
+
+
+class PinnedResponse:
+    def __init__(self, chunks, *, status_code=200, headers=None):
+        self.status_code = status_code
+        self.headers = headers or {}
+        self._chunks = chunks
+        self.closed = False
+        self.close_calls = 0
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+    def iter_content(self, chunk_size):
+        yield from self._chunks
+
+    def close(self):
+        self.close_calls += 1
+        self.closed = True
+
+
+class PinnedConnection:
+    def __init__(self, responses, requests_seen):
+        self.responses = responses
+        self.requests_seen = requests_seen
+
+    def get(self, target, *, headers, timeout):
+        self.requests_seen.append({"target": target, "headers": dict(headers), "timeout": timeout})
+        response = self.responses.pop(0)
+        if isinstance(response, BaseException):
+            raise response
+        return response
+
+
+def pinned_factory(responses, requests_seen=None, connected_ips=None):
+    requests_seen = requests_seen if requests_seen is not None else []
+    connected_ips = connected_ips if connected_ips is not None else []
+
+    def factory(scheme: str, ip: str, port: int, hostname: str):
+        connected_ips.append(ip)
+        return PinnedConnection(responses, requests_seen)
+
+    return factory
 
 
 class TestExtractFirstUrl:
@@ -166,19 +224,285 @@ class TestParseShareText:
         with pytest.raises(RuntimeError, match="videoInfoRes"):
             parse_share_text("https://v.douyin.com/abc123/")
 
+    def test_365yg_trust_uses_exact_hostname_boundaries(self):
+        assert is_trusted_365yg_url("https://365yg.com/video")
+        assert is_trusted_365yg_url("https://v3.365yg.com/video")
+        assert not is_trusted_365yg_url("https://365yg.com.evil.example/video")
+        assert not is_trusted_365yg_url("https://evil365yg.com/video")
+
 
 class TestDownloadVideo:
-    @patch("zhiji_backend.ingest.douyin.requests")
-    def test_downloads_video_to_path(self, mock_requests, tmp_path: Path):
+    def test_pinned_response_closes_pool_once_when_response_close_raises(self):
+        response = MagicMock(status=200, headers={})
+        response.close.side_effect = OSError("close failed")
+        pool = MagicMock()
+        pinned = _PinnedResponse(response, pool)
+
+        with pytest.raises(OSError, match="close failed"):
+            pinned.close()
+        pinned.close()
+
+        response.close.assert_called_once_with()
+        pool.close.assert_called_once_with()
+
+    @patch("zhiji_backend.ingest.douyin.HTTPSConnectionPool")
+    def test_https_pinned_connection_preserves_certificate_hostname_and_sni(self, pool_cls):
+        create_pinned_connection("https", "93.184.216.34", 443, "video.example.com")
+
+        pool_cls.assert_called_once_with(
+            "93.184.216.34",
+            port=443,
+            assert_hostname="video.example.com",
+            server_hostname="video.example.com",
+            cert_reqs=ssl.CERT_REQUIRED,
+            maxsize=1,
+            block=True,
+        )
+
+    @patch("zhiji_backend.ingest.douyin.HTTPConnectionPool")
+    def test_pinned_connection_closes_pool_once_when_urlopen_raises(self, pool_cls):
+        pool = pool_cls.return_value
+        pool.urlopen.side_effect = OSError("connect failed")
+        connection = create_pinned_connection("http", "93.184.216.34", 80, "video.example.com")
+
+        with pytest.raises(OSError, match="connect failed"):
+            connection.get("/video.mp4", headers={"Host": "video.example.com"}, timeout=(1, 1))
+
+        pool.close.assert_called_once_with()
+
+    def test_dns_rebinding_private_result_is_never_connected(self, tmp_path: Path):
+        resolutions = iter([["93.184.216.34"], ["127.0.0.1"]])
+        resolver_calls = []
+        connected_ips = []
+        requests_seen = []
+        responses = [OSError("public connection failed")]
+
+        def resolver(host: str, port: int) -> list[str]:
+            resolver_calls.append((host, port))
+            return next(resolutions)
+
+        def connection_factory(scheme: str, ip: str, port: int, hostname: str):
+            connected_ips.append(ip)
+            return PinnedConnection(responses, requests_seen)
+
+        dest = tmp_path / "video.mp4"
+        with pytest.raises(ValueError, match="公网"):
+            download_video(
+                "https://video.example.com/video.mp4",
+                dest,
+                resolver=resolver,
+                connection_factory=connection_factory,
+            )
+
+        assert not dest.exists()
+        assert connected_ips == ["93.184.216.34"]
+        assert "127.0.0.1" not in connected_ips
+        assert resolver_calls == [
+            ("video.example.com", 443),
+            ("video.example.com", 443),
+        ]
+        assert requests_seen[0]["headers"]["Host"] == "video.example.com"
+
+    def test_session_cookies_are_copied_to_pinned_request_headers(self, tmp_path: Path):
+        session = requests.Session()
+        session.cookies.set("sid", "cookie-value", domain="video.example.com", path="/")
+        requests_seen = []
+        responses = [PinnedResponse([b"video"])]
+
+        def connection_factory(scheme: str, ip: str, port: int, hostname: str):
+            return PinnedConnection(responses, requests_seen)
+
+        download_video(
+            "https://video.example.com/video.mp4",
+            tmp_path / "video.mp4",
+            session=session,
+            resolver=public_resolver,
+            connection_factory=connection_factory,
+        )
+
+        assert requests_seen[0]["headers"]["Cookie"] == "sid=cookie-value"
+
+    def test_downloads_video_to_path(self, tmp_path: Path):
         """Video download writes content to the destination file."""
         resp = MagicMock()
         resp.raise_for_status = lambda: None
         resp.iter_content = lambda chunk_size: [b"fake-video-data"]
-        mock_requests.Session.return_value.get.return_value = resp
+        factory = pinned_factory([resp])
 
         dest = tmp_path / "video.mp4"
-        result = download_video("https://example.com/video.mp4", dest)
+        result = download_video(
+            "https://example.com/video.mp4",
+            dest,
+            resolver=public_resolver,
+            connection_factory=factory,
+        )
 
         assert result == dest
         assert dest.exists()
         assert dest.read_bytes() == b"fake-video-data"
+
+    def test_rejects_content_length_over_limit_and_removes_partial(self, tmp_path: Path):
+        resp = PinnedResponse([], headers={"Content-Length": "6"})
+        factory = pinned_factory([resp])
+        dest = tmp_path / "large.mp4"
+
+        with pytest.raises(ValueError, match="大小"):
+            download_video(
+                "https://example.com/video.mp4",
+                dest,
+                max_bytes=5,
+                resolver=public_resolver,
+                connection_factory=factory,
+            )
+
+        assert not dest.exists()
+        assert resp.closed
+
+    def test_rejects_actual_bytes_over_limit_and_removes_partial(self, tmp_path: Path):
+        resp = PinnedResponse([b"abc", b"def"])
+        factory = pinned_factory([resp])
+        dest = tmp_path / "large.mp4"
+
+        with pytest.raises(ValueError, match="大小"):
+            download_video(
+                "https://example.com/video.mp4",
+                dest,
+                max_bytes=5,
+                resolver=public_resolver,
+                connection_factory=factory,
+            )
+
+        assert not dest.exists()
+        assert resp.closed
+
+    def test_range_fallback_remains_bounded(self, tmp_path: Path):
+        range_resp = MagicMock(status_code=206)
+        range_resp.headers = {"Content-Length": "3"}
+        range_resp.iter_content = lambda chunk_size: [b"abc"]
+        factory = pinned_factory([OSError("whole failed"), range_resp])
+        dest = tmp_path / "fallback.mp4"
+
+        result = download_video(
+            "https://example.com/video.mp4",
+            dest,
+            max_bytes=3,
+            resolver=public_resolver,
+            connection_factory=factory,
+        )
+
+        assert result == dest
+        assert dest.read_bytes() == b"abc"
+
+    def test_range_fallback_stops_when_server_ignores_range(self, tmp_path: Path):
+        whole = b"x" * (1024 * 1024)
+        range_resp = MagicMock(status_code=200)
+        range_resp.headers = {"Content-Length": str(len(whole))}
+        range_resp.iter_content = lambda chunk_size: [whole]
+        requests_seen = []
+        factory = pinned_factory([OSError("whole failed"), range_resp], requests_seen=requests_seen)
+        dest = tmp_path / "fallback.mp4"
+
+        download_video(
+            "https://example.com/video.mp4",
+            dest,
+            max_bytes=len(whole),
+            resolver=public_resolver,
+            connection_factory=factory,
+        )
+
+        assert dest.read_bytes() == whole
+        assert len(requests_seen) == 2
+
+    def test_content_length_mapping_is_enforced(self, tmp_path: Path):
+        resp = MagicMock()
+        resp.headers = UserDict({"Content-Length": "6"})
+        resp.raise_for_status = lambda: None
+        factory = pinned_factory([resp])
+
+        with pytest.raises(ValueError, match="大小"):
+            download_video(
+                "https://example.com/video.mp4",
+                tmp_path / "large.mp4",
+                max_bytes=5,
+                resolver=public_resolver,
+                connection_factory=factory,
+            )
+
+    def test_rejects_non_http_download_protocol(self, tmp_path: Path):
+        with pytest.raises(ValueError, match="协议"):
+            download_video(
+                "file:///tmp/video.mp4",
+                tmp_path / "video.mp4",
+                max_bytes=5,
+                resolver=public_resolver,
+            )
+
+    def test_rejects_redirect_to_private_host(self, tmp_path: Path):
+        redirect = PinnedResponse([], status_code=302, headers={"Location": "http://internal.example/video.mp4"})
+        requests_seen = []
+        factory = pinned_factory([redirect], requests_seen=requests_seen)
+
+        def resolver(host: str, port: int) -> list[str]:
+            return ["127.0.0.1"] if host == "internal.example" else ["93.184.216.34"]
+
+        with pytest.raises(ValueError, match="公网"):
+            download_video(
+                "https://example.com/video.mp4",
+                tmp_path / "video.mp4",
+                resolver=resolver,
+                connection_factory=factory,
+            )
+
+        assert len(requests_seen) == 1
+
+    def test_rejects_redirect_loop(self, tmp_path: Path):
+        redirect = PinnedResponse([], status_code=302, headers={"Location": "/video.mp4"})
+        factory = pinned_factory([redirect])
+
+        with pytest.raises(ValueError, match="重定向"):
+            download_video(
+                "https://example.com/video.mp4",
+                tmp_path / "video.mp4",
+                resolver=public_resolver,
+                max_redirects=2,
+                connection_factory=factory,
+            )
+
+    @pytest.mark.parametrize(
+        ("headers", "max_redirects", "message"),
+        [
+            ({"Location": "/next.mp4"}, 0, "次数"),
+            ({}, 5, "Location"),
+        ],
+    )
+    def test_redirect_failure_closes_response_once(
+        self,
+        tmp_path: Path,
+        headers: dict,
+        max_redirects: int,
+        message: str,
+    ):
+        redirect = PinnedResponse([], status_code=302, headers=headers)
+        factory = pinned_factory([redirect])
+
+        with pytest.raises(ValueError, match=message):
+            download_video(
+                "https://example.com/video.mp4",
+                tmp_path / "video.mp4",
+                resolver=public_resolver,
+                max_redirects=max_redirects,
+                connection_factory=factory,
+            )
+
+        assert redirect.close_calls == 1
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://user:pass@example.com/video.mp4",
+            "https://example.com:99999/video.mp4",
+        ],
+    )
+    def test_rejects_credentials_and_invalid_ports(self, tmp_path: Path, url: str):
+        with pytest.raises(ValueError):
+            download_video(url, tmp_path / "video.mp4", resolver=public_resolver)

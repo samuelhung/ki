@@ -45,8 +45,15 @@ def ensure_data_dirs() -> None:
         STUDY_DATA_DIR,
         INGEST_ROOT,
         INGEST_ROOT / "videos",
+        INGEST_ROOT / "audio",
+        INGEST_ROOT / "documents",
+        INGEST_ROOT / "transcripts",
+        INGEST_ROOT / "summaries",
+        INGEST_ROOT / "pending",
+        INGEST_ROOT / "concepts",
         BRAINSTORM_DIR,
         LOG_DIR,
+        RELEASES_DIR,
     ]
     for d in dirs:
         d.mkdir(parents=True, exist_ok=True)

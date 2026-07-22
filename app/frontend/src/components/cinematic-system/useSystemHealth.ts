@@ -18,7 +18,7 @@ export function useSystemHealth() {
     const startedAt = performance.now();
 
     try {
-      const response = await apiFetch('/api/health', { signal: controller.signal });
+      const response = await apiFetch('/api/system/health', { signal: controller.signal });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
       if (requestSeq !== requestSeqRef.current) return;

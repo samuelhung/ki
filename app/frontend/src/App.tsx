@@ -10,6 +10,7 @@ import { EventCacheProvider } from './components/EventCache';
 import { CurtainProvider, useCurtain } from './CurtainContext';
 import { CinematicBackdropProvider } from './components/cinematic/CinematicBackdropContext';
 import { apiFetch } from './api';
+import { useMediaTransportConnection } from './components/ingest/useAuthenticatedMediaUrl';
 
 const CinematicHome = lazy(() => import('./pages/CinematicHome'));
 const CinematicBriefings = lazy(() => import('./pages/CinematicBriefings'));
@@ -109,6 +110,7 @@ function CurtainOverlay() {
 
 function Layout() {
   const location = useLocation();
+  useMediaTransportConnection();
   const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest' || location.pathname === '/briefings' || location.pathname === '/events' || location.pathname.startsWith('/events/') || location.pathname === '/sources' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series' || location.pathname.startsWith('/series/') || location.pathname === '/study' || location.pathname.startsWith('/study/') || location.pathname === '/study-mistakes' || location.pathname === '/industry-chains' || location.pathname === '/chains' || location.pathname === '/brainstorm' || location.pathname.startsWith('/brainstorm/') || location.pathname === '/tasks';
 
   // ---- Offline detection ----

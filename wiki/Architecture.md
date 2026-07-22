@@ -15,7 +15,7 @@
 ## 1. 桌面壳
 
 - 技术栈：Flutter + `webview_flutter` + `tray_manager` + `window_manager` + `url_launcher`。
-- 默认后端：`http://127.0.0.1:9120`；连接设置支持 `http://10.8.0.105:9120` 等远程后端。直接打开远程 Web 首页时，后端签发 HttpOnly 会话 cookie 供同源业务接口授权。
+- 默认后端：`http://127.0.0.1:9120`；连接设置支持远程后端，访问令牌仅保存在当前浏览器标签会话的 `sessionStorage` 中。
 - 后端离线：不创建 WebView，显示 Flutter 原生连接设置页，避免 WKWebView 错误页遮挡 UI。
 - 更新入口：React 调 `window.zhiji_checkUpdates.postMessage('check')`，Flutter 转发到 `com.zhiji.sparkle` 原生通道。
 - 缓存策略：创建 WebView 前清理缓存和 localStorage，加载 URL 追加 `desktop_version` 和 `cache_bust`。
@@ -35,7 +35,8 @@
 - 技术栈：Python + FastAPI + SQLite + FTS5。
 - 源码入口：`src/zhiji_backend` 是唯一维护后端；旧 `app/backend` 已移出仓库归档，不参与运行和测试。
 - 端口：生产形态 API 与 Web 静态资源合一，均为 `:9120`。
-- 安全边界：本地回环访问保持零配置；非回环直接 API 调用必须携带 `KI_API_TOKEN`，远程同源 Web 页面通过后端签发的 HttpOnly 会话 cookie 自动授权。
+- 安全边界：后端默认监听回环地址；非回环监听要求非空 `KI_API_TOKEN`，受保护请求只接受 Bearer 或 X-API-Key。Trusted Host 与 CORS 精确列表分别由 `KI_ALLOWED_HOSTS`、`KI_CORS_ORIGINS` 配置。
+- 健康检查：`GET /api/health` 仅返回公共存活状态；系统中心通过受保护的 `GET /api/system/health` 获取版本、运行时与数据库摘要。
 - 托管：macOS 用户级 launchd `com.zhiji.backend`，开机自启，崩溃重启。
 - 主要能力按工作流组织为：今日知几、万象资料、深度研究、静观思辨、见微行动、启蒙辅导和系统总览。
 
@@ -69,7 +70,7 @@ data/
           → 替换 /Applications/知几.app
 ```
 
-- 发布物：只上传 `zhiji_X.Y.Z.dmg` 到 GitHub Release，不再使用 bsdiff、manifest.json、install_helper.sh，也不再将 Sparkle 下载入口指向内网后端。
+- 发布物：只上传 `zhiji_X.Y.Z.dmg` 到 GitHub Release，不再使用特权 Helper、bsdiff、manifest.json、install_helper.sh，也不再将 Sparkle 下载入口指向内网后端。
 - appcast：由 `scripts/build_release.py` 生成，但必须 `git add appcast.xml && git commit && git push` 后用户端才可见。
 - 版本同步：`desktop/pubspec.yaml`、`src/zhiji_backend/__init__.py`、`app/frontend/src/constants.ts`、`app/frontend/vite.config.ts`、`desktop/lib/main.dart`、`desktop/changelog.json`、系统说明/架构说明必须一起更新。
 - 验证：优先运行 `./scripts/check.sh`；它会校验版本一致性、前端版本化构建、旧 backend/Tauri/增量更新/内网 DMG 分发残留。完整发版再跑 Flutter release build、`scripts/build_release.py --skip-build`、`scripts/release-check.py X.Y.Z`、远端 appcast 和 GitHub Release asset 对齐、实机安装/更新提示。

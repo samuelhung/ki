@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import time
 from datetime import datetime, timezone
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from .. import __version__
 from ..db import connect, init_db
 
@@ -15,7 +15,12 @@ _start_time = time.time()
 
 
 @router.get("/api/health")
-def health() -> dict[str, object]:
+def health() -> dict[str, bool]:
+    return {"ok": True}
+
+
+@router.get("/api/system/health")
+def system_health() -> dict[str, object]:
     uptime_sec = time.time() - _start_time
     db_ok = True
     db_error = None
@@ -32,9 +37,9 @@ def health() -> dict[str, object]:
             db_event_count = conn.execute(
                 "SELECT COUNT(*) FROM events"
             ).fetchone()[0]
-    except Exception as e:
+    except Exception:
         db_ok = False
-        db_error = str(e)
+        db_error = "database unavailable"
 
     return {
         "ok": db_ok,
@@ -88,7 +93,7 @@ def dashboard_summary() -> dict[str, int]:
 
 
 @router.get("/api/dashboard/trend")
-def dashboard_trend(days: int = 7) -> list[dict[str, object]]:
+def dashboard_trend(days: int = Query(7, ge=1, le=365)) -> list[dict[str, object]]:
     """Return daily event counts for the last N days."""
     with connect() as conn:
         rows = conn.execute(

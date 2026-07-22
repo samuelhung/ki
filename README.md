@@ -16,9 +16,12 @@ macOS 知几.app
 - 后端源码唯一入口是 `src/zhiji_backend`；旧 `app/backend` 已移出仓库归档到 `/Users/mrh/Documents/Projects/zhiji-archives/backend-legacy-20260627`，不要再新增 `backend.*` import。
 - 后端由 launchd `com.zhiji.backend` 托管，开机自启并崩溃重启。
 - Web 与 API 在生产形态共用 `:9120`；远程后端地址可配置为 `http://10.8.0.105:9120`。
-- 本地回环访问保持零配置；非回环客户端直接调用 `/api`、`/ingest`、`/releases` 必须配置并携带 `KI_API_TOKEN`。直接打开远程 Web 首页时，后端会签发 HttpOnly 会话 cookie，让同源页面内业务 API 自动授权。
+- 后端默认只监听 `127.0.0.1`，本地回环访问保持零配置。非回环监听必须配置非空 `KI_API_TOKEN`，远程受保护请求只接受 `Authorization: Bearer ...` 或 `X-API-Key: ...`。
+- `KI_ALLOWED_HOSTS` 与 `KI_CORS_ORIGINS` 使用逗号分隔的精确列表覆盖桌面默认值；Vite 远程代理可通过服务端环境变量 `KI_REMOTE_API_TOKEN` 注入认证头，令牌不会下发到浏览器。
+- AI 凭据只从服务端环境解析，优先级为 `AI_API_KEY`、`OPENAI_API_KEY`、`DEEPSEEK_API_KEY`。系统设置只返回掩码；新凭据原子写入 `ZHIJI_HOME/.env`，配置文件和 `.env` 均强制为 `0600`，`system_config.json` 不保存明文密钥。
+- AI 接口地址默认只允许 `http://10.8.0.13:3000/v1`。服务端可用逗号分隔的 `KI_AI_BASE_URL_ALLOWLIST` 增加精确地址；请求体不能覆盖该策略，地址末尾 `/` 会被规范化。
 - 自动更新使用 Sparkle 2：appcast 走 `raw.githubusercontent.com`，DMG 只走 GitHub Release 全量包。
-- 发布物只保留全量 DMG：不再使用 bsdiff、manifest.json、install_helper.sh，也不再把 Sparkle 下载入口指向内网后端。
+- 发布物只保留全量 DMG：不再使用特权 Helper、bsdiff、manifest.json、install_helper.sh，也不再把 Sparkle 下载入口指向内网后端。旧安装可先运行 `scripts/remove_legacy_helper.sh --check`，再使用 `sudo scripts/remove_legacy_helper.sh --remove` 清理。
 
 ## 核心模块
 

@@ -25,9 +25,9 @@ export function useSystemConnection(setHealth: SetHealthState) {
       const authHeaders = token ? { Authorization: `Bearer ${token}` } : undefined;
       const healthRes = await fetchWithPolicy(target + '/api/health', { timeoutMs: 10_000 });
       if (!healthRes.ok) throw new Error('健康检查失败');
-      const json = await readApiJson<HealthData>(healthRes);
+      const json = await readApiJson<{ ok: boolean }>(healthRes);
       if (!json.ok) throw new Error('健康检查失败');
-      const protectedRes = await fetchWithPolicy(target + '/api/dashboard/summary', {
+      const protectedRes = await fetchWithPolicy(target + '/api/system/health', {
         headers: authHeaders,
         timeoutMs: 10_000,
       });
@@ -35,7 +35,8 @@ export function useSystemConnection(setHealth: SetHealthState) {
         if (protectedRes.status === 401) throw new Error('业务接口未授权，请填写后端 KI_API_TOKEN');
         throw new Error(`业务接口异常：HTTP ${protectedRes.status}`);
       }
-      setHealth({ data: json, latency_ms: Math.round(performance.now() - startedAt), error: null });
+      const detailedHealth = await readApiJson<HealthData>(protectedRes);
+      setHealth({ data: detailedHealth, latency_ms: Math.round(performance.now() - startedAt), error: null });
       setConnSaved(false);
     } catch (error: any) {
       setHealth({ data: null, latency_ms: 0, error: error?.message || '无法连接' });
