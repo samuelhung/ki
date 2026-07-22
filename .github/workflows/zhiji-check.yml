@@ -52,10 +52,8 @@ jobs:
         run: bundle check
         working-directory: desktop
       - name: Verify locked macOS pods
-        run: bundle exec pod install --deployment
+        run: bundle exec ruby -rlogger -S pod install --deployment
         working-directory: desktop/macos
-        env:
-          RUBYOPT: -rlogger
       - name: Install media dependencies
         run: brew install ffmpeg
       - name: Install backend test dependencies

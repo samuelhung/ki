@@ -75,12 +75,12 @@ def test_mobile_dependency_and_signing_inputs_are_locked() -> None:
     gradle_locks = sorted((ROOT / "desktop" / "android").glob("**/gradle.lockfile"))
 
     assert "flutter pub get --enforce-lockfile" in workflow
-    assert "pod install --deployment" in workflow
+    assert "bundle exec ruby -rlogger -S pod install --deployment" in workflow
     assert "COCOAPODS_VERSION: '1.16.2'" in workflow
     assert "BUNDLE_FROZEN: 'true'" in workflow
     assert "ruby-version: '3.1.6'" in workflow
     assert "bundle check" in workflow
-    assert "RUBYOPT: -rlogger" in workflow
+    assert "RUBYOPT: -rlogger" not in workflow
     assert "distributionSha256Sum=b84e04fa845fecba48551f425957641074fcc00a88a84d2aae5808743b35fc85" in wrapper
     assert "lockAllConfigurations()" in root_android_build
     assert "LockMode.STRICT" in root_android_build
