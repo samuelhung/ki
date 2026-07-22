@@ -115,9 +115,9 @@ def test_ci_executes_locked_android_graph_and_generates_gradle_sbom() -> None:
     assert "generate_lock_sbom.py" in workflow
     assert "locked-dependencies-sbom.cdx.json" in workflow
     assert "--require-lock-root ." in workflow
-    assert '--lockfile "$RUNNER_TEMP/android-gradle-sbom.cdx.json"' in workflow
-    assert '--lockfile "$RUNNER_TEMP/locked-dependencies-sbom.cdx.json"' in workflow
-    assert "--sbom" not in workflow
+    assert '--sbom "$RUNNER_TEMP/source-sbom.cdx.json"' in workflow
+    assert '--sbom "$RUNNER_TEMP/android-gradle-sbom.cdx.json"' in workflow
+    assert '--sbom "$RUNNER_TEMP/locked-dependencies-sbom.cdx.json"' in workflow
 
 
 def test_supply_chain_tools_and_dependabot_are_configured() -> None:
@@ -137,5 +137,5 @@ def test_supply_chain_tools_and_dependabot_are_configured() -> None:
     assert "shasum -a 256 -c" in installer
     assert 'gradle-distribution.zip" | shasum -a 256 -c -' in workflow
     assert "cyclonedx-json" in workflow
-    assert '--lockfile "$RUNNER_TEMP/source-sbom.cdx.json"' in workflow
+    assert '--sbom "$RUNNER_TEMP/source-sbom.cdx.json"' in workflow
     assert "vulnerability-exceptions.yml" in workflow

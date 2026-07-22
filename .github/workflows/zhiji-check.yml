@@ -154,9 +154,9 @@ jobs:
             --lockfile uv.lock \
             --lockfile app/frontend/package-lock.json \
             --lockfile desktop/pubspec.lock \
-            --lockfile "$RUNNER_TEMP/source-sbom.cdx.json" \
-            --lockfile "$RUNNER_TEMP/android-gradle-sbom.cdx.json" \
-            --lockfile "$RUNNER_TEMP/locked-dependencies-sbom.cdx.json"
+            --sbom "$RUNNER_TEMP/source-sbom.cdx.json" \
+            --sbom "$RUNNER_TEMP/android-gradle-sbom.cdx.json" \
+            --sbom "$RUNNER_TEMP/locked-dependencies-sbom.cdx.json"
           scanner_status=$?
           set -e
           if [[ "$scanner_status" -gt 1 ]]; then
