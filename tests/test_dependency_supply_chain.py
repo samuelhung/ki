@@ -104,7 +104,8 @@ def test_android_release_task_graph_uses_kotlin_action_overload() -> None:
 def test_ci_executes_locked_android_graph_and_generates_gradle_sbom() -> None:
     workflow = (ROOT / ".github" / "workflows" / "zhiji-check.yml").read_text(encoding="utf-8")
 
-    assert "GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home" in workflow
+    assert "GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home" not in workflow
+    assert 'echo "GRADLE_USER_HOME=$RUNNER_TEMP/gradle-home" >> "$GITHUB_ENV"' in workflow
     assert "flutter build apk --debug" in workflow
     assert "--write-locks" not in workflow
     assert 'scan dir:"$GRADLE_USER_HOME/caches/modules-2/files-2.1"' in workflow
