@@ -6,6 +6,8 @@ import re
 import tomllib
 from pathlib import Path
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -141,6 +143,29 @@ def test_android_build_tool_security_overrides_are_scoped_and_locked() -> None:
     assert "com.google.protobuf:protobuf-java:3.24.4=" not in gradle_lock
     assert "com.google.protobuf:protobuf-kotlin:3.24.4=" not in gradle_lock
     assert "org.bouncycastle:bcprov-jdk18on:1.79=" not in gradle_lock
+
+
+def test_android_lint_bundle_vulnerability_exceptions_are_exact_and_temporary() -> None:
+    payload = yaml.safe_load(
+        (ROOT / ".github" / "security" / "vulnerability-exceptions.yml").read_text(encoding="utf-8")
+    )
+    entries = {
+        (entry["id"], entry["ecosystem"], entry["package"], str(entry["version"])): entry
+        for entry in payload["exceptions"]
+    }
+    expected = {
+        ("GHSA-735f-pc8j-v9w8", "Maven", "com.google.protobuf:protobuf-java", "2.6.1"),
+        ("GHSA-wrvw-hg22-4m67", "Maven", "com.google.protobuf:protobuf-java", "2.6.1"),
+        ("GHSA-2r2c-cx56-8933", "Maven", "org.jline:jline-remote-telnet", "3.24.1"),
+        ("GHSA-47qp-hqvx-6r3f", "Maven", "org.jline:jline-remote-telnet", "3.24.1"),
+    }
+
+    assert expected <= entries.keys()
+    for key in expected:
+        entry = entries[key]
+        assert entry["expires"].isoformat() == "2026-09-30"
+        assert "Android Lint" in entry["reason"]
+        assert "APK" in entry["impact"]
 
 
 def test_ci_executes_locked_android_graph_and_generates_gradle_sbom() -> None:
