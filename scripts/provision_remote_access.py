@@ -316,6 +316,39 @@ def provision_remote_access(
             ) from remote_error
 
 
+def recover_remote_access(local_env: Path, remote: RemoteExecutor) -> None:
+    with _advisory_lock(local_env.with_name(f".{local_env.name}.lock")):
+        snapshot = _secure_snapshot(local_env, allow_missing=False)
+        token = _token_value(snapshot.data, "KI_REMOTE_API_TOKEN")
+        if not TOKEN_PATTERN.fullmatch(token):
+            raise ProvisionError("local recovery token is missing or invalid")
+        compare_payload = json.dumps({"token": token}).encode()
+        committed = remote.compare(compare_payload)
+        if committed is True:
+            return
+        if committed is None:
+            raise ProvisionError("remote state is uncertain; recovery not attempted")
+        payload = json.dumps({"token": token, "allowed_hosts": ALLOWED_HOSTS}).encode()
+        try:
+            remote.update(payload)
+        except Exception as remote_error:
+            try:
+                committed = remote.compare(compare_payload)
+            except Exception:
+                committed = None
+            if committed is True:
+                if isinstance(remote_error, RemoteWorkerError):
+                    raise ProvisionError(
+                        "remote commit durability/state uncertain; retained the matching local token"
+                    ) from remote_error
+                return
+            if committed is False:
+                raise ProvisionError(str(remote_error)) from remote_error
+            raise ProvisionError(
+                "remote state is uncertain; retained the local recovery token"
+            ) from remote_error
+
+
 class SshRemoteExecutor:
     _LOADER = (
         "import io,json,sys,types;"
@@ -376,7 +409,7 @@ class SshRemoteExecutor:
 
 
 def _remote_token(path: Path) -> str:
-    snapshot = _secure_snapshot(path, allow_missing=False)
+    snapshot = _secure_snapshot(path, allow_missing=True)
     return _token_value(snapshot.data, "KI_API_TOKEN")
 
 
@@ -396,7 +429,7 @@ def _remote_worker(path: Path, *, compare_only: bool) -> int:
             if compare_only:
                 return 0 if secrets.compare_digest(_remote_token(path), token) else 3
             allowed_hosts = request["allowed_hosts"]
-            snapshot = _secure_snapshot(path, allow_missing=False)
+            snapshot = _secure_snapshot(path, allow_missing=True)
             if _token_value(snapshot.data, "KI_API_TOKEN"):
                 raise ProvisionError(
                     "token rotation is not supported by this first-provision worker"
@@ -431,21 +464,27 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         default=Path("/Users/mrh/Documents/KI/runtime/venv/bin/python"),
     )
+    parser.add_argument(
+        "--recover-existing-local",
+        action="store_true",
+        help="reuse a retained local token after an uncertain first provision",
+    )
     parser.add_argument("--remote-worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--remote-compare", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(raw_argv)
     if args.remote_worker or args.remote_compare:
         return _remote_worker(args.remote_env, compare_only=args.remote_compare)
     try:
-        provision_remote_access(
-            args.local_env,
-            SshRemoteExecutor(
-                args.ssh_host,
-                args.worker_source,
-                args.remote_env,
-                args.remote_python,
-            ),
+        remote = SshRemoteExecutor(
+            args.ssh_host,
+            args.worker_source,
+            args.remote_env,
+            args.remote_python,
         )
+        if args.recover_existing_local:
+            recover_remote_access(args.local_env, remote)
+        else:
+            provision_remote_access(args.local_env, remote)
     except ProvisionError as exc:
         print(f"remote access provisioning failed: {exc}", file=sys.stderr)
         return 2

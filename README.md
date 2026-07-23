@@ -117,6 +117,17 @@ python3 scripts/provision_remote_access.py \
 
 生成值采用规范 URL-safe dotenv 形式；插值和反斜杠转义会被拒绝。脚本先原子提交本地文件，再提交远端；远端异常时会执行无输出 compare，只有确认远端未提交才恢复本地，状态不确定则保留新本地 token 并明确失败。
 
+若首次配置明确报告远端状态不确定，且本地文件已保留新 token，先核对远端未配置 token，再使用显式恢复入口复用本地 token；该入口不会生成或轮换 token：
+
+```bash
+python3 scripts/provision_remote_access.py \
+  --recover-existing-local \
+  --local-env app/frontend/.env.local \
+  --ssh-host zhiji-prod \
+  --remote-env /Users/mrh/Documents/KI/.env \
+  --remote-python /Users/mrh/Documents/KI/runtime/venv/bin/python
+```
+
 版本化 preflight 入口把 worker 源码和请求都经 SSH stdin 发送，不要求远端预装脚本。在任何远端目录创建、wheel 构建或文件上传之前运行只读 preflight；首次迁移使用 `absent`，已有原子运行目录时改为 `present`：
 
 ```bash
