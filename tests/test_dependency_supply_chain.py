@@ -112,7 +112,14 @@ def test_mobile_dependency_and_signing_inputs_are_locked() -> None:
     for lock in plugin_locks:
         contents = lock.read_text(encoding="utf-8")
         assert contents.strip()
-        for configuration in ("debugCompileClasspath", "profileCompileClasspath", "releaseCompileClasspath"):
+        for configuration in (
+            "debugCompileClasspath",
+            "debugRuntimeClasspath",
+            "profileCompileClasspath",
+            "profileRuntimeClasspath",
+            "releaseCompileClasspath",
+            "releaseRuntimeClasspath",
+        ):
             assert configuration in contents
     assert "ANDROID_KEYSTORE_PATH" in android_build
     assert "Production Android release signing is required" in android_build
