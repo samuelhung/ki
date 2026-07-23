@@ -10,6 +10,7 @@ import uuid
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator
 
+from .. import chain_node_service
 from ..ai_client import chat
 from ..db import connect
 from ..security.constraints import MAX_PAGE_SIZE, SafeIdentifier
@@ -68,61 +69,25 @@ router = APIRouter(prefix="/api/chains", tags=["chains"])
 @router.get("")
 def list_chains():
     """列出所有产业链（按 chain 分组的节点数统计 + 图标）"""
-    with connect() as conn:
-        conn.row_factory = lambda c, r: dict(zip([col[0] for col in c.description], r))
-        rows = conn.execute("""
-            SELECT chain, COUNT(*) as node_count
-            FROM industry_chain_nodes
-            GROUP BY chain
-            ORDER BY chain
-        """).fetchall()
-        # 合并图标和流转逻辑
-        meta_rows = conn.execute("SELECT chain_name, icon, flow_summary FROM chain_meta").fetchall()
-        icon_map = {r["chain_name"]: r["icon"] for r in meta_rows}
-        summary_map = {r["chain_name"]: r["flow_summary"] for r in meta_rows}
-        for r in rows:
-            r["icon"] = icon_map.get(r["chain"], "")
-            r["flow_summary"] = summary_map.get(r["chain"], "")
-        return {"chains": rows}
+    return chain_node_service.list_chains(connect_fn=connect)
 
 
 @router.get("/meta")
 def list_chain_meta():
     """返回所有产业链的元数据（图标等）。"""
-    with connect() as conn:
-        conn.row_factory = lambda c, r: dict(zip([col[0] for col in c.description], r))
-        rows = conn.execute("SELECT * FROM chain_meta ORDER BY chain_name").fetchall()
-        return {"meta": rows}
+    return chain_node_service.list_chain_meta(connect_fn=connect)
 
 
 @router.post("/flow-summary")
 def save_flow_summary(body: FlowSummaryReq):
     """保存产业链的流转逻辑摘要。前端 AI 生成后回传持久化。"""
-    with connect() as conn:
-        conn.execute(
-            "INSERT INTO chain_meta (chain_name, flow_summary, icon, created_at) "
-            "VALUES (?, ?, '', datetime('now')) "
-            "ON CONFLICT(chain_name) DO UPDATE SET flow_summary = excluded.flow_summary",
-            (body.chain_name, body.flow_summary),
-        )
-    return {"ok": True}
+    return chain_node_service.save_flow_summary(body, connect_fn=connect)
 
 
 @router.get("/nodes")
 def list_nodes():
     """列出所有节点（含全球份额和替代材料）"""
-    with connect() as conn:
-        conn.row_factory = lambda c, r: dict(zip([col[0] for col in c.description], r))
-        rows = conn.execute("""
-            SELECT * FROM industry_chain_nodes
-            ORDER BY chain, sort_order
-        """).fetchall()
-        for r in rows:
-            r["global_shares"] = json.loads(r["global_shares"])
-            r["substitutes"] = json.loads(r["substitutes"])
-            r["upstream_ids"] = json.loads(r["upstream_ids"])
-            r["data_sources"] = json.loads(r["data_sources"]) if r.get("data_sources") else {}
-        return {"nodes": rows}
+    return chain_node_service.list_nodes(connect_fn=connect)
 
 
 @router.post("/analyze")
@@ -423,102 +388,27 @@ def _extract_hints_from_analysis(analysis: str, title: str, summary: str) -> lis
 
 
 
-def _resolve_upstream_ids(conn, upstream_names: list[str]) -> list[str]:
-    """将上游节点名解析为 ID"""
-    if not upstream_names:
-        return []
-    placeholders = ",".join("?" for _ in upstream_names)
-    rows = conn.execute(
-        f"SELECT id, name FROM industry_chain_nodes WHERE name IN ({placeholders})",
-        upstream_names
-    ).fetchall()
-    name_map = {r[1]: r[0] for r in rows}
-    return [name_map[n] for n in upstream_names if n in name_map]
+_resolve_upstream_ids = chain_node_service.resolve_upstream_ids
 
 
 @router.put("/nodes/{node_id}")
 def update_node(node_id: SafeIdentifier, req: NodeUpdate):
     """更新产业链节点"""
-    with connect() as conn:
-        existing = conn.execute("SELECT id FROM industry_chain_nodes WHERE id = ?", (node_id,)).fetchone()
-        if not existing:
-            raise HTTPException(status_code=404, detail="节点不存在")
-
-        updates = {}
-        if req.name is not None:
-            updates["name"] = req.name
-        if req.node_type is not None:
-            updates["node_type"] = req.node_type
-        if req.description is not None:
-            updates["description"] = req.description
-        if req.global_shares is not None:
-            updates["global_shares"] = json.dumps(req.global_shares, ensure_ascii=False)
-        if req.substitutes is not None:
-            updates["substitutes"] = json.dumps(req.substitutes, ensure_ascii=False)
-        if req.data_sources is not None:
-            updates["data_sources"] = json.dumps(req.data_sources, ensure_ascii=False)
-        if req.sort_order is not None:
-            updates["sort_order"] = req.sort_order
-        if req.upstream_names is not None:
-            updates["upstream_ids"] = json.dumps(
-                _resolve_upstream_ids(conn, req.upstream_names), ensure_ascii=False
-            )
-
-        if not updates:
-            return {"ok": True, "message": "无变更"}
-
-        set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
-        set_clause = f"{set_clause}, last_updated = datetime('now')"
-        values = list(updates.values())
-        values.append(node_id)
-        conn.execute(f"UPDATE industry_chain_nodes SET {set_clause} WHERE id = ?", values)
-        conn.commit()
-        return {"ok": True}
+    return chain_node_service.update_node(node_id, req, connect_fn=connect)
 
 
 @router.post("/nodes")
 def create_node(req: NodeCreate):
     """新建产业链节点"""
-    nid = str(uuid.uuid4())
-    with connect() as conn:
-        upstream_ids = _resolve_upstream_ids(conn, req.upstream_names)
-        # 未手动指定上游时，自动连到同链最后一个节点（按 sort_order 最大）
-        if not upstream_ids:
-            last = conn.execute(
-                "SELECT id FROM industry_chain_nodes WHERE chain = ? ORDER BY sort_order DESC LIMIT 1",
-                (req.chain,)
-            ).fetchone()
-            if last:
-                upstream_ids = [last[0]]
-        # Auto-assign sort_order as max + 1 within the same chain
-        max_order = conn.execute(
-            "SELECT COALESCE(MAX(sort_order), -1) FROM industry_chain_nodes WHERE chain = ?",
-            (req.chain,)
-        ).fetchone()[0]
-
-        conn.execute("""
-            INSERT INTO industry_chain_nodes (id, chain, name, node_type, description,
-                global_shares, substitutes, upstream_ids, data_sources, sort_order)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            nid, req.chain, req.name, req.node_type, req.description,
-            json.dumps(req.global_shares, ensure_ascii=False),
-            json.dumps(req.substitutes, ensure_ascii=False),
-            json.dumps(upstream_ids, ensure_ascii=False),
-            json.dumps(req.data_sources, ensure_ascii=False),
-            max_order + 1
-        ))
-        conn.commit()
-        return {"ok": True, "id": nid}
+    return chain_node_service.create_node(
+        req, connect_fn=connect, uuid_factory=uuid.uuid4
+    )
 
 
 @router.delete("/nodes/{node_id}")
 def delete_node(node_id: SafeIdentifier):
     """删除产业链节点"""
-    with connect() as conn:
-        conn.execute("DELETE FROM industry_chain_nodes WHERE id = ?", (node_id,))
-        conn.commit()
-        return {"ok": True}
+    return chain_node_service.delete_node(node_id, connect_fn=connect)
 
 
 @router.post("/nodes/ai-update")
