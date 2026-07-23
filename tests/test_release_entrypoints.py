@@ -93,10 +93,13 @@ def test_readme_documents_only_the_verified_release_and_atomic_deploy_flow() -> 
         "build_remote_wheelhouse.py",
         "--expected-machine x86_64",
         "BOOTSTRAP_SHA256SUMS",
-        "plutil -extract ProgramArguments.2",
-        "plutil -extract ProgramArguments.3",
-        "plutil -extract ProgramArguments.4",
-        "plutil -extract ProgramArguments.5",
+            "plutil -extract ProgramArguments.0",
+            "plutil -extract ProgramArguments.1",
+            "plutil -extract ProgramArguments.2",
+            "plutil -extract ProgramArguments.4",
+            "plutil -extract ProgramArguments.5",
+            "plutil -extract ProgramArguments.6",
+            "plutil -extract ProgramArguments.7",
     ):
         assert protected_remote_deploy_detail in independent_deploy_body
     preflight_position = independent_deploy_body.index(

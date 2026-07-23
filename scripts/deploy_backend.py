@@ -375,11 +375,13 @@ def _atomic_write(path: Path, payload: bytes, *, mode: int = 0o600) -> None:
 
 def write_launchd_plist(config: BackendDeployConfig) -> None:
     _validate_remote_bind_environment(config)
-    executable = config.current_link / "venv" / "bin" / "zhiji"
+    executable = config.current_link / "venv" / "bin" / "python"
     payload = {
         "Label": config.launchd_label,
         "ProgramArguments": [
             str(executable),
+            "-m",
+            "zhiji_backend.cli",
             "serve",
             "--host",
             config.bind_host,
@@ -536,17 +538,26 @@ def _restore_database(backup: Path, database: Path) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def default_smoke_check(origin: str, *, timeout_seconds: float = 30) -> None:
-    checks = (
+def default_smoke_check(
+    origin: str,
+    *,
+    timeout_seconds: float = 30,
+    require_system_health: bool = True,
+) -> None:
+    checks = [
         ("/api/health", lambda payload: payload.get("ok") is True),
-        (
-            "/api/system/health",
-            lambda payload: payload.get("ok") is True
-            and isinstance(payload.get("database"), dict)
-            and payload["database"].get("ok") is True,
-        ),
         ("/api/dashboard/summary", lambda payload: isinstance(payload, dict)),
-    )
+    ]
+    if require_system_health:
+        checks.insert(
+            1,
+            (
+                "/api/system/health",
+                lambda payload: payload.get("ok") is True
+                and isinstance(payload.get("database"), dict)
+                and payload["database"].get("ok") is True,
+            ),
+        )
     deadline = time.monotonic() + timeout_seconds
     last_error = "service did not respond"
     while time.monotonic() < deadline:
@@ -613,6 +624,7 @@ def deploy_backend(
     *,
     service: ServiceController,
     smoke_check: Callable[[], None],
+    rollback_smoke_check: Callable[[], None] | None = None,
     installer: Callable[[Path, BackendDeployConfig], None] = _default_installer,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> Path:
@@ -623,6 +635,9 @@ def deploy_backend(
             config,
             service=service,
             smoke_check=smoke_check,
+            rollback_smoke_check=(
+                smoke_check if rollback_smoke_check is None else rollback_smoke_check
+            ),
             installer=installer,
             now=now,
         )
@@ -633,6 +648,7 @@ def _deploy_backend_locked(
     *,
     service: ServiceController,
     smoke_check: Callable[[], None],
+    rollback_smoke_check: Callable[[], None],
     installer: Callable[[Path, BackendDeployConfig], None],
     now: Callable[[], datetime],
 ) -> Path:
@@ -691,7 +707,7 @@ def _deploy_backend_locked(
             try:
                 service.start()
                 stopped = False
-                smoke_check()
+                rollback_smoke_check()
             except Exception as exc:
                 rollback_errors.append(f"previous version recovery failed: {exc}")
                 rollback_ready = False
@@ -758,6 +774,10 @@ def main(argv: list[str] | None = None) -> int:
             config,
             service=LaunchdServiceController(config),
             smoke_check=lambda: default_smoke_check(config.health_origin),
+            rollback_smoke_check=lambda: default_smoke_check(
+                config.health_origin,
+                require_system_health=False,
+            ),
         )
     except (BackendDeployError, OSError, sqlite3.Error, subprocess.CalledProcessError) as exc:
         print(f"backend deployment failed: {exc}", file=sys.stderr)

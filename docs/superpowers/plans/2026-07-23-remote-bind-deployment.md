@@ -826,7 +826,7 @@ ssh zhiji-prod 'python3 /Users/mrh/Documents/KI/packages/deploy_backend.py v2.0.
   --health-origin http://127.0.0.1:9120'
 ```
 
-Expected: deployer reports completion at `runtime/versions/2.0.0+90`. It creates a verified SQLite backup, switches `current`, starts through `current/venv/bin/zhiji`, passes all loopback smoke checks, and retains the legacy snapshot as the rollback target.
+Expected: deployer reports completion at `runtime/versions/2.0.0+90`. It creates a verified SQLite backup, switches `current`, starts through `current/venv/bin/python -m zhiji_backend.cli`, passes all loopback smoke checks, and retains the legacy snapshot as the rollback target.
 
 ### Task 9: Verify Production Reachability, Authentication, Rollback Readiness, And Retention
 
@@ -839,7 +839,7 @@ Expected: deployer reports completion at `runtime/versions/2.0.0+90`. It creates
 ssh zhiji-prod 'set -eu; curl -fsS http://127.0.0.1:9120/api/health; /Users/mrh/Documents/KI/runtime/current/venv/bin/python -c "import sqlite3; c=sqlite3.connect(\"/Users/mrh/Documents/KI/data/intelligence.sqlite\"); print(c.execute(\"PRAGMA quick_check\").fetchone()[0])"; readlink /Users/mrh/Documents/KI/runtime/current; launchctl print gui/$(id -u)/com.zhiji.backend | sed -n "1,90p"'
 ```
 
-Expected: health is `{"ok":true}`, SQLite is `ok`, `current` targets `2.0.0+90`, and launchd arguments contain `runtime/current/venv/bin/zhiji --host 0.0.0.0 --port 9120`.
+Expected: health is `{"ok":true}`, SQLite is `ok`, `current` targets `2.0.0+90`, and launchd arguments contain `runtime/current/venv/bin/python -m zhiji_backend.cli serve --host 0.0.0.0 --port 9120`.
 
 - [ ] **Step 2: Verify unauthenticated remote denial and authenticated remote success**
 
