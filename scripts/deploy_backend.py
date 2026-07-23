@@ -119,7 +119,7 @@ def _env_value(path: Path, key: str) -> str:
         if separator and candidate.strip() == key:
             value = value.strip()
             if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-                value = value[1:-1]
+                value = value[1:-1].strip()
             return value
     return ""
 

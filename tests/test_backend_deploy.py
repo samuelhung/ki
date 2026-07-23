@@ -235,8 +235,14 @@ def test_bind_host_accepts_ip_literals_and_localhost(tmp_path: Path, bind_host: 
 
 @pytest.mark.parametrize(
     "token",
-    [None, "", "   "],
-    ids=["missing-env", "empty-token", "whitespace-token"],
+    [None, "", "   ", '"   "', "'   '"],
+    ids=[
+        "missing-env",
+        "empty-token",
+        "whitespace-token",
+        "double-quoted-whitespace-token",
+        "single-quoted-whitespace-token",
+    ],
 )
 def test_public_bind_requires_secure_env_with_nonempty_api_token(
     tmp_path: Path,
