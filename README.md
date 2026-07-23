@@ -38,11 +38,14 @@ macOS 知几.app
 ## 常用命令
 
 ```bash
+# 首次开发环境同步（Python 3.12 / uv 0.11.31）
+uv sync --frozen --group dev
+
 # 后端
-zhiji serve
+uv run --frozen zhiji serve
 
 # 前端开发
-cd app/frontend && npm run dev
+cd app/frontend && npm ci && npm run dev
 
 # 前端构建
 cd app/frontend && npm run build
@@ -97,11 +100,10 @@ ZHIJI_SKIP_RELEASE_CHECK=1 ./scripts/check.sh
 ```bash
 # 1. 本机构建前端并打进 backend wheel（Python 3.12）
 cd /Users/yuk/Documents/zhiji/ki
-cd app/frontend && npm run build && cd ../..
-/Users/yuk/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 \
-  -m pip wheel --no-build-isolation --no-deps . -w dist
-PYTHONPATH=. /Users/yuk/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 \
-  -c "from pathlib import Path; from scripts.build_backend_wheel import verify_wheel; verify_wheel(Path('dist/zhiji_backend-2.0.0-py3-none-any.whl'))"
+uv lock --check
+uv sync --frozen --group dev
+# 脚本会先执行 npm ci，再构建并嵌入前端产物。
+uv run --frozen python scripts/build_backend_wheel.py --outdir dist
 
 # 2. 上传 wheel 到远端 packages
 scp /Users/yuk/Documents/zhiji/ki/dist/zhiji_backend-2.0.0-py3-none-any.whl \
@@ -114,6 +116,13 @@ ssh zhiji-prod "/Users/mrh/Documents/KI/runtime/venv/bin/python -m pip install -
 ssh zhiji-prod "sleep 2; curl -fsS http://127.0.0.1:9120/api/health"
 curl -fsS http://10.8.0.105:9120/api/health
 ```
+
+依赖与供应链约束：
+
+- 本地检查和 wheel 构建要求 Node `22.17.0`、npm `10.9.2` 和 `uv 0.11.31`。
+- Python、npm、Pub、Bundler 和 CocoaPods 安装必须使用仓库锁文件，不允许在 CI 隐式更新。
+- `desktop/macos/Podfile.lock` 变化时必须同步 `.github/security/cocoapods-security-coverage.yml`，确保外部 Pod 进入 OSV，Flutter/插件包装层由固定工具链或 Pub 锁覆盖。
+- CI 生成 Syft 源码 SBOM 和覆盖 Python、npm、Pub、Gem、CocoaPods 的精确锁文件 SBOM，并由 High/Critical 漏洞门禁统一检查。
 
 ### 破坏性清理迁移备份与回滚
 

@@ -1,0 +1,13 @@
+pods:
+  FlutterMacOS:
+    coverage: flutter-sdk
+    version: 3.44.2
+  Sparkle:
+    coverage: osv
+    purl: pkg:swift/github.com/sparkle-project/Sparkle@{version}
+  tray_manager:
+    coverage: pub
+    package: tray_manager
+  window_manager:
+    coverage: pub
+    package: window_manager
