@@ -1,0 +1,61 @@
+name: cocoapods-outdated
+
+on:
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  BUNDLE_GEMFILE: ${{ github.workspace }}/desktop/Gemfile
+  BUNDLE_FROZEN: 'true'
+  LANG: en_US.UTF-8
+
+jobs:
+  audit:
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: subosito/flutter-action@fd55f4c5af5b953cc57a2be44cb082c8f6635e8e # v2.21.0
+        with:
+          flutter-version: '3.44.2'
+          channel: stable
+          cache: true
+      - uses: ruby/setup-ruby@a30dfa457ad68707b8b910ac3a244714b61c0626 # v1.320.0
+        with:
+          ruby-version: '3.1.6'
+          bundler: '2.4.22'
+          bundler-cache: true
+      - name: Install locked desktop dependencies
+        run: flutter pub get --enforce-lockfile
+        working-directory: desktop
+      - name: Verify frozen CocoaPods CLI dependencies
+        run: bundle check
+        working-directory: desktop
+      - name: Check for CocoaPods updates
+        run: |
+          set +e
+          bundle exec ruby -e 'require "logger"; load Gem.bin_path("cocoapods", "pod")' -- \
+            outdated --repo-update --no-ansi | tee "$RUNNER_TEMP/cocoapods-outdated.txt"
+          pod_status=${PIPESTATUS[0]}
+          set -e
+          if [[ "$pod_status" -ne 0 ]]; then
+            echo "CocoaPods outdated audit failed with status $pod_status" >&2
+            exit "$pod_status"
+          fi
+          if grep -Fq "The following pod updates are available:" "$RUNNER_TEMP/cocoapods-outdated.txt"; then
+            echo "Locked CocoaPods dependencies have updates available" >&2
+            exit 1
+          fi
+        working-directory: desktop/macos
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: cocoapods-outdated-report
+          path: ${{ runner.temp }}/cocoapods-outdated.txt
+          if-no-files-found: error

@@ -88,6 +88,7 @@ def test_mobile_dependency_and_signing_inputs_are_locked() -> None:
     android_settings = (ROOT / "desktop" / "android" / "settings.gradle.kts").read_text(encoding="utf-8")
     root_android_build = (ROOT / "desktop" / "android" / "build.gradle.kts").read_text(encoding="utf-8")
     gradle_locks = sorted((ROOT / "desktop" / "android").glob("**/gradle.lockfile"))
+    plugin_lock_dir = ROOT / "desktop" / "android" / "gradle" / "dependency-locks"
 
     assert "flutter pub get --enforce-lockfile" in workflow
     assert 'id("com.android.application") version "9.1.1" apply false' in android_settings
@@ -101,9 +102,18 @@ def test_mobile_dependency_and_signing_inputs_are_locked() -> None:
     assert "distributionSha256Sum=17f277867f6914d61b1aa02efab1ba7bb439ad652ca485cd8ca6842fccec6e43" in wrapper
     assert "lockAllConfigurations()" in root_android_build
     assert "LockMode.STRICT" in root_android_build
-    assert "projectDir.toPath().startsWith(repositoryRoot)" in root_android_build
+    assert 'file("gradle/dependency-locks/${project.name}.lockfile")' in root_android_build
     assert gradle_locks
     assert all(lock.read_text(encoding="utf-8").strip() for lock in gradle_locks)
+    assert (plugin_lock_dir / "url_launcher_android.lockfile").is_file()
+    assert (plugin_lock_dir / "webview_flutter_android.lockfile").is_file()
+    plugin_locks = list(plugin_lock_dir.glob("*.lockfile"))
+    assert plugin_locks
+    for lock in plugin_locks:
+        contents = lock.read_text(encoding="utf-8")
+        assert contents.strip()
+        for configuration in ("debugCompileClasspath", "profileCompileClasspath", "releaseCompileClasspath"):
+            assert configuration in contents
     assert "ANDROID_KEYSTORE_PATH" in android_build
     assert "Production Android release signing is required" in android_build
     assert "gradle.taskGraph.whenReady" in android_build
@@ -111,6 +121,9 @@ def test_mobile_dependency_and_signing_inputs_are_locked() -> None:
     assert "Verify Android release signing guard" in workflow
     assert ":app:assembleRelease --dry-run" in workflow
     assert "Production Android release signing is required" in workflow
+    assert "keytool -genkeypair" in workflow
+    assert "ANDROID_KEYSTORE_PATH=" in workflow
+    assert "flutter build apk --release" in workflow
 
 
 def test_android_release_task_graph_uses_kotlin_action_overload() -> None:
@@ -174,6 +187,7 @@ def test_ci_executes_locked_android_graph_and_generates_gradle_sbom() -> None:
     assert "GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home" not in workflow
     assert 'echo "GRADLE_USER_HOME=$RUNNER_TEMP/gradle-home" >> "$GITHUB_ENV"' in workflow
     assert "flutter build apk --debug" in workflow
+    assert "flutter build apk --release" in workflow
     assert "--write-locks" not in workflow
     assert 'scan dir:"$GRADLE_USER_HOME/caches/modules-2/files-2.1"' in workflow
     assert "android-gradle-sbom.cdx.json" in workflow
@@ -183,6 +197,7 @@ def test_ci_executes_locked_android_graph_and_generates_gradle_sbom() -> None:
     assert '--sbom "$RUNNER_TEMP/source-sbom.cdx.json"' in workflow
     assert '--sbom "$RUNNER_TEMP/android-gradle-sbom.cdx.json"' in workflow
     assert '--sbom "$RUNNER_TEMP/locked-dependencies-sbom.cdx.json"' in workflow
+    assert "--runtime-lock-root desktop/android" in workflow
 
 
 def test_supply_chain_tools_and_dependabot_are_configured() -> None:
@@ -204,3 +219,22 @@ def test_supply_chain_tools_and_dependabot_are_configured() -> None:
     assert "cyclonedx-json" in workflow
     assert '--sbom "$RUNNER_TEMP/source-sbom.cdx.json"' in workflow
     assert "vulnerability-exceptions.yml" in workflow
+
+
+def test_cocoapods_updates_are_checked_weekly_with_locked_tools() -> None:
+    workflow_path = ROOT / ".github" / "workflows" / "cocoapods-outdated.yml"
+    assert workflow_path.is_file()
+    workflow = workflow_path.read_text(encoding="utf-8")
+
+    assert "schedule:" in workflow
+    assert "cron:" in workflow
+    assert "permissions:\n  contents: read" in workflow
+    assert "runs-on: macos-14" in workflow
+    assert "persist-credentials: false" in workflow
+    assert "flutter pub get --enforce-lockfile" in workflow
+    assert "bundle check" in workflow
+    assert "outdated --repo-update --no-ansi" in workflow
+    assert "The following pod updates are available:" in workflow
+    assert "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2" in workflow
+    action_refs = re.findall(r"uses:\s+[^@\s]+@([^\s]+)", workflow)
+    assert action_refs and all(re.fullmatch(r"[0-9a-f]{40}", ref) for ref in action_refs)

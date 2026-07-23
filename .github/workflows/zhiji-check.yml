@@ -114,6 +114,26 @@ jobs:
             exit 1
           fi
         working-directory: desktop/android
+      - name: Create ephemeral Android release signing key
+        run: |
+          keytool -genkeypair \
+            -keystore "$RUNNER_TEMP/android-ci-release.jks" \
+            -storepass ci-release-only \
+            -keypass ci-release-only \
+            -alias ci-release \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 1 \
+            -dname "CN=CI Release, OU=Engineering, O=Zhiji, L=CI, ST=CI, C=CN"
+          {
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/android-ci-release.jks"
+            echo "ANDROID_KEYSTORE_PASSWORD=ci-release-only"
+            echo "ANDROID_KEY_ALIAS=ci-release"
+            echo "ANDROID_KEY_PASSWORD=ci-release-only"
+          } >> "$GITHUB_ENV"
+      - name: Build locked Android release artifact
+        run: flutter build apk --release
+        working-directory: desktop
       - name: Install verified supply-chain tools
         run: ./scripts/install_supply_chain_tools.sh "$RUNNER_TEMP/zhiji-tools"
       - name: Verify pinned Gradle distribution
@@ -165,7 +185,8 @@ jobs:
           fi
           uv run --frozen python scripts/vulnerability_gate.py \
             "$RUNNER_TEMP/osv-report.json" \
-            .github/security/vulnerability-exceptions.yml
+            .github/security/vulnerability-exceptions.yml \
+            --runtime-lock-root desktop/android
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: source-and-gradle-cyclonedx-sboms
