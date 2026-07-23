@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import secrets
 import shlex
 import shutil
@@ -12,6 +13,8 @@ import sqlite3
 import stat
 import subprocess
 import sys
+import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -23,6 +26,7 @@ try:
         ProvisionError,
         _parse_env,
         _secure_snapshot,
+        _validate_remote_python,
     )
 except ModuleNotFoundError:
     from provision_remote_access import (  # type: ignore[no-redef]
@@ -30,6 +34,7 @@ except ModuleNotFoundError:
         ProvisionError,
         _parse_env,
         _secure_snapshot,
+        _validate_remote_python,
     )
 
 
@@ -47,11 +52,14 @@ class PreflightConfig:
     legacy_name: str
     target_name: str
     minimum_free_bytes: int
+    packages_root: Path
+    source_sha: str
     expect_legacy: str = "either"
     expect_current: str = "either"
     expect_target: str = "absent"
     health_url: str | None = None
     expected_health_version: str | None = None
+    expect_stage: str = "absent"
 
     @property
     def versions(self) -> Path:
@@ -68,6 +76,10 @@ class PreflightConfig:
     @property
     def current(self) -> Path:
         return self.runtime_root / "current"
+
+    @property
+    def stage(self) -> Path:
+        return self.packages_root / self.source_sha
 
 
 def _env_value(data: bytes, wanted: str) -> str:
@@ -160,6 +172,12 @@ def remote_preflight(
     if _env_value(remote_env.data, "KI_ALLOWED_HOSTS") != ALLOWED_HOSTS:
         raise PreflightError("remote allowed hosts do not match")
     _real_directory(config.runtime_root, "runtime")
+    _real_directory(config.packages_root, "packages root")
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", config.source_sha):
+        raise PreflightError("source SHA must contain exactly 40 hexadecimal characters")
+    stage_exists = _verify_expected_path(config.stage, config.expect_stage, "artifact stage")
+    if stage_exists:
+        _real_directory(config.stage, "artifact stage")
     first_migration = (
         config.expect_legacy == "absent"
         and config.expect_current == "absent"
@@ -199,6 +217,7 @@ def remote_preflight(
     _database_quick_check(config.database)
     return {
         "allowed_hosts": "ok",
+        "artifact_stage": "present" if stage_exists else "absent",
         "current": "present" if current_exists else "absent",
         "database": "ok",
         "disk_free_bytes": free_bytes,
@@ -227,7 +246,14 @@ worker.__file__ = "preflight_backend_deploy.py"
 sys.modules[worker.__name__] = worker
 exec(compile(envelope["source"], worker.__file__, "exec"), worker.__dict__)
 config_data = envelope["config"]
-for key in ("database", "local_env", "python_executable", "remote_env", "runtime_root"):
+for key in (
+    "database",
+    "local_env",
+    "packages_root",
+    "python_executable",
+    "remote_env",
+    "runtime_root",
+):
     config_data[key] = worker.Path(config_data[key])
 config = worker.PreflightConfig(**config_data)
 facts = worker.remote_preflight(config, envelope["token"])
@@ -243,6 +269,10 @@ print(json.dumps(facts, sort_keys=True))
         source_script: Path = Path(__file__),
         provision_source: Path = Path(__file__).with_name("provision_remote_access.py"),
     ) -> None:
+        try:
+            _validate_remote_python(config.python_executable)
+        except ProvisionError as exc:
+            raise PreflightError(str(exc)) from exc
         self.host = host
         self.config = config
         self.run = run
@@ -258,14 +288,17 @@ print(json.dumps(facts, sort_keys=True))
                     "expect_current": self.config.expect_current,
                     "expect_legacy": self.config.expect_legacy,
                     "expect_target": self.config.expect_target,
+                    "expect_stage": self.config.expect_stage,
                     "expected_health_version": None,
                     "health_url": None,
                     "legacy_name": self.config.legacy_name,
                     "local_env": str(self.config.local_env),
                     "minimum_free_bytes": self.config.minimum_free_bytes,
+                    "packages_root": str(self.config.packages_root),
                     "python_executable": str(self.config.python_executable),
                     "remote_env": str(self.config.remote_env),
                     "runtime_root": str(self.config.runtime_root),
+                    "source_sha": self.config.source_sha,
                     "target_name": self.config.target_name,
                 },
                 "provision_source": self.provision_source.read_text(encoding="utf-8"),
@@ -273,7 +306,10 @@ print(json.dumps(facts, sort_keys=True))
                 "token": request["token"],
             }
         ).encode()
-        remote_command = f"python3 -c {shlex.quote(self._LOADER)}"
+        remote_command = (
+            f"{shlex.quote(str(self.config.python_executable))} "
+            f"-c {shlex.quote(self._LOADER)}"
+        )
         command = ["ssh", self.host, remote_command]
         result = self.run(command, input=envelope, capture_output=True, check=False)
         if result.returncode != 0:
@@ -284,11 +320,40 @@ print(json.dumps(facts, sort_keys=True))
             raise PreflightError("remote preflight returned invalid safe facts") from exc
 
 
+EXPECTED_HEALTH_URL = "http://10.8.0.105:9120/api/system/health"
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(req.full_url, code, "redirect rejected", headers, fp)
+
+
+def _default_open_url(request: urllib.request.Request, *, timeout: int):
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
+    return opener.open(request, timeout=timeout)
+
+
+def _validate_health_url(url: str) -> None:
+    parsed = urllib.parse.urlsplit(url)
+    if (
+        url != EXPECTED_HEALTH_URL
+        or parsed.scheme != "http"
+        or parsed.hostname != "10.8.0.105"
+        or parsed.port != 9120
+        or parsed.path != "/api/system/health"
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise PreflightError(f"health URL must be exactly {EXPECTED_HEALTH_URL}")
+
+
 def preflight_backend_deploy(
     config: PreflightConfig,
     remote_runner: Callable[[bytes], dict[str, object]],
     *,
-    open_url=urllib.request.urlopen,
+    open_url=None,
 ) -> dict[str, object]:
     local = _snapshot(config.local_env, "local env")
     token = _env_value(local.data, "KI_REMOTE_API_TOKEN")
@@ -296,17 +361,20 @@ def preflight_backend_deploy(
         raise PreflightError("KI_REMOTE_API_TOKEN must be non-empty")
     if config.health_url and not config.expected_health_version:
         raise PreflightError("expected health version is required with health URL")
+    if config.health_url:
+        _validate_health_url(config.health_url)
     payload = json.dumps({"token": token}).encode()
     facts = remote_runner(payload)
     if token in json.dumps(facts, sort_keys=True):
         raise PreflightError("remote preflight returned unsafe facts")
     if config.health_url:
+        opener = _default_open_url if open_url is None else open_url
         request = urllib.request.Request(
             config.health_url,
             headers={"X-API-Key": token},
         )
         try:
-            with open_url(request, timeout=10) as response:
+            with opener(request, timeout=10) as response:
                 if response.status != 200:
                     raise PreflightError("authenticated health returned non-200 status")
                 health = json.loads(response.read())
@@ -334,12 +402,15 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--runtime-root", type=Path, required=True)
     parser.add_argument("--database", type=Path, required=True)
     parser.add_argument("--python", type=Path, required=True)
+    parser.add_argument("--packages-root", type=Path, required=True)
+    parser.add_argument("--source-sha", required=True)
     parser.add_argument("--legacy-name", default="legacy-2.0.0-pre-atomic")
     parser.add_argument("--target-name", required=True)
     parser.add_argument("--minimum-free-bytes", type=int, default=2 * 1024**3)
     parser.add_argument("--expect-legacy", choices=("present", "absent", "either"), default="either")
     parser.add_argument("--expect-current", choices=("present", "absent", "either"), default="either")
     parser.add_argument("--expect-target", choices=("present", "absent", "either"), default="absent")
+    parser.add_argument("--expect-stage", choices=("present", "absent", "either"), default="absent")
     parser.add_argument("--health-url")
     parser.add_argument("--expected-health-version")
     parser.add_argument("--remote-worker", action="store_true", help=argparse.SUPPRESS)
@@ -364,11 +435,14 @@ def main(argv: list[str] | None = None) -> int:
         legacy_name=args.legacy_name,
         target_name=args.target_name,
         minimum_free_bytes=args.minimum_free_bytes,
+        packages_root=args.packages_root,
+        source_sha=args.source_sha,
         expect_legacy=args.expect_legacy,
         expect_current=args.expect_current,
         expect_target=args.expect_target,
         health_url=args.health_url,
         expected_health_version=args.expected_health_version,
+        expect_stage=args.expect_stage,
     )
     try:
         if args.remote_worker:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -137,6 +138,69 @@ def test_local_replace_failure_never_calls_remote(tmp_path: Path) -> None:
     assert local.read_text() == "OTHER=kept\n"
 
 
+def test_local_parent_fsync_failure_after_replace_is_uncertain_and_skips_remote(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    local = tmp_path / ".env.local"
+    _secure_env(local, "OTHER=kept\n")
+    remote = FakeRemote()
+
+    def fail_fsync(_path: Path) -> None:
+        raise OSError("directory fsync failed")
+
+    monkeypatch.setattr("scripts.provision_remote_access._fsync_directory", fail_fsync)
+
+    with pytest.raises(ProvisionError, match="local committed; remote not attempted"):
+        provision_remote_access(local, remote, token_factory=lambda _length: TOKEN)
+
+    captured = capsys.readouterr()
+    assert f"KI_REMOTE_API_TOKEN={TOKEN}" in local.read_text()
+    assert remote.calls == []
+    assert TOKEN not in captured.out + captured.err
+
+
+def test_local_env_parent_symlink_is_rejected_before_remote_call(tmp_path: Path) -> None:
+    real_parent = tmp_path / "real"
+    real_parent.mkdir()
+    linked_parent = tmp_path / "linked"
+    linked_parent.symlink_to(real_parent, target_is_directory=True)
+    remote = FakeRemote()
+
+    with pytest.raises(ProvisionError, match="parent.*symlink"):
+        provision_remote_access(
+            linked_parent / ".env.local", remote, token_factory=lambda _length: TOKEN
+        )
+
+    assert remote.calls == []
+
+
+def test_local_env_parent_replacement_is_rejected_before_replace(
+    tmp_path: Path, monkeypatch
+) -> None:
+    parent = tmp_path / "frontend"
+    parent.mkdir()
+    local = parent / ".env.local"
+    displaced = tmp_path / "frontend-displaced"
+    remote = FakeRemote()
+    from scripts.provision_remote_access import _create_stage as real_create_stage
+
+    def replace_parent_after_staging(path: Path, payload: bytes) -> Path:
+        stage = real_create_stage(path, payload)
+        parent.rename(displaced)
+        parent.mkdir()
+        return displaced / stage.name
+
+    monkeypatch.setattr(
+        "scripts.provision_remote_access._create_stage", replace_parent_after_staging
+    )
+
+    with pytest.raises(ProvisionError, match="parent directory identity changed"):
+        provision_remote_access(local, remote, token_factory=lambda _length: TOKEN)
+
+    assert remote.calls == []
+    assert not local.exists()
+
+
 def test_secret_never_appears_in_output_or_remote_argv(tmp_path: Path, capsys) -> None:
     local = tmp_path / ".env.local"
     remote = FakeRemote()
@@ -170,6 +234,7 @@ def test_ssh_stdin_worker_updates_and_compares_without_secret_argv(tmp_path: Pat
         "test-host",
         Path("scripts/provision_remote_access.py"),
         remote_env,
+        Path(sys.executable),
         run=execute_loader,
     )
     executor.update(
@@ -179,6 +244,18 @@ def test_ssh_stdin_worker_updates_and_compares_without_secret_argv(tmp_path: Pat
 
     assert "UNRELATED=kept" in remote_env.read_text()
     assert all(TOKEN not in argument for command in commands for argument in command)
+    assert all(command[-1].startswith(f"{Path(sys.executable)} -c ") for command in commands)
+
+
+@pytest.mark.parametrize("remote_python", [Path("python3"), Path("/bad\npython")])
+def test_ssh_executor_rejects_unsafe_remote_python(remote_python: Path) -> None:
+    with pytest.raises(ProvisionError, match="remote Python"):
+        SshRemoteExecutor(
+            "test-host",
+            Path("scripts/provision_remote_access.py"),
+            Path("/remote/.env"),
+            remote_python,
+        )
 
 
 def stat_mode(path: Path) -> int:

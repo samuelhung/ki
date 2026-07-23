@@ -44,6 +44,18 @@ class FileSnapshot:
     identity: tuple[int, int] | None
 
 
+def _directory_identity(path: Path) -> tuple[int, int]:
+    try:
+        metadata = path.lstat()
+    except FileNotFoundError as exc:
+        raise ProvisionError(f"env parent directory is missing: {path}") from exc
+    if stat.S_ISLNK(metadata.st_mode):
+        raise ProvisionError(f"env parent directory must not be a symlink: {path}")
+    if not stat.S_ISDIR(metadata.st_mode):
+        raise ProvisionError(f"env parent must be a directory: {path}")
+    return metadata.st_dev, metadata.st_ino
+
+
 def _read_descriptor(descriptor: int) -> bytes:
     chunks: list[bytes] = []
     while chunk := os.read(descriptor, 64 * 1024):
@@ -99,7 +111,7 @@ def _fsync_directory(path: Path) -> None:
 
 @contextmanager
 def _advisory_lock(path: Path):
-    path.parent.mkdir(parents=True, exist_ok=True)
+    _directory_identity(path.parent)
     descriptor = os.open(
         path,
         os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK,
@@ -194,13 +206,33 @@ def _atomic_replace(
     *,
     replace_func: Callable[[Path, Path], None] = os.replace,
 ) -> FileSnapshot:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    parent_identity = _directory_identity(path.parent)
     stage = _create_stage(path, payload)
+    staged_metadata = stage.lstat()
+    staged_identity = staged_metadata.st_dev, staged_metadata.st_ino
+    committed = False
     try:
         _recheck_identity(path, expected)
+        if _directory_identity(path.parent) != parent_identity:
+            raise ProvisionError("env parent directory identity changed before replace")
         replace_func(stage, path)
+        committed = True
         _fsync_directory(path.parent)
     except Exception as exc:
+        if committed:
+            try:
+                current = _secure_snapshot(path, allow_missing=False)
+            except Exception as snapshot_error:
+                raise ProvisionError(
+                    "local publication state is uncertain; remote not attempted"
+                ) from snapshot_error
+            if current.identity != staged_identity:
+                raise ProvisionError(
+                    "local publication state is uncertain; remote not attempted"
+                ) from exc
+            raise ProvisionError(
+                "local committed; remote not attempted; directory durability is uncertain"
+            ) from exc
         raise ProvisionError(str(exc)) from exc
     finally:
         stage.unlink(missing_ok=True)
@@ -278,12 +310,15 @@ class SshRemoteExecutor:
         host: str,
         source_script: Path,
         remote_env: Path,
+        remote_python: Path,
         *,
         run=subprocess.run,
     ) -> None:
+        _validate_remote_python(remote_python)
         self.host = host
         self.source_script = source_script
         self.remote_env = remote_env
+        self.remote_python = remote_python
         self.run = run
 
     def _run(self, operation: str, payload: bytes) -> subprocess.CompletedProcess[bytes]:
@@ -295,7 +330,7 @@ class SshRemoteExecutor:
                 "source": self.source_script.read_text(encoding="utf-8"),
             }
         ).encode()
-        remote_command = f"python3 -c {shlex.quote(self._LOADER)}"
+        remote_command = f"{shlex.quote(str(self.remote_python))} -c {shlex.quote(self._LOADER)}"
         command = ["ssh", self.host, remote_command]
         return self.run(command, input=envelope, capture_output=True, check=False)
 
@@ -318,6 +353,12 @@ def _remote_token(path: Path) -> str:
         if key == "KI_API_TOKEN":
             result = line.partition("=")[2]
     return result
+
+
+def _validate_remote_python(path: Path) -> None:
+    value = str(path)
+    if not path.is_absolute() or any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise ProvisionError("remote Python must be an absolute path without control characters")
 
 
 def _remote_worker(path: Path, *, compare_only: bool) -> int:
@@ -356,6 +397,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--remote-env", type=Path, default=Path("/Users/mrh/Documents/KI/.env")
     )
+    parser.add_argument(
+        "--remote-python",
+        type=Path,
+        default=Path("/Users/mrh/Documents/KI/runtime/venv/bin/python"),
+    )
     parser.add_argument("--remote-worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--remote-compare", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(raw_argv)
@@ -364,7 +410,12 @@ def main(argv: list[str] | None = None) -> int:
     try:
         provision_remote_access(
             args.local_env,
-            SshRemoteExecutor(args.ssh_host, args.worker_source, args.remote_env),
+            SshRemoteExecutor(
+                args.ssh_host,
+                args.worker_source,
+                args.remote_env,
+                args.remote_python,
+            ),
         )
     except ProvisionError as exc:
         print(f"remote access provisioning failed: {exc}", file=sys.stderr)

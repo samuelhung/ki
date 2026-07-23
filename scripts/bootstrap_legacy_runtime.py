@@ -166,6 +166,36 @@ def _prepare_versions(config: BootstrapConfig) -> None:
         raise
 
 
+def _cleanup_published_target(
+    config: BootstrapConfig,
+    target_identity: tuple[int, int],
+) -> None:
+    try:
+        target_metadata = config.target.lstat()
+    except FileNotFoundError as exc:
+        raise BootstrapError("uncertain publication: target disappeared") from exc
+    if (
+        stat.S_ISLNK(target_metadata.st_mode)
+        or not stat.S_ISDIR(target_metadata.st_mode)
+        or (target_metadata.st_dev, target_metadata.st_ino) != target_identity
+    ):
+        raise BootstrapError("uncertain publication: target identity changed")
+    try:
+        current_metadata = config.current.lstat()
+    except FileNotFoundError:
+        current_metadata = None
+    if current_metadata is not None and stat.S_ISLNK(current_metadata.st_mode):
+        try:
+            if config.current.resolve(strict=True) == config.target.resolve(strict=True):
+                raise BootstrapError(
+                    "uncertain publication: current may already reference the new target"
+                )
+        except FileNotFoundError as exc:
+            raise BootstrapError("uncertain publication: current cannot be resolved") from exc
+    shutil.rmtree(config.target)
+    _fsync_directory(config.versions)
+
+
 def bootstrap_legacy_runtime(
     config: BootstrapConfig,
     *,
@@ -180,6 +210,7 @@ def bootstrap_legacy_runtime(
     stage: Path | None = None
     published = False
     current_published = False
+    target_identity: tuple[int, int] | None = None
     with _deployment_lock(config.runtime_root):
         try:
             current_runtime = _real_directory(config.runtime_root)
@@ -233,6 +264,8 @@ def bootstrap_legacy_runtime(
             os.replace(stage, config.target)
             stage = None
             published = True
+            target_metadata = config.target.lstat()
+            target_identity = target_metadata.st_dev, target_metadata.st_ino
             _fsync_directory(config.versions)
             _require_absent(config.current, "current")
             temporary = config.runtime_root / f".current.{os.getpid()}"
@@ -248,8 +281,11 @@ def bootstrap_legacy_runtime(
             return config.target
         except Exception as exc:
             if published and not current_published:
-                shutil.rmtree(config.target, ignore_errors=True)
-                _fsync_directory(config.versions)
+                assert target_identity is not None
+                try:
+                    _cleanup_published_target(config, target_identity)
+                except BootstrapError as uncertain:
+                    raise uncertain from exc
             if isinstance(exc, BootstrapError):
                 raise
             raise BootstrapError(str(exc)) from exc

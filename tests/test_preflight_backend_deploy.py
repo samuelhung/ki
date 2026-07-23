@@ -5,6 +5,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 from dataclasses import replace
 from pathlib import Path
@@ -15,6 +16,8 @@ from scripts.preflight_backend_deploy import (
     PreflightConfig,
     PreflightError,
     SshPreflightRunner,
+    _default_open_url,
+    _NoRedirect,
     main,
     preflight_backend_deploy,
     remote_preflight,
@@ -45,6 +48,7 @@ def _remote_tree(tmp_path: Path) -> PreflightConfig:
         f"OTHER=kept\nKI_API_TOKEN={TOKEN}\n"
         "KI_ALLOWED_HOSTS=10.8.0.105,127.0.0.1,localhost\n",
     )
+    (tmp_path / "packages").mkdir()
     return PreflightConfig(
         local_env=tmp_path / "local.env",
         remote_env=remote_env,
@@ -54,6 +58,8 @@ def _remote_tree(tmp_path: Path) -> PreflightConfig:
         legacy_name="legacy-2.0.0-pre-atomic",
         target_name="2.0.0+90",
         minimum_free_bytes=1024,
+        packages_root=tmp_path / "packages",
+        source_sha="a" * 40,
         expect_legacy="present",
         expect_current="present",
         expect_target="absent",
@@ -248,6 +254,74 @@ def test_local_authenticated_health_uses_token_in_memory_and_checks_json(tmp_pat
     assert requests[0].headers["X-api-key"] == TOKEN
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://10.8.0.105:9120/api/system/health",
+        "http://10.8.0.106:9120/api/system/health",
+        "http://10.8.0.105:9121/api/system/health",
+        "http://10.8.0.105:9120/api/health",
+        "http://user@10.8.0.105:9120/api/system/health",
+        "http://10.8.0.105:9120/api/system/health?token=x",
+        "http://10.8.0.105:9120/api/system/health#fragment",
+    ],
+)
+def test_invalid_authenticated_health_url_is_rejected_before_token_is_sent(
+    tmp_path: Path, url: str
+) -> None:
+    config = replace(
+        _remote_tree(tmp_path), health_url=url, expected_health_version="2.0.0"
+    )
+    _secure_env(config.local_env, f"KI_REMOTE_API_TOKEN={TOKEN}\n")
+    requests: list[urllib.request.Request] = []
+
+    with pytest.raises(PreflightError, match="health URL"):
+        preflight_backend_deploy(
+            config,
+            lambda _payload: pytest.fail("remote runner received token"),
+            open_url=lambda request, timeout: requests.append(request),
+        )
+
+    assert requests == []
+
+
+def test_default_health_opener_rejects_redirects() -> None:
+    handler = _NoRedirect()
+
+    with pytest.raises(urllib.error.HTTPError):
+        handler.redirect_request(
+            urllib.request.Request("http://10.8.0.105:9120/api/system/health"),
+            None,
+            302,
+            "Found",
+            {"Location": "http://example.invalid/steal"},
+            "http://example.invalid/steal",
+        )
+
+
+def test_default_health_opener_disables_proxies(monkeypatch) -> None:
+    handlers: list[object] = []
+
+    class Opener:
+        def open(self, _request, *, timeout: int):
+            assert timeout == 10
+            return object()
+
+    def build_opener(*configured_handlers):
+        handlers.extend(configured_handlers)
+        return Opener()
+
+    monkeypatch.setattr(urllib.request, "build_opener", build_opener)
+
+    _default_open_url(
+        urllib.request.Request("http://10.8.0.105:9120/api/system/health"), timeout=10
+    )
+
+    proxy = next(handler for handler in handlers if isinstance(handler, urllib.request.ProxyHandler))
+    assert proxy.proxies == {}
+    assert any(isinstance(handler, _NoRedirect) for handler in handlers)
+
+
 def test_authenticated_health_rejects_missing_or_mismatched_expected_version(
     tmp_path: Path,
 ) -> None:
@@ -316,6 +390,7 @@ def test_ssh_runner_keeps_secret_out_of_argv_and_output(tmp_path: Path, capsys) 
     assert TOKEN not in captured.out
     assert TOKEN not in captured.err
     assert all(TOKEN not in argument for command in commands for argument in command)
+    assert commands[0][-1].startswith(f"{config.python_executable} -c ")
 
 
 def test_ssh_stdin_worker_executes_full_remote_preflight_locally(tmp_path: Path) -> None:
@@ -341,6 +416,39 @@ def test_ssh_stdin_worker_executes_full_remote_preflight_locally(tmp_path: Path)
 
     assert facts["database"] == "ok"
     assert facts["token_match"] is True
+
+
+@pytest.mark.parametrize("python", [Path("python3"), Path("/bad\npython")])
+def test_ssh_preflight_rejects_unsafe_remote_python(tmp_path: Path, python: Path) -> None:
+    config = replace(_remote_tree(tmp_path), python_executable=python)
+
+    with pytest.raises(PreflightError, match="remote Python"):
+        SshPreflightRunner("test-host", config)
+
+
+def test_preflight_requires_real_packages_root_and_expected_stage_state(tmp_path: Path) -> None:
+    config = _remote_tree(tmp_path)
+
+    facts = remote_preflight(config, TOKEN, disk_free=4096, python_version=(3, 12, 0))
+    assert facts["artifact_stage"] == "absent"
+
+    config.stage.mkdir()
+    with pytest.raises(PreflightError, match="artifact stage.*absent"):
+        remote_preflight(config, TOKEN, disk_free=4096, python_version=(3, 12, 0))
+
+    postdeploy = replace(config, expect_stage="present")
+    facts = remote_preflight(postdeploy, TOKEN, disk_free=4096, python_version=(3, 12, 0))
+    assert facts["artifact_stage"] == "present"
+
+
+def test_preflight_rejects_symlink_packages_root(tmp_path: Path) -> None:
+    config = _remote_tree(tmp_path)
+    real = tmp_path / "real-packages"
+    config.packages_root.rename(real)
+    config.packages_root.symlink_to(real, target_is_directory=True)
+
+    with pytest.raises(PreflightError, match="packages"):
+        remote_preflight(config, TOKEN, disk_free=4096, python_version=(3, 12, 0))
 
 
 def test_cli_rejects_token_options_without_echoing_value(capsys) -> None:

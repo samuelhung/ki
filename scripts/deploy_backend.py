@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import errno
+import fcntl
 import hashlib
 import ipaddress
 import json
@@ -23,6 +24,7 @@ import urllib.parse
 import urllib.request
 import zipfile
 from collections.abc import Callable, Iterable
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -194,8 +196,6 @@ def _validate_config(config: BackendDeployConfig) -> None:
         "runtime path": config.zhiji_home / "runtime",
         "database path": config.zhiji_home / "data" / "intelligence.sqlite",
         "backups path": config.zhiji_home / "backups",
-        "wheel path": config.zhiji_home / "packages" / config.wheel.name,
-        "checksums path": config.zhiji_home / "packages" / "SHA256SUMS",
         "launchd plist path": (
             config.user_home / "Library" / "LaunchAgents" / f"{config.launchd_label}.plist"
         ),
@@ -204,8 +204,31 @@ def _validate_config(config: BackendDeployConfig) -> None:
         if paths[label] != expected_path:
             raise BackendDeployError(f"{label} is outside the configured deployment path")
     for label, path in paths.items():
+        if label == "Python path":
+            continue
         if path.is_symlink():
             raise BackendDeployError(f"{label} must not be a symbolic link")
+    try:
+        resolved_python = config.python_executable.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise BackendDeployError("Python path must resolve to an executable regular file") from exc
+    if not resolved_python.is_file() or not os.access(resolved_python, os.X_OK):
+        raise BackendDeployError("Python path must resolve to an executable regular file")
+    packages = config.zhiji_home / "packages"
+    artifact_parent = config.wheel.parent
+    if config.checksums != artifact_parent / "SHA256SUMS":
+        raise BackendDeployError("wheel and checksums must share one artifact directory")
+    if artifact_parent != packages:
+        if artifact_parent.parent != packages or not re.fullmatch(
+            r"[0-9a-fA-F]{40}", artifact_parent.name
+        ):
+            raise BackendDeployError("artifact stage must be packages/<40-hex-source-sha>")
+        try:
+            stage_metadata = artifact_parent.lstat()
+        except FileNotFoundError as exc:
+            raise BackendDeployError("artifact stage is missing") from exc
+        if stat.S_ISLNK(stage_metadata.st_mode) or not stat.S_ISDIR(stage_metadata.st_mode):
+            raise BackendDeployError("artifact stage must be a real non-symlink directory")
     managed_directories = {
         "runtime directory": config.runtime_root,
         "versions directory": config.versions_dir,
@@ -230,6 +253,26 @@ def _validate_config(config: BackendDeployConfig) -> None:
         or origin.fragment
     ):
         raise BackendDeployError("health origin must be a loopback HTTP origin")
+
+
+@contextmanager
+def _deployment_lock(runtime_root: Path):
+    runtime_root.mkdir(parents=True, exist_ok=True)
+    lock_path = runtime_root / ".backend-deploy.lock"
+    descriptor = os.open(
+        lock_path,
+        os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK,
+        0o600,
+    )
+    try:
+        os.fchmod(descriptor, 0o600)
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise BackendDeployError("deployment lock is not a regular file")
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(descriptor)
 
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -507,6 +550,24 @@ def deploy_backend(
 ) -> Path:
     _validate_config(config)
     _verify_release_artifact(config)
+    with _deployment_lock(config.runtime_root):
+        return _deploy_backend_locked(
+            config,
+            service=service,
+            smoke_check=smoke_check,
+            installer=installer,
+            now=now,
+        )
+
+
+def _deploy_backend_locked(
+    config: BackendDeployConfig,
+    *,
+    service: ServiceController,
+    smoke_check: Callable[[], None],
+    installer: Callable[[Path, BackendDeployConfig], None],
+    now: Callable[[], datetime],
+) -> Path:
     previous = _current_target(config)
     target = _prepare_version(config, installer)
     try:

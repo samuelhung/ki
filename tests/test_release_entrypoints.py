@@ -81,6 +81,12 @@ def test_readme_documents_only_the_verified_release_and_atomic_deploy_flow() -> 
         "截图和 JSON 报告",
         "legacy-2.0.0-pre-atomic",
         "7 个不同日期",
+        "--remote-python /Users/mrh/Documents/KI/runtime/venv/bin/python",
+        "--packages-root /Users/mrh/Documents/KI/packages",
+        "--source-sha \"${SOURCE_SHA}\"",
+        "mkdir -m 700 '$REMOTE_STAGE'",
+        "test \"$TOTAL\" = \"$DATES\"",
+        "test \"$DATES\" -ge 1",
     ):
         assert protected_remote_deploy_detail in independent_deploy_body
     preflight_position = independent_deploy_body.index(
@@ -98,6 +104,13 @@ def test_readme_documents_only_the_verified_release_and_atomic_deploy_flow() -> 
     assert "--python /Users/mrh/Documents/KI/runtime/venv/bin/python" in deploy_command.group(
         "arguments"
     )
+    assert "--wheel '${REMOTE_STAGE}/zhiji_backend-2.0.0-py3-none-any.whl'" in deploy_command.group(
+        "arguments"
+    )
+    assert "--checksums '${REMOTE_STAGE}/SHA256SUMS'" in deploy_command.group("arguments")
+    assert "python3 '${REMOTE_STAGE}/deploy_backend.py'" not in independent_deploy_body
+    assert "mkdir -p '$REMOTE_STAGE'" not in independent_deploy_body
+    assert "cp '${REMOTE_STAGE}/" not in independent_deploy_body
     for prohibited_inline_implementation in (
         "<<'PY'",
         "secrets.token_urlsafe",

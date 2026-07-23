@@ -125,6 +125,29 @@ def test_current_appearing_after_target_publish_removes_new_target(
     assert (runtime / "current").resolve() == runtime / "venv"
 
 
+def test_current_replace_committed_then_error_retains_published_state(
+    tmp_path: Path, monkeypatch
+) -> None:
+    runtime = _runtime(tmp_path)
+    real_replace = os.replace
+
+    def commit_then_fail(source: Path, destination: Path) -> None:
+        real_replace(source, destination)
+        if destination == runtime / "current":
+            raise OSError("response lost after current publication")
+
+    monkeypatch.setattr("scripts.bootstrap_legacy_runtime.os.replace", commit_then_fail)
+
+    with pytest.raises(BootstrapError, match="uncertain publication"):
+        bootstrap_legacy_runtime(
+            _config(runtime), copy_runner=_copy, version_reader=lambda _python: "2.0.0"
+        )
+
+    target = runtime / "versions/legacy-2.0.0-pre-atomic"
+    assert target.exists()
+    assert (runtime / "current").resolve() == target
+
+
 def test_source_identity_replacement_during_copy_aborts(tmp_path: Path) -> None:
     runtime = _runtime(tmp_path)
 

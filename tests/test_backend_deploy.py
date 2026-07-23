@@ -74,7 +74,7 @@ def _config(tmp_path: Path) -> BackendDeployConfig:
         launchd_plist=tmp_path / "home" / "Library" / "LaunchAgents" / "com.test.zhiji.plist",
         launchd_label="com.test.zhiji",
         health_origin="http://127.0.0.1:19120",
-        python_executable=Path("/test/python3.12"),
+        python_executable=Path(sys.executable),
     )
 
 
@@ -128,6 +128,8 @@ def _main_argv(config: BackendDeployConfig) -> list[str]:
         str(config.checksums),
         "--launchd-plist",
         str(config.launchd_plist),
+        "--launchd-label",
+        config.launchd_label,
         "--python",
         str(config.python_executable),
     ]
@@ -630,6 +632,95 @@ def test_artifact_mismatch_fails_before_service_is_stopped(tmp_path: Path) -> No
 
     assert service.events == []
     assert not config.current_link.exists()
+
+
+def test_venv_python_symlink_is_accepted_by_exact_cli_config(tmp_path: Path, monkeypatch) -> None:
+    config = _config(tmp_path)
+    python = config.runtime_root / "venv/bin/python"
+    python.parent.mkdir(parents=True)
+    python.symlink_to(Path(sys.executable).resolve())
+    config = replace(config, python_executable=python)
+    captured: list[BackendDeployConfig] = []
+
+    def capture(deploy_config: BackendDeployConfig, **_kwargs) -> Path:
+        from scripts.deploy_backend import _validate_config
+
+        _validate_config(deploy_config)
+        captured.append(deploy_config)
+        return deploy_config.versions_dir / deploy_config.release_id
+
+    monkeypatch.setattr("scripts.deploy_backend.deploy_backend", capture)
+    monkeypatch.setattr("scripts.deploy_backend.LaunchdServiceController", lambda _config: object())
+
+    assert main(_main_argv(config)) == 0
+    assert captured[0].python_executable == python
+
+
+def test_release_artifacts_are_accepted_together_in_source_sha_stage(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    source_sha = "a" * 40
+    stage = config.zhiji_home / "packages" / source_sha
+    stage.mkdir()
+    wheel = stage / config.wheel.name
+    checksums = stage / "SHA256SUMS"
+    config.wheel.replace(wheel)
+    config.checksums.replace(checksums)
+    config = replace(config, wheel=wheel, checksums=checksums)
+
+    deploy_backend(config, service=FakeService(), installer=_install, smoke_check=lambda: None)
+
+    assert config.current_link.resolve() == config.versions_dir / "2.0.0+90"
+
+
+@pytest.mark.parametrize("unsafe", ["deeper", "symlink-stage"])
+def test_release_artifact_stage_rejects_unsafe_layout(tmp_path: Path, unsafe: str) -> None:
+    config = _config(tmp_path)
+    source_sha = "a" * 40
+    stage = config.zhiji_home / "packages" / source_sha
+    if unsafe == "deeper":
+        stage = stage / "nested"
+        stage.mkdir(parents=True)
+    else:
+        real = tmp_path / "real-stage"
+        real.mkdir()
+        stage.symlink_to(real, target_is_directory=True)
+    wheel = stage / config.wheel.name
+    checksums = stage / "SHA256SUMS"
+    config.wheel.replace(wheel)
+    config.checksums.replace(checksums)
+    config = replace(config, wheel=wheel, checksums=checksums)
+
+    with pytest.raises(BackendDeployError, match="artifact|stage|deployment path"):
+        deploy_backend(config, service=FakeService(), installer=_install, smoke_check=lambda: None)
+
+
+def test_deploy_holds_shared_lock_before_prepare_and_through_service_stop(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config = _config(tmp_path)
+    events: list[str] = []
+
+    class Service(FakeService):
+        def stop(self) -> None:
+            assert events == ["lock", "install"]
+            events.append("stop")
+
+    def record_flock(_descriptor: int, operation: int) -> None:
+        import fcntl
+
+        assert operation == fcntl.LOCK_EX
+        events.append("lock")
+
+    def install(stage: Path, deploy_config: BackendDeployConfig) -> None:
+        assert events == ["lock"]
+        events.append("install")
+        _install(stage, deploy_config)
+
+    monkeypatch.setattr("scripts.deploy_backend.fcntl.flock", record_flock)
+
+    deploy_backend(config, service=Service(), installer=install, smoke_check=lambda: None)
+
+    assert events == ["lock", "install", "stop"]
 
 
 @pytest.mark.parametrize("field,value", [

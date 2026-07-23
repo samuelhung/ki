@@ -111,7 +111,8 @@ ZHIJI_SKIP_RELEASE_CHECK=1 ./scripts/check.sh
 python3 scripts/provision_remote_access.py \
   --local-env app/frontend/.env.local \
   --ssh-host zhiji-prod \
-  --remote-env /Users/mrh/Documents/KI/.env
+  --remote-env /Users/mrh/Documents/KI/.env \
+  --remote-python /Users/mrh/Documents/KI/runtime/venv/bin/python
 ```
 
 生成值采用规范 URL-safe dotenv 形式；插值和反斜杠转义会被拒绝。脚本先原子提交本地文件，再提交远端；远端异常时会执行无输出 compare，只有确认远端未提交才恢复本地，状态不确定则保留新本地 token 并明确失败。
@@ -134,18 +135,20 @@ python3 scripts/preflight_backend_deploy.py \
   --runtime-root /Users/mrh/Documents/KI/runtime \
   --database /Users/mrh/Documents/KI/data/intelligence.sqlite \
   --python /Users/mrh/Documents/KI/runtime/venv/bin/python \
+  --packages-root /Users/mrh/Documents/KI/packages \
+  --source-sha "${SOURCE_SHA}" \
   --legacy-name legacy-2.0.0-pre-atomic \
   --target-name 2.0.0+90 \
   --expect-legacy absent \
   --expect-current absent
 ```
 
-Preflight 只输出安全事实，并验证本地 `KI_REMOTE_API_TOKEN` 与远端 `KI_API_TOKEN` 相同、allowed hosts、磁盘空间、Python 3.12、legacy/current/target 预期、数据库普通文件与 `PRAGMA quick_check`。任何失败都停止流程。
+Preflight 只输出安全事实，并验证本地 `KI_REMOTE_API_TOKEN` 与远端 `KI_API_TOKEN` 相同、allowed hosts、磁盘空间、Python 3.12、packages 根目录、SHA staging 当前不存在、legacy/current/target 预期、数据库普通文件与 `PRAGMA quick_check`。任何失败都停止流程。
 
 Preflight 通过后构建 SHA 专属 wheel，检查摘要以及 wheel 内的 `frontend_dist/index.html` 和 `assets/`，再把 wheel 与三个部署工具上传到同一 staging。运行任何远端工具前必须再次验证完整 `SHA256SUMS`：
 
 ```bash
-ssh zhiji-prod "mkdir -p '$REMOTE_STAGE'"
+ssh zhiji-prod "mkdir -m 700 '$REMOTE_STAGE'"
 OUT="dist/backend-${SOURCE_SHA}"
 test ! -e "$OUT"
 mkdir -p "$OUT"
@@ -178,19 +181,17 @@ ssh zhiji-prod "/Users/mrh/Documents/KI/runtime/venv/bin/python '${REMOTE_STAGE}
 
 `legacy-2.0.0-pre-atomic` 是本次首次原子部署受保护的回滚目标；后续发布中它可能按版本保留策略老化退出。原始 `runtime/venv` 是长期紧急副本，在单独审计并明确批准退役前不得删除。
 
-将已校验 staging 中的 wheel 与摘要提升到部署器当前要求的 canonical packages 路径，再从 staging 运行匹配的部署器。命令不含 token flag：
+部署器直接读取已校验的 SHA staging 中的 wheel 与摘要，不复制或提升到共享 canonical 路径。命令不含 token flag：
 
 ```bash
-ssh zhiji-prod "cp '${REMOTE_STAGE}/$(basename "$WHEEL")' /Users/mrh/Documents/KI/packages/ && \
-  cp '${REMOTE_STAGE}/SHA256SUMS' /Users/mrh/Documents/KI/packages/"
-ssh zhiji-prod "python3 '${REMOTE_STAGE}/deploy_backend.py' v2.0.0+90 \
+ssh zhiji-prod "/Users/mrh/Documents/KI/runtime/venv/bin/python '${REMOTE_STAGE}/deploy_backend.py' v2.0.0+90 \
   --runtime-root /Users/mrh/Documents/KI/runtime \
   --zhiji-home /Users/mrh/Documents/KI \
   --user-home /Users/mrh \
   --database /Users/mrh/Documents/KI/data/intelligence.sqlite \
   --backups-dir /Users/mrh/Documents/KI/backups \
-  --wheel /Users/mrh/Documents/KI/packages/zhiji_backend-2.0.0-py3-none-any.whl \
-  --checksums /Users/mrh/Documents/KI/packages/SHA256SUMS \
+  --wheel '${REMOTE_STAGE}/zhiji_backend-2.0.0-py3-none-any.whl' \
+  --checksums '${REMOTE_STAGE}/SHA256SUMS' \
   --launchd-plist /Users/mrh/Library/LaunchAgents/com.zhiji.backend.plist \
   --python /Users/mrh/Documents/KI/runtime/venv/bin/python \
   --bind-host 0.0.0.0 \
@@ -206,12 +207,15 @@ python3 scripts/preflight_backend_deploy.py \
   --remote-env /Users/mrh/Documents/KI/.env \
   --runtime-root /Users/mrh/Documents/KI/runtime \
   --database /Users/mrh/Documents/KI/data/intelligence.sqlite \
-  --python /Users/mrh/Documents/KI/runtime/current/venv/bin/python \
+  --python /Users/mrh/Documents/KI/runtime/venv/bin/python \
+  --packages-root /Users/mrh/Documents/KI/packages \
+  --source-sha "${SOURCE_SHA}" \
   --legacy-name legacy-2.0.0-pre-atomic \
   --target-name 2.0.0+90 \
   --expect-legacy present \
   --expect-current present \
   --expect-target present \
+  --expect-stage present \
   --health-url http://10.8.0.105:9120/api/system/health \
   --expected-health-version 2.0.0
 ```
@@ -223,13 +227,13 @@ ssh zhiji-prod 'curl -fsS http://127.0.0.1:9120/api/health >/dev/null'
 test "$(curl -sS -o /dev/null -w '%{http_code}' http://10.8.0.105:9120/api/system/health)" = 401
 ssh zhiji-prod 'CURRENT=$(readlink /Users/mrh/Documents/KI/runtime/current) && test -d "$CURRENT" && test "$(basename "$CURRENT")" = 2.0.0+90'
 ssh zhiji-prod 'find /Users/mrh/Documents/KI/runtime/versions -mindepth 1 -maxdepth 1 -type d -print | sort'
-ssh zhiji-prod 'python3 -m json.tool /Users/mrh/Documents/KI/runtime/current/release.json >/dev/null'
+ssh zhiji-prod '/Users/mrh/Documents/KI/runtime/venv/bin/python -m json.tool /Users/mrh/Documents/KI/runtime/current/release.json >/dev/null'
 ssh zhiji-prod 'test -x /Users/mrh/Documents/KI/runtime/venv/bin/zhiji'
 ssh zhiji-prod 'test -x /Users/mrh/Documents/KI/runtime/versions/legacy-2.0.0-pre-atomic/venv/bin/zhiji'
 ssh zhiji-prod 'sqlite3 /Users/mrh/Documents/KI/data/intelligence.sqlite "PRAGMA quick_check;" | grep -Fx ok'
 ssh zhiji-prod 'launchctl print gui/$(id -u)/com.zhiji.backend | grep -E -- "runtime/current/venv/bin/zhiji|--host|0.0.0.0|--port|9120"'
 ssh zhiji-prod 'find /Users/mrh/Documents/KI/backups -type f -name "deploy-*.sqlite" -print | sort'
-ssh zhiji-prod 'COUNT=$(find /Users/mrh/Documents/KI/backups -type f -name "deploy-*.sqlite" -print | sed -E "s/.*deploy-([0-9]{8})-.*/\\1/" | sort -u | wc -l | tr -d " ") && test "$COUNT" -le 7 && printf "%s\\n" "$COUNT"'
+ssh zhiji-prod 'TOTAL=$(find /Users/mrh/Documents/KI/backups -type f -name "deploy-*.sqlite" -print | wc -l | tr -d " ") && DATES=$(find /Users/mrh/Documents/KI/backups -type f -name "deploy-*.sqlite" -print | sed -E "s/.*deploy-([0-9]{8})-.*/\\1/" | sort -u | wc -l | tr -d " ") && test "$TOTAL" = "$DATES" && test "$DATES" -ge 1 && test "$DATES" -le 7 && printf "%s\\n" "$DATES"'
 curl -fsS http://10.8.0.105:9120/ | grep -q '<div id="root">'
 curl -fsS http://10.8.0.105:9120/ | grep -q 'assets/'
 cd app/frontend
