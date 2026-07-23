@@ -7,13 +7,12 @@ import os
 import sqlite3
 import stat
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from zhiji_backend import database_backup, migrations
-
 
 MIGRATION_NAME = "20260719_remove_retired_features"
 
@@ -181,7 +180,7 @@ def test_destructive_migration_refuses_invalid_backup_prerequisite_before_deleti
         marker_path.write_text(json.dumps(marker), encoding="utf-8")
     elif failure == "stale":
         manifest["created_at"] = (
-            datetime.now(timezone.utc) - timedelta(days=2)
+            datetime.now(UTC) - timedelta(days=2)
         ).isoformat()
         _rewrite_manifest_and_marker(manifest_path, manifest)
     elif failure == "backup_missing":
@@ -659,7 +658,7 @@ def test_restore_validates_manifest_before_changing_destinations(
         manifest["migration_name"] = "20260720_wrong_migration"
     else:
         manifest["created_at"] = (
-            datetime.now(timezone.utc) - timedelta(days=2)
+            datetime.now(UTC) - timedelta(days=2)
         ).isoformat()
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
@@ -692,12 +691,18 @@ def test_restore_failure_is_journaled_and_recovery_completes_both_artifacts(
     monkeypatch.setattr(
         database_backup, "_replace_staged_restore", fail_database_replace
     )
+    wal_path = Path(f"{db_path}-wal")
+    shm_path = Path(f"{db_path}-shm")
+    wal_path.write_bytes(b"live-wal")
+    shm_path.write_bytes(b"live-shm")
 
     with pytest.raises(RuntimeError, match="restore is incomplete"):
         database_backup.restore_rollback_backup(manifest_path)
 
     journal = database_backup.restore_journal_path(db_path)
     assert journal.exists()
+    assert wal_path.read_bytes() == b"live-wal"
+    assert shm_path.read_bytes() == b"live-shm"
     assert config_path.read_text(encoding="utf-8") == original_config
     with sqlite3.connect(db_path) as conn:
         assert conn.execute(

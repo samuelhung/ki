@@ -4,7 +4,6 @@ Uses the existing ai_summary (structured) to generate a plain 500-char overview,
 avoiding re-processing the full transcript.
 """
 
-import json
 import logging
 import os
 import sqlite3

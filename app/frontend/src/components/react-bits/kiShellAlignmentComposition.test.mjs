@@ -13,6 +13,12 @@ const brainstormCss = readComponentCss('cinematic-brainstorm/cinematic-brainstor
 const toolboxCss = readComponentCss('cinematic-toolbox/cinematic-toolbox.css');
 const systemCss = readComponentCss('cinematic-system/cinematic-system.css');
 const chainsCss = readComponentCss('cinematic-chains/cinematic-chains.css');
+const shellCss = readPage('DualNavigationDemo.css');
+
+function declaration(css, selector, property) {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return css.match(new RegExp(`${escapedSelector}\\s*\\{[^}]*${property}:\\s*([^;!]+)`, 's'))?.[1].trim();
+}
 
 test('migrated pages use the content-ingest list width at default and compact sizes', () => {
   for (const css of [seriesCss, brainstormCss, toolboxCss, systemCss]) {
@@ -40,7 +46,11 @@ test('toolbox and system content use the same inner edges as content ingest', ()
   assert.match(toolboxCss, /\.ki-shell-toolbox \.toolbox-detail-reader\s*\{[^}]*width:\s*auto\s*!important[^}]*left:\s*12px\s*!important[^}]*right:\s*0\s*!important/s);
   assert.match(toolboxCss, /@media \(max-width:\s*1280px\)[\s\S]*\.ki-shell-toolbox \.toolbox-detail-reader\s*\{[^}]*left:\s*6px\s*!important/s);
   assert.match(systemCss, /\.ki-shell-system \.system-function-list\s*\{[^}]*padding-top:\s*0/s);
-  assert.match(systemCss, /\.ki-shell-system \.cinematic-ingest\.cinematic-system \.system-function-list\s*\{[^}]*padding:\s*0 18px 18px 4px\s*!important/s);
+  const systemPadding = declaration(systemCss, '.ki-shell-system .cinematic-ingest.cinematic-system .system-function-list', 'padding');
+  const ingestPadding = declaration(shellCss, '.ki-ingest-event-list', 'padding');
+  assert.notEqual(systemPadding, undefined);
+  assert.notEqual(ingestPadding, undefined);
+  assert.equal(systemPadding, ingestPadding);
 });
 
 test('industry chains keep the shared compact workspace origin', () => {

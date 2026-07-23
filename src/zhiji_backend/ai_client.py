@@ -18,8 +18,8 @@ from .config_manager import (
     get_config_and_credential,
 )
 from .credential_store import resolve_api_key
-from .usage_writer import UsageRecord, enqueue_usage
 from .security.redaction import classify_task_error
+from .usage_writer import UsageRecord, enqueue_usage
 
 logger = logging.getLogger(__name__)
 

@@ -9,13 +9,52 @@ SYSTEM_DOC_DATA="$ROOT/app/frontend/src/systemDocData.ts"
 SYSTEM_CENTER_PANELS="$ROOT/app/frontend/src/components/cinematic-system/SystemCenterPanels.tsx"
 APP_TSX="$ROOT/app/frontend/src/App.tsx"
 INGEST_TSX="$ROOT/app/frontend/src/pages/Ingest.tsx"
+SOURCES_OVERLAY_TSX="$ROOT/app/frontend/src/pages/GlobalDockSourcesOverlay.tsx"
 INSTALL_SH="$ROOT/scripts/install.sh"
 PACKAGE_JSON="$ROOT/app/frontend/package.json"
 CHECK_SH="$ROOT/scripts/check.sh"
 
-for path in "$WORKFLOW" "$VITE_CONFIG" "$SYSTEM_DOC_DATA" "$SYSTEM_CENTER_PANELS" "$APP_TSX" "$INGEST_TSX" "$INSTALL_SH" "$PACKAGE_JSON" "$CHECK_SH"; do
+RETIRED_FRONTEND_FILES=(
+  "$ROOT/app/frontend/src/pages/panels/BrainstormDetailPanel.tsx"
+  "$ROOT/app/frontend/src/pages/panels/IngestDetailPanel.tsx"
+  "$ROOT/app/frontend/src/components/EventRow.tsx"
+  "$ROOT/app/frontend/src/components/HeatmapChart.tsx"
+  "$ROOT/app/frontend/src/components/MetricCard.tsx"
+  "$ROOT/app/frontend/src/components/SourceRow.tsx"
+  "$ROOT/app/frontend/src/components/TrendChart.tsx"
+  "$ROOT/app/frontend/src/components/UsageWidget.tsx"
+  "$ROOT/app/frontend/src/components/cinematic/CinematicDashboard.tsx"
+  "$ROOT/app/frontend/src/components/cinematic/CinematicHud.tsx"
+  "$ROOT/app/frontend/src/components/cinematic/dashboardPresenter.ts"
+  "$ROOT/app/frontend/src/components/react-bits/CircularGallery.tsx"
+  "$ROOT/app/frontend/src/components/react-bits/CircularGallery.css"
+  "$ROOT/app/frontend/src/components/react-bits/DomeGallery.jsx"
+  "$ROOT/app/frontend/src/components/react-bits/DomeGallery.css"
+  "$ROOT/app/frontend/src/components/react-bits/Galaxy.jsx"
+  "$ROOT/app/frontend/src/components/react-bits/Galaxy.css"
+  "$ROOT/app/frontend/src/components/react-bits/GlitchText.jsx"
+  "$ROOT/app/frontend/src/components/react-bits/GlitchText.css"
+  "$ROOT/app/frontend/src/components/react-bits/PixelCard.jsx"
+  "$ROOT/app/frontend/src/components/react-bits/PixelCard.css"
+  "$ROOT/app/frontend/src/components/react-bits/ShinyText.jsx"
+  "$ROOT/app/frontend/src/components/react-bits/ShinyText.css"
+  "$ROOT/app/frontend/src/components/react-bits/Threads.jsx"
+  "$ROOT/app/frontend/src/components/react-bits/Threads.css"
+  "$ROOT/app/frontend/src/components/react-bits/circularGalleryComposition.test.mjs"
+  "$ROOT/app/frontend/src/components/react-bits/circularGalleryMath.mjs"
+  "$ROOT/app/frontend/src/components/react-bits/circularGalleryMath.test.mjs"
+)
+
+for path in "$WORKFLOW" "$VITE_CONFIG" "$SYSTEM_DOC_DATA" "$SYSTEM_CENTER_PANELS" "$APP_TSX" "$INGEST_TSX" "$SOURCES_OVERLAY_TSX" "$INSTALL_SH" "$PACKAGE_JSON" "$CHECK_SH"; do
   if [[ ! -f "$path" ]]; then
     echo "missing frontend quality gate file: $path" >&2
+    exit 1
+  fi
+done
+
+for path in "${RETIRED_FRONTEND_FILES[@]}"; do
+  if [[ -e "$path" ]]; then
+    echo "retired frontend file must stay removed: $path" >&2
     exit 1
   fi
 done
@@ -40,10 +79,10 @@ if grep -q "/api/ingest/upload" "$APP_TSX"; then
   exit 1
 fi
 
-if ! python3 - "$INGEST_TSX" <<'PY'
+if ! python3 - "$SOURCES_OVERLAY_TSX" <<'PY'
 import re, sys
 text = open(sys.argv[1], encoding='utf-8').read()
-pattern = r"apiFetch\('/api/collect',\s*\{[^}]*method:\s*'POST'[^}]*headers:\s*\{\s*'Content-Type'\s*:\s*'application/json'\s*\}[^}]*body:\s*JSON\.stringify\(\{\}\)"
+pattern = r"apiFetch\('/api/collect',\s*\{[^}]*method:\s*'POST'[^}]*headers:\s*\{\s*'Content-Type'\s*:\s*'application/json'\s*\}[^}]*body:\s*(?:JSON\.stringify\(\{\}\)|['\"]\{\}['\"])"
 sys.exit(0 if re.search(pattern, text, re.S) else 1)
 PY
 then

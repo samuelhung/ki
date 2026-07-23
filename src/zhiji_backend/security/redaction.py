@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote_plus, urlsplit, urlunsplit
 
-
 REDACTED = "[REDACTED]"
 MAX_REDACTION_INPUT_LENGTH = 65_536
 MAX_REDACTED_TEXT_LENGTH = 16_384

@@ -33,6 +33,7 @@ dev = [
     "build>=1.3,<2",
     "httpx>=0.28,<1",
     "pytest>=8.4,<9",
+    "ruff>=0.14,<1",
     "setuptools>=80,<81",
     "wheel>=0.46,<1",
 ]
@@ -42,3 +43,20 @@ zhiji = "zhiji_backend.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/backfill_overviews.py" = ["E402"]
+"src/zhiji_backend/collector.py" = ["E402"]
+"src/zhiji_backend/config_manager.py" = ["E402"]
+"src/zhiji_backend/main.py" = ["E402"]
+"src/zhiji_backend/routes/ingest_routes.py" = ["E402"]
+"src/zhiji_backend/routes/log_routes.py" = ["E402"]
+"src/zhiji_backend/routes/system_routes.py" = ["E402"]
+"src/zhiji_backend/task_queue.py" = ["E402"]
+"tests/*.py" = ["E402"]

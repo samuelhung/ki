@@ -58,7 +58,7 @@ done
 
 for contract in \
   "<KiNavigationShell" \
-  "<Ingest embedded"; do
+  "<Ingest />"; do
   if ! grep -F -q "$contract" "$INGEST_SHELL"; then
     echo "ingestion shell missing production contract: $contract" >&2
     exit 1

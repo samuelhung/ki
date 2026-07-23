@@ -15,7 +15,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
 
-
 TAG_PATTERN = re.compile(r"^v(?P<version>\d+\.\d+\.\d+)\+(?P<build>[1-9]\d*)$")
 BACKEND_VERSION_PATTERN = re.compile(r'^__version__\s*=\s*"([^"]+)"', re.MULTILINE)
 PUBSPEC_VERSION_PATTERN = re.compile(r"^version:\s*([^+\s]+)\+(\d+)\s*$", re.MULTILINE)

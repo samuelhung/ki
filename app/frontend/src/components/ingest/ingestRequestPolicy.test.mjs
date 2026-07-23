@@ -2,17 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-const source = readFileSync(new URL('./ingestRequestPolicy.ts', import.meta.url), 'utf8');
 const ingest = readFileSync(new URL('../../pages/Ingest.tsx', import.meta.url), 'utf8');
-
-test('queue polling is scoped to visible work', () => {
-  assert.match(source, /modalOpen/);
-  assert.match(source, /Boolean\(pollId\)/);
-  assert.match(source, /pending/);
-  assert.match(source, /running/);
-  assert.match(ingest, /shouldPollQueue/);
-  assert.match(ingest, /document\.hidden/);
-});
 
 test('event search is debounced and only the latest response commits', () => {
   assert.match(ingest, /useDebouncedValue\(search, 250\)/);
@@ -22,27 +12,27 @@ test('event search is debounced and only the latest response commits', () => {
   assert.match(ingest, /isLatestRequest/);
 });
 
-test('statistics are not reloaded by list navigation', () => {
-  assert.doesNotMatch(ingest, /loadEvents\(\);\s*loadStats\(\);\s*\}, \[historyTab, page/);
-  assert.match(ingest, /void loadStats\(\);\s*\}, \[loadStats\]\)/);
+test('embedded list requests do not retain standalone statistics or pagination fetches', () => {
+  assert.doesNotMatch(ingest, /loadStats|topic-counts|setTotal|setPage/);
+  assert.match(ingest, /limit=\$\{PAGE_SIZE\}&offset=0&count=1/);
 });
 
-test('ingest request families abort stale work and clean up on unmount', () => {
+test('retained ingest request families abort stale work and clean up on unmount', () => {
   assert.match(ingest, /statusRequestLifecycleRef/);
-  assert.match(ingest, /queueRequestLifecycleRef/);
-  assert.match(ingest, /topicCountRequestLifecycleRef/);
   assert.match(ingest, /abortableDelay\(2000, signal\)/);
   assert.match(ingest, /statusRequestLifecycleRef\.current\.abort\(\)/);
-  assert.match(ingest, /queueRequestLifecycleRef\.current\.abort\(\)/);
-  assert.match(ingest, /topicCountRequestLifecycleRef\.current\.abort\(\)/);
+  assert.match(ingest, /eventRequestAbortRef\.current\?\.abort\(\)/);
   assert.doesNotMatch(ingest, /briefingRequestLifecycleRef|\/api\/briefing\/latest/);
 });
 
-test('queue and supporting requests only commit their latest response', () => {
-  assert.match(ingest, /const loadQueue = useCallback/);
-  assert.match(ingest, /const loadTopicCounts = useCallback/);
-  assert.match(ingest, /queueRequestLifecycleRef\.current\.isCurrent\(sequence\)/);
-  assert.match(ingest, /topicCountRequestLifecycleRef\.current\.isCurrent\(sequence\)/);
-  assert.match(ingest, /apiFetch\('\/api\/ingest\/queue\?limit=30', \{ signal \}\)/);
-  assert.doesNotMatch(ingest, /loadBriefing|briefingLoading|briefingError|briefingTopics/);
+test('status polling keeps its endpoint delay latest-owner checks and completion refresh', () => {
+  assert.match(ingest, /apiFetch\(`\/api\/ingest\/status\/\$\{eventId\}`, \{ signal \}\)/);
+  assert.match(ingest, /for \(let attempt = 0; attempt < 120; attempt \+= 1\)/);
+  assert.match(ingest, /statusRequestLifecycleRef\.current\.isCurrent\(sequence\)/);
+  assert.match(ingest, /completionTimerRef\.current = window\.setTimeout/);
+  assert.match(ingest, /const loadEventsRef = useRef\(loadEvents\)/);
+  assert.match(ingest, /loadEventsRef\.current = loadEvents/);
+  assert.match(ingest, /void loadEventsRef\.current\(\)/);
+  const completionCallback = ingest.match(/completionTimerRef\.current = window\.setTimeout\(\(\) => \{([\s\S]*?)\n          \}, 1500\)/)?.[1] || '';
+  assert.doesNotMatch(completionCallback, /void loadEvents\(\)/);
 });

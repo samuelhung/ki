@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from scripts.generate_lock_sbom import locked_components, osv_alias_components, write_lock_sbom
+from scripts.generate_lock_sbom import (
+    locked_components,
+    osv_alias_components,
+    write_lock_sbom,
+)
 
 
 def _write(path: Path, content: str) -> None:

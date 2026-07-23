@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 
 const app = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8');
 const curtain = readFileSync(new URL('../../CurtainContext.tsx', import.meta.url), 'utf8');
@@ -11,11 +11,11 @@ const shell = readFileSync(new URL('../../pages/KiNavigationShell.tsx', import.m
 const dockItems = readFileSync(new URL('../../pages/globalDockItems.ts', import.meta.url), 'utf8');
 const dockOverlay = readFileSync(new URL('../../pages/GlobalDockOverlay.tsx', import.meta.url), 'utf8');
 const dockAccessOverlay = readFileSync(new URL('../../pages/GlobalDockAccessOverlay.tsx', import.meta.url), 'utf8');
+const dockQueueOverlay = readFileSync(new URL('../../pages/GlobalDockQueueOverlay.tsx', import.meta.url), 'utf8');
 const preview = readFileSync(new URL('../../pages/LegacyIngestShellPreview.tsx', import.meta.url), 'utf8');
 const ingest = readFileSync(new URL('../../pages/Ingest.tsx', import.meta.url), 'utf8');
 const libraryPage = readFileSync(new URL('../../pages/CinematicLibrary.tsx', import.meta.url), 'utf8');
 const gooey = readFileSync(new URL('./GooeyNav.tsx', import.meta.url), 'utf8');
-const hero = readFileSync(new URL('../ModuleHeroTabs.tsx', import.meta.url), 'utf8');
 const shellCss = readFileSync(new URL('../../pages/DualNavigationDemo.css', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../../api.ts', import.meta.url), 'utf8');
 const vite = readFileSync(new URL('../../../vite.config.ts', import.meta.url), 'utf8');
@@ -28,10 +28,23 @@ const spotlightRow = readFileSync(new URL('./SpotlightListRow.tsx', import.meta.
 const contentDetail = readFileSync(new URL('../cinematic-ingest/ContentDetailPanel.tsx', import.meta.url), 'utf8');
 const detailActions = readFileSync(new URL('../cinematic-ingest/useIngestDetailActions.ts', import.meta.url), 'utf8');
 const embeddedWorkspace = readFileSync(new URL('../ingest/EmbeddedIngestWorkspace.tsx', import.meta.url), 'utf8');
+const embeddedList = readFileSync(new URL('../ingest/EmbeddedIngestList.tsx', import.meta.url), 'utf8');
 const embeddedTabs = readFileSync(new URL('../ingest/EmbeddedIngestTopicTabs.tsx', import.meta.url), 'utf8');
 const embeddedRow = readFileSync(new URL('../ingest/EmbeddedIngestRow.tsx', import.meta.url), 'utf8');
 const embeddedConfig = readFileSync(new URL('../ingest/embeddedIngestConfig.ts', import.meta.url), 'utf8');
 const ingestTypes = readFileSync(new URL('../cinematic-ingest/ingestTypes.ts', import.meta.url), 'utf8');
+
+function readProductionTsx(directory) {
+  return readdirSync(directory, { withFileTypes: true })
+    .flatMap((entry) => {
+      const child = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, directory);
+      if (entry.isDirectory()) return readProductionTsx(child);
+      return entry.name.endsWith('.tsx') ? [readFileSync(child, 'utf8')] : [];
+    })
+    .join('\n');
+}
+
+const productionTsx = readProductionTsx(new URL('../../', import.meta.url));
 
 test('home and ingest use the production navigation shell', () => {
   assert.match(app, /const CinematicHome = lazy/);
@@ -89,16 +102,18 @@ test('the production ingest page uses the global navigation shell', () => {
   assert.match(shell, /<TextType/);
 });
 
-test('legacy ingest preserves its implementation and only adds an embedded mode', () => {
-  assert.match(preview, /<Ingest embedded \/>/);
-  assert.match(ingest, /interface IngestProps/);
-  assert.match(ingest, /embedded\?: boolean/);
-  assert.match(ingest, /export default function Ingest\(\{ embedded = false, actionRequest = null \}: IngestProps\)/);
+test('ingest exposes one embedded-only production interface', () => {
+  assert.match(preview, /<Ingest \/>/);
+  assert.equal([...productionTsx.matchAll(/<Ingest\s*\/>/g)].length, 1);
+  assert.doesNotMatch(productionTsx, /<Ingest\b[^>]*\b(?:embedded|actionRequest)\b/);
+  assert.match(ingest, /export default function Ingest\(\)/);
+  assert.doesNotMatch(ingest, /\bIngestProps\b|\bIngestActionRequest\b|\bactionRequest\b|embedded\?:|if \(!?embedded\)|\{ embedded/);
   assert.match(ingest, /legacy-ingest-root/);
   assert.match(ingest, /is-shell-embedded/);
   assert.match(ingest, /apiFetch/);
   assert.match(ingest, /handleDySubmit/);
   assert.match(ingest, /handleFileSubmit/);
+  assert.doesNotMatch(ingest, /\bTrash2\b/);
 });
 
 test('the embedded workspace stays between the top navigation and global dock', () => {
@@ -137,29 +152,34 @@ test('the global dock opens the same real workspaces on every shell page', () =>
   assert.match(dockItems, /key: 'sources'/);
   assert.match(dockItems, /key: 'queue'/);
   assert.match(dockOverlay, /GlobalDockAccessOverlay/);
+  assert.match(dockOverlay, /GlobalDockQueueOverlay/);
   assert.match(dockAccessOverlay, /apiFetch\('\/api\/ingest\/douyin'/);
   assert.match(dockAccessOverlay, /apiFetch\('\/api\/ingest\/file'/);
+  assert.match(dockQueueOverlay, /useIngestQueue/);
+  assert.match(ingest, /onClick=\{\(\) => openModal\('douyin'\)\}/);
+  assert.match(ingest, /onClick=\{\(\) => openModal\('file'\)\}/);
   assert.doesNotMatch(preview, /handleGlobalAction|actionRequest/);
 });
 
-test('embedded ingest removes the legacy hero and moves search beside category tabs', () => {
-  assert.match(hero, /compact\?: boolean/);
-  assert.match(hero, /module-hero-tabs/);
-  assert.match(hero, /is-compact/);
-  assert.match(ingest, /\{!embedded && \(/);
-  assert.match(ingest, /chips=\{embedded \? \[\] : \[/);
-  assert.match(ingest, /actions=\{embedded \? \[\] : \[/);
-  assert.match(ingest, /label: '处理队列'/);
-  assert.match(ingest, /legacy-ingest-toolbar-search/);
-  assert.match(shellCss, /\.module-hero-tabs\.is-compact/);
-  assert.match(shellCss, /\.legacy-ingest-category-sub/);
+test('retained douyin modal preserves the parent textarea sizing contract', () => {
+  const douyinModal = ingest.match(/\{modalType === 'douyin'[\s\S]*?\n      \)\}/)?.[0] || '';
+  assert.match(douyinModal, /<textarea[\s\S]*className="w-full h-32 px-3 py-2 text-sm bg-\[#0B0C10\] border border-\[#2A2B30\] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-purple-500\/50 resize-none"/);
+  assert.doesNotMatch(douyinModal, /<textarea[^>]*\brows=/s);
 });
 
-test('embedded event rows are unframed while preserving subtle row separation', () => {
-  assert.match(ingest, /legacy-ingest-list/);
-  assert.match(ingest, /legacy-ingest-list-head/);
-  assert.match(ingest, /legacy-ingest-list-row/);
-  assert.match(shellCss, /\.legacy-ingest-root\.is-shell-embedded \.legacy-ingest-list\s*\{[^}]*border:\s*0[^}]*border-radius:\s*0[^}]*background:\s*transparent/s);
+test('ingest contains only the shell workspace and portal search, with no legacy standalone composition', () => {
+  assert.doesNotMatch(ingest, /ModuleHeroTabs|WANXIANG_TABS|legacy-ingest-categories|legacy-ingest-list-head/);
+  assert.match(ingest, /EmbeddedIngestWorkspace/);
+  assert.match(ingest, /createPortal\(embeddedSearch, searchPortalTarget\)/);
+  assert.match(ingest, /legacy-ingest-root is-shell-embedded cinematic-ingest/);
+});
+
+test('embedded event rows remain in the extracted unframed list', () => {
+  assert.match(ingest, /<EmbeddedIngestList/);
+  assert.match(embeddedList, /className="ki-ingest-event-list"/);
+  assert.match(embeddedList, /<EmbeddedIngestRow/);
+  assert.match(embeddedRow, /className="ki-ingest-list-row"/);
+  assert.match(shellCss, /\.ki-ingest-list-row\s*\{[^}]*border:\s*0[^}]*background:\s*transparent/s);
 });
 
 test('formal ingest composes a split list orbit and reusable detail workspace', () => {

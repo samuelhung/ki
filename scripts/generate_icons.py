@@ -3,6 +3,7 @@ import math
 import shutil
 import struct
 from pathlib import Path
+
 from PIL import Image, ImageDraw, ImageFont
 
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "desktop" / "src-tauri" / "icons"
@@ -44,7 +45,7 @@ def draw_ki_icon(size: int) -> Image.Image:
         try:
             font = ImageFont.truetype(name, font_size)
             break
-        except (OSError, IOError):
+        except OSError:
             continue
     if font is None:
         font = ImageFont.load_default()

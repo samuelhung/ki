@@ -1110,8 +1110,9 @@ def test_cli_init_creates_env_and_config_with_0600_permissions(tmp_path):
 def test_cli_serve_hardens_existing_env_before_loading_preserved_credentials(
     tmp_path, monkeypatch
 ):
-    from zhiji_backend import cli
     import uvicorn
+
+    from zhiji_backend import cli
 
     home = tmp_path / "selected-home"
     home.mkdir()
@@ -1136,8 +1137,9 @@ def test_cli_serve_hardens_existing_env_before_loading_preserved_credentials(
 
 
 def test_cli_serve_rejects_symlink_env_without_touching_target(tmp_path, monkeypatch):
-    from zhiji_backend import cli
     import uvicorn
+
+    from zhiji_backend import cli
 
     home = tmp_path / "selected-home"
     home.mkdir()

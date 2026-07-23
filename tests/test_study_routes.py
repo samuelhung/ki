@@ -6,7 +6,6 @@ from zhiji_backend.main import app
 from zhiji_backend.routes.study_routes import _normalize_review_result
 from zhiji_backend.study.pipeline import _parse_json_object
 
-
 client = TestClient(app)
 
 

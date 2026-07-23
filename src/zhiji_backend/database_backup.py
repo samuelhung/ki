@@ -8,10 +8,11 @@ import sqlite3
 import stat
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from . import _database_backup_fs
 
 BACKUP_TEMP_PREFIX = ".intelligence-backup-"
 DEFAULT_DESTRUCTIVE_MIGRATION = "20260719_remove_retired_features"
@@ -54,28 +55,15 @@ class BackupPrerequisiteLease:
 
 
 def _read_only_uri(path: Path) -> str:
-    return f"{path.as_uri()}?mode=ro"
+    return _database_backup_fs.read_only_uri(path)
 
 
 def _regular_file_identity(path: Path) -> tuple[int, int]:
-    file_stat = os.lstat(path)
-    if not stat.S_ISREG(file_stat.st_mode):
-        raise RuntimeError(f"backup path is not a regular file: {path}")
-    return file_stat.st_dev, file_stat.st_ino
+    return _database_backup_fs.regular_file_identity(path)
 
 
 def _regular_non_symlink_identity(path: Path) -> tuple[int, int]:
-    link_stat = os.lstat(path)
-    file_stat = os.stat(path)
-    link_identity = link_stat.st_dev, link_stat.st_ino
-    file_identity = file_stat.st_dev, file_stat.st_ino
-    if (
-        not stat.S_ISREG(link_stat.st_mode)
-        or not stat.S_ISREG(file_stat.st_mode)
-        or link_identity != file_identity
-    ):
-        raise RuntimeError("database source must be a regular non-symlink file")
-    return file_identity
+    return _database_backup_fs.regular_non_symlink_identity(path)
 
 
 def _canonical_regular_source(path: Path, label: str) -> tuple[Path, tuple[int, int]]:
@@ -140,40 +128,19 @@ def _unlink_if_identity(path: Path, identity: tuple[int, int]) -> None:
 
 
 def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    return _database_backup_fs.sha256(path)
 
 
 def _stat_signature(file_stat: os.stat_result) -> tuple[int, int, int, int, int, int]:
-    return (
-        file_stat.st_dev,
-        file_stat.st_ino,
-        file_stat.st_mode,
-        file_stat.st_size,
-        file_stat.st_mtime_ns,
-        file_stat.st_ctime_ns,
-    )
+    return _database_backup_fs.stat_signature(file_stat)
 
 
 def _hash_fd(fd: int) -> str:
-    digest = hashlib.sha256()
-    os.lseek(fd, 0, os.SEEK_SET)
-    while chunk := os.read(fd, 1024 * 1024):
-        digest.update(chunk)
-    os.lseek(fd, 0, os.SEEK_SET)
-    return digest.hexdigest()
+    return _database_backup_fs.hash_fd(fd)
 
 
 def _read_fd_bytes(fd: int) -> bytes:
-    chunks: list[bytes] = []
-    os.lseek(fd, 0, os.SEEK_SET)
-    while chunk := os.read(fd, 1024 * 1024):
-        chunks.append(chunk)
-    os.lseek(fd, 0, os.SEEK_SET)
-    return b"".join(chunks)
+    return _database_backup_fs.read_fd_bytes(fd)
 
 
 def _pin_json_file(
@@ -320,13 +287,7 @@ def _sqlite_snapshot_sha256(path: Path) -> str:
 
 
 def _source_metadata(path: Path) -> dict[str, int]:
-    file_stat = os.stat(path)
-    return {
-        "device": file_stat.st_dev,
-        "inode": file_stat.st_ino,
-        "size": file_stat.st_size,
-        "mtime_ns": file_stat.st_mtime_ns,
-    }
+    return _database_backup_fs.source_metadata(path)
 
 
 def _artifact_metadata(path: Path, *, integrity_check: str | None = None) -> dict[str, Any]:
@@ -479,7 +440,7 @@ def create_rollback_backup(
             or _sqlite_snapshot_sha256(source) != sqlite_snapshot_sha256
         ):
             raise RuntimeError("database or config source changed during rollback backup")
-        created_at = datetime.now(timezone.utc).isoformat()
+        created_at = datetime.now(UTC).isoformat()
         manifest = {
             "schema_version": BACKUP_MANIFEST_SCHEMA_VERSION,
             "migration_name": migration_name,
@@ -571,7 +532,7 @@ def _parse_created_at(value: object) -> datetime:
         raise RuntimeError("backup prerequisite timestamp is invalid") from exc
     if created_at.tzinfo is None:
         raise RuntimeError("backup prerequisite timestamp is invalid")
-    return created_at.astimezone(timezone.utc)
+    return created_at.astimezone(UTC)
 
 
 def _require_current_source(
@@ -639,7 +600,7 @@ def validate_backup_prerequisite(
             raise RuntimeError("backup prerequisite marker path mismatch")
 
         created_at = _parse_created_at(manifest.get("created_at"))
-        age = (datetime.now(timezone.utc) - created_at).total_seconds()
+        age = (datetime.now(UTC) - created_at).total_seconds()
         if not allow_stale and (age < -300 or age > BACKUP_MAX_AGE_SECONDS):
             raise RuntimeError("backup prerequisite is stale")
 
@@ -739,7 +700,7 @@ def consume_backup_prerequisite(
         _validate_marker_for_consumption(source, migration_name, receipt)
         receipt = dict(receipt)
         receipt["state"] = "consumed"
-        receipt["consumed_at"] = datetime.now(timezone.utc).isoformat()
+        receipt["consumed_at"] = datetime.now(UTC).isoformat()
         _write_json_atomic(consumed, receipt)
         return consumed
     try:
@@ -760,7 +721,7 @@ def consume_backup_prerequisite(
         )
     receipt = dict(marker)
     receipt["state"] = "consumed"
-    receipt["consumed_at"] = datetime.now(timezone.utc).isoformat()
+    receipt["consumed_at"] = datetime.now(UTC).isoformat()
     try:
         os.replace(ready, consumed)
     except FileNotFoundError:
@@ -852,7 +813,7 @@ def _validate_rollback_manifest(
             created_at = _parse_created_at(manifest.get("created_at"))
         except RuntimeError as exc:
             raise RuntimeError("rollback manifest timestamp is invalid") from exc
-        age = (datetime.now(timezone.utc) - created_at).total_seconds()
+        age = (datetime.now(UTC) - created_at).total_seconds()
         if not allow_stale and (age < -300 or age > BACKUP_MAX_AGE_SECONDS):
             raise RuntimeError("rollback manifest is stale")
         source = manifest.get("source")
@@ -1007,10 +968,10 @@ def recover_rollback_restore(
                 sqlite_backup=key == "database",
             )
             staged.close()
+            _replace_staged_restore(stage, destination)
             if key == "database":
                 for suffix in ("-wal", "-shm"):
                     Path(f"{destination}{suffix}").unlink(missing_ok=True)
-            _replace_staged_restore(stage, destination)
             if not _restore_path_matches(destination, metadata):
                 raise RuntimeError(f"rollback restore {key} verification failed")
         for suffix in ("-wal", "-shm"):
@@ -1060,7 +1021,7 @@ def restore_rollback_backup(manifest_path: Path) -> dict[str, Path]:
         journal = {
             "schema_version": RESTORE_JOURNAL_SCHEMA_VERSION,
             "state": "staged",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "manifest_path": str(manifest_path),
             "manifest_sha256": manifest_sha256,
             "entries": {

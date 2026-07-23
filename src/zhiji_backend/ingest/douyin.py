@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import json
 import ipaddress
+import json
 import re
 import socket
 import ssl
+from collections.abc import Callable
 from dataclasses import dataclass
 from html import unescape
 from pathlib import Path
-from typing import Callable
 from urllib.parse import urljoin, urlsplit
 
 import requests  # type: ignore

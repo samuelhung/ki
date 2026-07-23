@@ -7,7 +7,6 @@ from pathlib import Path
 from zhiji_backend import summarizer
 from zhiji_backend.main import app
 
-
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND_ROOT = ROOT / "src" / "zhiji_backend"
 MIGRATION_PATH = Path("migrations.py")

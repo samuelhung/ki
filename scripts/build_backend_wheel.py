@@ -18,7 +18,6 @@ import tempfile
 from pathlib import Path
 from zipfile import ZipFile
 
-
 ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = ROOT / "app" / "frontend"
 FRONTEND_DIST = FRONTEND_DIR / "dist"

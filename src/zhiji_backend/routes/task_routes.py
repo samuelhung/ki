@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import json
-import uuid
 import logging
-from pathlib import Path
+import uuid
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel

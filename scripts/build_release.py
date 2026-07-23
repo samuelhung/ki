@@ -26,7 +26,7 @@ import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 try:
@@ -94,7 +94,7 @@ def write_release_metadata(
         "version": contract.version,
         "build": contract.build,
         "commit": commit,
-        "built_at": built_at or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "built_at": built_at or datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "tools": tools,
         "candidate_appcast_sha256": _shasum(candidate_appcast),
     }
@@ -321,7 +321,7 @@ def write_candidate_appcast(
     item = ET.Element("item")
     ET.SubElement(item, "title").text = f"知几桌面端 v{contract.version}"
     ET.SubElement(item, "description").text = _release_notes_plain(contract.version)
-    ET.SubElement(item, "pubDate").text = pub_date or datetime.now(timezone.utc).strftime(
+    ET.SubElement(item, "pubDate").text = pub_date or datetime.now(UTC).strftime(
         "%a, %d %b %Y %H:%M:%S %z"
     )
     ET.SubElement(

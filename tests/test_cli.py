@@ -1,6 +1,6 @@
 import json
-import sys
 import sqlite3
+import sys
 from pathlib import Path
 
 import pytest

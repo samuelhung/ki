@@ -7,7 +7,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 # 16 kHz mono PCM is about 32 KiB/s; 512 MiB permits roughly 4.5 hours.
 FFMPEG_MAX_OUTPUT_BYTES = 512 * 1024 * 1024
 FFMPEG_TIMEOUT_SECONDS = 300

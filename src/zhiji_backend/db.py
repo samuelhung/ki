@@ -3,13 +3,13 @@ from __future__ import annotations
 import logging
 import os
 import sqlite3
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
 
 logger = logging.getLogger(__name__)
 
-from .paths import DEFAULT_DB_PATH, ZHIJI_HOME  # noqa: E402 — 统一路径来源
+from .paths import DEFAULT_DB_PATH  # noqa: E402 — 统一路径来源
 
 DEFAULT_SOURCES = [
     {
@@ -411,7 +411,7 @@ def _migrate_chain_meta(conn: sqlite3.Connection) -> None:
     # Migration: add flow_summary column to existing chain_meta tables
     try:
         conn.execute("ALTER TABLE chain_meta ADD COLUMN flow_summary TEXT NOT NULL DEFAULT ''")
-    except:
+    except sqlite3.OperationalError:
         pass  # column already exists
 
 
@@ -469,8 +469,6 @@ def _migrate_brainstorm(conn: sqlite3.Connection) -> None:
 def _migrate_brainstorm_answers_to_messages(conn: sqlite3.Connection) -> None:
     """Convert old single-shot answers from .md files into brainstorm_messages rows,
     so they appear as first-round conversations in the new dialog UI."""
-    import os as _os
-    from pathlib import Path as _Path
     import json as _json
     import re as _re
 

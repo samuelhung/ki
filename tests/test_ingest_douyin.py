@@ -7,7 +7,7 @@ import ssl
 import sys
 from collections import UserDict
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
@@ -17,11 +17,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from zhiji_backend.ingest.douyin import (
     _PinnedResponse,
+    create_pinned_connection,
     download_video,
     extract_first_url,
     is_trusted_365yg_url,
     parse_share_text,
-    create_pinned_connection,
 )
 
 

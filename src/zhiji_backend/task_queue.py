@@ -11,12 +11,11 @@ import errno
 import json
 import logging
 import os
-import signal
 import shutil
+import signal
 import sqlite3
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 import uuid
@@ -30,6 +29,7 @@ from .paths import INGEST_ROOT
 from .security.constraints import safe_identifier
 from .security.paths import PathSecurityError, resolve_under, safe_unlink_under
 from .security.redaction import classify_task_error, sanitize_task_error
+
 PENDING_DIR = INGEST_ROOT / "pending"
 
 _worker: threading.Thread | None = None
@@ -435,13 +435,12 @@ def _process_one(task_id: str) -> None:
         return
 
     event_id = row["event_id"]
-    ingest_type = row["ingest_type"]
     payload = json.loads(row["payload_json"])
 
     # Reconstruct content from payload
     if payload.get("content_path"):
         try:
-            content = resolve_under(
+            resolve_under(
                 PENDING_DIR, Path(payload["content_path"]), expected="file"
             )
         except (PathSecurityError, TypeError, ValueError):
@@ -466,12 +465,6 @@ def _process_one(task_id: str) -> None:
                 classify_task_error(raw_error),
             )
             return
-    else:
-        content = payload.get("content_text", "")
-
-    topic = payload.get("topic", "uncategorized")
-    title = payload.get("title", "")
-
     # Mark as running
     with connect() as conn:
         conn.execute(

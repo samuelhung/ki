@@ -1,7 +1,7 @@
 """Shared Pydantic models used across route modules."""
 from __future__ import annotations
 
-from typing import List, Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -9,7 +9,7 @@ from .security.constraints import SafeIdentifierList
 
 
 class CollectRequest(BaseModel):
-    source_ids: Optional[SafeIdentifierList] = None
+    source_ids: SafeIdentifierList | None = None
 
 
 class TranslateRequest(BaseModel):

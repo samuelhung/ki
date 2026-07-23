@@ -1,14 +1,44 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { extname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const app = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8');
 const curtain = readFileSync(new URL('../../CurtainContext.tsx', import.meta.url), 'utf8');
 const page = readFileSync(new URL('../../pages/CinematicIndustryChains.tsx', import.meta.url), 'utf8');
-const legacy = readFileSync(new URL('../../pages/IndustryChains.tsx', import.meta.url), 'utf8');
+const workspaceTypes = readFileSync(new URL('./chainWorkspace.d.mts', import.meta.url), 'utf8');
+const detailView = readFileSync(new URL('./ChainDetailView.tsx', import.meta.url), 'utf8');
+const editorDialog = readFileSync(new URL('./ChainEditorDialog.tsx', import.meta.url), 'utf8');
+const reviewDialogs = readFileSync(new URL('./ChainReviewDialogs.tsx', import.meta.url), 'utf8');
 const detailPanels = readFileSync(new URL('./ChainDetailPanels.tsx', import.meta.url), 'utf8');
 const report = readFileSync(new URL('../ChainReport.tsx', import.meta.url), 'utf8');
 const css = readFileSync(new URL('./cinematic-chains.css', import.meta.url), 'utf8');
+
+test('industry chain production code uses focused modules and retires the legacy page', () => {
+  assert.equal(existsSync(new URL('./chainTypes.ts', import.meta.url)), true);
+  assert.equal(existsSync(new URL('./ChainEditorDialog.tsx', import.meta.url)), true);
+  assert.equal(existsSync(new URL('./ChainReviewDialogs.tsx', import.meta.url)), true);
+  assert.equal(existsSync(new URL('./ChainDetailView.tsx', import.meta.url)), true);
+  assert.match(page, /from ['"]\.\.\/components\/cinematic-chains\/chainTypes['"]/);
+  assert.match(page, /from ['"]\.\.\/components\/cinematic-chains\/ChainEditorDialog['"]/);
+  assert.match(page, /from ['"]\.\.\/components\/cinematic-chains\/ChainReviewDialogs['"]/);
+  assert.match(page, /from ['"]\.\.\/components\/cinematic-chains\/ChainDetailView['"]/);
+  assert.match(workspaceTypes, /from ['"]\.\/chainTypes['"]/);
+  assert.equal(existsSync(new URL('../../pages/IndustryChains.tsx', import.meta.url)), false);
+
+  const sourceRoot = fileURLToPath(new URL('../..', import.meta.url));
+  const pending = [sourceRoot];
+  while (pending.length > 0) {
+    const directory = pending.pop();
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) pending.push(path);
+      if (!entry.isFile() || !['.ts', '.tsx', '.mts'].includes(extname(entry.name)) || /\.test\.[^.]+$/.test(entry.name)) continue;
+      assert.doesNotMatch(readFileSync(path, 'utf8'), /from ['"][^'"]*IndustryChains['"]/);
+    }
+  }
+});
 
 test('industry chains use the finalized KI split workspace', () => {
   assert.match(page, /import KiNavigationShell from ['"]\.\/KiNavigationShell['"]/);
@@ -93,8 +123,8 @@ test('industry chain collection exposes visible operation results', () => {
 });
 
 test('industry chain detail isolates report and chat rendering with shared per-chain cache', () => {
-  assert.match(legacy, /<ChainReportPanel/);
-  assert.match(legacy, /<ChainChatPanel/);
+  assert.match(detailView, /<ChainReportPanel/);
+  assert.match(detailView, /<ChainChatPanel/);
   assert.match(page, /createChainDetailCache/);
   assert.doesNotMatch(page, /key=\{selected\.name\}/);
   assert.match(detailPanels, /memo\(function ChainReportPanel/);
@@ -107,14 +137,11 @@ test('chain report parsing is memoized by report content', () => {
 });
 
 test('shared chain edit and review dialogs keep failures and delete confirmation inline', () => {
-  const editModal = legacy.match(/export function EditModal[\s\S]*?\/\/ ── Hints Review Modal/)?.[0] || '';
-  const hintModal = legacy.match(/export function HintsReviewModal[\s\S]*?\/\/ ── Transition label helper/)?.[0] || '';
-
-  assert.match(editModal, /actionError/);
-  assert.match(editModal, /deleteArmed/);
-  assert.doesNotMatch(editModal, /alert\(|confirm\(/);
-  assert.match(hintModal, /actionError/);
-  assert.doesNotMatch(hintModal, /alert\(/);
+  assert.match(editorDialog, /actionError/);
+  assert.match(editorDialog, /deleteArmed/);
+  assert.doesNotMatch(editorDialog, /alert\(|confirm\(/);
+  assert.match(reviewDialogs, /actionError/);
+  assert.doesNotMatch(reviewDialogs, /alert\(/);
 });
 
 test('industry chain suggestions preserve structure and source evidence before adoption', () => {
@@ -127,7 +154,7 @@ test('industry chain suggestions preserve structure and source evidence before a
 
 test('embedded chain detail only reads cached AI reports on mount', () => {
   assert.match(detailPanels, /cache_only: embedded && !force/);
-  assert.match(legacy, /if \(embedded\) \{ setFlowSummary\(''\); return; \}/);
+  assert.match(detailView, /if \(embedded\) \{ setFlowSummary\(''\); return; \}/);
   assert.match(detailPanels, /embedded \? '正在读取分析报告…' : '正在生成分析报告…'/);
 });
 
@@ -135,14 +162,14 @@ test('embedded chain chat scroll stays inside its own message pane', () => {
   assert.match(detailPanels, /const chatScrollRef = useRef<HTMLDivElement>\(null\)/);
   assert.match(detailPanels, /chatScrollRef\.current/);
   assert.match(detailPanels, /target\.scrollTo\(\{ top: target\.scrollHeight, behavior: 'smooth' \}\)/);
-  assert.doesNotMatch(legacy, /chatEndRef\.current\?\.scrollIntoView/);
+  assert.doesNotMatch(detailView, /chatEndRef\.current\?\.scrollIntoView/);
 });
 
 test('chain collection indicators follow the real request lifecycle instead of fixed timers', () => {
-  assert.match(legacy, /await onCollectChain\(chainName\)/);
-  assert.match(legacy, /await onCollectNode\(node\.id\)/);
-  assert.doesNotMatch(legacy, /setTimeout\(\(\) => setCollectingChain\(false\), 30000\)/);
-  assert.doesNotMatch(legacy, /setTimeout\(\(\) => setCollectingNode\(null\), 30000\)/);
+  assert.match(detailView, /await onCollectChain\(chainName\)/);
+  assert.match(detailView, /await onCollectNode\(node\.id\)/);
+  assert.doesNotMatch(detailView, /setTimeout\(\(\) => setCollectingChain\(false\), 30000\)/);
+  assert.doesNotMatch(detailView, /setTimeout\(\(\) => setCollectingNode\(null\), 30000\)/);
 });
 
 test('industry chain routes bypass the retired full-screen curtain', () => {

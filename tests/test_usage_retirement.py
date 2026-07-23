@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 
@@ -6,8 +6,7 @@ from zhiji_backend.db import connect, init_db
 from zhiji_backend.main import app
 from zhiji_backend.routes import usage_routes
 
-
-BOUNDARY_USAGE_AT = datetime(2026, 7, 19, 16, 30, tzinfo=timezone.utc)
+BOUNDARY_USAGE_AT = datetime(2026, 7, 19, 16, 30, tzinfo=UTC)
 
 
 def _freeze_usage_day(monkeypatch) -> str:

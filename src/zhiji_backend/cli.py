@@ -8,17 +8,16 @@
   zhiji backup-db --output-dir DIR      创建迁移回滚清单、数据库与配置备份
 """
 import argparse
+import ipaddress
 import json
+import os
 import shutil
 import subprocess as sp
 import sys
-import os
 import tempfile
-import ipaddress
 from pathlib import Path
-from urllib.request import urlopen, Request
 from urllib.error import URLError
-
+from urllib.request import Request, urlopen
 
 GITHUB_API = "https://api.github.com/repos/samuelhung/ki/releases/latest"
 LAUNCHD_LABEL = "com.zhiji.backend"
@@ -118,7 +117,7 @@ def cmd_update(args: argparse.Namespace) -> None:
 
     if args.check:
         print(f"\n📦 有新版本可用: {latest_version}")
-        print(f"   运行 zhiji update 安装更新。")
+        print("   运行 zhiji update 安装更新。")
         return
 
     # 找 whl
@@ -144,7 +143,7 @@ def cmd_update(args: argparse.Namespace) -> None:
         with urlopen(req, timeout=300) as resp:
             with open(tmp_whl, "wb") as f:
                 shutil.copyfileobj(resp, f)
-        print(f"✅ 下载完成")
+        print("✅ 下载完成")
     except URLError as e:
         print(f"❌ 下载失败: {e}")
         shutil.rmtree(tmpdir, ignore_errors=True)
@@ -178,9 +177,16 @@ def cmd_init(args: argparse.Namespace) -> None:
     home = Path(args.data_dir).expanduser().resolve() if args.data_dir else Path.home() / ".zhiji"
     os.environ["ZHIJI_HOME"] = str(home)
 
-    from zhiji_backend.paths import ensure_data_dirs, ZHIJI_HOME, DATA_DIR, LOG_DIR
-    from zhiji_backend.paths import INGEST_ROOT, BRAINSTORM_DIR, STUDY_DATA_DIR
-    from zhiji_backend.paths import CONFIG_PATH
+    from zhiji_backend.paths import (
+        BRAINSTORM_DIR,
+        CONFIG_PATH,
+        DATA_DIR,
+        INGEST_ROOT,
+        LOG_DIR,
+        STUDY_DATA_DIR,
+        ZHIJI_HOME,
+        ensure_data_dirs,
+    )
 
     ensure_data_dirs()
 

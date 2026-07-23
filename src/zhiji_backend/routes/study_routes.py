@@ -14,15 +14,15 @@ from pydantic import BaseModel
 
 from ..db import connect, init_db
 from ..paths import STUDY_DATA_DIR
+from ..security.constraints import MAX_OFFSET, MAX_PAGE_SIZE, SafeIdentifier
 from ..security.file_intake import (
-    FileKind,
     OCR_PDF_MAX_BYTES,
+    FileKind,
     kind_for_filename,
     max_bytes_for_kind,
     stream_upload_to_temp,
     validate_file,
 )
-from ..security.constraints import MAX_OFFSET, MAX_PAGE_SIZE, SafeIdentifier
 from ..security.paths import PathSecurityError, resolve_under
 
 logger = logging.getLogger(__name__)

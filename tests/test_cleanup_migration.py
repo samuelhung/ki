@@ -13,7 +13,6 @@ from zhiji_backend import migrations
 from zhiji_backend.db import init_db
 from zhiji_backend.migrations import ensure_migrations
 
-
 RETIRED_TABLES = {
     "event_entities",
     "entity_relations",

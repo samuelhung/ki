@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
+
 from ..briefing import (
     generate_briefing,
     get_briefing,

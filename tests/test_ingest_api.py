@@ -12,8 +12,8 @@ from fastapi.testclient import TestClient
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from zhiji_backend.db import connect, init_db
 from zhiji_backend.main import app
-from zhiji_backend.db import connect, init_db, get_db_path
 
 client = TestClient(app)
 
