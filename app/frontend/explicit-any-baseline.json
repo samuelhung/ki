@@ -7,7 +7,7 @@
   "src/pages/BrainstormDetailPage.tsx": 7,
   "src/pages/CinematicBrainstorm.tsx": 1,
   "src/pages/CinematicBriefings.tsx": 3,
-  "src/pages/CinematicIndustryChains.tsx": 10,
+  "src/pages/CinematicIndustryChains.tsx": 9,
   "src/pages/CinematicLibrary.tsx": 6,
   "src/pages/CinematicSeries.tsx": 7,
   "src/pages/CinematicStudy.tsx": 3,
@@ -21,7 +21,6 @@
   "src/pages/GlobalDockQuestionOverlay.tsx": 1,
   "src/pages/GlobalDockSourcesOverlay.tsx": 4,
   "src/pages/GlobalDockTaskOverlay.tsx": 1,
-  "src/pages/IndustryChains.tsx": 19,
   "src/pages/Ingest.tsx": 23,
   "src/pages/SeriesDetail.tsx": 5,
   "src/pages/StudyDetail.tsx": 4

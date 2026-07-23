@@ -13,7 +13,10 @@ import {
 import { createChainDetailCache } from '../components/cinematic-chains/chainDetailCache.mjs';
 import { RequestLifecycle } from '../components/ingest/requestLifecycle';
 import SpotlightListRow from '../components/react-bits/SpotlightListRow';
-import { ChainDetailModal as LegacyChainDetail, EditModal, HintsReviewModal, type ChainHint, type ChainNode, type ChainSuggestion } from './IndustryChains';
+import { ChainDetailModal as LegacyChainDetail } from '../components/cinematic-chains/ChainDetailView';
+import { EditModal } from '../components/cinematic-chains/ChainEditorDialog';
+import { HintsReviewModal } from '../components/cinematic-chains/ChainReviewDialogs';
+import type { ChainHint, ChainNode, ChainSuggestion } from '../components/cinematic-chains/chainTypes';
 import KiNavigationShell from './KiNavigationShell';
 import '../components/cinematic-ingest/cinematic-ingest.css';
 import '../components/cinematic-chains/cinematic-chains.css';
@@ -497,7 +500,7 @@ function SuggestionDialog({ suggestions, onClose, onChanged }: { suggestions: Ch
               </div>
               {item.source_quote && <blockquote>{item.source_quote}</blockquote>}
               <div className="chain-suggestion-nodes">
-                {item.nodes_json.map((node: any, index: number) => (
+                {item.nodes_json.map((node, index) => (
                   <div key={`${node.name || 'node'}-${index}`}>
                     <header><b>{node.name || '未命名节点'}</b><span>{node.node_type || '待分类'}</span></header>
                     {node.description && <p>{node.description}</p>}

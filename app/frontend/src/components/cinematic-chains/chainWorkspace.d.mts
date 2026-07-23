@@ -1,4 +1,4 @@
-import type { ChainNode } from '../../pages/IndustryChains';
+import type { ChainNode } from './chainTypes';
 
 export interface ChainGroup {
   name: string;
