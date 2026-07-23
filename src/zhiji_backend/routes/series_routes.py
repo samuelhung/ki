@@ -1,6 +1,5 @@
 """Series endpoints — CRUD, discovery, AI intro/summary/paper, member management."""
 
-import difflib
 import json
 import logging
 import re
@@ -10,6 +9,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from .. import series_service
 from ..db import connect, init_db
 from ..security.constraints import (
     BoundedIdentifierList,
@@ -64,19 +64,8 @@ def _call_ai_chat(messages, temperature=0.3, max_tokens=3072, timeout=120, respo
 # 去重工具函数
 # ══════════════════════════════════════════════════
 
-def _name_similarity(a: str, b: str) -> float:
-    """使用 difflib 计算两个专题名称的相似度（0-1）。"""
-    return difflib.SequenceMatcher(None, a.strip().lower(), b.strip().lower()).ratio()
-
-
-def _member_overlap_score(ids_a: list, ids_b: list) -> float:
-    """计算两组 member_ids 的 Jaccard 相似度。"""
-    if not ids_a or not ids_b:
-        return 0.0
-    set_a, set_b = set(ids_a), set(ids_b)
-    intersection = len(set_a & set_b)
-    union = len(set_a | set_b)
-    return intersection / union if union > 0 else 0.0
+_name_similarity = series_service.name_similarity
+_member_overlap_score = series_service.member_overlap_score
 
 
 def _find_duplicate(conn, new_name: str, new_member_ids: list,
@@ -116,46 +105,9 @@ def _cleanup_stale_candidates(conn, max_age_days: int = 7) -> int:
 @router.get("/series")
 def list_series(include_candidates: bool = False):
     """List all series with member event titles. Excludes candidates by default."""
-    init_db()
-    with connect() as conn:
-        fields = "id, name, description, member_ids, status, created_at, updated_at"
-        if include_candidates:
-            rows = conn.execute(f"SELECT {fields} FROM series ORDER BY created_at DESC").fetchall()
-        else:
-            rows = conn.execute(
-                f"SELECT {fields} FROM series WHERE status != 'candidate' ORDER BY created_at DESC"
-            ).fetchall()
-
-        parsed_ids = {}
-        all_member_ids = []
-        for row in rows:
-            try:
-                member_ids = json.loads(row["member_ids"] or "[]")
-            except (json.JSONDecodeError, TypeError):
-                member_ids = []
-            parsed_ids[row["id"]] = member_ids
-            all_member_ids.extend(member_ids)
-
-        title_map = {}
-        unique_member_ids = list(dict.fromkeys(all_member_ids))
-        if unique_member_ids:
-            placeholders = ",".join(["?" for _ in unique_member_ids])
-            event_rows = conn.execute(
-                f"SELECT id, title FROM events WHERE id IN ({placeholders})",
-                unique_member_ids,
-            ).fetchall()
-            title_map = {row["id"]: row["title"] for row in event_rows}
-
-        items = []
-        for row in rows:
-            s = dict(row)
-            s["members"] = [
-                {"id": member_id, "title": title_map.get(member_id, "(已删除)")}
-                for member_id in parsed_ids[row["id"]]
-            ]
-            items.append(s)
-
-    return {"items": items}
+    return series_service.list_series(
+        include_candidates, connect_fn=connect, init_db_fn=init_db
+    )
 
 
 @router.get("/series/candidates")
@@ -165,61 +117,7 @@ def list_candidates():
     Includes dedup information: flags candidates whose names are similar to
     other candidates or published series.
     """
-    init_db()
-    with connect() as conn:
-        candidate_rows = conn.execute(
-            "SELECT * FROM series WHERE status = 'candidate' ORDER BY created_at DESC"
-        ).fetchall()
-
-    items = []
-    for row in candidate_rows:
-        s = dict(row)
-        try:
-            member_ids = json.loads(s.get("member_ids", "[]"))
-        except (json.JSONDecodeError, TypeError):
-            member_ids = []
-        s["member_count"] = len(member_ids)
-
-        # Resolve member titles
-        members = []
-        if member_ids:
-            with connect() as conn:
-                placeholders = ",".join(["?" for _ in member_ids])
-                event_rows = conn.execute(
-                    f"SELECT id, title FROM events WHERE id IN ({placeholders})",
-                    member_ids,
-                ).fetchall()
-                title_map = {r["id"]: r["title"] for r in event_rows}
-                for mid in member_ids:
-                    members.append({"id": mid, "title": title_map.get(mid, "(已删除)")})
-        s["members"] = members
-
-        # 去重标记：检查与其他候选 / 已发布专题的相似度
-        similar = []
-        with connect() as conn:
-            all_others = conn.execute(
-                "SELECT id, name, status, member_ids FROM series WHERE id != ? AND status IN ('candidate', 'published')",
-                (s["id"],),
-            ).fetchall()
-        for other in all_others:
-            name_sim = _name_similarity(s["name"], other["name"])
-            if name_sim >= 0.5:
-                try:
-                    other_ids = json.loads(other["member_ids"])
-                except (json.JSONDecodeError, TypeError):
-                    other_ids = []
-                member_sim = _member_overlap_score(member_ids, other_ids)
-                similar.append({
-                    "id": other["id"],
-                    "name": other["name"],
-                    "status": other["status"],
-                    "name_similarity": round(name_sim, 3),
-                    "member_overlap": round(member_sim, 3),
-                })
-        s["similar_to"] = similar
-        items.append(s)
-
-    return {"items": items, "total": len(items)}
+    return series_service.list_candidates(connect_fn=connect, init_db_fn=init_db)
 
 
 @router.post("/series/discover")
@@ -1069,66 +967,23 @@ def create_series(data: SeriesCreateRequest):
 
     If a candidate with the same name exists, upgrades it to 'published' (upsert).
     """
-    init_db()
-    name = data.name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="专题名称不能为空")
-    member_ids = data.member_ids
-    description = data.description.strip()
-    now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    with connect() as conn:
-        # 检查是否有同名候选——升级为 published
-        existing = conn.execute(
-            "SELECT id FROM series WHERE name = ? AND status = 'candidate'",
-            (name,),
-        ).fetchone()
-        if existing:
-            series_id = existing["id"]
-            conn.execute(
-                "UPDATE series SET description = ?, member_ids = ?, status = 'published', updated_at = ? WHERE id = ?",
-                (description, json.dumps(member_ids), now_ts, series_id),
-            )
-        else:
-            series_id = f"series-{uuid.uuid4().hex[:12]}"
-            conn.execute(
-                "INSERT INTO series (id, name, description, member_ids, status, updated_at) VALUES (?, ?, ?, ?, 'published', ?)",
-                (series_id, name, description, json.dumps(member_ids), now_ts),
-            )
-
-    return {"id": series_id, "name": name}
+    return series_service.create_series(data, connect_fn=connect, init_db_fn=init_db)
 
 
 @router.delete("/series/{series_id}")
 def delete_series(series_id: SafeIdentifier):
     """Delete a series."""
-    init_db()
-    with connect() as conn:
-        row = conn.execute("SELECT id FROM series WHERE id = ?", (series_id,)).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="专题不存在")
-        conn.execute("DELETE FROM series WHERE id = ?", (series_id,))
-    return {"deleted": series_id}
+    return series_service.delete_series(
+        series_id, connect_fn=connect, init_db_fn=init_db
+    )
 
 
 @router.put("/series/{series_id}")
 def update_series(series_id: SafeIdentifier, data: dict):
     """Update series metadata (name, description, status)."""
-    init_db()
-    with connect() as conn:
-        row = conn.execute("SELECT id FROM series WHERE id = ?", (series_id,)).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="专题不存在")
-        updates = []
-        params = []
-        for field in ["name", "description", "status"]:
-            if field in data:
-                updates.append(f"{field} = ?")
-                params.append(data[field])
-        if updates:
-            params.append(series_id)
-            conn.execute(f"UPDATE series SET {', '.join(updates)}, updated_at = datetime('now', 'localtime') WHERE id = ?", params)
-    return {"updated": series_id}
+    return series_service.update_series(
+        series_id, data, connect_fn=connect, init_db_fn=init_db
+    )
 
 
 @router.post("/series/merge")
@@ -1140,54 +995,7 @@ def merge_series(data: SeriesMergeRequest):
     - Deletes the source candidate
     - Returns updated target
     """
-    init_db()
-    source_id = data.source_id
-    target_id = data.target_id
-    if source_id == target_id:
-        raise HTTPException(status_code=400, detail="不能合并同一个专题")
-
-    with connect() as conn:
-        source = conn.execute("SELECT * FROM series WHERE id = ?", (source_id,)).fetchone()
-        if not source:
-            raise HTTPException(status_code=404, detail=f"源专题不存在: {source_id}")
-        target = conn.execute("SELECT * FROM series WHERE id = ?", (target_id,)).fetchone()
-        if not target:
-            raise HTTPException(status_code=404, detail=f"目标专题不存在: {target_id}")
-
-        try:
-            source_ids = json.loads(source["member_ids"])
-        except (json.JSONDecodeError, TypeError):
-            source_ids = []
-        try:
-            target_ids = json.loads(target["member_ids"])
-        except (json.JSONDecodeError, TypeError):
-            target_ids = []
-
-        # 合并 member_ids（去重，保持目标原有顺序，源的新成员追加）
-        target_set = set(target_ids)
-        new_from_source = [mid for mid in source_ids if mid not in target_set]
-        merged = target_ids + new_from_source
-
-        now_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        conn.execute(
-            "UPDATE series SET member_ids = ?, updated_at = ? WHERE id = ?",
-            (json.dumps(merged), now_ts, target_id),
-        )
-        conn.execute("DELETE FROM series WHERE id = ?", (source_id,))
-        # Clear scan cache for target — member set changed
-        conn.execute("DELETE FROM series_scan_cache WHERE series_id = ?", (target_id,))
-
-        return {
-            "merged": True,
-            "source": {"id": source_id, "name": source["name"], "deleted": True},
-            "target": {
-                "id": target_id,
-                "name": target["name"],
-                "member_ids": merged,
-                "members_added": len(new_from_source),
-                "total_members": len(merged),
-            },
-        }
+    return series_service.merge_series(data, connect_fn=connect, init_db_fn=init_db)
 
 
 # ══════════════════════════════════════════════════
@@ -1197,72 +1005,9 @@ def merge_series(data: SeriesMergeRequest):
 @router.get("/series/{series_id}")
 def get_series_detail(series_id: SafeIdentifier):
     """Return full series detail: metadata + enriched member events."""
-    init_db()
-    with connect() as conn:
-        row = conn.execute("SELECT * FROM series WHERE id = ?", (series_id,)).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="专题不存在")
-        s = dict(row)
-        try:
-            member_ids = json.loads(s.get("member_ids", "[]"))
-        except (json.JSONDecodeError, TypeError):
-            member_ids = []
-        try:
-            sort_order = json.loads(s.get("sort_order", "[]"))
-        except (json.JSONDecodeError, TypeError):
-            sort_order = []
-
-        # Apply sort_order if available, otherwise keep member_ids order
-        if sort_order:
-            ordered = [mid for mid in sort_order if mid in member_ids]
-            remaining = [mid for mid in member_ids if mid not in ordered]
-            member_ids = ordered + remaining
-
-        # Resolve full member info
-        members = []
-        if member_ids:
-            placeholders = ",".join(["?" for _ in member_ids])
-            event_rows = conn.execute(
-                f"SELECT id, title, overview, url, topic, source_id, status, created_at "
-                f"FROM events WHERE id IN ({placeholders})",
-                member_ids,
-            ).fetchall()
-            # Preserve order
-            event_map = {r["id"]: dict(r) for r in event_rows}
-            for mid in member_ids:
-                if mid in event_map:
-                    members.append(event_map[mid])
-
-        s["members"] = members
-
-        # ── 未扫描新内容计数（红点角标用） ──
-        scan_cache = conn.execute(
-            "SELECT scanned_at FROM series_scan_cache WHERE series_id = ?",
-            (series_id,),
-        ).fetchone()
-        if scan_cache and scan_cache["scanned_at"]:
-            since = scan_cache["scanned_at"]
-        else:
-            since = "1970-01-01"  # never scanned → count all eligible
-
-        if member_ids:
-            m_placeholders = ",".join(["?" for _ in member_ids])
-            unscanned = conn.execute(
-                f"SELECT COUNT(*) FROM events "
-                f"WHERE overview IS NOT NULL AND overview != '' AND status != 'error' "
-                f"AND id NOT IN ({m_placeholders}) AND created_at > ?",
-                member_ids + [since],
-            ).fetchone()[0]
-        else:
-            unscanned = conn.execute(
-                "SELECT COUNT(*) FROM events "
-                "WHERE overview IS NOT NULL AND overview != '' AND status != 'error' "
-                "AND created_at > ?",
-                (since,),
-            ).fetchone()[0]
-        s["unscanned_count"] = unscanned
-
-    return s
+    return series_service.get_series_detail(
+        series_id, connect_fn=connect, init_db_fn=init_db
+    )
 
 
 # ══════════════════════════════════════════════════
@@ -1529,89 +1274,25 @@ def generate_series_paper(series_id: SafeIdentifier):
 @router.put("/series/{series_id}/sort")
 def reorder_series(series_id: SafeIdentifier, data: SeriesOrderRequest):
     """Update member order via drag-and-drop."""
-    init_db()
-    member_ids = data.member_ids
-    with connect() as conn:
-        row = conn.execute("SELECT id FROM series WHERE id = ?", (series_id,)).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="专题不存在")
-        conn.execute(
-            "UPDATE series SET sort_order = ?, updated_at = ? WHERE id = ?",
-            (json.dumps(member_ids), __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M"), series_id),
-        )
-    return {"id": series_id, "member_ids": member_ids}
+    return series_service.reorder_series(
+        series_id, data, connect_fn=connect, init_db_fn=init_db
+    )
 
 
 @router.get("/series/{series_id}/suggestions")
 def get_series_suggestions(series_id: SafeIdentifier):
     """Get pending member suggestions for a series."""
-    init_db()
-    with connect() as conn:
-        row = conn.execute("SELECT id, member_ids FROM series WHERE id = ?", (series_id,)).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="专题不存在")
-        try:
-            member_ids = set(json.loads(row["member_ids"]))
-        except (json.JSONDecodeError, TypeError):
-            member_ids = set()
-
-        # Scan all events with suggested_series_json
-        candidates = conn.execute(
-            "SELECT id, suggested_series_json FROM events WHERE suggested_series_json IS NOT NULL AND suggested_series_json != '' AND suggested_series_json != '[]'"
-        ).fetchall()
-
-        suggestions = []  # list of {event_id, reason}
-        for ev in candidates:
-            try:
-                entries = json.loads(ev["suggested_series_json"])
-                # 兼容旧格式（纯ID数组）
-                if entries and isinstance(entries[0], str):
-                    if series_id in entries and ev["id"] not in member_ids:
-                        suggestions.append({"event_id": ev["id"], "reason": ""})
-                else:
-                    for entry in entries:
-                        if entry.get("series_id") == series_id and ev["id"] not in member_ids:
-                            suggestions.append({"event_id": ev["id"], "reason": entry.get("reason", "")})
-                            break
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-        if not suggestions:
-            return {"suggestions": []}
-
-        suggestion_ids = [s["event_id"] for s in suggestions]
-        reason_map = {s["event_id"]: s["reason"] for s in suggestions}
-        placeholders = ",".join(["?" for _ in suggestion_ids])
-        event_rows = conn.execute(
-            f"SELECT id, title, topic, created_at FROM events WHERE id IN ({placeholders})",
-            suggestion_ids,
-        ).fetchall()
-
-    return {"suggestions": [{"id": r["id"], "title": r["title"], "topic": r["topic"] or "", "reason": reason_map.get(r["id"], ""), "created_at": r["created_at"]} for r in event_rows]}
+    return series_service.get_series_suggestions(
+        series_id, connect_fn=connect, init_db_fn=init_db
+    )
 
 
 @router.post("/series/{series_id}/members")
 def add_series_members(series_id: SafeIdentifier, data: SeriesMembersRequest):
     """Add one or more event_ids to a series (non-destructive append)."""
-    init_db()
-    new_ids = data.event_ids
-
-    with connect() as conn:
-        row = conn.execute("SELECT id, member_ids FROM series WHERE id = ?", (series_id,)).fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="专题不存在")
-        try:
-            existing = json.loads(row["member_ids"])
-        except (json.JSONDecodeError, TypeError):
-            existing = []
-        merged = existing + [eid for eid in new_ids if eid not in existing]
-        conn.execute(
-            "UPDATE series SET member_ids = ?, updated_at = ? WHERE id = ?",
-            (json.dumps(merged), __import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M"), series_id),
-        )
-        # Clear scan cache — member set changed
-        conn.execute("DELETE FROM series_scan_cache WHERE series_id = ?", (series_id,))
-    return {"id": series_id, "member_ids": merged}
+    return series_service.add_series_members(
+        series_id, data, connect_fn=connect, init_db_fn=init_db
+    )
 
 
 # ══════════════════════════════════════════════════
