@@ -23,8 +23,26 @@ import re
 import shutil
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
+
+try:
+    from scripts.release_contract import (
+        SPARKLE_NS,
+        ReleaseContract,
+        load_release_contract,
+        validate_candidate_appcast,
+    )
+    from scripts.release_preflight import run_preflight
+except ModuleNotFoundError:
+    from release_contract import (  # type: ignore[no-redef]
+        SPARKLE_NS,
+        ReleaseContract,
+        load_release_contract,
+        validate_candidate_appcast,
+    )
+    from release_preflight import run_preflight  # type: ignore[no-redef]
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DESKTOP_DIR = PROJECT_ROOT / "desktop"
@@ -33,28 +51,8 @@ RELEASE_DIR = BUILD_DIR / "release"
 FLUTTER_APP = BUILD_DIR / "macos" / "Build" / "Products" / "Release" / "知几.app"
 APP_BINARY = FLUTTER_APP / "Contents" / "Frameworks" / "App.framework" / "Versions" / "A" / "App"
 
-GITHUB_REPO = "samuelhung/ki"
-GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}"
-
-
-def _read_desktop_version() -> str:
-    """从 pubspec.yaml 读取版本号（不含 build number）。"""
-    pubspec = DESKTOP_DIR / "pubspec.yaml"
-    content = pubspec.read_text()
-    m = re.search(r"^version:\s*(\S+)", content, re.MULTILINE)
-    if not m:
-        sys.exit("❌ 找不到 version 字段")
-    return m.group(1).split("+")[0]  # "1.0.0+1" → "1.0.0"
-
-
-def _read_full_version() -> str:
-    """从 pubspec.yaml 读取完整版本号（含 build number，如 '1.0.51+52'）。"""
-    pubspec = DESKTOP_DIR / "pubspec.yaml"
-    content = pubspec.read_text()
-    m = re.search(r"^version:\s*(\S+)", content, re.MULTILINE)
-    if not m:
-        sys.exit("❌ 找不到 version 字段")
-    return m.group(1)  # "1.0.51+52"
+class ReleaseBuildError(RuntimeError):
+    pass
 
 
 def _shasum(path: Path) -> str:
@@ -64,6 +62,55 @@ def _shasum(path: Path) -> str:
         for chunk in iter(lambda: f.read(8192), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def write_release_metadata(
+    directory: Path,
+    contract: ReleaseContract,
+    *,
+    commit: str,
+    tools: dict[str, str],
+    built_at: str | None = None,
+) -> None:
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise ReleaseBuildError("release provenance requires a full Git SHA")
+    if not tools:
+        raise ReleaseBuildError("release provenance requires tool versions")
+    for name in (contract.dmg_name, contract.wheel_name, contract.sbom_name):
+        if not (directory / name).is_file():
+            raise ReleaseBuildError(f"release artifact is missing: {name}")
+    provenance = {
+        "schema_version": 1,
+        "tag": contract.tag,
+        "version": contract.version,
+        "build": contract.build,
+        "commit": commit,
+        "built_at": built_at or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "tools": tools,
+    }
+    (directory / contract.provenance_name).write_text(
+        json.dumps(provenance, ensure_ascii=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    targets = (contract.dmg_name, contract.wheel_name, contract.sbom_name, contract.provenance_name)
+    (directory / "SHA256SUMS").write_text(
+        "".join(f"{_shasum(directory / name)}  {name}\n" for name in sorted(targets)),
+        encoding="ascii",
+    )
+
+
+def _tool_output(*command: str) -> str:
+    return subprocess.check_output(command, text=True).strip().splitlines()[0]
+
+
+def collect_tool_versions() -> dict[str, str]:
+    return {
+        "python": sys.version.split()[0],
+        "flutter": _tool_output("flutter", "--version"),
+        "node": _tool_output("node", "--version"),
+        "npm": _tool_output("npm", "--version"),
+        "uv": _tool_output("uv", "--version"),
+    }
 
 
 def build_flutter() -> bool:
@@ -118,76 +165,77 @@ def build_dmg(version: str) -> Path:
     return dmg_path
 
 
-def _generate_appcast_entry(version: str, dmg_path: Path) -> str | None:
-    """用 Sparkle sign_update 签名 DMG，返回 appcast <item> XML 片段。"""
-    sign_update = DESKTOP_DIR / "macos" / "Pods" / "Sparkle" / "bin" / "sign_update"
-    if not sign_update.exists():
-        print(f"⚠️  sign_update 未找到: {sign_update}")
-        return None
+def parse_sparkle_signature(output: str, *, expected_length: int) -> str:
+    match = re.search(r'sparkle:edSignature="([^"]+)"\s+length="(\d+)"', output.strip())
+    if not match:
+        raise ReleaseBuildError("sign_update returned malformed output")
+    if int(match.group(2)) != expected_length:
+        raise ReleaseBuildError("sign_update length does not match DMG")
+    return match.group(1)
 
-    result = subprocess.run(
+
+def sign_sparkle_update(
+    sign_update: Path,
+    dmg_path: Path,
+    *,
+    run=subprocess.run,
+) -> str:
+    if not sign_update.is_file():
+        raise ReleaseBuildError(f"Sparkle sign_update is missing: {sign_update}")
+    result = run(
         [str(sign_update), str(dmg_path)],
-        capture_output=True, text=True, timeout=15,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
     if result.returncode != 0:
-        print(f"⚠️  sign_update 失败: {result.stderr}")
-        return None
-
-    ed_sig_raw = result.stdout.strip()
-    # sign_update 输出: sparkle:edSignature="xxx" length="nnn"
-    m = re.search(r'sparkle:edSignature="([^"]+)"', ed_sig_raw)
-    ed_sig = m.group(1) if m else ed_sig_raw
-    dmg_name = dmg_path.name
-    dmg_size = dmg_path.stat().st_size
-    full_version = _read_full_version()  # "1.0.51+52"
-    full_version_enc = full_version.replace("+", "%2B")
-    build_number = full_version.split("+")[1] if "+" in full_version else "0"
-    # GitHub Release 下载 URL
-    tag = f"v{full_version}"
-    download_url = f"https://github.com/{GITHUB_REPO}/releases/download/{tag.replace('+', '%2B')}/{dmg_name}"
-    pub_date = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S %z")
-
-    release_notes = _release_notes_plain(version)
-
-    return f"""    <item>
-      <title>知几桌面端 v{version}</title>
-      <description><![CDATA[{release_notes}]]></description>
-      <pubDate>{pub_date}</pubDate>
-      <enclosure
-        url="{download_url}"
-        sparkle:version="{build_number}"
-        sparkle:shortVersionString="{version}"
-        sparkle:edSignature="{ed_sig}"
-        length="{dmg_size}"
-        type="application/octet-stream"
-      />
-    </item>"""
+        detail = (result.stderr or "unknown signing error").strip()
+        raise ReleaseBuildError(f"Sparkle sign_update failed: {detail}")
+    return parse_sparkle_signature(result.stdout, expected_length=dmg_path.stat().st_size)
 
 
-def _update_appcast(appcast_path: Path, entry: str) -> None:
-    """将新 item 插入 appcast.xml — 移除同版本旧条目后在 </link> 后插入。"""
-    if not appcast_path.exists():
-        print(f"⚠️  appcast.xml 不存在: {appcast_path}")
-        return
+def write_candidate_appcast(
+    live_appcast: Path,
+    candidate_path: Path,
+    contract: ReleaseContract,
+    signature: str,
+    *,
+    dmg_size: int,
+    pub_date: str | None = None,
+) -> None:
+    ET.register_namespace("sparkle", SPARKLE_NS)
+    tree = ET.parse(live_appcast)
+    channel = tree.getroot().find("channel")
+    if channel is None:
+        raise ReleaseBuildError("live appcast has no channel")
+    for existing in list(channel.findall("item")):
+        enclosure = existing.find("enclosure")
+        if enclosure is not None and enclosure.get(f"{{{SPARKLE_NS}}}shortVersionString") == contract.version:
+            channel.remove(existing)
 
-    content = appcast_path.read_text()
-
-    # 提取新条目的 shortVersionString 用于去重
-    ver_match = re.search(r'sparkle:shortVersionString="([^"]+)"', entry)
-    if ver_match:
-        new_ver = ver_match.group(1)
-        # 移除已有同版本 <item>...</item> 块
-        pattern = re.compile(
-            r'\n    <item>.*?sparkle:shortVersionString="' + re.escape(new_ver) + r'".*?</item>',
-            re.DOTALL,
-        )
-        content = pattern.sub("", content)
-
-    # 在 channel 元数据后、第一个 <item> 前插入
-    marker = "</link>"
-    new_content = content.replace(marker, f"{marker}\n{entry}", 1)
-    appcast_path.write_text(new_content)
-    print(f"📡 appcast.xml 已更新")
+    item = ET.Element("item")
+    ET.SubElement(item, "title").text = f"知几桌面端 v{contract.version}"
+    ET.SubElement(item, "description").text = _release_notes_plain(contract.version)
+    ET.SubElement(item, "pubDate").text = pub_date or datetime.now(timezone.utc).strftime(
+        "%a, %d %b %Y %H:%M:%S %z"
+    )
+    ET.SubElement(
+        item,
+        "enclosure",
+        {
+            "url": contract.download_url,
+            f"{{{SPARKLE_NS}}}version": str(contract.build),
+            f"{{{SPARKLE_NS}}}shortVersionString": contract.version,
+            f"{{{SPARKLE_NS}}}edSignature": signature,
+            "length": str(dmg_size),
+            "type": "application/octet-stream",
+        },
+    )
+    insert_at = next((index for index, child in enumerate(channel) if child.tag == "item"), len(channel))
+    channel.insert(insert_at, item)
+    candidate_path.parent.mkdir(parents=True, exist_ok=True)
+    tree.write(candidate_path, encoding="utf-8", xml_declaration=True)
+    validate_candidate_appcast(candidate_path, contract)
 
 
 def _generate_release_notes(version: str) -> str:
@@ -241,12 +289,13 @@ def _release_notes_plain(version: str) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description="知几桌面端发布构建")
+    parser.add_argument("tag", help="规范发布标签，例如 v2.0.0+90")
     parser.add_argument("--skip-build", action="store_true", help="跳过编译（使用已有产物）")
-    parser.add_argument("--version", default=None, help="指定版本号（默认读取 pubspec.yaml）")
     args = parser.parse_args()
 
-    version = args.version or _read_desktop_version()
-    print(f"📦 知几桌面端 v{version} 发布构建")
+    contract = load_release_contract(PROJECT_ROOT, args.tag)
+    version = contract.version
+    print(f"📦 知几桌面端 {contract.tag} 发布构建")
     print(f"   项目根: {PROJECT_ROOT}")
     print()
 
@@ -266,6 +315,10 @@ def main():
         ["codesign", "--deep", "--force", "--sign", "Zhiji", str(FLUTTER_APP)],
         capture_output=True, check=True, timeout=60,
     )
+    subprocess.run(
+        ["codesign", "--verify", "--deep", "--strict", str(FLUTTER_APP)],
+        capture_output=True, check=True, timeout=60,
+    )
     print("✅ .app 签名完成")
 
     # 2. 哈希
@@ -281,14 +334,24 @@ def main():
         ["codesign", "--force", "--sign", "Zhiji", str(dmg_path)],
         capture_output=True, check=True, timeout=30,
     )
+    subprocess.run(
+        ["codesign", "--verify", "--strict", str(dmg_path)],
+        capture_output=True, check=True, timeout=30,
+    )
     print("✅ DMG 签名完成")
 
-    # 4. 生成/更新 Sparkle appcast
-    appcast_path = PROJECT_ROOT / "appcast.xml"
-    appcast_entry = _generate_appcast_entry(version, dmg_path)
-    if appcast_entry:
-        _update_appcast(appcast_path, appcast_entry)
-        print(f"📡 appcast: {appcast_path}")
+    # 4. 只生成候选 Appcast。正式 feed 必须等远端制品回读校验后才能发布。
+    sign_update = DESKTOP_DIR / "macos" / "Pods" / "Sparkle" / "bin" / "sign_update"
+    sparkle_signature = sign_sparkle_update(sign_update, dmg_path)
+    candidate_appcast = RELEASE_DIR / contract.candidate_appcast_name
+    write_candidate_appcast(
+        PROJECT_ROOT / "appcast.xml",
+        candidate_appcast,
+        contract,
+        sparkle_signature,
+        dmg_size=dmg_path.stat().st_size,
+    )
+    print(f"📡 候选 appcast: {candidate_appcast}")
 
     # 5. 总结
     print()
@@ -305,10 +368,27 @@ def main():
     print(notes)
     print()
 
-    print("上传到 GitHub Release:")
-    print(f"  gh release create v{version} \\\\")
-    print(f"    {dmg_path} \\\\")
-    print(f"  --notes-file {notes_path}")
+    subprocess.run(
+        [sys.executable, str(PROJECT_ROOT / "scripts" / "build_backend_wheel.py"), "--outdir", str(RELEASE_DIR)],
+        cwd=PROJECT_ROOT,
+        check=True,
+    )
+    if not (RELEASE_DIR / contract.wheel_name).is_file():
+        raise ReleaseBuildError(f"backend wheel name does not match release contract: {contract.wheel_name}")
+    subprocess.run(
+        [sys.executable, str(PROJECT_ROOT / "scripts" / "generate_lock_sbom.py"), str(RELEASE_DIR / contract.sbom_name)],
+        cwd=PROJECT_ROOT,
+        check=True,
+    )
+    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=PROJECT_ROOT, text=True).strip()
+    write_release_metadata(
+        RELEASE_DIR,
+        contract,
+        commit=commit,
+        tools=collect_tool_versions(),
+    )
+    run_preflight(PROJECT_ROOT, contract.tag, RELEASE_DIR, candidate_appcast)
+    print(f"✅ 完整发布候选已通过 preflight: {contract.tag}")
     print("━" * 50)
 
 
