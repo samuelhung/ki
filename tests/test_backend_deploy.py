@@ -228,7 +228,13 @@ def test_deploy_installs_immutable_version_and_atomically_switches_current(tmp_p
     assert smoke_targets == [result]
     assert service.events == ["stop", "start"]
     assert list(config.backups_dir.glob("deploy-*.sqlite"))
-    assert "runtime/current/venv/bin/zhiji" in config.launchd_plist.read_text(encoding="utf-8")
+    arguments = plistlib.loads(config.launchd_plist.read_bytes())["ProgramArguments"]
+    assert arguments[:4] == [
+        str(config.current_link / "venv" / "bin" / "python"),
+        "-m",
+        "zhiji_backend.cli",
+        "serve",
+    ]
 
 
 def test_failed_smoke_restores_database_and_previous_version(tmp_path: Path) -> None:
@@ -262,6 +268,30 @@ def test_failed_smoke_restores_database_and_previous_version(tmp_path: Path) -> 
     assert _read_database(config.database_path) == "before"
     assert smoke_attempts == 2
     assert service.events == ["stop", "start", "stop", "start"]
+
+
+def test_failed_new_smoke_uses_separate_rollback_smoke(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    old = config.versions_dir / "1.9.0+89"
+    (old / "venv" / "bin").mkdir(parents=True)
+    (old / "venv" / "bin" / "zhiji").write_text("old", encoding="utf-8")
+    config.current_link.parent.mkdir(parents=True, exist_ok=True)
+    config.current_link.symlink_to(old)
+    checks: list[str] = []
+
+    with pytest.raises(BackendDeployError, match="new version unhealthy"):
+        deploy_backend(
+            config,
+            service=FakeService(),
+            installer=_install,
+            smoke_check=lambda: (_ for _ in ()).throw(
+                BackendDeployError("new version unhealthy")
+            ),
+            rollback_smoke_check=lambda: checks.append("rollback"),
+        )
+
+    assert checks == ["rollback"]
+    assert config.current_link.resolve() == old
 
 
 def test_failed_rollback_stop_never_restores_live_database_or_removes_active_version(
@@ -310,8 +340,53 @@ def test_launchd_plist_keeps_label_and_executes_through_current(tmp_path: Path) 
 
     content = config.launchd_plist.read_text(encoding="utf-8")
     assert "<string>com.test.zhiji</string>" in content
-    assert f"<string>{config.current_link}/venv/bin/zhiji</string>" in content
+    assert f"<string>{config.current_link}/venv/bin/python</string>" in content
+    assert "<string>zhiji_backend.cli</string>" in content
     assert f"<string>{config.zhiji_home}</string>" in content
+
+
+def test_launchd_module_entrypoint_survives_staged_venv_rename(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    stage = config.versions_dir / ".2.0.0+90.stage"
+    target = config.versions_dir / "2.0.0+90"
+    subprocess.run([sys.executable, "-m", "venv", str(stage / "venv")], check=True)
+    stage_python = stage / "venv" / "bin" / "python"
+    site_packages = Path(
+        subprocess.run(
+            [
+                str(stage_python),
+                "-c",
+                "import sysconfig; print(sysconfig.get_path('purelib'))",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    )
+    package = site_packages / "zhiji_backend"
+    package.mkdir()
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "cli.py").write_text(
+        "import sys\nprint(' '.join(sys.argv[1:]))\n",
+        encoding="utf-8",
+    )
+    stage.rename(target)
+    config.current_link.symlink_to(target)
+
+    write_launchd_plist(config)
+    arguments = plistlib.loads(config.launchd_plist.read_bytes())["ProgramArguments"]
+    environment = os.environ.copy()
+    environment.pop("PYTHONPATH", None)
+    result = subprocess.run(
+        arguments,
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+        env=environment,
+    )
+
+    assert result.stdout.strip() == "serve --host 127.0.0.1 --port 19120"
 
 
 def test_launchd_defaults_to_loopback_bind_and_health_origin_port(tmp_path: Path) -> None:
@@ -1014,3 +1089,40 @@ def test_default_smoke_checks_liveness_database_and_core_api(monkeypatch) -> Non
     default_smoke_check("http://127.0.0.1:19120", timeout_seconds=1)
 
     assert requested == ["/api/health", "/api/system/health", "/api/dashboard/summary"]
+
+
+def test_legacy_compatible_smoke_skips_system_health(monkeypatch) -> None:
+    requested: list[str] = []
+    payloads = {
+        "/api/health": {"ok": True},
+        "/api/dashboard/summary": {"today_new": 1},
+    }
+
+    class Response:
+        def __init__(self, payload: dict[str, object]):
+            self.payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return json.dumps(self.payload).encode()
+
+    def open_url(url: str, *, timeout: int):
+        assert timeout == 3
+        path = url.removeprefix("http://127.0.0.1:19120")
+        requested.append(path)
+        return Response(payloads[path])
+
+    monkeypatch.setattr("scripts.deploy_backend.urllib.request.urlopen", open_url)
+
+    default_smoke_check(
+        "http://127.0.0.1:19120",
+        timeout_seconds=1,
+        require_system_health=False,
+    )
+
+    assert requested == ["/api/health", "/api/dashboard/summary"]
