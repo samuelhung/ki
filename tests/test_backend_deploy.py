@@ -5,6 +5,8 @@ import json
 import os
 import plistlib
 import sqlite3
+import subprocess
+import sys
 import zipfile
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -278,9 +280,18 @@ def test_public_bind_requires_secure_env_with_nonempty_api_token(
     "contents",
     [
         'KI_API_TOKEN="" # comment\n',
+        'KI_API_TOKEN="" # comment ending with quote "\n',
         "KI_API_TOKEN=first-token\nKI_API_TOKEN=\n",
+        "KI_API_TOKEN=${UNSET}\n",
+        'KI_API_TOKEN="\\t"\n',
     ],
-    ids=["quoted-empty-with-comment", "duplicate-last-empty"],
+    ids=[
+        "quoted-empty-with-comment",
+        "quoted-empty-with-quote-in-comment",
+        "duplicate-last-empty",
+        "dotenv-interpolation",
+        "quoted-backslash-escape",
+    ],
 )
 def test_public_bind_env_parser_rejects_effectively_empty_last_token(
     tmp_path: Path,
@@ -303,12 +314,14 @@ def test_public_bind_env_parser_rejects_effectively_empty_last_token(
     [
         'KI_API_TOKEN="quoted-token" # comment\n',
         "export KI_API_TOKEN=exported-token\n",
+        "export\tKI_API_TOKEN=tab-exported-token\n",
         "KI_API_TOKEN=token=with=equals\n",
         "KI_API_TOKEN=\nKI_API_TOKEN=last-token\n",
     ],
     ids=[
         "quoted-with-comment",
         "export",
+        "tab-export",
         "embedded-equals",
         "duplicate-last-nonempty",
     ],
@@ -340,6 +353,54 @@ def test_public_bind_rejects_non_regular_env_before_service_stop(tmp_path: Path)
     assert not config.versions_dir.exists()
 
 
+def test_public_bind_rejects_fifo_env_promptly(tmp_path: Path) -> None:
+    config = replace(_config(tmp_path), bind_host="0.0.0.0")
+    env_file = config.zhiji_home / ".env"
+    os.mkfifo(env_file, mode=0o600)
+    script = """
+import sys
+from pathlib import Path
+
+from scripts.deploy_backend import (
+    BackendDeployConfig,
+    BackendDeployError,
+    _validate_remote_bind_environment,
+)
+
+home = Path(sys.argv[1])
+config = BackendDeployConfig(
+    release_tag="v1.0.0+1",
+    runtime_root=home / "runtime",
+    zhiji_home=home,
+    user_home=home,
+    database_path=home / "database.sqlite",
+    backups_dir=home / "backups",
+    wheel=home / "package.whl",
+    checksums=home / "SHA256SUMS",
+    launchd_plist=home / "backend.plist",
+    launchd_label="com.test.zhiji",
+    health_origin="http://127.0.0.1:9120",
+    python_executable=Path(sys.executable),
+    bind_host="0.0.0.0",
+)
+try:
+    _validate_remote_bind_environment(config)
+except BackendDeployError as exc:
+    raise SystemExit(0 if "regular non-symlink file" in str(exc) else 2)
+raise SystemExit(3)
+"""
+
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(config.zhiji_home)],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=2,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_public_bind_validation_uses_opened_inode_without_following_replacement(
     tmp_path: Path,
     monkeypatch,
@@ -367,6 +428,7 @@ def test_public_bind_validation_uses_opened_inode_without_following_replacement(
 
     assert opened_flags
     assert opened_flags[0] & os.O_NOFOLLOW
+    assert opened_flags[0] & os.O_NONBLOCK
     assert env_file.is_symlink()
     with pytest.raises(OSError):
         os.fstat(descriptors[0])

@@ -113,14 +113,16 @@ def _parse_env_value(value: str) -> str | None:
     value = value.strip()
     if value[:1] in {"'", '"'}:
         quote = value[0]
-        closing_quote = value.rfind(quote)
+        closing_quote = value.find(quote, 1)
         if closing_quote == 0:
             return None
         suffix = value[closing_quote + 1 :].strip()
         if suffix and not suffix.startswith("#"):
             return None
-        return value[1:closing_quote].strip()
-    return re.split(r"\s+#", value, maxsplit=1)[0].strip()
+        parsed = value[1:closing_quote].strip()
+        return None if "$" in parsed or "\\" in parsed else parsed
+    parsed = re.split(r"\s+#", value, maxsplit=1)[0].strip()
+    return None if "$" in parsed else parsed
 
 
 def _env_value(lines: Iterable[str], key: str) -> str:
@@ -129,13 +131,13 @@ def _env_value(lines: Iterable[str], key: str) -> str:
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        if line.startswith("export "):
-            line = line.removeprefix("export ").strip()
+        export = re.match(r"export\s+", line)
+        if export:
+            line = line[export.end() :].strip()
         candidate, separator, value = line.partition("=")
         if separator and candidate.strip() == key:
             parsed = _parse_env_value(value)
-            if parsed is not None:
-                result = parsed
+            result = "" if parsed is None else parsed
     return result
 
 
@@ -145,7 +147,7 @@ def _validate_remote_bind_environment(config: BackendDeployConfig) -> None:
 
     env_file = config.zhiji_home / ".env"
     try:
-        descriptor = os.open(env_file, os.O_RDONLY | os.O_NOFOLLOW)
+        descriptor = os.open(env_file, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except FileNotFoundError as exc:
         raise BackendDeployError("secure .env is required for a non-loopback bind") from exc
     except OSError as exc:
