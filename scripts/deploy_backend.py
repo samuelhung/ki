@@ -82,6 +82,14 @@ class BackendDeployConfig:
     def current_link(self) -> Path:
         return self.runtime_root / "current"
 
+    @property
+    def requirements_lock(self) -> Path:
+        return self.wheel.parent / "requirements.lock"
+
+    @property
+    def wheelhouse(self) -> Path:
+        return self.wheel.parent / "wheelhouse"
+
 
 class LaunchdServiceController:
     def __init__(self, config: BackendDeployConfig, *, run=subprocess.run, uid: int | None = None):
@@ -186,6 +194,8 @@ def _validate_config(config: BackendDeployConfig) -> None:
         "database path": config.database_path,
         "backups path": config.backups_dir,
         "wheel path": config.wheel,
+        "requirements lock path": config.requirements_lock,
+        "wheelhouse path": config.wheelhouse,
         "checksums path": config.checksums,
         "launchd plist path": config.launchd_plist,
         "Python path": config.python_executable,
@@ -218,6 +228,10 @@ def _validate_config(config: BackendDeployConfig) -> None:
     artifact_parent = config.wheel.parent
     if config.checksums != artifact_parent / "SHA256SUMS":
         raise BackendDeployError("wheel and checksums must share one artifact directory")
+    if config.requirements_lock != artifact_parent / "requirements.lock":
+        raise BackendDeployError("requirements lock must share the artifact directory")
+    if config.wheelhouse != artifact_parent / "wheelhouse":
+        raise BackendDeployError("wheelhouse must share the artifact directory")
     if artifact_parent != packages:
         if artifact_parent.parent != packages or not re.fullmatch(
             r"[0-9a-fA-F]{40}", artifact_parent.name
@@ -288,14 +302,49 @@ def _verify_release_artifact(config: BackendDeployConfig) -> None:
         raise BackendDeployError(f"wheel does not match release: {expected_name}")
     if not config.checksums.is_file():
         raise BackendDeployError("SHA256SUMS is missing")
-    checksum = None
+    checksums: dict[str, str] = {}
     for line in config.checksums.read_text(encoding="ascii").splitlines():
-        match = re.fullmatch(r"([0-9a-f]{64})  ([^/]+)", line)
-        if match and match.group(2) == config.wheel.name:
-            checksum = match.group(1)
-            break
+        match = re.fullmatch(r"([0-9a-f]{64})  ([A-Za-z0-9._+/-]+)", line)
+        if match:
+            relative = Path(match.group(2))
+            if relative.is_absolute() or ".." in relative.parts:
+                raise BackendDeployError("SHA256SUMS contains an unsafe artifact path")
+            checksums[relative.as_posix()] = match.group(1)
+    checksum = checksums.get(config.wheel.name)
     if checksum is None or _sha256(config.wheel) != checksum:
         raise BackendDeployError("wheel checksum does not match SHA256SUMS")
+    if config.requirements_lock.is_symlink() or not config.requirements_lock.is_file():
+        raise BackendDeployError("requirements.lock is missing or unsafe")
+    try:
+        requirements = config.requirements_lock.read_text(encoding="ascii")
+    except (OSError, UnicodeError) as exc:
+        raise BackendDeployError("requirements.lock is unreadable") from exc
+    if (
+        "--hash=sha256:" not in requirements
+        or "://" in requirements
+        or " @ " in requirements
+        or re.search(r"(?m)^\s*--(?:extra-)?index-url\b|^\s*--find-links\b", requirements)
+    ):
+        raise BackendDeployError("requirements.lock must contain only hash-locked registry packages")
+    dependency_files: list[Path] = []
+    try:
+        wheelhouse_metadata = config.wheelhouse.lstat()
+    except FileNotFoundError as exc:
+        raise BackendDeployError("wheelhouse is missing") from exc
+    if stat.S_ISLNK(wheelhouse_metadata.st_mode) or not stat.S_ISDIR(wheelhouse_metadata.st_mode):
+        raise BackendDeployError("wheelhouse must be a real directory")
+    for dependency in sorted(config.wheelhouse.iterdir()):
+        metadata = dependency.lstat()
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+            raise BackendDeployError("wheelhouse contains an unsafe entry")
+        dependency_files.append(dependency)
+    if not dependency_files:
+        raise BackendDeployError("wheelhouse is empty")
+    for artifact in [config.requirements_lock, *dependency_files]:
+        relative = artifact.relative_to(config.wheel.parent).as_posix()
+        expected_checksum = checksums.get(relative)
+        if expected_checksum is None or _sha256(artifact) != expected_checksum:
+            raise BackendDeployError(f"dependency bundle checksum mismatch: {relative}")
     try:
         with zipfile.ZipFile(config.wheel) as archive:
             metadata_names = [name for name in archive.namelist() if name.endswith(".dist-info/METADATA")]
@@ -350,13 +399,32 @@ def write_launchd_plist(config: BackendDeployConfig) -> None:
 def _default_installer(stage: Path, config: BackendDeployConfig) -> None:
     venv = stage / "venv"
     subprocess.run([str(config.python_executable), "-m", "venv", str(venv)], check=True)
+    python = str(venv / "bin" / "python")
     subprocess.run(
         [
-            str(venv / "bin" / "python"),
+            python,
             "-m",
             "pip",
             "install",
             "--disable-pip-version-check",
+            "--no-index",
+            "--find-links",
+            str(config.wheelhouse),
+            "--require-hashes",
+            "--requirement",
+            str(config.requirements_lock),
+        ],
+        check=True,
+    )
+    subprocess.run(
+        [
+            python,
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--no-index",
+            "--no-deps",
             str(config.wheel),
         ],
         check=True,

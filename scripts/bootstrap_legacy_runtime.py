@@ -280,6 +280,10 @@ def bootstrap_legacy_runtime(
                 temporary.unlink(missing_ok=True)
             return config.target
         except Exception as exc:
+            if current_published:
+                raise BootstrapError(
+                    "uncertain publication: current is published but directory durability is uncertain"
+                ) from exc
             if published and not current_published:
                 assert target_identity is not None
                 try:

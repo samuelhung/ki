@@ -18,6 +18,7 @@ from scripts.deploy_backend import (
     BackendDeployConfig,
     BackendDeployError,
     LaunchdServiceController,
+    _default_installer,
     _restore_database,
     _validate_remote_bind_environment,
     default_smoke_check,
@@ -50,9 +51,21 @@ def _release_files(tmp_path: Path) -> tuple[Path, Path]:
             "zhiji_backend-2.0.0.dist-info/METADATA",
             "Metadata-Version: 2.4\nName: zhiji-backend\nVersion: 2.0.0\n",
         )
+    requirements = packages / "requirements.lock"
+    requirements.write_text(
+        "example-dependency==1.0 --hash=sha256:" + "1" * 64 + "\n",
+        encoding="ascii",
+    )
+    wheelhouse = packages / "wheelhouse"
+    wheelhouse.mkdir()
+    dependency = wheelhouse / "example_dependency-1.0-py3-none-any.whl"
+    dependency.write_bytes(b"locked dependency")
     checksums = packages / "SHA256SUMS"
     checksums.write_text(
-        f"{hashlib.sha256(wheel.read_bytes()).hexdigest()}  {wheel.name}\n",
+        "".join(
+            f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(packages)}\n"
+            for path in (wheel, requirements, dependency)
+        ),
         encoding="ascii",
     )
     return wheel, checksums
@@ -634,6 +647,41 @@ def test_artifact_mismatch_fails_before_service_is_stopped(tmp_path: Path) -> No
     assert not config.current_link.exists()
 
 
+def test_dependency_bundle_mismatch_fails_before_service_is_stopped(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    next(config.wheelhouse.iterdir()).write_bytes(b"tampered dependency")
+    service = FakeService()
+
+    with pytest.raises(BackendDeployError, match="dependency bundle checksum"):
+        deploy_backend(config, service=service, installer=_install, smoke_check=lambda: None)
+
+    assert service.events == []
+
+
+def test_default_installer_uses_only_hash_locked_offline_dependencies(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config = _config(tmp_path)
+    commands: list[list[str]] = []
+
+    def record(command: list[str], **kwargs) -> None:
+        assert kwargs == {"check": True}
+        commands.append(command)
+
+    monkeypatch.setattr("scripts.deploy_backend.subprocess.run", record)
+    _default_installer(tmp_path / "stage", config)
+
+    install = commands[1]
+    assert install[install.index("--no-index") + 1] == "--find-links"
+    assert install[install.index("--find-links") + 1] == str(config.wheelhouse)
+    assert "--require-hashes" in install
+    assert install[install.index("--requirement") + 1] == str(config.requirements_lock)
+    project_install = commands[2]
+    assert "--no-index" in project_install
+    assert "--no-deps" in project_install
+    assert project_install[-1] == str(config.wheel)
+
+
 def test_venv_python_symlink_is_accepted_by_exact_cli_config(tmp_path: Path, monkeypatch) -> None:
     config = _config(tmp_path)
     python = config.runtime_root / "venv/bin/python"
@@ -665,6 +713,8 @@ def test_release_artifacts_are_accepted_together_in_source_sha_stage(tmp_path: P
     checksums = stage / "SHA256SUMS"
     config.wheel.replace(wheel)
     config.checksums.replace(checksums)
+    config.requirements_lock.replace(stage / config.requirements_lock.name)
+    config.wheelhouse.replace(stage / config.wheelhouse.name)
     config = replace(config, wheel=wheel, checksums=checksums)
 
     deploy_backend(config, service=FakeService(), installer=_install, smoke_check=lambda: None)

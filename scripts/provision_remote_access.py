@@ -176,6 +176,14 @@ def _render_env(data: bytes, updates: dict[str, str]) -> bytes:
     return ("\n".join(rendered) + "\n").encode()
 
 
+def _token_value(data: bytes, key: str) -> str:
+    value = ""
+    for candidate, line in _parse_env(data):
+        if candidate == key:
+            value = line.partition("=")[2]
+    return value
+
+
 def _create_stage(path: Path, payload: bytes) -> Path:
     for _attempt in range(100):
         stage = path.with_name(f".{path.name}.{secrets.token_hex(12)}.tmp")
@@ -275,6 +283,10 @@ def provision_remote_access(
     lock_path = local_env.with_name(f".{local_env.name}.lock")
     with _advisory_lock(lock_path):
         original = _secure_snapshot(local_env, allow_missing=True)
+        if _token_value(original.data, "KI_REMOTE_API_TOKEN"):
+            raise ProvisionError(
+                "token rotation is not supported by this first-provision tool; use a coordinated rotation"
+            )
         updated_bytes = _render_env(original.data, {"KI_REMOTE_API_TOKEN": token})
         updated = _atomic_replace(
             local_env,
@@ -365,11 +377,7 @@ class SshRemoteExecutor:
 
 def _remote_token(path: Path) -> str:
     snapshot = _secure_snapshot(path, allow_missing=False)
-    result = ""
-    for key, line in _parse_env(snapshot.data):
-        if key == "KI_API_TOKEN":
-            result = line.partition("=")[2]
-    return result
+    return _token_value(snapshot.data, "KI_API_TOKEN")
 
 
 def _validate_remote_python(path: Path) -> None:
@@ -389,6 +397,10 @@ def _remote_worker(path: Path, *, compare_only: bool) -> int:
                 return 0 if secrets.compare_digest(_remote_token(path), token) else 3
             allowed_hosts = request["allowed_hosts"]
             snapshot = _secure_snapshot(path, allow_missing=False)
+            if _token_value(snapshot.data, "KI_API_TOKEN"):
+                raise ProvisionError(
+                    "token rotation is not supported by this first-provision worker"
+                )
             updated = _render_env(
                 snapshot.data,
                 {"KI_API_TOKEN": token, "KI_ALLOWED_HOSTS": allowed_hosts},

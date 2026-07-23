@@ -51,7 +51,7 @@ def _secure_env(path: Path, contents: str) -> None:
 
 def test_success_updates_local_and_remote_without_losing_unrelated_keys(tmp_path: Path) -> None:
     local = tmp_path / "app/frontend/.env.local"
-    _secure_env(local, "OTHER=kept\nKI_REMOTE_API_TOKEN=old\n")
+    _secure_env(local, "OTHER=kept\n")
     remote = FakeRemote()
 
     provision_remote_access(local, remote, token_factory=lambda _length: TOKEN)
@@ -59,6 +59,46 @@ def test_success_updates_local_and_remote_without_losing_unrelated_keys(tmp_path
     assert local.read_text() == f"OTHER=kept\nKI_REMOTE_API_TOKEN={TOKEN}\n"
     assert "UNRELATED=kept" in remote.contents
     assert [name for name, _payload in remote.calls] == ["update"]
+
+
+def test_existing_local_token_rejects_implicit_rotation_before_remote_call(tmp_path: Path) -> None:
+    local = tmp_path / ".env.local"
+    _secure_env(local, "KI_REMOTE_API_TOKEN=existing\n")
+    remote = FakeRemote()
+
+    with pytest.raises(ProvisionError, match="rotation"):
+        provision_remote_access(local, remote, token_factory=lambda _length: TOKEN)
+
+    assert remote.calls == []
+    assert local.read_text() == "KI_REMOTE_API_TOKEN=existing\n"
+
+
+def test_existing_remote_token_rejects_first_provision_and_restores_local(tmp_path: Path) -> None:
+    local = tmp_path / "local.env"
+    remote_env = tmp_path / "remote.env"
+    _secure_env(remote_env, "KI_API_TOKEN=existing\n")
+
+    def execute_loader(command: list[str], **kwargs):
+        return subprocess.run(
+            ["/bin/sh", "-c", command[-1]],
+            input=kwargs["input"],
+            capture_output=True,
+            check=False,
+        )
+
+    remote = SshRemoteExecutor(
+        "test-host",
+        Path("scripts/provision_remote_access.py"),
+        remote_env,
+        Path(sys.executable),
+        run=execute_loader,
+    )
+
+    with pytest.raises(ProvisionError, match="remote worker failed"):
+        provision_remote_access(local, remote, token_factory=lambda _length: TOKEN)
+
+    assert not local.exists()
+    assert "KI_API_TOKEN=existing" in remote_env.read_text()
 
 
 def test_remote_precommit_failure_restores_original_local_file(tmp_path: Path) -> None:
@@ -272,7 +312,7 @@ def test_real_ssh_worker_post_replace_fsync_failure_is_reported_uncertain(
 ) -> None:
     local_env = tmp_path / "local.env"
     remote_env = tmp_path / "remote.env"
-    _secure_env(remote_env, "UNRELATED=kept\nKI_API_TOKEN=old\n")
+    _secure_env(remote_env, "UNRELATED=kept\n")
     source = Path("scripts/provision_remote_access.py").read_text(encoding="utf-8")
     source = source.replace(
         "def _fsync_directory(path: Path) -> None:\n"

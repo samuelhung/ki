@@ -148,6 +148,29 @@ def test_current_replace_committed_then_error_retains_published_state(
     assert (runtime / "current").resolve() == target
 
 
+def test_current_directory_fsync_failure_reports_uncertain_published_state(
+    tmp_path: Path, monkeypatch
+) -> None:
+    runtime = _runtime(tmp_path)
+    from scripts.bootstrap_legacy_runtime import _fsync_directory as real_fsync
+
+    def fail_after_current_publish(path: Path) -> None:
+        if path == runtime and (runtime / "current").is_symlink():
+            raise OSError("directory fsync failed after current publication")
+        real_fsync(path)
+
+    monkeypatch.setattr("scripts.bootstrap_legacy_runtime._fsync_directory", fail_after_current_publish)
+
+    with pytest.raises(BootstrapError, match="uncertain publication.*directory durability"):
+        bootstrap_legacy_runtime(
+            _config(runtime), copy_runner=_copy, version_reader=lambda _python: "2.0.0"
+        )
+
+    target = runtime / "versions/legacy-2.0.0-pre-atomic"
+    assert target.exists()
+    assert (runtime / "current").resolve() == target
+
+
 def test_source_identity_replacement_during_copy_aborts(tmp_path: Path) -> None:
     runtime = _runtime(tmp_path)
 

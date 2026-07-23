@@ -47,6 +47,9 @@ def test_readme_documents_only_the_verified_release_and_atomic_deploy_flow() -> 
         "runtime/versions/legacy-2.0.0-pre-atomic",
         "curl -fsS http://127.0.0.1:9120/api/health",
         "X-API-Key",
+        "requirements.lock",
+        "--require-hashes",
+        "--no-index",
     ):
         assert required in readme
     for retired in (
@@ -87,6 +90,11 @@ def test_readme_documents_only_the_verified_release_and_atomic_deploy_flow() -> 
         "mkdir -m 700 '$REMOTE_STAGE'",
         "test \"$TOTAL\" = \"$DATES\"",
         "test \"$DATES\" -ge 1",
+        "scp -r \"$OUT/wheelhouse\"",
+        "grep -Fx '        --host'",
+        "grep -Fx '        0.0.0.0'",
+        "grep -Fx '        --port'",
+        "grep -Fx '        9120'",
     ):
         assert protected_remote_deploy_detail in independent_deploy_body
     preflight_position = independent_deploy_body.index(
@@ -111,6 +119,8 @@ def test_readme_documents_only_the_verified_release_and_atomic_deploy_flow() -> 
     assert "python3 '${REMOTE_STAGE}/deploy_backend.py'" not in independent_deploy_body
     assert "mkdir -p '$REMOTE_STAGE'" not in independent_deploy_body
     assert "cp '${REMOTE_STAGE}/" not in independent_deploy_body
+    assert "token 时只运行版本化入口" not in independent_deploy_body
+    assert "grep -E -- \"runtime/current/venv/bin/zhiji|" not in independent_deploy_body
     for prohibited_inline_implementation in (
         "<<'PY'",
         "secrets.token_urlsafe",
@@ -138,3 +148,20 @@ def test_backend_deployment_tools_support_documented_direct_cli_entrypoints() ->
         "scripts/preflight_backend_deploy.py",
     ):
         subprocess.run([sys.executable, script, "--help"], cwd=ROOT, check=True)
+
+
+def test_backend_build_requirements_are_hash_locked_to_uv_lock() -> None:
+    build_lock = (ROOT / "scripts/backend-build-requirements.lock").read_text(encoding="ascii")
+    uv_lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
+
+    for package, version in (
+        ("packaging", "26.2"),
+        ("setuptools", "80.10.2"),
+        ("wheel", "0.47.0"),
+    ):
+        assert f"{package}=={version}" in build_lock
+        assert f'name = "{package}"' in uv_lock
+        assert f'version = "{version}"' in uv_lock
+    hashes = re.findall(r"--hash=sha256:([0-9a-f]{64})", build_lock)
+    assert len(hashes) == 6
+    assert all(digest in uv_lock for digest in hashes)
