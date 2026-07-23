@@ -3,7 +3,10 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import plistlib
 import sqlite3
+import subprocess
+import sys
 import zipfile
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -15,9 +18,12 @@ from scripts.deploy_backend import (
     BackendDeployConfig,
     BackendDeployError,
     LaunchdServiceController,
+    _default_installer,
     _restore_database,
+    _validate_remote_bind_environment,
     default_smoke_check,
     deploy_backend,
+    main,
     prune_daily_backups,
     prune_versions,
     write_launchd_plist,
@@ -45,9 +51,21 @@ def _release_files(tmp_path: Path) -> tuple[Path, Path]:
             "zhiji_backend-2.0.0.dist-info/METADATA",
             "Metadata-Version: 2.4\nName: zhiji-backend\nVersion: 2.0.0\n",
         )
+    requirements = packages / "requirements.lock"
+    requirements.write_text(
+        "example-dependency==1.0 --hash=sha256:" + "1" * 64 + "\n",
+        encoding="ascii",
+    )
+    wheelhouse = packages / "wheelhouse"
+    wheelhouse.mkdir()
+    dependency = wheelhouse / "example_dependency-1.0-py3-none-any.whl"
+    dependency.write_bytes(b"locked dependency")
     checksums = packages / "SHA256SUMS"
     checksums.write_text(
-        f"{hashlib.sha256(wheel.read_bytes()).hexdigest()}  {wheel.name}\n",
+        "".join(
+            f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.relative_to(packages)}\n"
+            for path in (wheel, requirements, dependency)
+        ),
         encoding="ascii",
     )
     return wheel, checksums
@@ -69,7 +87,7 @@ def _config(tmp_path: Path) -> BackendDeployConfig:
         launchd_plist=tmp_path / "home" / "Library" / "LaunchAgents" / "com.test.zhiji.plist",
         launchd_label="com.test.zhiji",
         health_origin="http://127.0.0.1:19120",
-        python_executable=Path("/test/python3.12"),
+        python_executable=Path(sys.executable),
     )
 
 
@@ -88,6 +106,107 @@ def _install(stage: Path, _config: BackendDeployConfig) -> None:
     executable = stage / "venv" / "bin" / "zhiji"
     executable.parent.mkdir(parents=True)
     executable.write_text("executable", encoding="utf-8")
+
+
+def _write_secure_api_token(home: Path, value: str = "test-only-token") -> Path:
+    env_file = home / ".env"
+    env_file.write_text(f"KI_API_TOKEN={value}\n", encoding="utf-8")
+    env_file.chmod(0o600)
+    return env_file
+
+
+def _write_secure_env_contents(home: Path, contents: str) -> Path:
+    env_file = home / ".env"
+    env_file.write_text(contents, encoding="utf-8")
+    env_file.chmod(0o600)
+    return env_file
+
+
+def _main_argv(config: BackendDeployConfig) -> list[str]:
+    return [
+        config.release_tag,
+        "--runtime-root",
+        str(config.runtime_root),
+        "--zhiji-home",
+        str(config.zhiji_home),
+        "--user-home",
+        str(config.user_home),
+        "--database",
+        str(config.database_path),
+        "--backups-dir",
+        str(config.backups_dir),
+        "--wheel",
+        str(config.wheel),
+        "--checksums",
+        str(config.checksums),
+        "--launchd-plist",
+        str(config.launchd_plist),
+        "--launchd-label",
+        config.launchd_label,
+        "--python",
+        str(config.python_executable),
+    ]
+
+
+def test_main_propagates_explicit_public_bind_host(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config = _config(tmp_path)
+    _write_secure_api_token(config.zhiji_home)
+    captured: list[BackendDeployConfig] = []
+
+    def capture_deploy(deploy_config: BackendDeployConfig, **_kwargs) -> Path:
+        captured.append(deploy_config)
+        return deploy_config.versions_dir / deploy_config.release_id
+
+    monkeypatch.setattr("scripts.deploy_backend.deploy_backend", capture_deploy)
+    monkeypatch.setattr("scripts.deploy_backend.LaunchdServiceController", lambda _config: object())
+
+    result = main([*_main_argv(config), "--bind-host", "0.0.0.0"])
+
+    assert result == 0
+    assert captured[0].bind_host == "0.0.0.0"
+
+
+def test_main_defaults_bind_host_to_loopback(tmp_path: Path, monkeypatch) -> None:
+    config = _config(tmp_path)
+    captured: list[BackendDeployConfig] = []
+
+    def capture_deploy(deploy_config: BackendDeployConfig, **_kwargs) -> Path:
+        captured.append(deploy_config)
+        return deploy_config.versions_dir / deploy_config.release_id
+
+    monkeypatch.setattr("scripts.deploy_backend.deploy_backend", capture_deploy)
+    monkeypatch.setattr("scripts.deploy_backend.LaunchdServiceController", lambda _config: object())
+
+    result = main(_main_argv(config))
+
+    assert result == 0
+    assert captured[0].bind_host == "127.0.0.1"
+
+
+@pytest.mark.parametrize("option", ["--api-token", "--ki-api-token", "--remote-api-token"])
+@pytest.mark.parametrize("form", ["separated", "equals"])
+def test_main_rejects_command_line_secrets_without_echoing_them(
+    tmp_path: Path,
+    option: str,
+    form: str,
+    capsys,
+) -> None:
+    config = _config(tmp_path)
+    secret = "sentinel-command-line-secret"
+    guarded = [option, secret] if form == "separated" else [f"{option}={secret}"]
+
+    result = main([*_main_argv(config), *guarded])
+
+    captured = capsys.readouterr()
+    assert result == 2
+    assert secret not in captured.out
+    assert secret not in captured.err
+    assert "backend deployment failed:" in captured.err
+    assert "KI_API_TOKEN" in captured.err
+    assert "server-side .env" in captured.err
 
 
 def test_deploy_installs_immutable_version_and_atomically_switches_current(tmp_path: Path) -> None:
@@ -195,6 +314,303 @@ def test_launchd_plist_keeps_label_and_executes_through_current(tmp_path: Path) 
     assert f"<string>{config.zhiji_home}</string>" in content
 
 
+def test_launchd_defaults_to_loopback_bind_and_health_origin_port(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+
+    write_launchd_plist(config)
+
+    payload = plistlib.loads(config.launchd_plist.read_bytes())
+    arguments = payload["ProgramArguments"]
+    assert arguments[arguments.index("--host") + 1] == "127.0.0.1"
+    assert arguments[arguments.index("--port") + 1] == "19120"
+
+
+@pytest.mark.parametrize("bind_host", ["0.0.0.0", "10.8.0.105", "::", "::1", "localhost"])
+def test_bind_host_accepts_ip_literals_and_localhost(tmp_path: Path, bind_host: str) -> None:
+    config = replace(_config(tmp_path), bind_host=bind_host)
+    if bind_host not in {"::1", "localhost"}:
+        _write_secure_api_token(config.zhiji_home)
+
+    deploy_backend(
+        config,
+        service=FakeService(),
+        installer=_install,
+        smoke_check=lambda: None,
+    )
+
+    payload = plistlib.loads(config.launchd_plist.read_bytes())
+    arguments = payload["ProgramArguments"]
+    assert arguments[arguments.index("--host") + 1] == bind_host
+    assert arguments[arguments.index("--port") + 1] == "19120"
+
+
+@pytest.mark.parametrize(
+    "token",
+    [None, "", "   ", '"   "', "'   '"],
+    ids=[
+        "missing-env",
+        "empty-token",
+        "whitespace-token",
+        "double-quoted-whitespace-token",
+        "single-quoted-whitespace-token",
+    ],
+)
+def test_public_bind_requires_secure_env_with_nonempty_api_token(
+    tmp_path: Path,
+    token: str | None,
+) -> None:
+    config = replace(_config(tmp_path), bind_host="0.0.0.0")
+    if token is not None:
+        _write_secure_api_token(config.zhiji_home, token)
+    service = FakeService()
+
+    match = (
+        r"secure \.env is required for a non-loopback bind"
+        if token is None
+        else "KI_API_TOKEN"
+    )
+    with pytest.raises(BackendDeployError, match=match):
+        deploy_backend(config, service=service, installer=_install, smoke_check=lambda: None)
+
+    assert service.events == []
+    assert not config.current_link.exists()
+    assert not config.versions_dir.exists()
+
+
+@pytest.mark.parametrize(
+    "contents",
+    [
+        'KI_API_TOKEN="" # comment\n',
+        'KI_API_TOKEN="" # comment ending with quote "\n',
+        "KI_API_TOKEN=first-token\nKI_API_TOKEN=\n",
+        "KI_API_TOKEN=${UNSET}\n",
+        'KI_API_TOKEN="\\t"\n',
+    ],
+    ids=[
+        "quoted-empty-with-comment",
+        "quoted-empty-with-quote-in-comment",
+        "duplicate-last-empty",
+        "dotenv-interpolation",
+        "quoted-backslash-escape",
+    ],
+)
+def test_public_bind_env_parser_rejects_effectively_empty_last_token(
+    tmp_path: Path,
+    contents: str,
+) -> None:
+    config = replace(_config(tmp_path), bind_host="0.0.0.0")
+    _write_secure_env_contents(config.zhiji_home, contents)
+    service = FakeService()
+
+    with pytest.raises(BackendDeployError, match="KI_API_TOKEN"):
+        deploy_backend(config, service=service, installer=_install, smoke_check=lambda: None)
+
+    assert service.events == []
+    assert not config.current_link.exists()
+    assert not config.versions_dir.exists()
+
+
+@pytest.mark.parametrize(
+    "contents",
+    [
+        'KI_API_TOKEN="quoted-token" # comment\n',
+        "export KI_API_TOKEN=exported-token\n",
+        "export\tKI_API_TOKEN=tab-exported-token\n",
+        "KI_API_TOKEN=token=with=equals\n",
+        "KI_API_TOKEN=\nKI_API_TOKEN=last-token\n",
+    ],
+    ids=[
+        "quoted-with-comment",
+        "export",
+        "tab-export",
+        "embedded-equals",
+        "duplicate-last-nonempty",
+    ],
+)
+def test_public_bind_env_parser_accepts_runtime_compatible_token_forms(
+    tmp_path: Path,
+    contents: str,
+) -> None:
+    config = replace(_config(tmp_path), bind_host="0.0.0.0")
+    _write_secure_env_contents(config.zhiji_home, contents)
+    service = FakeService()
+
+    deploy_backend(config, service=service, installer=_install, smoke_check=lambda: None)
+
+    assert service.events == ["stop", "start"]
+    assert config.current_link.resolve() == config.versions_dir / "2.0.0+90"
+
+
+def test_public_bind_rejects_non_regular_env_before_service_stop(tmp_path: Path) -> None:
+    config = replace(_config(tmp_path), bind_host="0.0.0.0")
+    (config.zhiji_home / ".env").mkdir()
+    service = FakeService()
+
+    with pytest.raises(BackendDeployError, match="regular non-symlink file"):
+        deploy_backend(config, service=service, installer=_install, smoke_check=lambda: None)
+
+    assert service.events == []
+    assert not config.current_link.exists()
+    assert not config.versions_dir.exists()
+
+
+def test_public_bind_rejects_fifo_env_promptly(tmp_path: Path) -> None:
+    config = replace(_config(tmp_path), bind_host="0.0.0.0")
+    env_file = config.zhiji_home / ".env"
+    os.mkfifo(env_file, mode=0o600)
+    script = """
+import sys
+from pathlib import Path
+
+from scripts.deploy_backend import (
+    BackendDeployConfig,
+    BackendDeployError,
+    _validate_remote_bind_environment,
+)
+
+home = Path(sys.argv[1])
+config = BackendDeployConfig(
+    release_tag="v1.0.0+1",
+    runtime_root=home / "runtime",
+    zhiji_home=home,
+    user_home=home,
+    database_path=home / "database.sqlite",
+    backups_dir=home / "backups",
+    wheel=home / "package.whl",
+    checksums=home / "SHA256SUMS",
+    launchd_plist=home / "backend.plist",
+    launchd_label="com.test.zhiji",
+    health_origin="http://127.0.0.1:9120",
+    python_executable=Path(sys.executable),
+    bind_host="0.0.0.0",
+)
+try:
+    _validate_remote_bind_environment(config)
+except BackendDeployError as exc:
+    raise SystemExit(0 if "regular non-symlink file" in str(exc) else 2)
+raise SystemExit(3)
+"""
+
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(config.zhiji_home)],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=2,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_public_bind_validation_uses_opened_inode_without_following_replacement(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config = replace(_config(tmp_path), bind_host="0.0.0.0")
+    env_file = _write_secure_api_token(config.zhiji_home)
+    replacement = tmp_path / "replacement.env"
+    replacement.write_text("KI_API_TOKEN=\n", encoding="utf-8")
+    replacement.chmod(0o644)
+    real_open = os.open
+    descriptors: list[int] = []
+    opened_flags: list[int] = []
+
+    def replace_path_after_open(path, flags):
+        descriptor = real_open(path, flags)
+        descriptors.append(descriptor)
+        opened_flags.append(flags)
+        env_file.unlink()
+        env_file.symlink_to(replacement)
+        return descriptor
+
+    monkeypatch.setattr("scripts.deploy_backend.os.open", replace_path_after_open)
+
+    _validate_remote_bind_environment(config)
+
+    assert opened_flags
+    assert opened_flags[0] & os.O_NOFOLLOW
+    assert opened_flags[0] & os.O_NONBLOCK
+    assert env_file.is_symlink()
+    with pytest.raises(OSError):
+        os.fstat(descriptors[0])
+
+
+def test_public_bind_rejects_symlinked_env_before_service_stop(tmp_path: Path) -> None:
+    config = replace(_config(tmp_path), bind_host="0.0.0.0")
+    external = tmp_path.parent / f"{tmp_path.name}-external.env"
+    external.write_text("KI_API_TOKEN=test-only-token\n", encoding="utf-8")
+    external.chmod(0o600)
+    (config.zhiji_home / ".env").symlink_to(external)
+    service = FakeService()
+
+    with pytest.raises(BackendDeployError, match="regular non-symlink file"):
+        deploy_backend(config, service=service, installer=_install, smoke_check=lambda: None)
+
+    assert service.events == []
+    assert not config.current_link.exists()
+    assert not config.versions_dir.exists()
+
+
+@pytest.mark.parametrize("mode", [0o400, 0o640, 0o644, 0o660])
+def test_public_bind_rejects_env_mode_other_than_0600_before_service_stop(
+    tmp_path: Path,
+    mode: int,
+) -> None:
+    config = replace(_config(tmp_path), bind_host="0.0.0.0")
+    env_file = _write_secure_api_token(config.zhiji_home)
+    env_file.chmod(mode)
+    service = FakeService()
+
+    with pytest.raises(BackendDeployError, match="0600"):
+        deploy_backend(config, service=service, installer=_install, smoke_check=lambda: None)
+
+    assert service.events == []
+    assert not config.current_link.exists()
+    assert not config.versions_dir.exists()
+
+
+def test_loopback_bind_does_not_require_api_token(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+
+    deploy_backend(
+        config,
+        service=FakeService(),
+        installer=_install,
+        smoke_check=lambda: None,
+    )
+
+    assert config.current_link.resolve() == config.versions_dir / "2.0.0+90"
+
+
+def test_launchd_refuses_public_bind_without_secure_env(tmp_path: Path) -> None:
+    config = replace(_config(tmp_path), bind_host="0.0.0.0")
+
+    with pytest.raises(
+        BackendDeployError,
+        match=r"secure \.env is required for a non-loopback bind",
+    ):
+        write_launchd_plist(config)
+
+    assert not config.launchd_plist.exists()
+
+
+@pytest.mark.parametrize(
+    "bind_host",
+    ["production.internal", "http://10.8.0.105", "10.8.0.105:9120", "", "10.8.0.999"],
+)
+def test_bind_host_rejects_non_ip_values_before_service_stop(
+    tmp_path: Path,
+    bind_host: str,
+) -> None:
+    config = replace(_config(tmp_path), bind_host=bind_host)
+    service = FakeService()
+
+    with pytest.raises(BackendDeployError, match="bind host must be an IP literal or localhost"):
+        deploy_backend(config, service=service, installer=_install, smoke_check=lambda: None)
+
+    assert service.events == []
+
+
 def test_initial_service_stop_failure_keeps_previous_runtime_untouched(tmp_path: Path) -> None:
     config = _config(tmp_path)
     old = config.versions_dir / "1.9.0+89"
@@ -229,6 +645,132 @@ def test_artifact_mismatch_fails_before_service_is_stopped(tmp_path: Path) -> No
 
     assert service.events == []
     assert not config.current_link.exists()
+
+
+def test_dependency_bundle_mismatch_fails_before_service_is_stopped(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    next(config.wheelhouse.iterdir()).write_bytes(b"tampered dependency")
+    service = FakeService()
+
+    with pytest.raises(BackendDeployError, match="dependency bundle checksum"):
+        deploy_backend(config, service=service, installer=_install, smoke_check=lambda: None)
+
+    assert service.events == []
+
+
+def test_default_installer_uses_only_hash_locked_offline_dependencies(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config = _config(tmp_path)
+    commands: list[list[str]] = []
+
+    def record(command: list[str], **kwargs) -> None:
+        assert kwargs == {"check": True}
+        commands.append(command)
+
+    monkeypatch.setattr("scripts.deploy_backend.subprocess.run", record)
+    _default_installer(tmp_path / "stage", config)
+
+    install = commands[1]
+    assert install[install.index("--no-index") + 1] == "--find-links"
+    assert install[install.index("--find-links") + 1] == str(config.wheelhouse)
+    assert "--require-hashes" in install
+    assert install[install.index("--requirement") + 1] == str(config.requirements_lock)
+    project_install = commands[2]
+    assert "--no-index" in project_install
+    assert "--no-deps" in project_install
+    assert project_install[-1] == str(config.wheel)
+
+
+def test_venv_python_symlink_is_accepted_by_exact_cli_config(tmp_path: Path, monkeypatch) -> None:
+    config = _config(tmp_path)
+    python = config.runtime_root / "venv/bin/python"
+    python.parent.mkdir(parents=True)
+    python.symlink_to(Path(sys.executable).resolve())
+    config = replace(config, python_executable=python)
+    captured: list[BackendDeployConfig] = []
+
+    def capture(deploy_config: BackendDeployConfig, **_kwargs) -> Path:
+        from scripts.deploy_backend import _validate_config
+
+        _validate_config(deploy_config)
+        captured.append(deploy_config)
+        return deploy_config.versions_dir / deploy_config.release_id
+
+    monkeypatch.setattr("scripts.deploy_backend.deploy_backend", capture)
+    monkeypatch.setattr("scripts.deploy_backend.LaunchdServiceController", lambda _config: object())
+
+    assert main(_main_argv(config)) == 0
+    assert captured[0].python_executable == python
+
+
+def test_release_artifacts_are_accepted_together_in_source_sha_stage(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    source_sha = "a" * 40
+    stage = config.zhiji_home / "packages" / source_sha
+    stage.mkdir()
+    wheel = stage / config.wheel.name
+    checksums = stage / "SHA256SUMS"
+    config.wheel.replace(wheel)
+    config.checksums.replace(checksums)
+    config.requirements_lock.replace(stage / config.requirements_lock.name)
+    config.wheelhouse.replace(stage / config.wheelhouse.name)
+    config = replace(config, wheel=wheel, checksums=checksums)
+
+    deploy_backend(config, service=FakeService(), installer=_install, smoke_check=lambda: None)
+
+    assert config.current_link.resolve() == config.versions_dir / "2.0.0+90"
+
+
+@pytest.mark.parametrize("unsafe", ["deeper", "symlink-stage"])
+def test_release_artifact_stage_rejects_unsafe_layout(tmp_path: Path, unsafe: str) -> None:
+    config = _config(tmp_path)
+    source_sha = "a" * 40
+    stage = config.zhiji_home / "packages" / source_sha
+    if unsafe == "deeper":
+        stage = stage / "nested"
+        stage.mkdir(parents=True)
+    else:
+        real = tmp_path / "real-stage"
+        real.mkdir()
+        stage.symlink_to(real, target_is_directory=True)
+    wheel = stage / config.wheel.name
+    checksums = stage / "SHA256SUMS"
+    config.wheel.replace(wheel)
+    config.checksums.replace(checksums)
+    config = replace(config, wheel=wheel, checksums=checksums)
+
+    with pytest.raises(BackendDeployError, match="artifact|stage|deployment path"):
+        deploy_backend(config, service=FakeService(), installer=_install, smoke_check=lambda: None)
+
+
+def test_deploy_holds_shared_lock_before_prepare_and_through_service_stop(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config = _config(tmp_path)
+    events: list[str] = []
+
+    class Service(FakeService):
+        def stop(self) -> None:
+            assert events == ["lock", "install"]
+            events.append("stop")
+
+    def record_flock(_descriptor: int, operation: int) -> None:
+        import fcntl
+
+        assert operation == fcntl.LOCK_EX
+        events.append("lock")
+
+    def install(stage: Path, deploy_config: BackendDeployConfig) -> None:
+        assert events == ["lock"]
+        events.append("install")
+        _install(stage, deploy_config)
+
+    monkeypatch.setattr("scripts.deploy_backend.fcntl.flock", record_flock)
+
+    deploy_backend(config, service=Service(), installer=install, smoke_check=lambda: None)
+
+    assert events == ["lock", "install", "stop"]
 
 
 @pytest.mark.parametrize("field,value", [

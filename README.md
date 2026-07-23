@@ -101,6 +101,166 @@ ZHIJI_SKIP_RELEASE_CHECK=1 ./scripts/check.sh
 - 远端运行入口：`/Users/mrh/Documents/KI/runtime/current`
 - SSH alias：`zhiji-prod`
 
+### 后端与 Web 独立部署
+
+本节只发布 Python wheel 及其中内嵌的 Web 静态文件，不执行 Sparkle、DMG、Git tag、GitHub Release 或 Appcast，也不替代下方桌面版本与 tag 契约。所有命令从已合并、干净且与 `origin/main` 一致的 `main` 执行；远端 `ZHIJI_HOME=/Users/mrh/Documents/KI`，访问地址为 `http://10.8.0.105:9120`。
+
+远端 `.env` 必须是 `0600` 非符号链接普通文件，并保留精确的 `KI_ALLOWED_HOSTS=10.8.0.105,127.0.0.1,localhost`。本地 `app/frontend/.env.local` 同样必须是 `0600` 非符号链接普通文件且受 Git 忽略。仅在两侧均未配置 token 的首次配置中运行以下版本化入口；已有任一 token 时脚本拒绝隐式轮换。轮换必须作为单独维护操作协调服务重启、认证验证和失败恢复，不得在本部署流程中顺带执行。脚本在内存生成 token，通过 SSH stdin 更新远端，不接受 token 参数，也不输出 token、指纹或 env 内容：
+
+```bash
+python3 scripts/provision_remote_access.py \
+  --local-env app/frontend/.env.local \
+  --ssh-host zhiji-prod \
+  --remote-env /Users/mrh/Documents/KI/.env \
+  --remote-python /Users/mrh/Documents/KI/runtime/venv/bin/python
+```
+
+生成值采用规范 URL-safe dotenv 形式；插值和反斜杠转义会被拒绝。脚本先原子提交本地文件，再提交远端；远端异常时会执行无输出 compare，只有确认远端未提交才恢复本地，状态不确定则保留新本地 token 并明确失败。
+
+版本化 preflight 入口把 worker 源码和请求都经 SSH stdin 发送，不要求远端预装脚本。在任何远端目录创建、wheel 构建或文件上传之前运行只读 preflight；首次迁移使用 `absent`，已有原子运行目录时改为 `present`：
+
+```bash
+cd /Users/yuk/Documents/zhiji/ki
+test "$(git branch --show-current)" = main
+test -z "$(git status --porcelain)"
+git fetch origin main
+test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+SOURCE_SHA="$(git rev-parse HEAD)"
+REMOTE_STAGE="/Users/mrh/Documents/KI/packages/${SOURCE_SHA}"
+ROLLBACK_NAME="legacy-2.0.0-pre-atomic"
+
+python3 scripts/preflight_backend_deploy.py \
+  --local-env app/frontend/.env.local \
+  --ssh-host zhiji-prod \
+  --remote-env /Users/mrh/Documents/KI/.env \
+  --runtime-root /Users/mrh/Documents/KI/runtime \
+  --database /Users/mrh/Documents/KI/data/intelligence.sqlite \
+  --python /Users/mrh/Documents/KI/runtime/venv/bin/python \
+  --packages-root /Users/mrh/Documents/KI/packages \
+  --source-sha "${SOURCE_SHA}" \
+  --legacy-name "${ROLLBACK_NAME}" \
+  --target-name 2.0.0+90 \
+  --expect-legacy absent \
+  --expect-current absent
+```
+
+Preflight 只输出安全事实，并验证本地 `KI_REMOTE_API_TOKEN` 与远端 `KI_API_TOKEN` 相同、allowed hosts、磁盘空间、Python 3.12、packages 根目录、SHA staging 当前不存在、legacy/current/target 预期、数据库普通文件与 `PRAGMA quick_check`。任何失败都停止流程。
+
+Preflight 通过后构建 SHA 专属 wheel，并从 `uv.lock` 导出带 hash 的生产依赖锁。由于开发机是 ARM64、正式机是 Intel，wheelhouse 必须在停止服务前由正式机固定的 Python 3.12 于 SHA staging 内构建；构建下载受 hash 锁约束，部署安装全程使用 `--no-index`、`--require-hashes` 和 `--no-deps`，不会在线解析依赖。先校验 `BOOTSTRAP_SHA256SUMS` 再执行 wheelhouse 构建工具，构建完成后由工具生成覆盖全部制品的最终 `SHA256SUMS`：
+
+```bash
+OUT="dist/backend-${SOURCE_SHA}"
+test ! -e "$OUT"
+mkdir -p "$OUT"
+/Users/yuk/Documents/zhiji/ki/.venv/bin/python scripts/build_backend_wheel.py --outdir "$OUT"
+WHEEL="$(find "$OUT" -maxdepth 1 -name 'zhiji_backend-2.0.0-*.whl' -print -quit)"
+test -n "$WHEEL"
+uv export --frozen --no-dev \
+  --no-emit-project --no-editable --format requirements.txt \
+  --output-file "$OUT/requirements.lock"
+cp scripts/deploy_backend.py scripts/bootstrap_legacy_runtime.py \
+  scripts/preflight_backend_deploy.py scripts/provision_remote_access.py \
+  scripts/build_remote_wheelhouse.py scripts/backend-build-requirements.lock "$OUT/"
+(cd "$OUT" && shasum -a 256 "$(basename "$WHEEL")" requirements.lock \
+  deploy_backend.py bootstrap_legacy_runtime.py preflight_backend_deploy.py \
+  provision_remote_access.py build_remote_wheelhouse.py \
+  backend-build-requirements.lock > BOOTSTRAP_SHA256SUMS)
+(cd "$OUT" && shasum -a 256 -c BOOTSTRAP_SHA256SUMS)
+unzip -l "$WHEEL" | grep -q 'zhiji_backend/frontend_dist/index.html'
+unzip -l "$WHEEL" | grep -q 'zhiji_backend/frontend_dist/assets/'
+ssh zhiji-prod "mkdir -m 700 '$REMOTE_STAGE'"
+scp "$WHEEL" "$OUT/BOOTSTRAP_SHA256SUMS" "$OUT/deploy_backend.py" \
+  "$OUT/bootstrap_legacy_runtime.py" "$OUT/preflight_backend_deploy.py" \
+  "$OUT/provision_remote_access.py" "$OUT/requirements.lock" \
+  "$OUT/build_remote_wheelhouse.py" "$OUT/backend-build-requirements.lock" \
+  "zhiji-prod:${REMOTE_STAGE}/"
+ssh zhiji-prod "cd '$REMOTE_STAGE' && shasum -a 256 -c BOOTSTRAP_SHA256SUMS"
+ssh zhiji-prod "/Users/mrh/Documents/KI/runtime/venv/bin/python \
+  '${REMOTE_STAGE}/build_remote_wheelhouse.py' \
+  --stage '${REMOTE_STAGE}' --expected-machine x86_64"
+ssh zhiji-prod "cd '$REMOTE_STAGE' && shasum -a 256 -c SHA256SUMS"
+```
+
+仅当 preflight 报告 legacy/current 均 absent 时执行首次 bootstrap。该脚本使用 `/usr/bin/ditto` 复制原 `runtime/venv`，不会移动或删除它；复制完成前 launchd 仍使用原路径：
+
+```bash
+ssh zhiji-prod "/Users/mrh/Documents/KI/runtime/venv/bin/python '${REMOTE_STAGE}/bootstrap_legacy_runtime.py' \
+  --runtime-root /Users/mrh/Documents/KI/runtime \
+  --expected-version 2.0.0 \
+  --snapshot-name '${ROLLBACK_NAME}' \
+  --source-sha '${SOURCE_SHA}'"
+```
+
+`${ROLLBACK_NAME}` 是当前发布受保护的回滚目标；首次迁移对应 `runtime/versions/legacy-2.0.0-pre-atomic`，后续发布必须改成当时实际保留的上一版本目录名。原始 `runtime/venv` 是长期紧急副本，在单独审计并明确批准退役前不得删除。
+
+部署器直接读取已校验的 SHA staging 中的 wheel 与摘要，不复制或提升到共享 canonical 路径。命令不含 token flag：
+
+```bash
+ssh zhiji-prod "/Users/mrh/Documents/KI/runtime/venv/bin/python '${REMOTE_STAGE}/deploy_backend.py' v2.0.0+90 \
+  --runtime-root /Users/mrh/Documents/KI/runtime \
+  --zhiji-home /Users/mrh/Documents/KI \
+  --user-home /Users/mrh \
+  --database /Users/mrh/Documents/KI/data/intelligence.sqlite \
+  --backups-dir /Users/mrh/Documents/KI/backups \
+  --wheel '${REMOTE_STAGE}/zhiji_backend-2.0.0-py3-none-any.whl' \
+  --checksums '${REMOTE_STAGE}/SHA256SUMS' \
+  --launchd-plist /Users/mrh/Library/LaunchAgents/com.zhiji.backend.plist \
+  --python /Users/mrh/Documents/KI/runtime/venv/bin/python \
+  --bind-host 0.0.0.0 \
+  --health-origin http://127.0.0.1:9120"
+```
+
+部署器任一 smoke check 失败会恢复数据库、切回旧 `current` 并重启旧服务。不得故意破坏生产来演练回滚。部署成功后再次运行只读 preflight：它从本机 `app/frontend/.env.local` 读取 token，在内存设置 `X-API-Key`，从本机请求远端 system health，并断言 HTTP 200、JSON `ok`、`version` 和 `database.ok`：
+
+```bash
+python3 scripts/preflight_backend_deploy.py \
+  --local-env app/frontend/.env.local \
+  --ssh-host zhiji-prod \
+  --remote-env /Users/mrh/Documents/KI/.env \
+  --runtime-root /Users/mrh/Documents/KI/runtime \
+  --database /Users/mrh/Documents/KI/data/intelligence.sqlite \
+  --python /Users/mrh/Documents/KI/runtime/venv/bin/python \
+  --packages-root /Users/mrh/Documents/KI/packages \
+  --source-sha "${SOURCE_SHA}" \
+  --legacy-name "${ROLLBACK_NAME}" \
+  --target-name 2.0.0+90 \
+  --expect-legacy present \
+  --expect-current present \
+  --expect-target present \
+  --expect-stage present \
+  --health-url http://10.8.0.105:9120/api/system/health \
+  --expected-health-version 2.0.0
+```
+
+然后执行其余只读验收：
+
+```bash
+ssh zhiji-prod 'curl -fsS http://127.0.0.1:9120/api/health >/dev/null'
+test "$(curl -sS -o /dev/null -w '%{http_code}' http://10.8.0.105:9120/api/system/health)" = 401
+ssh zhiji-prod 'CURRENT=$(readlink /Users/mrh/Documents/KI/runtime/current) && test -d "$CURRENT" && test "$(basename "$CURRENT")" = 2.0.0+90'
+ssh zhiji-prod 'find /Users/mrh/Documents/KI/runtime/versions -mindepth 1 -maxdepth 1 -type d -print | sort'
+ssh zhiji-prod '/Users/mrh/Documents/KI/runtime/venv/bin/python -m json.tool /Users/mrh/Documents/KI/runtime/current/release.json >/dev/null'
+ssh zhiji-prod 'test -x /Users/mrh/Documents/KI/runtime/venv/bin/zhiji'
+ssh zhiji-prod "test -x '/Users/mrh/Documents/KI/runtime/versions/${ROLLBACK_NAME}/venv/bin/zhiji'"
+ssh zhiji-prod 'sqlite3 /Users/mrh/Documents/KI/data/intelligence.sqlite "PRAGMA quick_check;" | grep -Fx ok'
+ssh zhiji-prod 'launchctl print gui/$(id -u)/com.zhiji.backend >/dev/null'
+ssh zhiji-prod 'test "$(/usr/bin/plutil -extract ProgramArguments.0 raw -o - /Users/mrh/Library/LaunchAgents/com.zhiji.backend.plist)" = "/Users/mrh/Documents/KI/runtime/current/venv/bin/zhiji"'
+ssh zhiji-prod 'test "$(/usr/bin/plutil -extract ProgramArguments.2 raw -o - /Users/mrh/Library/LaunchAgents/com.zhiji.backend.plist)" = "--host"'
+ssh zhiji-prod 'test "$(/usr/bin/plutil -extract ProgramArguments.3 raw -o - /Users/mrh/Library/LaunchAgents/com.zhiji.backend.plist)" = "0.0.0.0"'
+ssh zhiji-prod 'test "$(/usr/bin/plutil -extract ProgramArguments.4 raw -o - /Users/mrh/Library/LaunchAgents/com.zhiji.backend.plist)" = "--port"'
+ssh zhiji-prod 'test "$(/usr/bin/plutil -extract ProgramArguments.5 raw -o - /Users/mrh/Library/LaunchAgents/com.zhiji.backend.plist)" = "9120"'
+ssh zhiji-prod 'find /Users/mrh/Documents/KI/backups -type f -name "deploy-*.sqlite" -print | sort'
+ssh zhiji-prod 'TOTAL=$(find /Users/mrh/Documents/KI/backups -type f -name "deploy-*.sqlite" -print | wc -l | tr -d " ") && DATES=$(find /Users/mrh/Documents/KI/backups -type f -name "deploy-*.sqlite" -print | sed -E "s/.*deploy-([0-9]{8})-.*/\\1/" | sort -u | wc -l | tr -d " ") && test "$TOTAL" = "$DATES" && test "$DATES" -ge 1 && test "$DATES" -le 7 && printf "%s\\n" "$DATES"'
+curl -fsS http://10.8.0.105:9120/ | grep -q '<div id="root">'
+curl -fsS http://10.8.0.105:9120/ | grep -q 'assets/'
+cd app/frontend
+npm run qa:cinematic-pages -- http://10.8.0.105:9120 tmp/deploy-smoke today,ingest,system
+```
+
+`current` 必须指向本次真实版本目录，版本目录清单必须同时保留当前与回滚目标。每日备份策略只保留最近至多 7 个不同日期且每个日期 1 份；已有至少 7 天历史时，上述日期计数应为 7。浏览器 QA 必须通过 today、ingest、system 的 route markers，并在 `app/frontend/tmp/deploy-smoke/` 生成三页截图和 JSON 报告；逐张确认无加载态、空白页或重叠。
+
+## 桌面完整发布与后端部署
+
 唯一发布与部署流程：
 
 ```bash

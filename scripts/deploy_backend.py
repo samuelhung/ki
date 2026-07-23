@@ -4,13 +4,17 @@
 from __future__ import annotations
 
 import argparse
+import errno
+import fcntl
 import hashlib
+import ipaddress
 import json
 import os
 import plistlib
 import re
 import shutil
 import sqlite3
+import stat
 import subprocess
 import sys
 import tempfile
@@ -19,7 +23,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -53,6 +58,7 @@ class BackendDeployConfig:
     launchd_label: str
     health_origin: str
     python_executable: Path
+    bind_host: str = "127.0.0.1"
 
     @property
     def release_id(self) -> str:
@@ -76,6 +82,14 @@ class BackendDeployConfig:
     def current_link(self) -> Path:
         return self.runtime_root / "current"
 
+    @property
+    def requirements_lock(self) -> Path:
+        return self.wheel.parent / "requirements.lock"
+
+    @property
+    def wheelhouse(self) -> Path:
+        return self.wheel.parent / "wheelhouse"
+
 
 class LaunchdServiceController:
     def __init__(self, config: BackendDeployConfig, *, run=subprocess.run, uid: int | None = None):
@@ -96,7 +110,83 @@ class LaunchdServiceController:
         )
 
 
+def _is_loopback_bind(bind_host: str) -> bool:
+    if bind_host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(bind_host).is_loopback
+    except ValueError as exc:
+        raise BackendDeployError("bind host must be an IP literal or localhost") from exc
+
+
+def _parse_env_value(value: str) -> str | None:
+    value = value.strip()
+    if value[:1] in {"'", '"'}:
+        quote = value[0]
+        closing_quote = value.find(quote, 1)
+        if closing_quote == 0:
+            return None
+        suffix = value[closing_quote + 1 :].strip()
+        if suffix and not suffix.startswith("#"):
+            return None
+        parsed = value[1:closing_quote].strip()
+        return None if "$" in parsed or "\\" in parsed else parsed
+    parsed = re.split(r"\s+#", value, maxsplit=1)[0].strip()
+    return None if "$" in parsed else parsed
+
+
+def _env_value(lines: Iterable[str], key: str) -> str:
+    result = ""
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        export = re.match(r"export\s+", line)
+        if export:
+            line = line[export.end() :].strip()
+        candidate, separator, value = line.partition("=")
+        if separator and candidate.strip() == key:
+            parsed = _parse_env_value(value)
+            result = "" if parsed is None else parsed
+    return result
+
+
+def _validate_remote_bind_environment(config: BackendDeployConfig) -> None:
+    if _is_loopback_bind(config.bind_host):
+        return
+
+    env_file = config.zhiji_home / ".env"
+    try:
+        descriptor = os.open(env_file, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError as exc:
+        raise BackendDeployError("secure .env is required for a non-loopback bind") from exc
+    except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise BackendDeployError(".env must be a regular non-symlink file") from exc
+        raise BackendDeployError("unable to inspect secure .env") from exc
+
+    try:
+        try:
+            env_stat = os.fstat(descriptor)
+        except OSError as exc:
+            raise BackendDeployError("unable to inspect secure .env") from exc
+        if not stat.S_ISREG(env_stat.st_mode):
+            raise BackendDeployError(".env must be a regular non-symlink file")
+        if stat.S_IMODE(env_stat.st_mode) != 0o600:
+            raise BackendDeployError(".env must have mode 0600")
+        try:
+            with os.fdopen(descriptor, encoding="utf-8", closefd=False) as env_handle:
+                api_token = _env_value(env_handle, "KI_API_TOKEN")
+        except (OSError, UnicodeError) as exc:
+            raise BackendDeployError("unable to read secure .env") from exc
+    finally:
+        os.close(descriptor)
+    if not api_token:
+        raise BackendDeployError("KI_API_TOKEN must be non-empty for a non-loopback bind")
+
+
 def _validate_config(config: BackendDeployConfig) -> None:
+    _validate_remote_bind_environment(config)
     paths = {
         "runtime path": config.runtime_root,
         "Zhiji home path": config.zhiji_home,
@@ -104,6 +194,8 @@ def _validate_config(config: BackendDeployConfig) -> None:
         "database path": config.database_path,
         "backups path": config.backups_dir,
         "wheel path": config.wheel,
+        "requirements lock path": config.requirements_lock,
+        "wheelhouse path": config.wheelhouse,
         "checksums path": config.checksums,
         "launchd plist path": config.launchd_plist,
         "Python path": config.python_executable,
@@ -114,8 +206,6 @@ def _validate_config(config: BackendDeployConfig) -> None:
         "runtime path": config.zhiji_home / "runtime",
         "database path": config.zhiji_home / "data" / "intelligence.sqlite",
         "backups path": config.zhiji_home / "backups",
-        "wheel path": config.zhiji_home / "packages" / config.wheel.name,
-        "checksums path": config.zhiji_home / "packages" / "SHA256SUMS",
         "launchd plist path": (
             config.user_home / "Library" / "LaunchAgents" / f"{config.launchd_label}.plist"
         ),
@@ -124,8 +214,35 @@ def _validate_config(config: BackendDeployConfig) -> None:
         if paths[label] != expected_path:
             raise BackendDeployError(f"{label} is outside the configured deployment path")
     for label, path in paths.items():
+        if label == "Python path":
+            continue
         if path.is_symlink():
             raise BackendDeployError(f"{label} must not be a symbolic link")
+    try:
+        resolved_python = config.python_executable.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise BackendDeployError("Python path must resolve to an executable regular file") from exc
+    if not resolved_python.is_file() or not os.access(resolved_python, os.X_OK):
+        raise BackendDeployError("Python path must resolve to an executable regular file")
+    packages = config.zhiji_home / "packages"
+    artifact_parent = config.wheel.parent
+    if config.checksums != artifact_parent / "SHA256SUMS":
+        raise BackendDeployError("wheel and checksums must share one artifact directory")
+    if config.requirements_lock != artifact_parent / "requirements.lock":
+        raise BackendDeployError("requirements lock must share the artifact directory")
+    if config.wheelhouse != artifact_parent / "wheelhouse":
+        raise BackendDeployError("wheelhouse must share the artifact directory")
+    if artifact_parent != packages:
+        if artifact_parent.parent != packages or not re.fullmatch(
+            r"[0-9a-fA-F]{40}", artifact_parent.name
+        ):
+            raise BackendDeployError("artifact stage must be packages/<40-hex-source-sha>")
+        try:
+            stage_metadata = artifact_parent.lstat()
+        except FileNotFoundError as exc:
+            raise BackendDeployError("artifact stage is missing") from exc
+        if stat.S_ISLNK(stage_metadata.st_mode) or not stat.S_ISDIR(stage_metadata.st_mode):
+            raise BackendDeployError("artifact stage must be a real non-symlink directory")
     managed_directories = {
         "runtime directory": config.runtime_root,
         "versions directory": config.versions_dir,
@@ -151,6 +268,26 @@ def _validate_config(config: BackendDeployConfig) -> None:
     ):
         raise BackendDeployError("health origin must be a loopback HTTP origin")
 
+
+@contextmanager
+def _deployment_lock(runtime_root: Path):
+    runtime_root.mkdir(parents=True, exist_ok=True)
+    lock_path = runtime_root / ".backend-deploy.lock"
+    descriptor = os.open(
+        lock_path,
+        os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK,
+        0o600,
+    )
+    try:
+        os.fchmod(descriptor, 0o600)
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise BackendDeployError("deployment lock is not a regular file")
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(descriptor)
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -165,14 +302,49 @@ def _verify_release_artifact(config: BackendDeployConfig) -> None:
         raise BackendDeployError(f"wheel does not match release: {expected_name}")
     if not config.checksums.is_file():
         raise BackendDeployError("SHA256SUMS is missing")
-    checksum = None
+    checksums: dict[str, str] = {}
     for line in config.checksums.read_text(encoding="ascii").splitlines():
-        match = re.fullmatch(r"([0-9a-f]{64})  ([^/]+)", line)
-        if match and match.group(2) == config.wheel.name:
-            checksum = match.group(1)
-            break
+        match = re.fullmatch(r"([0-9a-f]{64})  ([A-Za-z0-9._+/-]+)", line)
+        if match:
+            relative = Path(match.group(2))
+            if relative.is_absolute() or ".." in relative.parts:
+                raise BackendDeployError("SHA256SUMS contains an unsafe artifact path")
+            checksums[relative.as_posix()] = match.group(1)
+    checksum = checksums.get(config.wheel.name)
     if checksum is None or _sha256(config.wheel) != checksum:
         raise BackendDeployError("wheel checksum does not match SHA256SUMS")
+    if config.requirements_lock.is_symlink() or not config.requirements_lock.is_file():
+        raise BackendDeployError("requirements.lock is missing or unsafe")
+    try:
+        requirements = config.requirements_lock.read_text(encoding="ascii")
+    except (OSError, UnicodeError) as exc:
+        raise BackendDeployError("requirements.lock is unreadable") from exc
+    if (
+        "--hash=sha256:" not in requirements
+        or "://" in requirements
+        or " @ " in requirements
+        or re.search(r"(?m)^\s*--(?:extra-)?index-url\b|^\s*--find-links\b", requirements)
+    ):
+        raise BackendDeployError("requirements.lock must contain only hash-locked registry packages")
+    dependency_files: list[Path] = []
+    try:
+        wheelhouse_metadata = config.wheelhouse.lstat()
+    except FileNotFoundError as exc:
+        raise BackendDeployError("wheelhouse is missing") from exc
+    if stat.S_ISLNK(wheelhouse_metadata.st_mode) or not stat.S_ISDIR(wheelhouse_metadata.st_mode):
+        raise BackendDeployError("wheelhouse must be a real directory")
+    for dependency in sorted(config.wheelhouse.iterdir()):
+        metadata = dependency.lstat()
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+            raise BackendDeployError("wheelhouse contains an unsafe entry")
+        dependency_files.append(dependency)
+    if not dependency_files:
+        raise BackendDeployError("wheelhouse is empty")
+    for artifact in [config.requirements_lock, *dependency_files]:
+        relative = artifact.relative_to(config.wheel.parent).as_posix()
+        expected_checksum = checksums.get(relative)
+        if expected_checksum is None or _sha256(artifact) != expected_checksum:
+            raise BackendDeployError(f"dependency bundle checksum mismatch: {relative}")
     try:
         with zipfile.ZipFile(config.wheel) as archive:
             metadata_names = [name for name in archive.namelist() if name.endswith(".dist-info/METADATA")]
@@ -202,6 +374,7 @@ def _atomic_write(path: Path, payload: bytes, *, mode: int = 0o600) -> None:
 
 
 def write_launchd_plist(config: BackendDeployConfig) -> None:
+    _validate_remote_bind_environment(config)
     executable = config.current_link / "venv" / "bin" / "zhiji"
     payload = {
         "Label": config.launchd_label,
@@ -209,7 +382,7 @@ def write_launchd_plist(config: BackendDeployConfig) -> None:
             str(executable),
             "serve",
             "--host",
-            "127.0.0.1",
+            config.bind_host,
             "--port",
             str(urllib.parse.urlsplit(config.health_origin).port or 9120),
         ],
@@ -226,13 +399,32 @@ def write_launchd_plist(config: BackendDeployConfig) -> None:
 def _default_installer(stage: Path, config: BackendDeployConfig) -> None:
     venv = stage / "venv"
     subprocess.run([str(config.python_executable), "-m", "venv", str(venv)], check=True)
+    python = str(venv / "bin" / "python")
     subprocess.run(
         [
-            str(venv / "bin" / "python"),
+            python,
             "-m",
             "pip",
             "install",
             "--disable-pip-version-check",
+            "--no-index",
+            "--find-links",
+            str(config.wheelhouse),
+            "--require-hashes",
+            "--requirement",
+            str(config.requirements_lock),
+        ],
+        check=True,
+    )
+    subprocess.run(
+        [
+            python,
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--no-index",
+            "--no-deps",
             str(config.wheel),
         ],
         check=True,
@@ -426,6 +618,24 @@ def deploy_backend(
 ) -> Path:
     _validate_config(config)
     _verify_release_artifact(config)
+    with _deployment_lock(config.runtime_root):
+        return _deploy_backend_locked(
+            config,
+            service=service,
+            smoke_check=smoke_check,
+            installer=installer,
+            now=now,
+        )
+
+
+def _deploy_backend_locked(
+    config: BackendDeployConfig,
+    *,
+    service: ServiceController,
+    smoke_check: Callable[[], None],
+    installer: Callable[[Path, BackendDeployConfig], None],
+    now: Callable[[], datetime],
+) -> Path:
     previous = _current_target(config)
     target = _prepare_version(config, installer)
     try:
@@ -497,7 +707,22 @@ def deploy_backend(
         raise BackendDeployError(f"deployment failed: {original}") from original
 
 
+def _reject_command_line_secrets(argv: list[str]) -> None:
+    forbidden = {"--api-token", "--ki-api-token", "--remote-api-token"}
+    for argument in argv:
+        option, _, _ = argument.partition("=")
+        if option in forbidden:
+            raise BackendDeployError("KI_API_TOKEN must come from the server-side .env")
+
+
 def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    try:
+        _reject_command_line_secrets(raw_argv)
+    except BackendDeployError as exc:
+        print(f"backend deployment failed: {exc}", file=sys.stderr)
+        return 2
+
     parser = argparse.ArgumentParser(description="Atomically deploy a Zhiji backend wheel")
     parser.add_argument("tag")
     parser.add_argument("--runtime-root", type=Path, required=True)
@@ -511,7 +736,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--launchd-label", default="com.zhiji.backend")
     parser.add_argument("--health-origin", default="http://127.0.0.1:9120")
     parser.add_argument("--python", type=Path, default=Path(sys.executable))
-    args = parser.parse_args(argv)
+    parser.add_argument("--bind-host", default="127.0.0.1")
+    args = parser.parse_args(raw_argv)
     config = BackendDeployConfig(
         release_tag=args.tag,
         runtime_root=args.runtime_root.absolute(),
@@ -525,6 +751,7 @@ def main(argv: list[str] | None = None) -> int:
         launchd_label=args.launchd_label,
         health_origin=args.health_origin,
         python_executable=args.python,
+        bind_host=args.bind_host,
     )
     try:
         target = deploy_backend(
