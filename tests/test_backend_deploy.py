@@ -375,7 +375,16 @@ def test_launchd_module_entrypoint_survives_staged_venv_rename(tmp_path: Path) -
 
     write_launchd_plist(config)
     arguments = plistlib.loads(config.launchd_plist.read_bytes())["ProgramArguments"]
-    result = subprocess.run(arguments, check=True, capture_output=True, text=True)
+    environment = os.environ.copy()
+    environment.pop("PYTHONPATH", None)
+    result = subprocess.run(
+        arguments,
+        check=True,
+        capture_output=True,
+        text=True,
+        cwd=tmp_path,
+        env=environment,
+    )
 
     assert result.stdout.strip() == "serve --host 127.0.0.1 --port 19120"
 
