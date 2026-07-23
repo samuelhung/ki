@@ -133,7 +133,7 @@ def _main_argv(config: BackendDeployConfig) -> list[str]:
     ]
 
 
-def test_main_propagates_public_bind_host_with_absolute_paths(
+def test_main_propagates_explicit_public_bind_host(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -152,20 +152,23 @@ def test_main_propagates_public_bind_host_with_absolute_paths(
 
     assert result == 0
     assert captured[0].bind_host == "0.0.0.0"
-    assert all(
-        path.is_absolute()
-        for path in (
-            captured[0].runtime_root,
-            captured[0].zhiji_home,
-            captured[0].user_home,
-            captured[0].database_path,
-            captured[0].backups_dir,
-            captured[0].wheel,
-            captured[0].checksums,
-            captured[0].launchd_plist,
-            captured[0].python_executable,
-        )
-    )
+
+
+def test_main_defaults_bind_host_to_loopback(tmp_path: Path, monkeypatch) -> None:
+    config = _config(tmp_path)
+    captured: list[BackendDeployConfig] = []
+
+    def capture_deploy(deploy_config: BackendDeployConfig, **_kwargs) -> Path:
+        captured.append(deploy_config)
+        return deploy_config.versions_dir / deploy_config.release_id
+
+    monkeypatch.setattr("scripts.deploy_backend.deploy_backend", capture_deploy)
+    monkeypatch.setattr("scripts.deploy_backend.LaunchdServiceController", lambda _config: object())
+
+    result = main(_main_argv(config))
+
+    assert result == 0
+    assert captured[0].bind_host == "127.0.0.1"
 
 
 @pytest.mark.parametrize("option", ["--api-token", "--ki-api-token", "--remote-api-token"])
@@ -182,12 +185,13 @@ def test_main_rejects_command_line_secrets_without_echoing_them(
 
     result = main([*_main_argv(config), *guarded])
 
-    stderr = capsys.readouterr().err
+    captured = capsys.readouterr()
     assert result == 2
-    assert secret not in stderr
-    assert "backend deployment failed:" in stderr
-    assert "KI_API_TOKEN" in stderr
-    assert "server-side .env" in stderr
+    assert secret not in captured.out
+    assert secret not in captured.err
+    assert "backend deployment failed:" in captured.err
+    assert "KI_API_TOKEN" in captured.err
+    assert "server-side .env" in captured.err
 
 
 def test_deploy_installs_immutable_version_and_atomically_switches_current(tmp_path: Path) -> None:
