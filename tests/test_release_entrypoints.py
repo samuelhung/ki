@@ -61,12 +61,38 @@ def test_readme_documents_only_the_verified_release_and_atomic_deploy_flow() -> 
         flags=re.MULTILINE | re.DOTALL,
     )
     assert independent_deploy is not None
+    independent_deploy_body = independent_deploy.group("body")
     for desktop_release_entrypoint in (
         "scripts/publish_release.py",
         "scripts/build_release.py",
         "candidate-appcast",
     ):
-        assert desktop_release_entrypoint not in independent_deploy.group("body")
+        assert desktop_release_entrypoint not in independent_deploy_body
+    for protected_remote_deploy_detail in (
+        "http://10.8.0.105:9120/api/system/health",
+        'Path("app/frontend/.env.local")',
+        'headers={"X-API-Key": token}',
+        "npm run qa:cinematic-pages -- http://10.8.0.105:9120 tmp/deploy-smoke today,ingest,system",
+        "secrets.token_urlsafe(48)",
+        "shlex.quote",
+        "input=payload",
+        "os.replace(temporary, path)",
+        "也接受不含插值和反斜杠转义的安全单引号或双引号普通值",
+        "require_real_directory(runtime)",
+        "require_real_directory(source)",
+        "require_real_directory(versions)",
+        "shutil.copytree(source, stage / \"venv\", symlinks=True)",
+        "fsync_directory(versions)",
+        'assert payload["ok"] is True',
+        'assert payload["version"] == "2.0.0"',
+        'assert payload["database"]["ok"] is True',
+    ):
+        assert protected_remote_deploy_detail in independent_deploy_body
+    assert not re.search(
+        r"(?m)^\s*curl\b[^\n]*/#/(?:ingest|system)(?:\s|$)",
+        independent_deploy_body,
+    )
+    assert "127.0.0.1:9120/api/system/health" not in independent_deploy_body
 
 
 def test_frontend_remote_token_file_is_ignored() -> None:
