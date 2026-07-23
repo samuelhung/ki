@@ -16,7 +16,7 @@ import tempfile
 from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -240,7 +240,7 @@ def bootstrap_legacy_runtime(
                 stage / "release.json",
                 {
                     "git_sha": config.source_sha,
-                    "migrated_at": datetime.now(UTC).isoformat(),
+                    "migrated_at": datetime.now(timezone.utc).isoformat(),  # noqa: UP017
                     "release": config.snapshot_name,
                     "source": str(config.source),
                     "version": config.expected_version,

@@ -127,6 +127,7 @@ git fetch origin main
 test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
 SOURCE_SHA="$(git rev-parse HEAD)"
 REMOTE_STAGE="/Users/mrh/Documents/KI/packages/${SOURCE_SHA}"
+ROLLBACK_NAME="legacy-2.0.0-pre-atomic"
 
 python3 scripts/preflight_backend_deploy.py \
   --local-env app/frontend/.env.local \
@@ -137,7 +138,7 @@ python3 scripts/preflight_backend_deploy.py \
   --python /Users/mrh/Documents/KI/runtime/venv/bin/python \
   --packages-root /Users/mrh/Documents/KI/packages \
   --source-sha "${SOURCE_SHA}" \
-  --legacy-name legacy-2.0.0-pre-atomic \
+  --legacy-name "${ROLLBACK_NAME}" \
   --target-name 2.0.0+90 \
   --expect-legacy absent \
   --expect-current absent
@@ -145,10 +146,9 @@ python3 scripts/preflight_backend_deploy.py \
 
 Preflight 只输出安全事实，并验证本地 `KI_REMOTE_API_TOKEN` 与远端 `KI_API_TOKEN` 相同、allowed hosts、磁盘空间、Python 3.12、packages 根目录、SHA staging 当前不存在、legacy/current/target 预期、数据库普通文件与 `PRAGMA quick_check`。任何失败都停止流程。
 
-Preflight 通过后构建 SHA 专属 wheel，检查摘要以及 wheel 内的 `frontend_dist/index.html` 和 `assets/`，再把 wheel 与三个部署工具上传到同一 staging。运行任何远端工具前必须再次验证完整 `SHA256SUMS`：
+Preflight 通过后构建 SHA 专属 wheel，检查摘要以及 wheel 内的 `frontend_dist/index.html` 和 `assets/`，再把 wheel 与四个部署工具上传到同一 staging。运行任何远端工具前必须再次验证完整 `SHA256SUMS`：
 
 ```bash
-ssh zhiji-prod "mkdir -m 700 '$REMOTE_STAGE'"
 OUT="dist/backend-${SOURCE_SHA}"
 test ! -e "$OUT"
 mkdir -p "$OUT"
@@ -163,6 +163,7 @@ cp scripts/deploy_backend.py scripts/bootstrap_legacy_runtime.py \
 (cd "$OUT" && shasum -a 256 -c SHA256SUMS)
 unzip -l "$WHEEL" | grep -q 'zhiji_backend/frontend_dist/index.html'
 unzip -l "$WHEEL" | grep -q 'zhiji_backend/frontend_dist/assets/'
+ssh zhiji-prod "mkdir -m 700 '$REMOTE_STAGE'"
 scp "$WHEEL" "$OUT/SHA256SUMS" "$OUT/deploy_backend.py" \
   "$OUT/bootstrap_legacy_runtime.py" "$OUT/preflight_backend_deploy.py" \
   "$OUT/provision_remote_access.py" "zhiji-prod:${REMOTE_STAGE}/"
@@ -175,11 +176,11 @@ ssh zhiji-prod "cd '$REMOTE_STAGE' && shasum -a 256 -c SHA256SUMS"
 ssh zhiji-prod "/Users/mrh/Documents/KI/runtime/venv/bin/python '${REMOTE_STAGE}/bootstrap_legacy_runtime.py' \
   --runtime-root /Users/mrh/Documents/KI/runtime \
   --expected-version 2.0.0 \
-  --snapshot-name legacy-2.0.0-pre-atomic \
+  --snapshot-name '${ROLLBACK_NAME}' \
   --source-sha '${SOURCE_SHA}'"
 ```
 
-`legacy-2.0.0-pre-atomic` 是本次首次原子部署受保护的回滚目标；后续发布中它可能按版本保留策略老化退出。原始 `runtime/venv` 是长期紧急副本，在单独审计并明确批准退役前不得删除。
+`${ROLLBACK_NAME}` 是当前发布受保护的回滚目标；首次迁移对应 `runtime/versions/legacy-2.0.0-pre-atomic`，后续发布必须改成当时实际保留的上一版本目录名。原始 `runtime/venv` 是长期紧急副本，在单独审计并明确批准退役前不得删除。
 
 部署器直接读取已校验的 SHA staging 中的 wheel 与摘要，不复制或提升到共享 canonical 路径。命令不含 token flag：
 
@@ -210,7 +211,7 @@ python3 scripts/preflight_backend_deploy.py \
   --python /Users/mrh/Documents/KI/runtime/venv/bin/python \
   --packages-root /Users/mrh/Documents/KI/packages \
   --source-sha "${SOURCE_SHA}" \
-  --legacy-name legacy-2.0.0-pre-atomic \
+  --legacy-name "${ROLLBACK_NAME}" \
   --target-name 2.0.0+90 \
   --expect-legacy present \
   --expect-current present \
@@ -229,7 +230,7 @@ ssh zhiji-prod 'CURRENT=$(readlink /Users/mrh/Documents/KI/runtime/current) && t
 ssh zhiji-prod 'find /Users/mrh/Documents/KI/runtime/versions -mindepth 1 -maxdepth 1 -type d -print | sort'
 ssh zhiji-prod '/Users/mrh/Documents/KI/runtime/venv/bin/python -m json.tool /Users/mrh/Documents/KI/runtime/current/release.json >/dev/null'
 ssh zhiji-prod 'test -x /Users/mrh/Documents/KI/runtime/venv/bin/zhiji'
-ssh zhiji-prod 'test -x /Users/mrh/Documents/KI/runtime/versions/legacy-2.0.0-pre-atomic/venv/bin/zhiji'
+ssh zhiji-prod "test -x '/Users/mrh/Documents/KI/runtime/versions/${ROLLBACK_NAME}/venv/bin/zhiji'"
 ssh zhiji-prod 'sqlite3 /Users/mrh/Documents/KI/data/intelligence.sqlite "PRAGMA quick_check;" | grep -Fx ok'
 ssh zhiji-prod 'launchctl print gui/$(id -u)/com.zhiji.backend | grep -E -- "runtime/current/venv/bin/zhiji|--host|0.0.0.0|--port|9120"'
 ssh zhiji-prod 'find /Users/mrh/Documents/KI/backups -type f -name "deploy-*.sqlite" -print | sort'
