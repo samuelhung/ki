@@ -14,7 +14,9 @@
     "qa:cinematic-pages:journey": "node scripts/qa-cinematic-user-path.mjs",
     "qa:cinematic-ingest": "node scripts/qa-cinematic-ingest.mjs",
     "qa:cinematic-ingest:perf": "node scripts/qa-cinematic-ingest-perf.mjs",
+    "lint:explicit-any": "node scripts/check-explicit-any.mjs",
     "typecheck": "tsc --noEmit",
+    "test:quality-gates": "node --test scripts/explicitAnyGate.test.mjs",
     "test:media-transport": "node --experimental-strip-types --test src/mediaTransport.test.mjs"
   },
   "dependencies": {
