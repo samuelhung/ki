@@ -578,7 +578,22 @@ def deploy_backend(
         raise BackendDeployError(f"deployment failed: {original}") from original
 
 
+def _reject_command_line_secrets(argv: list[str]) -> None:
+    forbidden = {"--api-token", "--ki-api-token", "--remote-api-token"}
+    for argument in argv:
+        option, _, _ = argument.partition("=")
+        if option in forbidden:
+            raise BackendDeployError("KI_API_TOKEN must come from the server-side .env")
+
+
 def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    try:
+        _reject_command_line_secrets(raw_argv)
+    except BackendDeployError as exc:
+        print(f"backend deployment failed: {exc}", file=sys.stderr)
+        return 2
+
     parser = argparse.ArgumentParser(description="Atomically deploy a Zhiji backend wheel")
     parser.add_argument("tag")
     parser.add_argument("--runtime-root", type=Path, required=True)
@@ -592,7 +607,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--launchd-label", default="com.zhiji.backend")
     parser.add_argument("--health-origin", default="http://127.0.0.1:9120")
     parser.add_argument("--python", type=Path, default=Path(sys.executable))
-    args = parser.parse_args(argv)
+    parser.add_argument("--bind-host", default="127.0.0.1")
+    args = parser.parse_args(raw_argv)
     config = BackendDeployConfig(
         release_tag=args.tag,
         runtime_root=args.runtime_root.absolute(),
@@ -606,6 +622,7 @@ def main(argv: list[str] | None = None) -> int:
         launchd_label=args.launchd_label,
         health_origin=args.health_origin,
         python_executable=args.python,
+        bind_host=args.bind_host,
     )
     try:
         target = deploy_backend(

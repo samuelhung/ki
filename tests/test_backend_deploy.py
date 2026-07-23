@@ -22,6 +22,7 @@ from scripts.deploy_backend import (
     _validate_remote_bind_environment,
     default_smoke_check,
     deploy_backend,
+    main,
     prune_daily_backups,
     prune_versions,
     write_launchd_plist,
@@ -106,6 +107,87 @@ def _write_secure_env_contents(home: Path, contents: str) -> Path:
     env_file.write_text(contents, encoding="utf-8")
     env_file.chmod(0o600)
     return env_file
+
+
+def _main_argv(config: BackendDeployConfig) -> list[str]:
+    return [
+        config.release_tag,
+        "--runtime-root",
+        str(config.runtime_root),
+        "--zhiji-home",
+        str(config.zhiji_home),
+        "--user-home",
+        str(config.user_home),
+        "--database",
+        str(config.database_path),
+        "--backups-dir",
+        str(config.backups_dir),
+        "--wheel",
+        str(config.wheel),
+        "--checksums",
+        str(config.checksums),
+        "--launchd-plist",
+        str(config.launchd_plist),
+        "--python",
+        str(config.python_executable),
+    ]
+
+
+def test_main_propagates_public_bind_host_with_absolute_paths(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config = _config(tmp_path)
+    _write_secure_api_token(config.zhiji_home)
+    captured: list[BackendDeployConfig] = []
+
+    def capture_deploy(deploy_config: BackendDeployConfig, **_kwargs) -> Path:
+        captured.append(deploy_config)
+        return deploy_config.versions_dir / deploy_config.release_id
+
+    monkeypatch.setattr("scripts.deploy_backend.deploy_backend", capture_deploy)
+    monkeypatch.setattr("scripts.deploy_backend.LaunchdServiceController", lambda _config: object())
+
+    result = main([*_main_argv(config), "--bind-host", "0.0.0.0"])
+
+    assert result == 0
+    assert captured[0].bind_host == "0.0.0.0"
+    assert all(
+        path.is_absolute()
+        for path in (
+            captured[0].runtime_root,
+            captured[0].zhiji_home,
+            captured[0].user_home,
+            captured[0].database_path,
+            captured[0].backups_dir,
+            captured[0].wheel,
+            captured[0].checksums,
+            captured[0].launchd_plist,
+            captured[0].python_executable,
+        )
+    )
+
+
+@pytest.mark.parametrize("option", ["--api-token", "--ki-api-token", "--remote-api-token"])
+@pytest.mark.parametrize("form", ["separated", "equals"])
+def test_main_rejects_command_line_secrets_without_echoing_them(
+    tmp_path: Path,
+    option: str,
+    form: str,
+    capsys,
+) -> None:
+    config = _config(tmp_path)
+    secret = "sentinel-command-line-secret"
+    guarded = [option, secret] if form == "separated" else [f"{option}={secret}"]
+
+    result = main([*_main_argv(config), *guarded])
+
+    stderr = capsys.readouterr().err
+    assert result == 2
+    assert secret not in stderr
+    assert "backend deployment failed:" in stderr
+    assert "KI_API_TOKEN" in stderr
+    assert "server-side .env" in stderr
 
 
 def test_deploy_installs_immutable_version_and_atomically_switches_current(tmp_path: Path) -> None:
