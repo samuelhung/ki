@@ -692,12 +692,18 @@ def test_restore_failure_is_journaled_and_recovery_completes_both_artifacts(
     monkeypatch.setattr(
         database_backup, "_replace_staged_restore", fail_database_replace
     )
+    wal_path = Path(f"{db_path}-wal")
+    shm_path = Path(f"{db_path}-shm")
+    wal_path.write_bytes(b"live-wal")
+    shm_path.write_bytes(b"live-shm")
 
     with pytest.raises(RuntimeError, match="restore is incomplete"):
         database_backup.restore_rollback_backup(manifest_path)
 
     journal = database_backup.restore_journal_path(db_path)
     assert journal.exists()
+    assert wal_path.read_bytes() == b"live-wal"
+    assert shm_path.read_bytes() == b"live-shm"
     assert config_path.read_text(encoding="utf-8") == original_config
     with sqlite3.connect(db_path) as conn:
         assert conn.execute(

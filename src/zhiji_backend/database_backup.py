@@ -1007,10 +1007,10 @@ def recover_rollback_restore(
                 sqlite_backup=key == "database",
             )
             staged.close()
+            _replace_staged_restore(stage, destination)
             if key == "database":
                 for suffix in ("-wal", "-shm"):
                     Path(f"{destination}{suffix}").unlink(missing_ok=True)
-            _replace_staged_restore(stage, destination)
             if not _restore_path_matches(destination, metadata):
                 raise RuntimeError(f"rollback restore {key} verification failed")
         for suffix in ("-wal", "-shm"):

@@ -459,8 +459,8 @@ def update_node(node_id: SafeIdentifier, req: NodeUpdate):
         if not updates:
             return {"ok": True, "message": "无变更"}
 
-        updates["last_updated"] = "datetime('now')"
         set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
+        set_clause = f"{set_clause}, last_updated = datetime('now')"
         values = list(updates.values())
         values.append(node_id)
         conn.execute(f"UPDATE industry_chain_nodes SET {set_clause} WHERE id = ?", values)
