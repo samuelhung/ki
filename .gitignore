@@ -26,6 +26,7 @@
 .vscode/
 __pycache__/
 app/frontend/dist/
+app/frontend/.env.local
 app/frontend/node_modules/
 app/.venv/
 .venv-verify/

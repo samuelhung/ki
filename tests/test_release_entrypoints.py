@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,6 +39,12 @@ def test_readme_documents_only_the_verified_release_and_atomic_deploy_flow() -> 
         "scripts/release_preflight.py v2.0.0+90",
         "scripts/publish_release.py v2.0.0+90",
         "scripts/deploy_backend.py v2.0.0+90",
+        "--bind-host 0.0.0.0",
+        "KI_ALLOWED_HOSTS=10.8.0.105,127.0.0.1,localhost",
+        "app/frontend/.env.local",
+        "runtime/versions/legacy-2.0.0-pre-atomic",
+        "curl -fsS http://127.0.0.1:9120/api/health",
+        "X-API-Key",
     ):
         assert required in readme
     for retired in (
@@ -47,3 +54,22 @@ def test_readme_documents_only_the_verified_release_and_atomic_deploy_flow() -> 
     ):
         assert retired not in readme
         assert retired not in architecture
+
+    independent_deploy = re.search(
+        r"^### 后端与 Web 独立部署\n(?P<body>.*?)(?=^## )",
+        readme,
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    assert independent_deploy is not None
+    for desktop_release_entrypoint in (
+        "scripts/publish_release.py",
+        "scripts/build_release.py",
+        "candidate-appcast",
+    ):
+        assert desktop_release_entrypoint not in independent_deploy.group("body")
+
+
+def test_frontend_remote_token_file_is_ignored() -> None:
+    ignored_paths = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+
+    assert "app/frontend/.env.local" in ignored_paths

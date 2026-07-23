@@ -101,6 +101,182 @@ ZHIJI_SKIP_RELEASE_CHECK=1 ./scripts/check.sh
 - 远端运行入口：`/Users/mrh/Documents/KI/runtime/current`
 - SSH alias：`zhiji-prod`
 
+### 后端与 Web 独立部署
+
+本节只发布 Python wheel 及其中内嵌的 Web 静态文件，用于不发桌面客户端时更新后端与 Web。它不会执行 Sparkle、DMG、Git tag、GitHub Release 或 Appcast 操作，也不替代下方桌面发布的版本号、构建号和 tag 契约。
+
+开始前必须满足以下条件：
+
+- 待部署提交已经合并到 `main`，本地位于干净且与远端一致的 `main`；记录本次完整 Git SHA，后续产物目录不得复用。
+- 远端 `ZHIJI_HOME=/Users/mrh/Documents/KI`。`ZHIJI_HOME/.env` 必须是非符号链接的普通文件、权限为 `0600`，包含非空 `KI_API_TOKEN`，并包含精确的 `KI_ALLOWED_HOSTS=10.8.0.105,127.0.0.1,localhost`；保留文件内所有无关配置键。
+- 本地 `app/frontend/.env.local` 已被 Git 忽略，必须是非符号链接的普通文件、权限为 `0600`，且包含与远端一致的非空 `KI_REMOTE_API_TOKEN`。该值只由 Vite 开发服务器在服务端代理请求时读取，绝不能进入浏览器 bundle。
+
+首次开通远程访问时，用受控的一次性 Python 进程调用 `secrets.token_urlsafe(48)` 生成规范 URL-safe token。token 只保存在进程内存中，并通过 SSH 子进程的 stdin 送到远端更新进程；禁止将其放入 argv、终端输出、shell tracing、Git、浏览器 bundle 或日志。更新进程同时原子更新本地 `.env.local` 与远端 `.env`：仅替换目标键并保留其他键，在各自目标文件同目录创建 `0600` 临时文件，写入后 `flush`、`fsync`、再次 `chmod 0600`，最后用 `os.replace` 切换；过程中不得跟随符号链接。
+
+上述初始化器只接受保守 dotenv 子集：键名使用 ASCII 字母、数字和下划线，值使用未加引号的规范 URL-safe 字符；`${...}`/`$...` 插值、单引号或双引号值、以及带反斜杠转义的 quoted backslash escape 形式均故意拒绝。初始化后以只读检查确认两个文件的类型、模式和必需键，任何不满足都停止，不得进入构建或部署。
+
+在干净的 `main` 上构建 SHA 专属 wheel，并独立生成和复核摘要及内嵌 Web 文件：
+
+```bash
+cd /Users/yuk/Documents/zhiji/ki
+test "$(git branch --show-current)" = main
+test -z "$(git status --porcelain)"
+git fetch origin main
+test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+
+SOURCE_SHA="$(git rev-parse HEAD)"
+OUT="dist/backend-${SOURCE_SHA}"
+test ! -e "$OUT"
+mkdir -p "$OUT"
+/Users/yuk/Documents/zhiji/ki/.venv/bin/python scripts/build_backend_wheel.py --outdir "$OUT"
+WHEEL="$(find "$OUT" -maxdepth 1 -name 'zhiji_backend-2.0.0-*.whl' -print -quit)"
+test -n "$WHEEL"
+(cd "$OUT" && shasum -a 256 "$(basename "$WHEEL")" > SHA256SUMS)
+(cd "$OUT" && shasum -a 256 -c SHA256SUMS)
+unzip -l "$WHEEL" | grep -q 'zhiji_backend/frontend_dist/index.html'
+unzip -l "$WHEEL" | grep -q 'zhiji_backend/frontend_dist/assets/'
+```
+
+若 `runtime/current` 尚不存在，先做一次迁移。迁移只能复制现有 `runtime/venv`，不得移动或删除它：将副本写入 `runtime/versions` 下的同目录 staged 目录，验证 `bin/zhiji` 可执行且其中安装的 `zhiji-backend` 版本为 `2.0.0`，写入不含密钥的 `release.json`，再把 staged 目录改名为 `runtime/versions/legacy-2.0.0-pre-atomic`。最后在 `runtime` 同目录创建临时符号链接并用 `os.replace` 原子指向该副本。整个迁移期间 launchd 仍使用原始 `/Users/mrh/Documents/KI/runtime/venv/bin/zhiji`，不重启服务；完成后原始 venv 与复制快照必须同时保留。
+
+```bash
+SOURCE_SHA="$(git rev-parse HEAD)"
+ssh zhiji-prod python3 - "$SOURCE_SHA" <<'PY'
+import json
+import os
+import shutil
+import stat
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+source_sha = sys.argv[1]
+runtime = Path("/Users/mrh/Documents/KI/runtime")
+source = runtime / "venv"
+versions = runtime / "versions"
+stage = versions / ".legacy-2.0.0-pre-atomic.staged"
+target = versions / "legacy-2.0.0-pre-atomic"
+current = runtime / "current"
+assert source.is_dir() and not source.is_symlink()
+assert not current.exists() and not current.is_symlink()
+assert not stage.exists() and not target.exists()
+versions.mkdir(mode=0o755, parents=True, exist_ok=True)
+shutil.copytree(source, stage / "venv", symlinks=True)
+executable = stage / "venv/bin/zhiji"
+assert executable.is_file() and executable.stat().st_mode & stat.S_IXUSR
+subprocess.run(
+    [
+        str(stage / "venv/bin/python"),
+        "-c",
+        "import importlib.metadata as m; assert m.version('zhiji-backend') == '2.0.0'",
+    ],
+    check=True,
+)
+with (stage / "release.json").open("w", encoding="utf-8") as stream:
+    json.dump(
+        {
+            "release": "legacy-2.0.0-pre-atomic",
+            "source": str(source),
+            "migrated_at": datetime.now(timezone.utc).isoformat(),
+            "git_sha": source_sha,
+        },
+        stream,
+        indent=2,
+    )
+    stream.write("\n")
+    stream.flush()
+    os.fsync(stream.fileno())
+os.replace(stage, target)
+temporary = runtime / ".current.migration"
+temporary.symlink_to(target)
+os.replace(temporary, current)
+directory_fd = os.open(runtime, os.O_RDONLY)
+try:
+    os.fsync(directory_fd)
+finally:
+    os.close(directory_fd)
+PY
+```
+
+迁移后的只读验收命令如下；`release.json` 只能记录 release、来源路径、迁移时间和 Git SHA 等非秘密元数据：
+
+```bash
+ssh zhiji-prod 'test -x /Users/mrh/Documents/KI/runtime/venv/bin/zhiji'
+ssh zhiji-prod 'test -x /Users/mrh/Documents/KI/runtime/versions/legacy-2.0.0-pre-atomic/venv/bin/zhiji'
+ssh zhiji-prod 'test "$(readlink /Users/mrh/Documents/KI/runtime/current)" = /Users/mrh/Documents/KI/runtime/versions/legacy-2.0.0-pre-atomic'
+ssh zhiji-prod 'python3 -m json.tool /Users/mrh/Documents/KI/runtime/versions/legacy-2.0.0-pre-atomic/release.json >/dev/null'
+ssh zhiji-prod 'launchctl print gui/$(id -u)/com.zhiji.backend | grep -F /Users/mrh/Documents/KI/runtime/venv/bin/zhiji'
+```
+
+只上传该 SHA 目录中的 wheel、对应的 `SHA256SUMS`，以及同一提交中的部署器；上传后再在远端复核摘要：
+
+```bash
+scp "$WHEEL" "$OUT/SHA256SUMS" scripts/deploy_backend.py \
+  zhiji-prod:/Users/mrh/Documents/KI/packages/
+ssh zhiji-prod 'cd /Users/mrh/Documents/KI/packages && shasum -a 256 -c SHA256SUMS'
+```
+
+确认远端安全配置预检通过后部署 `v2.0.0+90`。命令不接受也不得增加任何 token 参数：
+
+```bash
+ssh zhiji-prod 'python3 /Users/mrh/Documents/KI/packages/deploy_backend.py v2.0.0+90 \
+  --runtime-root /Users/mrh/Documents/KI/runtime \
+  --zhiji-home /Users/mrh/Documents/KI \
+  --user-home /Users/mrh \
+  --database /Users/mrh/Documents/KI/data/intelligence.sqlite \
+  --backups-dir /Users/mrh/Documents/KI/backups \
+  --wheel /Users/mrh/Documents/KI/packages/zhiji_backend-2.0.0-py3-none-any.whl \
+  --checksums /Users/mrh/Documents/KI/packages/SHA256SUMS \
+  --launchd-plist /Users/mrh/Library/LaunchAgents/com.zhiji.backend.plist \
+  --bind-host 0.0.0.0 \
+  --health-origin http://127.0.0.1:9120'
+```
+
+部署器在切换前创建数据库备份；新版本任一 smoke check 失败时会停止新服务、恢复数据库、原子切回旧 `current` 并重新启动旧服务。生产验证只做下列成功路径和只读检查，禁止为测试回滚而故意破坏生产服务：
+
+```bash
+# 回环公开健康检查
+ssh zhiji-prod 'curl -fsS http://127.0.0.1:9120/api/health >/dev/null'
+
+# 远端系统健康检查：未认证必须是 401
+test "$(curl -sS -o /dev/null -w '%{http_code}' http://10.8.0.105:9120/api/system/health)" = 401
+
+# 已认证检查在远端进程内读取 .env；token 不进入命令行或输出
+ssh zhiji-prod 'cd /Users/mrh/Documents/KI && runtime/current/venv/bin/python -' <<'PY'
+import urllib.request
+from pathlib import Path
+
+token = next(
+    line.removeprefix("KI_API_TOKEN=")
+    for line in Path(".env").read_text(encoding="utf-8").splitlines()
+    if line.startswith("KI_API_TOKEN=")
+)
+request = urllib.request.Request(
+    "http://127.0.0.1:9120/api/system/health",
+    headers={"X-API-Key": token},
+)
+with urllib.request.urlopen(request, timeout=10) as response:
+    assert response.status == 200
+PY
+
+# 数据库、版本指针、元数据、launchd 参数与三个 Web 路由
+ssh zhiji-prod 'sqlite3 /Users/mrh/Documents/KI/data/intelligence.sqlite "PRAGMA quick_check;" | grep -Fx ok'
+ssh zhiji-prod 'test -L /Users/mrh/Documents/KI/runtime/current && readlink /Users/mrh/Documents/KI/runtime/current'
+ssh zhiji-prod 'python3 -m json.tool /Users/mrh/Documents/KI/runtime/current/release.json >/dev/null'
+ssh zhiji-prod 'launchctl print gui/$(id -u)/com.zhiji.backend | grep -E -- "runtime/current/venv/bin/zhiji|--host|0.0.0.0|--port|9120"'
+curl -fsS http://10.8.0.105:9120/ | grep -q '<div id="root">'
+curl -fsS http://10.8.0.105:9120/ | grep -q 'assets/'
+curl -fsS http://10.8.0.105:9120/#/ingest >/dev/null
+curl -fsS http://10.8.0.105:9120/#/system >/dev/null
+
+# 回滚证据：原始 venv 和首次迁移快照均仍存在，不修改任何文件
+ssh zhiji-prod 'test -x /Users/mrh/Documents/KI/runtime/venv/bin/zhiji'
+ssh zhiji-prod 'test -x /Users/mrh/Documents/KI/runtime/versions/legacy-2.0.0-pre-atomic/venv/bin/zhiji'
+```
+
+## 桌面完整发布与后端部署
+
 唯一发布与部署流程：
 
 ```bash
