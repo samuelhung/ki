@@ -1,7 +1,6 @@
 """API endpoint for viewing AI prompt templates per module."""
 from __future__ import annotations
 
-import html
 from fastapi import APIRouter
 
 from ..prompt_registry import get_all_prompts

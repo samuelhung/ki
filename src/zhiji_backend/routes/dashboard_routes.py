@@ -1,12 +1,12 @@
 """Dashboard, health, stats, and topic-count endpoints."""
 from __future__ import annotations
 
-import json
 import time
-from datetime import datetime, timezone
-from fastapi import APIRouter, Query, Request
+
+from fastapi import APIRouter, Query
+
 from .. import __version__
-from ..db import connect, init_db
+from ..db import connect
 
 router = APIRouter()
 

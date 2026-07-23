@@ -13,10 +13,11 @@ import os
 import stat
 import tempfile
 import threading
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from . import credential_store
 
@@ -26,6 +27,7 @@ DEFAULT_AI_MODEL = "deepseek-v4-pro-max"
 DEFAULT_AI_BASE_URL = "http://10.8.0.13:3000/v1"
 
 from .paths import CONFIG_PATH
+
 _config: dict[str, Any] = {}
 _config_lock = threading.RLock()
 

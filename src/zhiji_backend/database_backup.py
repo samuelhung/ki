@@ -8,10 +8,9 @@ import sqlite3
 import stat
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-
 
 BACKUP_TEMP_PREFIX = ".intelligence-backup-"
 DEFAULT_DESTRUCTIVE_MIGRATION = "20260719_remove_retired_features"
@@ -479,7 +478,7 @@ def create_rollback_backup(
             or _sqlite_snapshot_sha256(source) != sqlite_snapshot_sha256
         ):
             raise RuntimeError("database or config source changed during rollback backup")
-        created_at = datetime.now(timezone.utc).isoformat()
+        created_at = datetime.now(UTC).isoformat()
         manifest = {
             "schema_version": BACKUP_MANIFEST_SCHEMA_VERSION,
             "migration_name": migration_name,
@@ -571,7 +570,7 @@ def _parse_created_at(value: object) -> datetime:
         raise RuntimeError("backup prerequisite timestamp is invalid") from exc
     if created_at.tzinfo is None:
         raise RuntimeError("backup prerequisite timestamp is invalid")
-    return created_at.astimezone(timezone.utc)
+    return created_at.astimezone(UTC)
 
 
 def _require_current_source(
@@ -639,7 +638,7 @@ def validate_backup_prerequisite(
             raise RuntimeError("backup prerequisite marker path mismatch")
 
         created_at = _parse_created_at(manifest.get("created_at"))
-        age = (datetime.now(timezone.utc) - created_at).total_seconds()
+        age = (datetime.now(UTC) - created_at).total_seconds()
         if not allow_stale and (age < -300 or age > BACKUP_MAX_AGE_SECONDS):
             raise RuntimeError("backup prerequisite is stale")
 
@@ -739,7 +738,7 @@ def consume_backup_prerequisite(
         _validate_marker_for_consumption(source, migration_name, receipt)
         receipt = dict(receipt)
         receipt["state"] = "consumed"
-        receipt["consumed_at"] = datetime.now(timezone.utc).isoformat()
+        receipt["consumed_at"] = datetime.now(UTC).isoformat()
         _write_json_atomic(consumed, receipt)
         return consumed
     try:
@@ -760,7 +759,7 @@ def consume_backup_prerequisite(
         )
     receipt = dict(marker)
     receipt["state"] = "consumed"
-    receipt["consumed_at"] = datetime.now(timezone.utc).isoformat()
+    receipt["consumed_at"] = datetime.now(UTC).isoformat()
     try:
         os.replace(ready, consumed)
     except FileNotFoundError:
@@ -852,7 +851,7 @@ def _validate_rollback_manifest(
             created_at = _parse_created_at(manifest.get("created_at"))
         except RuntimeError as exc:
             raise RuntimeError("rollback manifest timestamp is invalid") from exc
-        age = (datetime.now(timezone.utc) - created_at).total_seconds()
+        age = (datetime.now(UTC) - created_at).total_seconds()
         if not allow_stale and (age < -300 or age > BACKUP_MAX_AGE_SECONDS):
             raise RuntimeError("rollback manifest is stale")
         source = manifest.get("source")
@@ -1060,7 +1059,7 @@ def restore_rollback_backup(manifest_path: Path) -> dict[str, Path]:
         journal = {
             "schema_version": RESTORE_JOURNAL_SCHEMA_VERSION,
             "state": "staged",
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "manifest_path": str(manifest_path),
             "manifest_sha256": manifest_sha256,
             "entries": {

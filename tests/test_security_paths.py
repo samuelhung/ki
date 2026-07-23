@@ -1,9 +1,12 @@
-from pathlib import Path
 
 import pytest
 
 from zhiji_backend.security.constraints import safe_identifier
-from zhiji_backend.security.paths import PathSecurityError, resolve_under, safe_unlink_under
+from zhiji_backend.security.paths import (
+    PathSecurityError,
+    resolve_under,
+    safe_unlink_under,
+)
 
 
 @pytest.mark.parametrize(

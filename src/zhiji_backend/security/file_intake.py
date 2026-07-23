@@ -7,11 +7,10 @@ import stat
 import tempfile
 import zipfile
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from fastapi import HTTPException, UploadFile
-
 
 MIB = 1024 * 1024
 GIB = 1024 * MIB
@@ -35,7 +34,7 @@ class EpubLimits:
     max_text: int = 50 * MIB
 
 
-class FileKind(str, Enum):
+class FileKind(StrEnum):
     AUDIO = "audio"
     VIDEO = "video"
     DOCUMENT = "document"

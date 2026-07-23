@@ -11,8 +11,8 @@ import logging
 import uuid
 from typing import Any
 
-from .db import connect, init_db
 from .ai_client import chat
+from .db import connect, init_db
 
 logger = logging.getLogger(__name__)
 

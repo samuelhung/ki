@@ -1,11 +1,19 @@
 from __future__ import annotations
 
-import os
-import logging
 import hmac
+import logging
+import os
 from pathlib import Path
-from .paths import ZHIJI_HOME, FRONTEND_DIST, LOG_DIR, INGEST_ROOT, RELEASES_DIR, ensure_data_dirs
+
 from .credential_store import load_hardened_env
+from .paths import (
+    FRONTEND_DIST,
+    INGEST_ROOT,
+    LOG_DIR,
+    RELEASES_DIR,
+    ZHIJI_HOME,
+    ensure_data_dirs,
+)
 from .security.redaction import RedactingFormatter, SecureTimedRotatingFileHandler
 
 # ---- 数据目录初始化 ----
@@ -57,40 +65,52 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+)
 from fastapi.staticfiles import StaticFiles
-from starlette.datastructures import Headers, URL
+from starlette.datastructures import URL, Headers
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.middleware.trustedhost import TrustedHostMiddleware as StarletteTrustedHostMiddleware
+from starlette.middleware.trustedhost import (
+    TrustedHostMiddleware as StarletteTrustedHostMiddleware,
+)
 
 from . import __version__
-from .db import get_db_path, init_db, seed_default_sources
 from .config_manager import load_config
+from .db import get_db_path, init_db, seed_default_sources
 from .migrations import ensure_migrations
-from .task_queue import start_worker, stop_worker
-from .usage_writer import start_usage_writer, stop_usage_writer
-from .security.constraints import safe_identifier
-from .security.artifacts import ArtifactOpenError, PinnedFileResponse, open_regular_under
+from .routes.brainstorm_routes import router as brainstorm_router
+from .routes.briefing_routes import router as briefing_router
+from .routes.chain_routes import router as chain_router
+from .routes.config_routes import router as config_router
 
 # Route modules
 from .routes.dashboard_routes import router as dashboard_router
-from .routes.source_routes import router as source_router
 from .routes.event_routes import router as event_router
-from .routes.translate_routes import router as translate_router
-from .routes.brainstorm_routes import router as brainstorm_router
-from .routes.briefing_routes import router as briefing_router
 from .routes.ingest_routes import router as ingest_router
-from .routes.series_routes import router as series_router
-from .routes.config_routes import router as config_router
-from .routes.task_routes import router as task_router
-from .routes.usage_routes import router as usage_router
 from .routes.log_routes import router as log_router
+from .routes.prompt_routes import router as prompt_router
+from .routes.series_routes import router as series_router
+from .routes.source_routes import router as source_router
 from .routes.study_routes import router as study_router
 from .routes.system_routes import router as system_router
-from .routes.prompt_routes import router as prompt_router
-from .routes.chain_routes import router as chain_router
+from .routes.task_routes import router as task_router
+from .routes.translate_routes import router as translate_router
+from .routes.usage_routes import router as usage_router
+from .security.artifacts import (
+    ArtifactOpenError,
+    PinnedFileResponse,
+    open_regular_under,
+)
+from .security.constraints import safe_identifier
+from .task_queue import start_worker, stop_worker
+from .usage_writer import start_usage_writer, stop_usage_writer
 
 
 @asynccontextmanager

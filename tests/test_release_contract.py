@@ -16,7 +16,6 @@ from scripts.release_contract import (
 )
 from scripts.release_preflight import run_preflight
 
-
 ROOT = Path(__file__).resolve().parents[1]
 VALID_SPARKLE_SIGNATURE = base64.b64encode(b"s" * 64).decode("ascii")
 

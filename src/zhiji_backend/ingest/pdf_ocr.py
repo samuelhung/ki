@@ -12,10 +12,10 @@ import hmac
 import logging
 import os
 import time
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable
-from urllib.parse import quote, urlencode
+from urllib.parse import urlencode
 
 import requests  # type: ignore
 
@@ -131,7 +131,7 @@ def _sign(method: str, uri: str, query: str,
           headers: dict[str, str], body: str,
           ak: str, sk: str) -> str:
     """Compute Volcengine V4 signature string."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     x_date = now.strftime("%Y%m%dT%H%M%SZ")
     short_date = now.strftime("%Y%m%d")
 

@@ -10,7 +10,8 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from zhiji_backend import ai_client, db as db_module, ingest_task_runner, main
+from zhiji_backend import ai_client, ingest_task_runner, main
+from zhiji_backend import db as db_module
 from zhiji_backend import usage_writer as usage_writer_module
 from zhiji_backend.db import connect, init_db
 from zhiji_backend.routes import usage_routes

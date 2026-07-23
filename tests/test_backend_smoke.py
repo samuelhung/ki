@@ -6,8 +6,8 @@ from fastapi.testclient import TestClient
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from zhiji_backend.main import app, _requires_token_for_request
-from zhiji_backend.db import init_db, get_db_path, connect
+from zhiji_backend.db import connect, get_db_path, init_db
+from zhiji_backend.main import _requires_token_for_request, app
 
 
 def test_health_endpoint_returns_ok():

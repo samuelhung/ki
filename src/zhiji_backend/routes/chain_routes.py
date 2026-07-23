@@ -6,10 +6,12 @@ import json
 import logging
 import re
 import uuid
-from pydantic import BaseModel, Field, field_validator
+
 from fastapi import APIRouter, HTTPException, Query
-from ..db import connect
+from pydantic import BaseModel, Field, field_validator
+
 from ..ai_client import chat
+from ..db import connect
 from ..security.constraints import MAX_PAGE_SIZE, SafeIdentifier
 
 logger = logging.getLogger(__name__)
@@ -278,12 +280,18 @@ def chain_report(req: ChainReportRequest):
                 for s in all_s:
                     c = s.get("c", "未知")
                     metrics = []
-                    if s.get("p"): metrics.append(f"全球产量占比 {s['p']}%")
-                    if s.get("p_export_global"): metrics.append(f"出口/全球出口 {s['p_export_global']}%")
-                    if s.get("p_export_ratio"): metrics.append(f"出口/产量 {s['p_export_ratio']}%")
-                    if s.get("d", 0): metrics.append(f"全球消费占比 {s['d']}%")
-                    if s.get("d_import_global"): metrics.append(f"进口/全球进口 {s['d_import_global']}%")
-                    if s.get("d_import_ratio"): metrics.append(f"进口/消费 {s['d_import_ratio']}%")
+                    if s.get("p"):
+                        metrics.append(f"全球产量占比 {s['p']}%")
+                    if s.get("p_export_global"):
+                        metrics.append(f"出口/全球出口 {s['p_export_global']}%")
+                    if s.get("p_export_ratio"):
+                        metrics.append(f"出口/产量 {s['p_export_ratio']}%")
+                    if s.get("d", 0):
+                        metrics.append(f"全球消费占比 {s['d']}%")
+                    if s.get("d_import_global"):
+                        metrics.append(f"进口/全球进口 {s['d_import_global']}%")
+                    if s.get("d_import_ratio"):
+                        metrics.append(f"进口/消费 {s['d_import_ratio']}%")
                     if metrics:
                         parts.append(f"  {c}: {', '.join(metrics)}")
             except Exception:
@@ -1105,8 +1113,6 @@ def _apply_hint_update(conn, hint: dict, new_value: str, node: dict):
     field_lower = field.lower()
 
     shares = _json.loads(node.get("global_shares", "[]")) if isinstance(node.get("global_shares"), str) else (node.get("global_shares") or [])
-    subs = _json.loads(node.get("substitutes", "[]")) if isinstance(node.get("substitutes"), str) else (node.get("substitutes") or [])
-
     updated = False
 
     # 尝试匹配国家+指标组合
@@ -1383,10 +1389,14 @@ def chain_chat(req: ChatRequest):
                 for s in all_share_items:
                     c = s.get("c", "未知")
                     nums = []
-                    if s.get("p", 0) > 0: nums.append(f"产量{s['p']}%")
-                    if s.get("d", 0) > 0: nums.append(f"消费{s['d']}%")
-                    if s.get("p_export_global", 0) > 0: nums.append(f"出口/全球{s['p_export_global']}%")
-                    if s.get("d_import_global", 0) > 0: nums.append(f"进口/全球{s['d_import_global']}%")
+                    if s.get("p", 0) > 0:
+                        nums.append(f"产量{s['p']}%")
+                    if s.get("d", 0) > 0:
+                        nums.append(f"消费{s['d']}%")
+                    if s.get("p_export_global", 0) > 0:
+                        nums.append(f"出口/全球{s['p_export_global']}%")
+                    if s.get("d_import_global", 0) > 0:
+                        nums.append(f"进口/全球{s['d_import_global']}%")
                     if nums:
                         country_parts.append(f"{c}({', '.join(nums)})")
                 if country_parts:

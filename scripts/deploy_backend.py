@@ -19,11 +19,11 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable, Protocol
-
+from typing import Protocol
 
 RELEASE_TAG_PATTERN = re.compile(r"^v(?P<version>\d+\.\d+\.\d+)\+(?P<build>[1-9]\d*)$")
 BACKUP_PATTERN = re.compile(r"^deploy-(?P<day>\d{8})-(?P<time>\d{6})(?:-\d+)?\.sqlite$")
@@ -305,7 +305,7 @@ def _create_database_backup(
     if not database.is_file() or database.is_symlink():
         raise BackendDeployError("database must be a regular file")
     backups_dir.mkdir(parents=True, exist_ok=True)
-    stamp = now.astimezone(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    stamp = now.astimezone(UTC).strftime("%Y%m%d-%H%M%S")
     target = backups_dir / f"deploy-{stamp}.sqlite"
     if target.exists():
         raise BackendDeployError(f"deployment backup already exists: {target.name}")
@@ -422,7 +422,7 @@ def deploy_backend(
     service: ServiceController,
     smoke_check: Callable[[], None],
     installer: Callable[[Path, BackendDeployConfig], None] = _default_installer,
-    now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+    now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> Path:
     _validate_config(config)
     _verify_release_artifact(config)

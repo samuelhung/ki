@@ -10,7 +10,6 @@ from zhiji_backend import config_manager
 from zhiji_backend.db import init_db
 from zhiji_backend.main import app
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 

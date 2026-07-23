@@ -6,7 +6,6 @@ import logging
 import re
 import uuid
 from datetime import datetime, timedelta
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -865,8 +864,8 @@ def expand_series(series_id: SafeIdentifier):
         non_member_rows = conn.execute(
             "SELECT id, title, overview FROM events "
             "WHERE overview IS NOT NULL AND overview != '' AND status != 'error' "
-            "AND id NOT IN ({}) "
-            "ORDER BY created_at DESC LIMIT 100".format(placeholders),
+            f"AND id NOT IN ({placeholders}) "
+            "ORDER BY created_at DESC LIMIT 100",
             member_ids,
         ).fetchall()
 

@@ -6,8 +6,8 @@ import json
 import logging
 import uuid
 
-from .db import connect
 from .ai_client import chat
+from .db import connect
 
 logger = logging.getLogger(__name__)
 

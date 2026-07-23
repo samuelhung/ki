@@ -1,9 +1,6 @@
 """System-level info API — database stats, file counts, health."""
 from __future__ import annotations
 
-import os
-from pathlib import Path
-
 from fastapi import APIRouter
 
 from ..db import connect

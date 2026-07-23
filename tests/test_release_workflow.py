@@ -16,8 +16,8 @@ from scripts.build_release import (
     require_fresh_release_build,
     sign_sparkle_update,
     verify_release_build_checkout,
-    write_release_metadata,
     write_candidate_appcast,
+    write_release_metadata,
 )
 from scripts.publish_release import (
     GitHubReleaseClient,
@@ -26,7 +26,6 @@ from scripts.publish_release import (
     verify_appcast_push_ready,
 )
 from scripts.release_contract import expected_artifact_names, load_release_contract
-
 
 ROOT = Path(__file__).resolve().parents[1]
 VALID_SPARKLE_SIGNATURE = base64.b64encode(b"s" * 64).decode("ascii")

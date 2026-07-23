@@ -4,13 +4,13 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from pydantic import BaseModel, Field
-from ..db import connect, init_db, seed_default_sources
-from ..summarizer import summarize_transcript
+
+from ..classifier import classify_batch, classify_event
 from ..collector import collect_once, fetch_url
-from ..tagger import tag_event
-from ..classifier import classify_event, classify_batch
+from ..db import connect, seed_default_sources
 from ..models import CollectRequest
 from ..security.constraints import (
     MAX_OFFSET,
@@ -20,6 +20,8 @@ from ..security.constraints import (
     parse_bounded_identifier_csv,
 )
 from ..security.paths import resolve_under, safe_unlink_under
+from ..summarizer import summarize_transcript
+from ..tagger import tag_event
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

@@ -3,8 +3,8 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from zhiji_backend.main import app
 from zhiji_backend.db import connect
+from zhiji_backend.main import app
 from zhiji_backend.routes import event_routes
 
 

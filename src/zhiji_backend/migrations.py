@@ -9,8 +9,8 @@ from __future__ import annotations
 import logging
 import sqlite3
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +142,9 @@ def ensure_migrations(db_path: Path) -> None:
                         fn(conn)
                     conn.execute("INSERT INTO _migrations (name) VALUES (?)", (name,))
                     if prerequisite is not None:
-                        from .database_backup import assert_backup_prerequisite_published
+                        from .database_backup import (
+                            assert_backup_prerequisite_published,
+                        )
 
                         assert_backup_prerequisite_published(prerequisite)
                     conn.commit()

@@ -93,11 +93,11 @@ def test_validate_file_accepts_supported_signatures(tmp_path: Path, filename: st
 @pytest.mark.parametrize(
     ("filename", "data"),
     [
-        ("notes.txt", "hello\nworld".encode()),
-        ("notes.md", "# hello".encode()),
+        ("notes.txt", b"hello\nworld"),
+        ("notes.md", b"# hello"),
         ("events.json", json.dumps({"ok": True}).encode()),
-        ("data.csv", "a,b\n1,2\n".encode()),
-        ("run.log", "started\n".encode()),
+        ("data.csv", b"a,b\n1,2\n"),
+        ("run.log", b"started\n"),
     ],
 )
 def test_validate_file_accepts_utf8_text_and_json(tmp_path: Path, filename: str, data: bytes):

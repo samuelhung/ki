@@ -6,13 +6,12 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from zhiji_backend import cli, main
-from zhiji_backend.routes import dashboard_routes
 from zhiji_backend.main import app
+from zhiji_backend.routes import dashboard_routes
 
 
 def _middleware_options(middleware_class):

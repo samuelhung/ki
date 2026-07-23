@@ -13,6 +13,7 @@ router = APIRouter(prefix="/api/logs", tags=["logs"])
 
 from ..paths import LOG_DIR
 from ..security.redaction import redact_text
+
 LOG_FILE = LOG_DIR / "ki.log"
 
 # Log line pattern: 2026-06-13 14:05:30 [WARNING] module:line | message

@@ -1,7 +1,7 @@
 """Unified ingest API endpoints for douyin links, audio, video, and documents."""
 
-import json
 import hashlib
+import json
 import logging
 import re
 import shutil
@@ -13,13 +13,13 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
 from ..db import connect, init_db
+from ..security.constraints import MAX_PAGE_SIZE, SafeIdentifier, safe_identifier
 from ..security.file_intake import (
     kind_for_filename,
     max_bytes_for_kind,
     stream_upload_to_temp,
     validate_file,
 )
-from ..security.constraints import MAX_PAGE_SIZE, SafeIdentifier, safe_identifier
 from ..security.paths import resolve_under
 from ..security.redaction import classify_task_error, sanitize_task_error
 from ..task_queue import enqueue as enqueue_task
@@ -28,7 +28,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ingest", tags=["ingest"])
 
+from datetime import UTC
+
 from ..paths import INGEST_ROOT
+
 TRANSCRIPTS_DIR = INGEST_ROOT / "transcripts"
 SUMMARIES_DIR   = INGEST_ROOT / "summaries"
 VIDEOS_DIR      = INGEST_ROOT / "videos"
@@ -313,8 +316,8 @@ def _create_concept(title: str, topic: str, description: str = "", force_ai: boo
     from ..classifier import classify_content
 
     concept_id = f"evt-concept-{uuid.uuid4().hex[:12]}"
-    from datetime import datetime, timezone
-    now_ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    from datetime import datetime
+    now_ts = datetime.now(UTC).strftime("%Y-%m-%d %H:%M")
 
     # Build source doc context block with [文档N] indexing
     docs_block = ""
@@ -343,21 +346,21 @@ def _create_concept(title: str, topic: str, description: str = "", force_ai: boo
                 f"请为以下概念提供结构化的解释说明：\n\n"
                 f"概念名称：{title}\n"
                 + (f"参考简述：{seed}\n\n" if seed else "\n") +
-                f"请按以下格式输出（使用 Markdown）：\n\n"
-                f"## 核心定义\n"
-                f"（一到两句话厘清概念）\n\n"
-                f"## 关键机制/原理\n"
-                f"1. ...\n"
-                f"2. ...\n\n"
-                + (f"## 原文依据\n"
-                   f"（从下方参考文档中摘录与该概念直接相关的原文段落。要求：\n"
-                   f"- 每条引用独立成段，末尾标注 [文档N]\n"
-                   f"- 引用原文关键句，而非自行概括\n"
-                   f"- 若无直接相关原文，标注「参考文档中未直接涉及」）\n\n" if docs_block else "") +
-                f"## 适用范围/前提假设\n\n"
-                f"## 关联概念\n"
-                f"- 概念A\n"
-                f"- 概念B"
+                "请按以下格式输出（使用 Markdown）：\n\n"
+                "## 核心定义\n"
+                "（一到两句话厘清概念）\n\n"
+                "## 关键机制/原理\n"
+                "1. ...\n"
+                "2. ...\n\n"
+                + ("## 原文依据\n"
+                   "（从下方参考文档中摘录与该概念直接相关的原文段落。要求：\n"
+                   "- 每条引用独立成段，末尾标注 [文档N]\n"
+                   "- 引用原文关键句，而非自行概括\n"
+                   "- 若无直接相关原文，标注「参考文档中未直接涉及」）\n\n" if docs_block else "") +
+                "## 适用范围/前提假设\n\n"
+                "## 关联概念\n"
+                "- 概念A\n"
+                "- 概念B"
             )
             if docs_block:
                 prompt += f"\n\n参考文档原文：\n{docs_block}\n\n参考文档清单：\n{docs_index}"
@@ -513,9 +516,13 @@ def _process_ingest(event_id: str, ingest_type: str, content, topic: str, title:
             _set_progress(event_id, stages)
 
         elif ingest_type == "douyin_share":
-            from ..ingest.douyin import parse_share_text, download_video
+            from ..ingest.douyin import download_video, parse_share_text
             from ..ingest.media import extract_audio
-            from ..ingest.volc_transcriber import upload_to_tos, submit_transcription, poll_result
+            from ..ingest.volc_transcriber import (
+                poll_result,
+                submit_transcription,
+                upload_to_tos,
+            )
 
             stages = [
                 {"key": "parse", "label": "解析链接", "status": "active"},

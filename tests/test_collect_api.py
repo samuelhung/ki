@@ -10,7 +10,6 @@ import zhiji_backend.main as main
 import zhiji_backend.routes.event_routes as event_routes
 from zhiji_backend.db import connect, init_db, seed_default_sources
 
-
 SAMPLE_FEED_V1 = """<?xml version="1.0" encoding="UTF-8" ?>
 <rss version="2.0">
   <channel>

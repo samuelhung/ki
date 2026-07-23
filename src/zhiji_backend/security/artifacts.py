@@ -8,12 +8,12 @@ import os
 import re
 import stat
 from dataclasses import dataclass
+from datetime import UTC
 from pathlib import Path
 
 import anyio
 from starlette.datastructures import Headers
 from starlette.responses import Response
-
 
 _CHUNK_SIZE = 64 * 1024
 _ASCII_DIGITS = re.compile(r"[0-9]+\Z", re.ASCII)
@@ -128,9 +128,8 @@ def _http_date_timestamp(value: str) -> float | None:
     if parsed is None:
         return None
     if parsed.tzinfo is None:
-        from datetime import timezone
 
-        parsed = parsed.replace(tzinfo=timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
     try:
         return parsed.timestamp()
     except (OverflowError, OSError, ValueError):

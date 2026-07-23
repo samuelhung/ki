@@ -11,14 +11,23 @@ import re
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Protocol
+from typing import Protocol
 
 try:
-    from scripts.release_contract import ReleaseContract, expected_artifact_names, validate_release_artifacts
+    from scripts.release_contract import (
+        ReleaseContract,
+        expected_artifact_names,
+        validate_release_artifacts,
+    )
     from scripts.release_preflight import run_preflight
 except ModuleNotFoundError:
-    from release_contract import ReleaseContract, expected_artifact_names, validate_release_artifacts  # type: ignore[no-redef]
+    from release_contract import (  # type: ignore[no-redef]
+        ReleaseContract,
+        expected_artifact_names,
+        validate_release_artifacts,
+    )
     from release_preflight import run_preflight  # type: ignore[no-redef]
 
 

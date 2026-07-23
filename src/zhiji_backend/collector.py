@@ -9,18 +9,19 @@ import re
 import sqlite3
 import urllib.request
 import xml.etree.ElementTree as ET
+from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from html import unescape
 from pathlib import Path
-from typing import Callable, Iterable
 
 from .db import connect, init_db
 
 logger = logging.getLogger("knowledge-intelligence")
 
 from .paths import DATA_DIR
+
 DEFAULT_DATA_DIR = DATA_DIR
 MAX_WATERMARK_IDS = 500
 
@@ -129,7 +130,7 @@ def _extract_text(html: str, max_chars: int = 5000) -> str:
         r'^\d+ (minutes|hours|days) ago$', r'^Published\s', r'^\d+ (January|February|March|April|May|June|July|August|September|October|November|December) \d{4}$',
     ]
     lines = raw.split('\n')
-    filtered = [l for l in lines if not any(re.match(p, l.strip()) for p in noise_patterns)]
+    filtered = [line for line in lines if not any(re.match(p, line.strip()) for p in noise_patterns)]
     raw = '\n'.join(filtered)
     raw = re.sub(r'\n{3,}', '\n\n', raw)
     if len(raw) > max_chars:
@@ -153,16 +154,16 @@ def parse_datetime(value: str | None) -> str | None:
     try:
         dt = parsedate_to_datetime(text)
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone.utc).isoformat()
+            dt = dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC).isoformat()
     except Exception:
         logger.debug("parsedate_to_datetime failed for %r, trying fromisoformat", text)
     try:
         normalized = text.replace("Z", "+00:00")
         dt = datetime.fromisoformat(normalized)
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone.utc).isoformat()
+            dt = dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC).isoformat()
     except Exception:
         logger.debug("fromisoformat failed for %r, returning raw text", text)
         return text
@@ -240,21 +241,21 @@ def save_watermark(source_id: str, seen_ids: Iterable[str]) -> None:
     path = watermark_path(source_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     bounded = list(dict.fromkeys(seen_ids))[:MAX_WATERMARK_IDS]
-    payload = {"source_id": source_id, "seen_ids": bounded, "updated_at": datetime.now(timezone.utc).isoformat()}
+    payload = {"source_id": source_id, "seen_ids": bounded, "updated_at": datetime.now(UTC).isoformat()}
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
     tmp.replace(path)
 
 
 def event_id(source_id: str, external_id: str) -> str:
-    digest = hashlib.sha256(f"{source_id}:{external_id}".encode("utf-8")).hexdigest()[:24]
+    digest = hashlib.sha256(f"{source_id}:{external_id}".encode()).hexdigest()[:24]
     return f"evt-{digest}"
 
 
 def append_event_jsonl(event: dict[str, object]) -> None:
     events_dir = get_data_dir() / "events"
     events_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now(timezone.utc).date().isoformat()
+    stamp = datetime.now(UTC).date().isoformat()
     with (events_dir / f"{stamp}.jsonl").open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
 
@@ -328,7 +329,7 @@ def _is_duplicate_title(new_title: str, existing_titles: list[str], threshold: f
 def _collect_one_source(source: dict[str, object], fetcher: FetchUrl) -> dict[str, object]:
     """Collect events from a single source. Returns result dict suitable for aggregation."""
     source_id = str(source["id"])
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
 
     try:
         items = parse_rss_items(fetcher(str(source["url"])))

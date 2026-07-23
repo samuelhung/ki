@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
-from ..db import connect, init_db, seed_default_sources
+
 from ..collector import collect_once, fetch_url
+from ..db import connect, seed_default_sources
 
 router = APIRouter()
 

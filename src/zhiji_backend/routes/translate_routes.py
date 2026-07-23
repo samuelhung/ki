@@ -1,13 +1,16 @@
 """Translation endpoints for event content."""
 from __future__ import annotations
 
-import os
+import logging
+
 from fastapi import APIRouter
+
 from ..db import connect
-from ..translator import translate, translate_title
 from ..models import TranslateRequest
+from ..translator import translate, translate_title
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.post("/api/translate/run")
@@ -116,6 +119,5 @@ def backfill_translation(request: TranslateRequest | None = None) -> dict[str, o
     result = run_translation(TranslateRequest(limit=limit))
     result["marked"] = marked
     return result
-
 
 

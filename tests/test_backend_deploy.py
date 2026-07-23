@@ -6,7 +6,7 @@ import os
 import sqlite3
 import zipfile
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -15,11 +15,11 @@ from scripts.deploy_backend import (
     BackendDeployConfig,
     BackendDeployError,
     LaunchdServiceController,
+    _restore_database,
     default_smoke_check,
     deploy_backend,
     prune_daily_backups,
     prune_versions,
-    _restore_database,
     write_launchd_plist,
 )
 
@@ -100,7 +100,7 @@ def test_deploy_installs_immutable_version_and_atomically_switches_current(tmp_p
         service=service,
         installer=_install,
         smoke_check=lambda: smoke_targets.append(config.current_link.resolve()),
-        now=lambda: datetime(2026, 7, 23, 12, tzinfo=timezone.utc),
+        now=lambda: datetime(2026, 7, 23, 12, tzinfo=UTC),
     )
 
     assert result == config.versions_dir / "2.0.0+90"
@@ -136,7 +136,7 @@ def test_failed_smoke_restores_database_and_previous_version(tmp_path: Path) -> 
             service=service,
             installer=_install,
             smoke_check=smoke,
-            now=lambda: datetime(2026, 7, 23, 12, tzinfo=timezone.utc),
+            now=lambda: datetime(2026, 7, 23, 12, tzinfo=UTC),
         )
 
     assert config.current_link.resolve() == old
@@ -174,7 +174,7 @@ def test_failed_rollback_stop_never_restores_live_database_or_removes_active_ver
             service=service,
             installer=_install,
             smoke_check=fail_smoke,
-            now=lambda: datetime(2026, 7, 23, 12, tzinfo=timezone.utc),
+            now=lambda: datetime(2026, 7, 23, 12, tzinfo=UTC),
         )
 
     active = config.current_link.resolve()
@@ -374,7 +374,7 @@ def test_successful_deploy_retains_actual_previous_version_even_when_older_by_mt
         service=FakeService(),
         installer=_install,
         smoke_check=lambda: None,
-        now=lambda: datetime(2026, 7, 23, 12, tzinfo=timezone.utc),
+        now=lambda: datetime(2026, 7, 23, 12, tzinfo=UTC),
     )
 
     assert previous.exists()
