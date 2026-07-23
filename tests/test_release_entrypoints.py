@@ -90,11 +90,13 @@ def test_readme_documents_only_the_verified_release_and_atomic_deploy_flow() -> 
         "mkdir -m 700 '$REMOTE_STAGE'",
         "test \"$TOTAL\" = \"$DATES\"",
         "test \"$DATES\" -ge 1",
-        "scp -r \"$OUT/wheelhouse\"",
-        "grep -Fx '        --host'",
-        "grep -Fx '        0.0.0.0'",
-        "grep -Fx '        --port'",
-        "grep -Fx '        9120'",
+        "build_remote_wheelhouse.py",
+        "--expected-machine x86_64",
+        "BOOTSTRAP_SHA256SUMS",
+        "plutil -extract ProgramArguments.2",
+        "plutil -extract ProgramArguments.3",
+        "plutil -extract ProgramArguments.4",
+        "plutil -extract ProgramArguments.5",
     ):
         assert protected_remote_deploy_detail in independent_deploy_body
     preflight_position = independent_deploy_body.index(
@@ -121,6 +123,7 @@ def test_readme_documents_only_the_verified_release_and_atomic_deploy_flow() -> 
     assert "cp '${REMOTE_STAGE}/" not in independent_deploy_body
     assert "token 时只运行版本化入口" not in independent_deploy_body
     assert "grep -E -- \"runtime/current/venv/bin/zhiji|" not in independent_deploy_body
+    assert "scp -r \"$OUT/wheelhouse\"" not in independent_deploy_body
     for prohibited_inline_implementation in (
         "<<'PY'",
         "secrets.token_urlsafe",
@@ -146,6 +149,7 @@ def test_backend_deployment_tools_support_documented_direct_cli_entrypoints() ->
         "scripts/provision_remote_access.py",
         "scripts/bootstrap_legacy_runtime.py",
         "scripts/preflight_backend_deploy.py",
+        "scripts/build_remote_wheelhouse.py",
     ):
         subprocess.run([sys.executable, script, "--help"], cwd=ROOT, check=True)
 

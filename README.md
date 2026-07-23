@@ -146,7 +146,7 @@ python3 scripts/preflight_backend_deploy.py \
 
 Preflight 只输出安全事实，并验证本地 `KI_REMOTE_API_TOKEN` 与远端 `KI_API_TOKEN` 相同、allowed hosts、磁盘空间、Python 3.12、packages 根目录、SHA staging 当前不存在、legacy/current/target 预期、数据库普通文件与 `PRAGMA quick_check`。任何失败都停止流程。
 
-Preflight 通过后构建 SHA 专属 wheel，从 `uv.lock` 导出带 hash 的生产依赖锁，并用固定 Python 3.12 下载本机生产平台的依赖 wheelhouse。远端安装全程使用 `--no-index`、`--require-hashes` 和 `--no-deps`，不会在线解析依赖。检查摘要以及 wheel 内的 `frontend_dist/index.html` 和 `assets/` 后，再把 wheel、依赖包与四个部署工具上传到同一 staging。运行任何远端工具前必须再次验证完整 `SHA256SUMS`：
+Preflight 通过后构建 SHA 专属 wheel，并从 `uv.lock` 导出带 hash 的生产依赖锁。由于开发机是 ARM64、正式机是 Intel，wheelhouse 必须在停止服务前由正式机固定的 Python 3.12 于 SHA staging 内构建；构建下载受 hash 锁约束，部署安装全程使用 `--no-index`、`--require-hashes` 和 `--no-deps`，不会在线解析依赖。先校验 `BOOTSTRAP_SHA256SUMS` 再执行 wheelhouse 构建工具，构建完成后由工具生成覆盖全部制品的最终 `SHA256SUMS`：
 
 ```bash
 OUT="dist/backend-${SOURCE_SHA}"
@@ -158,35 +158,26 @@ test -n "$WHEEL"
 uv export --frozen --no-dev \
   --no-emit-project --no-editable --format requirements.txt \
   --output-file "$OUT/requirements.lock"
-/Users/yuk/Documents/zhiji/ki/.venv/bin/python -m venv "$OUT/.download-venv"
-mkdir "$OUT/wheelhouse"
-"$OUT/.download-venv/bin/python" -m pip download --require-hashes \
-  --only-binary=:all: --dest "$OUT/wheelhouse" \
-  --requirement scripts/backend-build-requirements.lock
-"$OUT/.download-venv/bin/python" -m pip install --no-index --require-hashes \
-  --find-links "$OUT/wheelhouse" \
-  --requirement scripts/backend-build-requirements.lock
-"$OUT/.download-venv/bin/python" -m pip download --no-build-isolation \
-  --require-hashes --dest "$OUT/wheelhouse" \
-  --requirement "$OUT/requirements.lock"
-rm -rf "$OUT/.download-venv"
 cp scripts/deploy_backend.py scripts/bootstrap_legacy_runtime.py \
   scripts/preflight_backend_deploy.py scripts/provision_remote_access.py \
-  scripts/backend-build-requirements.lock "$OUT/"
+  scripts/build_remote_wheelhouse.py scripts/backend-build-requirements.lock "$OUT/"
 (cd "$OUT" && shasum -a 256 "$(basename "$WHEEL")" requirements.lock \
   deploy_backend.py bootstrap_legacy_runtime.py preflight_backend_deploy.py \
-  provision_remote_access.py backend-build-requirements.lock \
-  $(find wheelhouse -mindepth 1 -maxdepth 1 -type f -print | sort) > SHA256SUMS)
-(cd "$OUT" && shasum -a 256 -c SHA256SUMS)
+  provision_remote_access.py build_remote_wheelhouse.py \
+  backend-build-requirements.lock > BOOTSTRAP_SHA256SUMS)
+(cd "$OUT" && shasum -a 256 -c BOOTSTRAP_SHA256SUMS)
 unzip -l "$WHEEL" | grep -q 'zhiji_backend/frontend_dist/index.html'
 unzip -l "$WHEEL" | grep -q 'zhiji_backend/frontend_dist/assets/'
 ssh zhiji-prod "mkdir -m 700 '$REMOTE_STAGE'"
-scp "$WHEEL" "$OUT/SHA256SUMS" "$OUT/deploy_backend.py" \
+scp "$WHEEL" "$OUT/BOOTSTRAP_SHA256SUMS" "$OUT/deploy_backend.py" \
   "$OUT/bootstrap_legacy_runtime.py" "$OUT/preflight_backend_deploy.py" \
   "$OUT/provision_remote_access.py" "$OUT/requirements.lock" \
-  "$OUT/backend-build-requirements.lock" \
+  "$OUT/build_remote_wheelhouse.py" "$OUT/backend-build-requirements.lock" \
   "zhiji-prod:${REMOTE_STAGE}/"
-scp -r "$OUT/wheelhouse" "zhiji-prod:${REMOTE_STAGE}/"
+ssh zhiji-prod "cd '$REMOTE_STAGE' && shasum -a 256 -c BOOTSTRAP_SHA256SUMS"
+ssh zhiji-prod "/Users/mrh/Documents/KI/runtime/venv/bin/python \
+  '${REMOTE_STAGE}/build_remote_wheelhouse.py' \
+  --stage '${REMOTE_STAGE}' --expected-machine x86_64"
 ssh zhiji-prod "cd '$REMOTE_STAGE' && shasum -a 256 -c SHA256SUMS"
 ```
 
@@ -252,12 +243,12 @@ ssh zhiji-prod '/Users/mrh/Documents/KI/runtime/venv/bin/python -m json.tool /Us
 ssh zhiji-prod 'test -x /Users/mrh/Documents/KI/runtime/venv/bin/zhiji'
 ssh zhiji-prod "test -x '/Users/mrh/Documents/KI/runtime/versions/${ROLLBACK_NAME}/venv/bin/zhiji'"
 ssh zhiji-prod 'sqlite3 /Users/mrh/Documents/KI/data/intelligence.sqlite "PRAGMA quick_check;" | grep -Fx ok'
-LAUNCHD_STATE="$(ssh zhiji-prod 'launchctl print gui/$(id -u)/com.zhiji.backend')"
-printf '%s\n' "$LAUNCHD_STATE" | grep -F '/runtime/current/venv/bin/zhiji'
-printf '%s\n' "$LAUNCHD_STATE" | grep -Fx '        --host'
-printf '%s\n' "$LAUNCHD_STATE" | grep -Fx '        0.0.0.0'
-printf '%s\n' "$LAUNCHD_STATE" | grep -Fx '        --port'
-printf '%s\n' "$LAUNCHD_STATE" | grep -Fx '        9120'
+ssh zhiji-prod 'launchctl print gui/$(id -u)/com.zhiji.backend >/dev/null'
+ssh zhiji-prod 'test "$(/usr/bin/plutil -extract ProgramArguments.0 raw -o - /Users/mrh/Library/LaunchAgents/com.zhiji.backend.plist)" = "/Users/mrh/Documents/KI/runtime/current/venv/bin/zhiji"'
+ssh zhiji-prod 'test "$(/usr/bin/plutil -extract ProgramArguments.2 raw -o - /Users/mrh/Library/LaunchAgents/com.zhiji.backend.plist)" = "--host"'
+ssh zhiji-prod 'test "$(/usr/bin/plutil -extract ProgramArguments.3 raw -o - /Users/mrh/Library/LaunchAgents/com.zhiji.backend.plist)" = "0.0.0.0"'
+ssh zhiji-prod 'test "$(/usr/bin/plutil -extract ProgramArguments.4 raw -o - /Users/mrh/Library/LaunchAgents/com.zhiji.backend.plist)" = "--port"'
+ssh zhiji-prod 'test "$(/usr/bin/plutil -extract ProgramArguments.5 raw -o - /Users/mrh/Library/LaunchAgents/com.zhiji.backend.plist)" = "9120"'
 ssh zhiji-prod 'find /Users/mrh/Documents/KI/backups -type f -name "deploy-*.sqlite" -print | sort'
 ssh zhiji-prod 'TOTAL=$(find /Users/mrh/Documents/KI/backups -type f -name "deploy-*.sqlite" -print | wc -l | tr -d " ") && DATES=$(find /Users/mrh/Documents/KI/backups -type f -name "deploy-*.sqlite" -print | sed -E "s/.*deploy-([0-9]{8})-.*/\\1/" | sort -u | wc -l | tr -d " ") && test "$TOTAL" = "$DATES" && test "$DATES" -ge 1 && test "$DATES" -le 7 && printf "%s\\n" "$DATES"'
 curl -fsS http://10.8.0.105:9120/ | grep -q '<div id="root">'
