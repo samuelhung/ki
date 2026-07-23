@@ -17,6 +17,7 @@ from scripts.deploy_backend import (
     BackendDeployError,
     LaunchdServiceController,
     _restore_database,
+    _validate_remote_bind_environment,
     default_smoke_check,
     deploy_backend,
     prune_daily_backups,
@@ -94,6 +95,13 @@ def _install(stage: Path, _config: BackendDeployConfig) -> None:
 def _write_secure_api_token(home: Path, value: str = "test-only-token") -> Path:
     env_file = home / ".env"
     env_file.write_text(f"KI_API_TOKEN={value}\n", encoding="utf-8")
+    env_file.chmod(0o600)
+    return env_file
+
+
+def _write_secure_env_contents(home: Path, contents: str) -> Path:
+    env_file = home / ".env"
+    env_file.write_text(contents, encoding="utf-8")
     env_file.chmod(0o600)
     return env_file
 
@@ -264,6 +272,104 @@ def test_public_bind_requires_secure_env_with_nonempty_api_token(
     assert service.events == []
     assert not config.current_link.exists()
     assert not config.versions_dir.exists()
+
+
+@pytest.mark.parametrize(
+    "contents",
+    [
+        'KI_API_TOKEN="" # comment\n',
+        "KI_API_TOKEN=first-token\nKI_API_TOKEN=\n",
+    ],
+    ids=["quoted-empty-with-comment", "duplicate-last-empty"],
+)
+def test_public_bind_env_parser_rejects_effectively_empty_last_token(
+    tmp_path: Path,
+    contents: str,
+) -> None:
+    config = replace(_config(tmp_path), bind_host="0.0.0.0")
+    _write_secure_env_contents(config.zhiji_home, contents)
+    service = FakeService()
+
+    with pytest.raises(BackendDeployError, match="KI_API_TOKEN"):
+        deploy_backend(config, service=service, installer=_install, smoke_check=lambda: None)
+
+    assert service.events == []
+    assert not config.current_link.exists()
+    assert not config.versions_dir.exists()
+
+
+@pytest.mark.parametrize(
+    "contents",
+    [
+        'KI_API_TOKEN="quoted-token" # comment\n',
+        "export KI_API_TOKEN=exported-token\n",
+        "KI_API_TOKEN=token=with=equals\n",
+        "KI_API_TOKEN=\nKI_API_TOKEN=last-token\n",
+    ],
+    ids=[
+        "quoted-with-comment",
+        "export",
+        "embedded-equals",
+        "duplicate-last-nonempty",
+    ],
+)
+def test_public_bind_env_parser_accepts_runtime_compatible_token_forms(
+    tmp_path: Path,
+    contents: str,
+) -> None:
+    config = replace(_config(tmp_path), bind_host="0.0.0.0")
+    _write_secure_env_contents(config.zhiji_home, contents)
+    service = FakeService()
+
+    deploy_backend(config, service=service, installer=_install, smoke_check=lambda: None)
+
+    assert service.events == ["stop", "start"]
+    assert config.current_link.resolve() == config.versions_dir / "2.0.0+90"
+
+
+def test_public_bind_rejects_non_regular_env_before_service_stop(tmp_path: Path) -> None:
+    config = replace(_config(tmp_path), bind_host="0.0.0.0")
+    (config.zhiji_home / ".env").mkdir()
+    service = FakeService()
+
+    with pytest.raises(BackendDeployError, match="regular non-symlink file"):
+        deploy_backend(config, service=service, installer=_install, smoke_check=lambda: None)
+
+    assert service.events == []
+    assert not config.current_link.exists()
+    assert not config.versions_dir.exists()
+
+
+def test_public_bind_validation_uses_opened_inode_without_following_replacement(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config = replace(_config(tmp_path), bind_host="0.0.0.0")
+    env_file = _write_secure_api_token(config.zhiji_home)
+    replacement = tmp_path / "replacement.env"
+    replacement.write_text("KI_API_TOKEN=\n", encoding="utf-8")
+    replacement.chmod(0o644)
+    real_open = os.open
+    descriptors: list[int] = []
+    opened_flags: list[int] = []
+
+    def replace_path_after_open(path, flags):
+        descriptor = real_open(path, flags)
+        descriptors.append(descriptor)
+        opened_flags.append(flags)
+        env_file.unlink()
+        env_file.symlink_to(replacement)
+        return descriptor
+
+    monkeypatch.setattr("scripts.deploy_backend.os.open", replace_path_after_open)
+
+    _validate_remote_bind_environment(config)
+
+    assert opened_flags
+    assert opened_flags[0] & os.O_NOFOLLOW
+    assert env_file.is_symlink()
+    with pytest.raises(OSError):
+        os.fstat(descriptors[0])
 
 
 def test_public_bind_rejects_symlinked_env_before_service_stop(tmp_path: Path) -> None:

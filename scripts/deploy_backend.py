@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import ipaddress
 import json
@@ -21,7 +22,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -108,8 +109,23 @@ def _is_loopback_bind(bind_host: str) -> bool:
         raise BackendDeployError("bind host must be an IP literal or localhost") from exc
 
 
-def _env_value(path: Path, key: str) -> str:
-    for line in path.read_text(encoding="utf-8").splitlines():
+def _parse_env_value(value: str) -> str | None:
+    value = value.strip()
+    if value[:1] in {"'", '"'}:
+        quote = value[0]
+        closing_quote = value.rfind(quote)
+        if closing_quote == 0:
+            return None
+        suffix = value[closing_quote + 1 :].strip()
+        if suffix and not suffix.startswith("#"):
+            return None
+        return value[1:closing_quote].strip()
+    return re.split(r"\s+#", value, maxsplit=1)[0].strip()
+
+
+def _env_value(lines: Iterable[str], key: str) -> str:
+    result = ""
+    for line in lines:
         line = line.strip()
         if not line or line.startswith("#"):
             continue
@@ -117,11 +133,10 @@ def _env_value(path: Path, key: str) -> str:
             line = line.removeprefix("export ").strip()
         candidate, separator, value = line.partition("=")
         if separator and candidate.strip() == key:
-            value = value.strip()
-            if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-                value = value[1:-1].strip()
-            return value
-    return ""
+            parsed = _parse_env_value(value)
+            if parsed is not None:
+                result = parsed
+    return result
 
 
 def _validate_remote_bind_environment(config: BackendDeployConfig) -> None:
@@ -130,20 +145,30 @@ def _validate_remote_bind_environment(config: BackendDeployConfig) -> None:
 
     env_file = config.zhiji_home / ".env"
     try:
-        env_stat = env_file.lstat()
+        descriptor = os.open(env_file, os.O_RDONLY | os.O_NOFOLLOW)
     except FileNotFoundError as exc:
         raise BackendDeployError("secure .env is required for a non-loopback bind") from exc
     except OSError as exc:
+        if exc.errno == errno.ELOOP:
+            raise BackendDeployError(".env must be a regular non-symlink file") from exc
         raise BackendDeployError("unable to inspect secure .env") from exc
 
-    if not stat.S_ISREG(env_stat.st_mode):
-        raise BackendDeployError(".env must be a regular non-symlink file")
-    if stat.S_IMODE(env_stat.st_mode) != 0o600:
-        raise BackendDeployError(".env must have mode 0600")
     try:
-        api_token = _env_value(env_file, "KI_API_TOKEN")
-    except (OSError, UnicodeError) as exc:
-        raise BackendDeployError("unable to read secure .env") from exc
+        try:
+            env_stat = os.fstat(descriptor)
+        except OSError as exc:
+            raise BackendDeployError("unable to inspect secure .env") from exc
+        if not stat.S_ISREG(env_stat.st_mode):
+            raise BackendDeployError(".env must be a regular non-symlink file")
+        if stat.S_IMODE(env_stat.st_mode) != 0o600:
+            raise BackendDeployError(".env must have mode 0600")
+        try:
+            with os.fdopen(descriptor, encoding="utf-8", closefd=False) as env_handle:
+                api_token = _env_value(env_handle, "KI_API_TOKEN")
+        except (OSError, UnicodeError) as exc:
+            raise BackendDeployError("unable to read secure .env") from exc
+    finally:
+        os.close(descriptor)
     if not api_token:
         raise BackendDeployError("KI_API_TOKEN must be non-empty for a non-loopback bind")
 
