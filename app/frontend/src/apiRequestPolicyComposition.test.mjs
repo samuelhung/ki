@@ -14,7 +14,6 @@ const mediaTransport = existsSync(mediaTransportUrl) ? readFileSync(mediaTranspo
 const mediaWorkerUrl = new URL('../public/ki-media-sw.js', import.meta.url);
 const mediaWorker = existsSync(mediaWorkerUrl) ? readFileSync(mediaWorkerUrl, 'utf8') : '';
 const eventDetail = readFileSync(new URL('./pages/EventDetailPage.tsx', import.meta.url), 'utf8');
-const ingestDetail = readFileSync(new URL('./pages/panels/IngestDetailPanel.tsx', import.meta.url), 'utf8');
 const systemConnection = readFileSync(new URL('./components/cinematic-system/useSystemConnection.ts', import.meta.url), 'utf8');
 const dockAccess = readFileSync(new URL('./pages/GlobalDockAccessOverlay.tsx', import.meta.url), 'utf8');
 const ingest = readFileSync(new URL('./pages/Ingest.tsx', import.meta.url), 'utf8');
@@ -59,10 +58,8 @@ test('protected ingest media uses the streaming service-worker route in every na
   assert.match(mediaWorker, /fetch\(upstreamUrl/);
   assert.doesNotMatch(mediaHook + mediaTransport + mediaWorker, /createObjectURL|response\.blob\(|caches\.(?:open|match)|cache\.put/);
   assert.match(eventDetail, /useAuthenticatedMediaUrl\(toMediaPath\(detail\?\.video_path\)\)/);
-  assert.match(ingestDetail, /useAuthenticatedMediaUrl\(toMediaPath\(detail\?\.video_path\)\)/);
   assert.doesNotMatch(eventDetail, /<video[^>]*src=\{toMediaUrl/s);
-  assert.doesNotMatch(ingestDetail, /<video[^>]*src=\{toMediaUrl/s);
-  assert.doesNotMatch(eventDetail + ingestDetail, /[?&](?:token|api_key)=/i);
+  assert.doesNotMatch(eventDetail, /[?&](?:token|api_key)=/i);
 });
 
 test('connection setters notify the media transport and the app owns a cleaned-up synchronizer', () => {

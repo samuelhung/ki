@@ -13,9 +13,47 @@ INSTALL_SH="$ROOT/scripts/install.sh"
 PACKAGE_JSON="$ROOT/app/frontend/package.json"
 CHECK_SH="$ROOT/scripts/check.sh"
 
+RETIRED_FRONTEND_FILES=(
+  "$ROOT/app/frontend/src/pages/panels/BrainstormDetailPanel.tsx"
+  "$ROOT/app/frontend/src/pages/panels/IngestDetailPanel.tsx"
+  "$ROOT/app/frontend/src/components/EventRow.tsx"
+  "$ROOT/app/frontend/src/components/HeatmapChart.tsx"
+  "$ROOT/app/frontend/src/components/MetricCard.tsx"
+  "$ROOT/app/frontend/src/components/SourceRow.tsx"
+  "$ROOT/app/frontend/src/components/TrendChart.tsx"
+  "$ROOT/app/frontend/src/components/UsageWidget.tsx"
+  "$ROOT/app/frontend/src/components/cinematic/CinematicDashboard.tsx"
+  "$ROOT/app/frontend/src/components/cinematic/CinematicHud.tsx"
+  "$ROOT/app/frontend/src/components/cinematic/dashboardPresenter.ts"
+  "$ROOT/app/frontend/src/components/react-bits/CircularGallery.tsx"
+  "$ROOT/app/frontend/src/components/react-bits/CircularGallery.css"
+  "$ROOT/app/frontend/src/components/react-bits/DomeGallery.jsx"
+  "$ROOT/app/frontend/src/components/react-bits/DomeGallery.css"
+  "$ROOT/app/frontend/src/components/react-bits/Galaxy.jsx"
+  "$ROOT/app/frontend/src/components/react-bits/Galaxy.css"
+  "$ROOT/app/frontend/src/components/react-bits/GlitchText.jsx"
+  "$ROOT/app/frontend/src/components/react-bits/GlitchText.css"
+  "$ROOT/app/frontend/src/components/react-bits/PixelCard.jsx"
+  "$ROOT/app/frontend/src/components/react-bits/PixelCard.css"
+  "$ROOT/app/frontend/src/components/react-bits/ShinyText.jsx"
+  "$ROOT/app/frontend/src/components/react-bits/ShinyText.css"
+  "$ROOT/app/frontend/src/components/react-bits/Threads.jsx"
+  "$ROOT/app/frontend/src/components/react-bits/Threads.css"
+  "$ROOT/app/frontend/src/components/react-bits/circularGalleryComposition.test.mjs"
+  "$ROOT/app/frontend/src/components/react-bits/circularGalleryMath.mjs"
+  "$ROOT/app/frontend/src/components/react-bits/circularGalleryMath.test.mjs"
+)
+
 for path in "$WORKFLOW" "$VITE_CONFIG" "$SYSTEM_DOC_DATA" "$SYSTEM_CENTER_PANELS" "$APP_TSX" "$INGEST_TSX" "$INSTALL_SH" "$PACKAGE_JSON" "$CHECK_SH"; do
   if [[ ! -f "$path" ]]; then
     echo "missing frontend quality gate file: $path" >&2
+    exit 1
+  fi
+done
+
+for path in "${RETIRED_FRONTEND_FILES[@]}"; do
+  if [[ -e "$path" ]]; then
+    echo "retired frontend file must stay removed: $path" >&2
     exit 1
   fi
 done

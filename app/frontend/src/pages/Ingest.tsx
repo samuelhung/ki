@@ -4,7 +4,6 @@ import { useLocation } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
 import { useCurtain } from '../CurtainContext';
 import { Upload, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Loader2, Trash2, Search, Maximize2, Download, Globe, Coins, Brain, Telescope, Zap, X, List, RotateCcw, Sparkles, Radio, FileText, Link2 } from 'lucide-react';
-import MetricCard from '../components/MetricCard';
 import Modal from '../components/Modal';
 import Checkbox from '../components/Checkbox';
 import EmptyState from '../components/EmptyState';
