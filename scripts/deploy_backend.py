@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import ipaddress
 import json
 import os
 import plistlib
@@ -53,6 +54,7 @@ class BackendDeployConfig:
     launchd_label: str
     health_origin: str
     python_executable: Path
+    bind_host: str = "127.0.0.1"
 
     @property
     def release_id(self) -> str:
@@ -96,7 +98,17 @@ class LaunchdServiceController:
         )
 
 
+def _is_loopback_bind(bind_host: str) -> bool:
+    if bind_host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(bind_host).is_loopback
+    except ValueError as exc:
+        raise BackendDeployError("bind host must be an IP literal or localhost") from exc
+
+
 def _validate_config(config: BackendDeployConfig) -> None:
+    _is_loopback_bind(config.bind_host)
     paths = {
         "runtime path": config.runtime_root,
         "Zhiji home path": config.zhiji_home,
@@ -209,7 +221,7 @@ def write_launchd_plist(config: BackendDeployConfig) -> None:
             str(executable),
             "serve",
             "--host",
-            "127.0.0.1",
+            config.bind_host,
             "--port",
             str(urllib.parse.urlsplit(config.health_origin).port or 9120),
         ],

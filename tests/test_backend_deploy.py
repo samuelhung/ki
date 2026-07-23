@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import plistlib
 import sqlite3
 import zipfile
 from dataclasses import dataclass, field, replace
@@ -88,6 +89,12 @@ def _install(stage: Path, _config: BackendDeployConfig) -> None:
     executable = stage / "venv" / "bin" / "zhiji"
     executable.parent.mkdir(parents=True)
     executable.write_text("executable", encoding="utf-8")
+
+
+def _write_secure_env(config: BackendDeployConfig) -> None:
+    env_file = config.zhiji_home / ".env"
+    env_file.write_text("ZHIJI_TEST_SECRET=configured\n", encoding="utf-8")
+    env_file.chmod(0o600)
 
 
 def test_deploy_installs_immutable_version_and_atomically_switches_current(tmp_path: Path) -> None:
@@ -193,6 +200,53 @@ def test_launchd_plist_keeps_label_and_executes_through_current(tmp_path: Path) 
     assert "<string>com.test.zhiji</string>" in content
     assert f"<string>{config.current_link}/venv/bin/zhiji</string>" in content
     assert f"<string>{config.zhiji_home}</string>" in content
+
+
+def test_launchd_defaults_to_loopback_bind_and_health_origin_port(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+
+    write_launchd_plist(config)
+
+    payload = plistlib.loads(config.launchd_plist.read_bytes())
+    arguments = payload["ProgramArguments"]
+    assert arguments[arguments.index("--host") + 1] == "127.0.0.1"
+    assert arguments[arguments.index("--port") + 1] == "19120"
+
+
+@pytest.mark.parametrize("bind_host", ["0.0.0.0", "10.8.0.105", "::", "::1", "localhost"])
+def test_bind_host_accepts_ip_literals_and_localhost(tmp_path: Path, bind_host: str) -> None:
+    config = replace(_config(tmp_path), bind_host=bind_host)
+    if bind_host not in {"::1", "localhost"}:
+        _write_secure_env(config)
+
+    deploy_backend(
+        config,
+        service=FakeService(),
+        installer=_install,
+        smoke_check=lambda: None,
+    )
+
+    payload = plistlib.loads(config.launchd_plist.read_bytes())
+    arguments = payload["ProgramArguments"]
+    assert arguments[arguments.index("--host") + 1] == bind_host
+    assert arguments[arguments.index("--port") + 1] == "19120"
+
+
+@pytest.mark.parametrize(
+    "bind_host",
+    ["production.internal", "http://10.8.0.105", "10.8.0.105:9120", "", "10.8.0.999"],
+)
+def test_bind_host_rejects_non_ip_values_before_service_stop(
+    tmp_path: Path,
+    bind_host: str,
+) -> None:
+    config = replace(_config(tmp_path), bind_host=bind_host)
+    service = FakeService()
+
+    with pytest.raises(BackendDeployError, match="bind host must be an IP literal or localhost"):
+        deploy_backend(config, service=service, installer=_install, smoke_check=lambda: None)
+
+    assert service.events == []
 
 
 def test_initial_service_stop_failure_keeps_previous_runtime_untouched(tmp_path: Path) -> None:
