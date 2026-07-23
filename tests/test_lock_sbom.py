@@ -13,7 +13,7 @@ def _write(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def test_locked_components_reads_every_supported_lockfile(tmp_path: Path) -> None:
+def test_locked_components_reads_every_supported_non_android_lockfile(tmp_path: Path) -> None:
     _write(
         tmp_path / "uv.lock",
         'version = 1\n[[package]]\nname = "alpha"\nversion = "1.2.3"\n',
@@ -76,7 +76,6 @@ DEPENDENCIES:
         "pkg:gem/base64@0.3.0",
         "pkg:cocoapods/Sparkle@2.9.3",
         "pkg:cocoapods/LocalPlugin@0.0.1",
-        "pkg:maven/com.example/widget@5.0.0",
     }
 
 
@@ -86,7 +85,6 @@ def test_write_lock_sbom_emits_exact_cyclonedx_components(tmp_path: Path) -> Non
     _write(tmp_path / "desktop/pubspec.lock", "packages: {}\n")
     _write(tmp_path / "desktop/Gemfile.lock", "GEM\n  specs:\n")
     _write(tmp_path / "desktop/macos/Podfile.lock", "PODS:\n\nDEPENDENCIES:\n")
-    _write(tmp_path / "desktop/android/app/gradle.lockfile", "empty=\n")
     output = tmp_path / "lock-sbom.cdx.json"
 
     assert write_lock_sbom(tmp_path, output) == 1

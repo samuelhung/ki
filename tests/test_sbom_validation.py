@@ -31,21 +31,9 @@ def test_sbom_requires_every_locked_ecosystem(tmp_path: Path) -> None:
             "pkg:pub/c@1",
             "pkg:gem/d@1",
             "pkg:cocoapods/e@1",
-            "pkg:maven/com.example/f@1",
         ],
     )
-    assert validate_sbom(complete) == 6
-
-    without_maven = _write_sbom(
-        tmp_path / "without-maven.json",
-        ["pkg:pypi/a@1", "pkg:npm/b@1", "pkg:pub/c@1", "pkg:gem/d@1", "pkg:cocoapods/e@1"],
-    )
-    try:
-        validate_sbom(without_maven)
-    except ValueError as exc:
-        assert "maven" in str(exc)
-    else:
-        raise AssertionError("SBOM without Maven/Gradle evidence was accepted")
+    assert validate_sbom(complete) == 5
 
     incomplete = _write_sbom(tmp_path / "incomplete.json", ["pkg:npm/b@1"])
     try:
@@ -56,14 +44,14 @@ def test_sbom_requires_every_locked_ecosystem(tmp_path: Path) -> None:
         raise AssertionError("incomplete SBOM was accepted")
 
 
-def test_sbom_can_combine_source_and_gradle_evidence(tmp_path: Path) -> None:
+def test_sbom_can_combine_source_and_lock_evidence(tmp_path: Path) -> None:
     source = _write_sbom(
         tmp_path / "source.json",
-        ["pkg:pypi/a@1", "pkg:npm/b@1", "pkg:pub/c@1", "pkg:gem/d@1", "pkg:cocoapods/e@1"],
+        ["pkg:pypi/a@1", "pkg:npm/b@1", "pkg:pub/c@1"],
     )
-    gradle = _write_sbom(tmp_path / "gradle.json", ["pkg:maven/com.example/f@1"])
+    locks = _write_sbom(tmp_path / "locks.json", ["pkg:gem/d@1", "pkg:cocoapods/e@1"])
 
-    assert validate_sbom(source, gradle) == 6
+    assert validate_sbom(source, locks) == 5
 
 
 def test_sbom_rejects_missing_locked_component(tmp_path: Path) -> None:
@@ -75,7 +63,6 @@ def test_sbom_rejects_missing_locked_component(tmp_path: Path) -> None:
             "pkg:pub/c@1",
             "pkg:gem/d@1",
             "pkg:cocoapods/e@1",
-            "pkg:maven/com.example/f@1",
         ],
     )
 
@@ -97,7 +84,6 @@ def test_validator_cli_runs_directly_without_pythonpath(tmp_path: Path) -> None:
             "pkg:pub/c@1",
             "pkg:gem/d@1",
             "pkg:cocoapods/e@1",
-            "pkg:maven/com.example/f@1",
         ],
     )
 

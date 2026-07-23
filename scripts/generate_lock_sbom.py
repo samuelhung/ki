@@ -82,18 +82,6 @@ def _pod_purls(path: Path) -> set[str]:
     return {_purl("cocoapods", name, version) for name, version in _pod_versions(path).items()}
 
 
-def _gradle_purls(path: Path) -> set[str]:
-    result: set[str] = set()
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or line.startswith("empty="):
-            continue
-        coordinate = line.rsplit("=", 1)[0]
-        group, artifact, version = coordinate.split(":", 2)
-        result.add(_purl("maven", f"{group}/{artifact}", version))
-    return result
-
-
 def locked_components(root: Path) -> set[str]:
     return set().union(
         _uv_purls(root / "uv.lock"),
@@ -101,7 +89,6 @@ def locked_components(root: Path) -> set[str]:
         _pub_purls(root / "desktop/pubspec.lock"),
         _gem_purls(root / "desktop/Gemfile.lock"),
         _pod_purls(root / "desktop/macos/Podfile.lock"),
-        _gradle_purls(root / "desktop/android/app/gradle.lockfile"),
     )
 
 

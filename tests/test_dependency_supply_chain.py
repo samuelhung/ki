@@ -79,132 +79,52 @@ def test_frontend_typescript_tests_enable_the_locked_node22_loader() -> None:
     assert "tsx" not in package.get("devDependencies", {})
 
 
-def test_mobile_dependency_and_signing_inputs_are_locked() -> None:
+def test_desktop_dependency_inputs_are_locked_without_android_target() -> None:
     workflow = (ROOT / ".github" / "workflows" / "zhiji-check.yml").read_text(encoding="utf-8")
-    wrapper = (ROOT / "desktop" / "android" / "gradle" / "wrapper" / "gradle-wrapper.properties").read_text(
-        encoding="utf-8"
-    )
-    android_build = (ROOT / "desktop" / "android" / "app" / "build.gradle.kts").read_text(encoding="utf-8")
-    android_settings = (ROOT / "desktop" / "android" / "settings.gradle.kts").read_text(encoding="utf-8")
-    root_android_build = (ROOT / "desktop" / "android" / "build.gradle.kts").read_text(encoding="utf-8")
-    gradle_locks = sorted((ROOT / "desktop" / "android").glob("**/gradle.lockfile"))
-    plugin_lock_dir = ROOT / "desktop" / "android" / "gradle" / "dependency-locks"
+    metadata = (ROOT / "desktop" / ".metadata").read_text(encoding="utf-8")
+    gitignore = (ROOT / "desktop" / ".gitignore").read_text(encoding="utf-8")
 
+    assert not (ROOT / "desktop" / "android").exists()
+    assert "platform: android" not in metadata
+    assert "/android/" not in gitignore
     assert "flutter pub get --enforce-lockfile" in workflow
-    assert 'id("com.android.application") version "9.1.1" apply false' in android_settings
     assert "load Gem.bin_path(\"cocoapods\", \"pod\")" in workflow
     assert "COCOAPODS_VERSION: '1.16.2'" in workflow
     assert "BUNDLE_FROZEN: 'true'" in workflow
     assert "ruby-version: '3.1.6'" in workflow
     assert "bundle check" in workflow
     assert "RUBYOPT: -rlogger" not in workflow
-    assert "distributionUrl=https\\://services.gradle.org/distributions/gradle-9.3.1-all.zip" in wrapper
-    assert "distributionSha256Sum=17f277867f6914d61b1aa02efab1ba7bb439ad652ca485cd8ca6842fccec6e43" in wrapper
-    assert "lockAllConfigurations()" in root_android_build
-    assert "LockMode.STRICT" in root_android_build
-    assert 'file("gradle/dependency-locks/${project.name}.lockfile")' in root_android_build
-    assert gradle_locks
-    assert all(lock.read_text(encoding="utf-8").strip() for lock in gradle_locks)
-    assert (plugin_lock_dir / "url_launcher_android.lockfile").is_file()
-    assert (plugin_lock_dir / "webview_flutter_android.lockfile").is_file()
-    plugin_locks = list(plugin_lock_dir.glob("*.lockfile"))
-    assert plugin_locks
-    for lock in plugin_locks:
-        contents = lock.read_text(encoding="utf-8")
-        assert contents.strip()
-        for configuration in (
-            "debugCompileClasspath",
-            "debugRuntimeClasspath",
-            "profileCompileClasspath",
-            "profileRuntimeClasspath",
-            "releaseCompileClasspath",
-            "releaseRuntimeClasspath",
-        ):
-            assert configuration in contents
-    assert "ANDROID_KEYSTORE_PATH" in android_build
-    assert "Production Android release signing is required" in android_build
-    assert "gradle.taskGraph.whenReady" in android_build
-    assert 'signingConfigs.getByName("debug")' not in android_build
-    assert "Verify Android release signing guard" in workflow
-    assert ":app:assembleRelease --dry-run" in workflow
-    assert "Production Android release signing is required" in workflow
-    assert "keytool -genkeypair" in workflow
-    assert "ANDROID_KEYSTORE_PATH=" in workflow
-    assert "flutter build apk --release" in workflow
+    assert (ROOT / "desktop" / "pubspec.lock").is_file()
+    assert (ROOT / "desktop" / "Gemfile.lock").is_file()
+    assert (ROOT / "desktop" / "macos" / "Podfile.lock").is_file()
 
 
-def test_android_release_task_graph_uses_kotlin_action_overload() -> None:
-    android_build = (ROOT / "desktop" / "android" / "app" / "build.gradle.kts").read_text(encoding="utf-8")
-
-    assert "object : Action<TaskExecutionGraph>" in android_build
-    assert "override fun execute(taskGraph: TaskExecutionGraph)" in android_build
-
-
-def test_android_build_tool_security_overrides_are_scoped_and_locked() -> None:
-    android_build = (ROOT / "desktop" / "android" / "build.gradle.kts").read_text(encoding="utf-8")
-    gradle_lock = (ROOT / "desktop" / "android" / "app" / "gradle.lockfile").read_text(encoding="utf-8")
-
-    assert 'name.startsWith("_internal-unified-test-platform")' in android_build
-    assert 'requested.group == "io.netty"' in android_build
-    assert 'requested.version in setOf("4.1.93.Final", "4.1.110.Final")' in android_build
-    assert 'useVersion("4.1.135.Final")' in android_build
-    assert 'requested.group == "com.google.protobuf"' in android_build
-    assert 'requested.version?.startsWith("3.") == true' in android_build
-    assert 'useVersion("3.25.5")' in android_build
-    assert 'requested.group == "org.bouncycastle"' in android_build
-    assert 'requested.version == "1.79"' in android_build
-    assert 'useVersion("1.80.2")' in android_build
-    assert "io.netty:netty-handler:4.1.135.Final=" in gradle_lock
-    assert "com.google.protobuf:protobuf-java:4.28.3=" in gradle_lock
-    assert "com.google.protobuf:protobuf-kotlin:4.28.3=" in gradle_lock
-    assert "org.bouncycastle:bcprov-jdk18on:1.80.2=" in gradle_lock
-    assert "io.netty:netty-handler:4.1.110.Final=" not in gradle_lock
-    assert "io.netty:netty-handler:4.1.93.Final=" not in gradle_lock
-    assert "com.google.protobuf:protobuf-java:3.24.4=" not in gradle_lock
-    assert "com.google.protobuf:protobuf-kotlin:3.24.4=" not in gradle_lock
-    assert "org.bouncycastle:bcprov-jdk18on:1.79=" not in gradle_lock
-
-
-def test_android_lint_bundle_vulnerability_exceptions_are_exact_and_temporary() -> None:
+def test_android_vulnerability_exceptions_are_absent() -> None:
     payload = yaml.safe_load(
         (ROOT / ".github" / "security" / "vulnerability-exceptions.yml").read_text(encoding="utf-8")
     )
-    entries = {
-        (entry["id"], entry["ecosystem"], entry["package"], str(entry["version"])): entry
-        for entry in payload["exceptions"]
-    }
-    expected = {
-        ("GHSA-735f-pc8j-v9w8", "Maven", "com.google.protobuf:protobuf-java", "2.6.1"),
-        ("GHSA-wrvw-hg22-4m67", "Maven", "com.google.protobuf:protobuf-java", "2.6.1"),
-        ("GHSA-2r2c-cx56-8933", "Maven", "org.jline:jline-remote-telnet", "3.24.1"),
-        ("GHSA-47qp-hqvx-6r3f", "Maven", "org.jline:jline-remote-telnet", "3.24.1"),
-    }
+    entries = payload["exceptions"]
 
-    assert expected <= entries.keys()
-    for key in expected:
-        entry = entries[key]
-        assert entry["expires"].isoformat() == "2026-09-30"
-        assert "Android Lint" in entry["reason"]
-        assert "APK" in entry["impact"]
+    assert all(entry["ecosystem"].casefold() != "maven" for entry in entries)
+    assert all("android" not in f'{entry["reason"]} {entry["impact"]}'.casefold() for entry in entries)
 
 
-def test_ci_executes_locked_android_graph_and_generates_gradle_sbom() -> None:
+def test_ci_generates_non_android_supply_chain_evidence() -> None:
     workflow = (ROOT / ".github" / "workflows" / "zhiji-check.yml").read_text(encoding="utf-8")
 
-    assert "GRADLE_USER_HOME: ${{ runner.temp }}/gradle-home" not in workflow
-    assert 'echo "GRADLE_USER_HOME=$RUNNER_TEMP/gradle-home" >> "$GITHUB_ENV"' in workflow
-    assert "flutter build apk --debug" in workflow
-    assert "flutter build apk --release" in workflow
+    assert "GRADLE_USER_HOME" not in workflow
+    assert "flutter build apk" not in workflow
+    assert "Android release" not in workflow
+    assert "ANDROID_KEYSTORE" not in workflow
     assert "--write-locks" not in workflow
-    assert 'scan dir:"$GRADLE_USER_HOME/caches/modules-2/files-2.1"' in workflow
-    assert "android-gradle-sbom.cdx.json" in workflow
+    assert "gradle-distribution.zip" not in workflow
+    assert "android-gradle-sbom.cdx.json" not in workflow
     assert "generate_lock_sbom.py" in workflow
     assert "locked-dependencies-sbom.cdx.json" in workflow
     assert "--require-lock-root ." in workflow
     assert '--sbom "$RUNNER_TEMP/source-sbom.cdx.json"' in workflow
-    assert '--sbom "$RUNNER_TEMP/android-gradle-sbom.cdx.json"' in workflow
     assert '--sbom "$RUNNER_TEMP/locked-dependencies-sbom.cdx.json"' in workflow
-    assert "--runtime-lock-root desktop/android" in workflow
+    assert "--runtime-lock-root" not in workflow
 
 
 def test_supply_chain_tools_and_dependabot_are_configured() -> None:
@@ -217,12 +137,12 @@ def test_supply_chain_tools_and_dependabot_are_configured() -> None:
     assert "permissions:\n  contents: read" in workflow
     assert "runs-on: macos-14" in workflow
     assert "persist-credentials: false" in workflow
-    for ecosystem in ("github-actions", "npm", "uv", "pub", "gradle", "bundler"):
+    for ecosystem in ("github-actions", "npm", "uv", "pub", "bundler"):
         assert f'package-ecosystem: "{ecosystem}"' in dependabot
+    assert 'package-ecosystem: "gradle"' not in dependabot
     assert "OSV_SCANNER_VERSION=2.4.0" in installer
     assert "SYFT_VERSION=1.49.0" in installer
     assert "shasum -a 256 -c" in installer
-    assert 'gradle-distribution.zip" | shasum -a 256 -c -' in workflow
     assert "cyclonedx-json" in workflow
     assert '--sbom "$RUNNER_TEMP/source-sbom.cdx.json"' in workflow
     assert "vulnerability-exceptions.yml" in workflow

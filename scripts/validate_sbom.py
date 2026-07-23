@@ -11,7 +11,7 @@ except ModuleNotFoundError:  # Direct execution: python scripts/validate_sbom.py
     from generate_lock_sbom import locked_components
 
 
-REQUIRED_ECOSYSTEMS = {"pypi", "npm", "pub", "gem", "cocoapods", "maven"}
+REQUIRED_ECOSYSTEMS = {"pypi", "npm", "pub", "gem", "cocoapods"}
 
 
 def validate_sbom(*paths: Path, required_purls: set[str] | None = None) -> int:

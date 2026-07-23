@@ -120,9 +120,9 @@ curl -fsS http://10.8.0.105:9120/api/health
 依赖与供应链约束：
 
 - 本地检查和 wheel 构建要求 Node `22.17.0`、npm `10.9.2` 和 `uv 0.11.31`。
-- Python、npm、Pub、Bundler 和 Gradle 安装必须使用仓库锁文件，不允许在 CI 隐式更新。
+- Python、npm、Pub、Bundler 和 CocoaPods 安装必须使用仓库锁文件，不允许在 CI 隐式更新。
 - `desktop/macos/Podfile.lock` 变化时必须同步 `.github/security/cocoapods-security-coverage.yml`，确保外部 Pod 进入 OSV，Flutter/插件包装层由固定工具链或 Pub 锁覆盖。
-- CI 生成 Syft 源码 SBOM、Gradle SBOM 和精确锁文件 SBOM，并由 High/Critical 漏洞门禁统一检查。
+- CI 生成 Syft 源码 SBOM 和覆盖 Python、npm、Pub、Gem、CocoaPods 的精确锁文件 SBOM，并由 High/Critical 漏洞门禁统一检查。
 
 ### 破坏性清理迁移备份与回滚
 

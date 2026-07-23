@@ -16,10 +16,6 @@ updates:
     directory: "/desktop"
     schedule:
       interval: "weekly"
-  - package-ecosystem: "gradle"
-    directory: "/desktop/android"
-    schedule:
-      interval: "weekly"
   - package-ecosystem: "bundler"
     directory: "/desktop"
     schedule:
