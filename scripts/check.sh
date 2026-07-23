@@ -1247,7 +1247,7 @@ if grep -R "__TAURI_INTERNALS__\|@tauri-apps\|check_updates\|tauriInvoke\|tauriL
   echo "FAIL: stale Tauri/update residue found" >&2
   exit 1
 fi
-if grep -R "patch_.*\.bsdiff\|bsdiff .*zhiji\|bspatch .*zhiji\|manifest.json.*gh release\|install_helper\.sh\|10\.8\.0\.105:9120/releases\|后端 DMG 分发\|BACKEND_DMG_URL\|RELEASES_DIR_LOCAL" scripts/build_release.py scripts/release-check.py 2>/dev/null; then
+if grep -R "patch_.*\.bsdiff\|bsdiff .*zhiji\|bspatch .*zhiji\|manifest.json.*gh release\|install_helper\.sh\|10\.8\.0\.105:9120/releases\|后端 DMG 分发\|BACKEND_DMG_URL\|RELEASES_DIR_LOCAL" scripts/build_release.py scripts/publish_release.py 2>/dev/null; then
   echo "FAIL: stale patch-update implementation found in active release scripts" >&2
   exit 1
 fi
@@ -1291,11 +1291,16 @@ fi
 
 echo "== Optional release artifact check =="
 if [[ "${ZHIJI_SKIP_RELEASE_CHECK:-}" == "1" ]]; then
-  echo "skip release-check: ZHIJI_SKIP_RELEASE_CHECK=1"
+  echo "skip release preflight: ZHIJI_SKIP_RELEASE_CHECK=1"
 elif [[ -f "desktop/build/release/zhiji_${VERSION}.dmg" ]]; then
-  PYTHONPATH=src "${PYTHON_BIN[@]}" scripts/release-check.py "$VERSION"
+  RELEASE_BUILD="$(sed -nE 's/^version:[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+\+([0-9]+)[[:space:]]*$/\1/p' desktop/pubspec.yaml)"
+  RELEASE_TAG="v${VERSION}+${RELEASE_BUILD}"
+  CANDIDATE_APPCAST="desktop/build/release/appcast-${VERSION}+${RELEASE_BUILD}.candidate.xml"
+  PYTHONPATH=. "${PYTHON_BIN[@]}" scripts/release_preflight.py "$RELEASE_TAG" \
+    --artifacts-dir desktop/build/release \
+    --candidate-appcast "$CANDIDATE_APPCAST"
 else
-  echo "skip release-check: desktop/build/release/zhiji_${VERSION}.dmg not found"
+  echo "skip release preflight: desktop/build/release/zhiji_${VERSION}.dmg not found"
 fi
 
 echo "== check ok =="

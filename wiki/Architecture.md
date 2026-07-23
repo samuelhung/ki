@@ -70,10 +70,10 @@ data/
           → 替换 /Applications/知几.app
 ```
 
-- 发布物：只上传 `zhiji_X.Y.Z.dmg` 到 GitHub Release，不再使用特权 Helper、bsdiff、manifest.json、install_helper.sh，也不再将 Sparkle 下载入口指向内网后端。
-- appcast：由 `scripts/build_release.py` 生成，但必须 `git add appcast.xml && git commit && git push` 后用户端才可见。
+- 发布物：DMG、wheel、`SHA256SUMS`、CycloneDX SBOM 和 provenance 必须成套上传，不再使用特权 Helper、bsdiff、manifest.json 或 install_helper.sh。
+- appcast：`scripts/build_release.py vX.Y.Z+N` 只生成候选；`scripts/publish_release.py` 在远端制品回读校验和 Release 发布成功后才原子发布正式 Appcast。
 - 版本同步：`desktop/pubspec.yaml`、`src/zhiji_backend/__init__.py`、`app/frontend/src/constants.ts`、`app/frontend/vite.config.ts`、`desktop/lib/main.dart`、`desktop/changelog.json`、系统说明/架构说明必须一起更新。
-- 验证：优先运行 `./scripts/check.sh`；它会校验版本一致性、前端版本化构建、旧 backend/Tauri/增量更新/内网 DMG 分发残留。完整发版再跑 Flutter release build、`scripts/build_release.py --skip-build`、`scripts/release-check.py X.Y.Z`、远端 appcast 和 GitHub Release asset 对齐、实机安装/更新提示。
+- 验证：优先运行 `./scripts/check.sh`；完整发版必须依次执行 `scripts/build_release.py`、`scripts/release_preflight.py` 和 `scripts/publish_release.py`。后端只允许通过 `scripts/deploy_backend.py` 的版本目录、数据库备份、冒烟和自动回滚流程切换。
 
 ## 6. 情报闭环
 

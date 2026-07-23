@@ -136,28 +136,28 @@ cd desktop && flutter build macos
 | 后端 | `src/zhiji_backend/__init__.py` | `__version__ = "X.Y.Z"` |
 | 桌面端 | `desktop/pubspec.yaml` | `version: X.Y.Z+N` |
 
-### 发版命令
+### 发版与部署命令
 
 ```bash
-# 一键发版（推荐）
-./scripts/release.sh 1.10.0
+# 构建并验证候选，不修改正式 Appcast
+python3 scripts/build_release.py v2.0.0+90
+python3 scripts/release_preflight.py v2.0.0+90 --artifacts-dir desktop/build/release \
+  --candidate-appcast desktop/build/release/appcast-2.0.0+90.candidate.xml
 
-# 仅服务端
-./scripts/release.sh 1.10.0 server
+# Draft Release 上传并回读成功后，才发布 Release 与 Appcast
+python3 scripts/publish_release.py v2.0.0+90 --artifacts-dir desktop/build/release \
+  --candidate-appcast desktop/build/release/appcast-2.0.0+90.candidate.xml \
+  --notes desktop/build/release/RELEASE_NOTES.md
 
-# 仅桌面端
-./scripts/release.sh 1.10.0 desktop
-
-# 仅构建 DMG（不发 GitHub）
-cd desktop && flutter build macos
-python3 scripts/build_release.py
+# 后端通过版本目录和 current 符号链接进行原子部署
+python3 scripts/deploy_backend.py v2.0.0+90 --help
 ```
 
 ### 更新机制
 
 | 端 | 方式 | 说明 |
 |---|---|---|
-| 后端 | `zhiji update` CLI | 从 GitHub API 检查 → 下载 whl → pip install → 重启 |
+| 后端 | 原子部署器 | 验证 wheel/SHA256 → 独立 venv → SQLite 备份 → current 切换 → 冒烟/自动回滚 |
 | 桌面端 | Sparkle 2 | 启动自动检查 appcast.xml → 下载 DMG → EdDSA 验证 → 替换安装 |
 
 > 🚫 **bsdiff/bspatch 增量更新已废弃**：国内 GitHub 下载不可靠，补丁文件字节级损坏导致 SIGSEGV 崩溃。改为 Sparkle 全量 DMG 更新。
