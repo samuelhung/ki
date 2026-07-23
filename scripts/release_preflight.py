@@ -13,6 +13,7 @@ try:
         ReleaseContractError,
         load_release_contract,
         validate_candidate_appcast,
+        validate_candidate_binding,
         validate_release_artifacts,
     )
 except ModuleNotFoundError:  # Direct execution from scripts/.
@@ -21,6 +22,7 @@ except ModuleNotFoundError:  # Direct execution from scripts/.
         ReleaseContractError,
         load_release_contract,
         validate_candidate_appcast,
+        validate_candidate_binding,
         validate_release_artifacts,
     )
 
@@ -30,10 +32,19 @@ def run_preflight(
     tag: str,
     artifacts_dir: Path,
     candidate_appcast: Path,
+    *,
+    expected_commit: str | None = None,
 ) -> ReleaseContract:
     contract = load_release_contract(root.resolve(), tag)
-    validate_candidate_appcast(candidate_appcast.resolve(), contract)
-    validate_release_artifacts(artifacts_dir.resolve(), contract)
+    artifacts_dir = artifacts_dir.resolve()
+    candidate_appcast = candidate_appcast.resolve()
+    validate_candidate_appcast(
+        candidate_appcast,
+        contract,
+        dmg_path=artifacts_dir / contract.dmg_name,
+    )
+    validate_release_artifacts(artifacts_dir, contract, expected_commit=expected_commit)
+    validate_candidate_binding(candidate_appcast, artifacts_dir, contract)
     return contract
 
 

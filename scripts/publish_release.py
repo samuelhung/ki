@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import re
 import subprocess
@@ -64,6 +66,14 @@ class GitHubReleaseClient:
         self._checked(["gh", "release", "edit", tag, "--draft=false", "--latest"])
 
 
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def publish_release_candidate(
     root: Path,
     tag: str,
@@ -80,8 +90,21 @@ def publish_release_candidate(
         raise ValueError("release commit must be a full Git SHA")
     if not notes.is_file():
         raise ValueError(f"release notes are missing: {notes}")
-    contract = run_preflight(root, tag, artifacts_dir, candidate_appcast)
+    contract = run_preflight(
+        root,
+        tag,
+        artifacts_dir,
+        candidate_appcast,
+        expected_commit=commit,
+    )
     assets = [artifacts_dir / name for name in sorted(expected_artifact_names(contract))]
+    local_hashes = {asset.name: _sha256(asset) for asset in assets}
+    candidate_bytes = candidate_appcast.read_bytes()
+    provenance = json.loads(
+        (artifacts_dir / contract.provenance_name).read_text(encoding="utf-8")
+    )
+    if hashlib.sha256(candidate_bytes).hexdigest() != provenance["candidate_appcast_sha256"]:
+        raise ValueError("candidate Appcast changed after preflight")
 
     client.create_draft(contract.tag, commit, notes)
     client.upload(contract.tag, assets)
@@ -89,9 +112,14 @@ def publish_release_candidate(
         raise ValueError(f"remote verification directory is not empty: {temp_root}")
     temp_root.mkdir(parents=True, exist_ok=True)
     client.download(contract.tag, temp_root)
-    validate_release_artifacts(temp_root, contract)
+    validate_release_artifacts(temp_root, contract, expected_commit=commit)
+    for name, expected_hash in local_hashes.items():
+        if _sha256(temp_root / name) != expected_hash:
+            raise ValueError(f"remote {name} does not match uploaded artifact")
+    candidate_snapshot = temp_root / contract.candidate_appcast_name
+    candidate_snapshot.write_bytes(candidate_bytes)
     client.publish(contract.tag)
-    publish_appcast(candidate_appcast)
+    publish_appcast(candidate_snapshot)
     return contract
 
 
@@ -107,7 +135,11 @@ def _verify_release_checkout(root: Path) -> str:
     return _git_output(root, "rev-parse", "HEAD")
 
 
-def publish_live_appcast(root: Path, candidate: Path) -> None:
+def verify_appcast_push_ready(root: Path, *, run=subprocess.run) -> None:
+    run(["git", "push", "--dry-run", "origin", "main"], cwd=root, check=True)
+
+
+def publish_live_appcast(root: Path, candidate: Path, *, run=subprocess.run) -> None:
     destination = root / "appcast.xml"
     fd, temporary_name = tempfile.mkstemp(prefix=".appcast.", dir=root)
     temporary = Path(temporary_name)
@@ -119,9 +151,18 @@ def publish_live_appcast(root: Path, candidate: Path) -> None:
         os.replace(temporary, destination)
     finally:
         temporary.unlink(missing_ok=True)
-    subprocess.run(["git", "add", "appcast.xml"], cwd=root, check=True)
-    subprocess.run(["git", "commit", "-m", "release: publish verified appcast"], cwd=root, check=True)
-    subprocess.run(["git", "push", "origin", "main"], cwd=root, check=True)
+    run(["git", "add", "appcast.xml"], cwd=root, check=True)
+    run(["git", "commit", "-m", "release: publish verified appcast"], cwd=root, check=True)
+    try:
+        run(["git", "push", "origin", "main"], cwd=root, check=True)
+    except subprocess.CalledProcessError:
+        run(["git", "fetch", "origin", "main"], cwd=root, check=True)
+        try:
+            run(["git", "rebase", "origin/main"], cwd=root, check=True)
+        except subprocess.CalledProcessError:
+            run(["git", "rebase", "--abort"], cwd=root, check=False)
+            raise
+        run(["git", "push", "origin", "main"], cwd=root, check=True)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -135,6 +176,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         root = args.root.resolve()
         commit = _verify_release_checkout(root)
+        verify_appcast_push_ready(root)
         with tempfile.TemporaryDirectory(prefix="zhiji-release-verify-") as temporary:
             publish_release_candidate(
                 root,

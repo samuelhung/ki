@@ -5,7 +5,7 @@ import json
 import os
 import sqlite3
 import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -19,6 +19,7 @@ from scripts.deploy_backend import (
     deploy_backend,
     prune_daily_backups,
     prune_versions,
+    _restore_database,
     write_launchd_plist,
 )
 
@@ -36,13 +37,15 @@ def _read_database(path: Path) -> str:
 
 
 def _release_files(tmp_path: Path) -> tuple[Path, Path]:
-    wheel = tmp_path / "zhiji_backend-2.0.0-py3-none-any.whl"
+    packages = tmp_path / "packages"
+    packages.mkdir(exist_ok=True)
+    wheel = packages / "zhiji_backend-2.0.0-py3-none-any.whl"
     with zipfile.ZipFile(wheel, "w") as archive:
         archive.writestr(
             "zhiji_backend-2.0.0.dist-info/METADATA",
             "Metadata-Version: 2.4\nName: zhiji-backend\nVersion: 2.0.0\n",
         )
-    checksums = tmp_path / "SHA256SUMS"
+    checksums = packages / "SHA256SUMS"
     checksums.write_text(
         f"{hashlib.sha256(wheel.read_bytes()).hexdigest()}  {wheel.name}\n",
         encoding="ascii",
@@ -58,11 +61,12 @@ def _config(tmp_path: Path) -> BackendDeployConfig:
         release_tag="v2.0.0+90",
         runtime_root=tmp_path / "runtime",
         zhiji_home=tmp_path,
+        user_home=tmp_path / "home",
         database_path=database,
         backups_dir=tmp_path / "backups",
         wheel=wheel,
         checksums=checksums,
-        launchd_plist=tmp_path / "Library" / "LaunchAgents" / "com.test.zhiji.plist",
+        launchd_plist=tmp_path / "home" / "Library" / "LaunchAgents" / "com.test.zhiji.plist",
         launchd_label="com.test.zhiji",
         health_origin="http://127.0.0.1:19120",
         python_executable=Path("/test/python3.12"),
@@ -227,6 +231,157 @@ def test_artifact_mismatch_fails_before_service_is_stopped(tmp_path: Path) -> No
     assert not config.current_link.exists()
 
 
+@pytest.mark.parametrize("field,value", [
+    ("runtime_root", Path("outside-runtime")),
+    ("backups_dir", Path("outside-backups")),
+    ("launchd_plist", Path("other/com.test.zhiji.plist")),
+])
+def test_destructive_deployment_paths_are_restricted_to_configured_roots(
+    tmp_path: Path,
+    field: str,
+    value: Path,
+) -> None:
+    config = _config(tmp_path)
+    invalid = replace(config, **{field: tmp_path.parent / value})
+    service = FakeService()
+
+    with pytest.raises(BackendDeployError, match="path|plist"):
+        deploy_backend(invalid, service=service, installer=_install, smoke_check=lambda: None)
+
+    assert service.events == []
+
+
+def test_database_symlink_is_rejected_before_service_stop(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    real_database = tmp_path / "real.sqlite"
+    config.database_path.replace(real_database)
+    config.database_path.symlink_to(real_database)
+    service = FakeService()
+
+    with pytest.raises(BackendDeployError, match="symbolic link"):
+        deploy_backend(config, service=service, installer=_install, smoke_check=lambda: None)
+
+    assert service.events == []
+
+
+def test_managed_directory_symlink_is_rejected_before_service_stop(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    packages = tmp_path / "packages"
+    real_packages = tmp_path / "real-packages"
+    packages.rename(real_packages)
+    packages.symlink_to(real_packages, target_is_directory=True)
+    service = FakeService()
+
+    with pytest.raises(BackendDeployError, match="packages directory.*symbolic link"):
+        deploy_backend(config, service=service, installer=_install, smoke_check=lambda: None)
+
+    assert service.events == []
+
+
+def test_versions_directory_symlink_is_rejected_before_service_stop(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    config.runtime_root.mkdir()
+    outside = tmp_path / "outside-versions"
+    outside.mkdir()
+    config.versions_dir.symlink_to(outside, target_is_directory=True)
+    service = FakeService()
+
+    with pytest.raises(BackendDeployError, match="versions directory.*symbolic link"):
+        deploy_backend(config, service=service, installer=_install, smoke_check=lambda: None)
+
+    assert service.events == []
+    assert list(outside.iterdir()) == []
+
+
+def test_failed_smoke_rollback_removes_sqlite_wal_sidecars(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    old = config.versions_dir / "1.9.0+89"
+    (old / "venv" / "bin").mkdir(parents=True)
+    (old / "venv" / "bin" / "zhiji").write_text("old", encoding="utf-8")
+    config.current_link.parent.mkdir(parents=True, exist_ok=True)
+    config.current_link.symlink_to(old)
+
+    def fail_smoke() -> None:
+        wal = config.database_path.with_name(f"{config.database_path.name}-wal")
+        shm = config.database_path.with_name(f"{config.database_path.name}-shm")
+        wal.write_bytes(b"failed-version-wal")
+        shm.write_bytes(b"failed-version-shm")
+        raise BackendDeployError("new version unhealthy")
+
+    smoke_attempts = 0
+
+    def fail_once() -> None:
+        nonlocal smoke_attempts
+        smoke_attempts += 1
+        if smoke_attempts == 1:
+            fail_smoke()
+
+    with pytest.raises(BackendDeployError, match="new version unhealthy"):
+        deploy_backend(
+            config,
+            service=FakeService(),
+            installer=_install,
+            smoke_check=fail_once,
+        )
+
+    assert not config.database_path.with_name(f"{config.database_path.name}-wal").exists()
+    assert not config.database_path.with_name(f"{config.database_path.name}-shm").exists()
+    assert _read_database(config.database_path) == "before"
+
+
+def test_failed_database_replace_preserves_existing_wal_sidecars(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    database = tmp_path / "intelligence.sqlite"
+    backup = tmp_path / "backup.sqlite"
+    _database(database, "live")
+    _database(backup, "backup")
+    wal = database.with_name(f"{database.name}-wal")
+    shm = database.with_name(f"{database.name}-shm")
+    wal.write_bytes(b"live-wal")
+    shm.write_bytes(b"live-shm")
+
+    def fail_replace(_source: Path, _destination: Path) -> None:
+        raise OSError("replace failed")
+
+    monkeypatch.setattr("scripts.deploy_backend.os.replace", fail_replace)
+
+    with pytest.raises(OSError, match="replace failed"):
+        _restore_database(backup, database)
+
+    assert wal.read_bytes() == b"live-wal"
+    assert shm.read_bytes() == b"live-shm"
+    assert _read_database(database) == "live"
+
+
+def test_successful_deploy_retains_actual_previous_version_even_when_older_by_mtime(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    versions = config.versions_dir
+    versions.mkdir(parents=True)
+    previous = versions / "1.7.0+70"
+    newer_stale = [versions / "1.8.0+80", versions / "1.9.0+89"]
+    for index, entry in enumerate([previous, *newer_stale]):
+        (entry / "venv" / "bin").mkdir(parents=True)
+        (entry / "venv" / "bin" / "zhiji").write_text("old", encoding="utf-8")
+        os.utime(entry, (1_700_000_000 + index, 1_700_000_000 + index))
+    config.current_link.symlink_to(previous)
+
+    target = deploy_backend(
+        config,
+        service=FakeService(),
+        installer=_install,
+        smoke_check=lambda: None,
+        now=lambda: datetime(2026, 7, 23, 12, tzinfo=timezone.utc),
+    )
+
+    assert previous.exists()
+    assert target.exists()
+    assert len([path for path in versions.iterdir() if path.is_dir()]) == 3
+
+
 def test_retention_keeps_current_previous_two_and_seven_daily_backups(tmp_path: Path) -> None:
     versions = tmp_path / "versions"
     versions.mkdir()
@@ -246,7 +401,8 @@ def test_retention_keeps_current_previous_two_and_seven_daily_backups(tmp_path: 
 
     assert current.exists()
     assert rollback.exists()
-    assert entries[-2].exists() and entries[-3].exists()
+    assert entries[-2].exists()
+    assert not entries[-3].exists()
     assert not entries[0].exists()
 
     backups = tmp_path / "backups"

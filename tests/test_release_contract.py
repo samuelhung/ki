@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 from pathlib import Path
@@ -17,6 +18,7 @@ from scripts.release_preflight import run_preflight
 
 
 ROOT = Path(__file__).resolve().parents[1]
+VALID_SPARKLE_SIGNATURE = base64.b64encode(b"s" * 64).decode("ascii")
 
 
 def test_repository_release_contract_uses_strict_tag_and_consistent_versions() -> None:
@@ -76,16 +78,30 @@ def test_candidate_appcast_must_match_tag_build_url_and_asset(tmp_path: Path) ->
 <channel><item><enclosure
 url="https://github.com/samuelhung/ki/releases/download/v2.0.0%2B90/{contract.dmg_name}"
 sparkle:version="90" sparkle:shortVersionString="2.0.0"
-sparkle:edSignature="signed-value" length="4" type="application/octet-stream" />
+sparkle:edSignature="{VALID_SPARKLE_SIGNATURE}" length="4" type="application/octet-stream" />
 </item></channel></rss>
 """,
         encoding="utf-8",
     )
 
-    validate_candidate_appcast(candidate, contract)
+    dmg = tmp_path / contract.dmg_name
+    dmg.write_bytes(b"test")
+    validate_candidate_appcast(candidate, contract, dmg_path=dmg)
+
+    candidate.write_text(
+        candidate.read_text().replace('length="4"', 'length="3"'),
+        encoding="utf-8",
+    )
+    with pytest.raises(ReleaseContractError, match="length does not match DMG"):
+        validate_candidate_appcast(candidate, contract, dmg_path=dmg)
+
+    candidate.write_text(
+        candidate.read_text().replace('length="3"', 'length="4"'),
+        encoding="utf-8",
+    )
     candidate.write_text(candidate.read_text().replace("%2B90", "%2B91"), encoding="utf-8")
     with pytest.raises(ReleaseContractError, match="download URL"):
-        validate_candidate_appcast(candidate, contract)
+        validate_candidate_appcast(candidate, contract, dmg_path=dmg)
 
 
 def test_release_artifacts_require_exact_assets_checksums_and_provenance(tmp_path: Path) -> None:
@@ -93,6 +109,26 @@ def test_release_artifacts_require_exact_assets_checksums_and_provenance(tmp_pat
     names = expected_artifact_names(contract)
     for name in names - {"SHA256SUMS", contract.provenance_name}:
         (tmp_path / name).write_bytes(name.encode())
+    valid_sbom = json.dumps(
+        {
+            "bomFormat": "CycloneDX",
+            "specVersion": "1.6",
+            "components": [
+                {
+                    "type": "file",
+                    "name": name,
+                    "hashes": [
+                        {
+                            "alg": "SHA-256",
+                            "content": hashlib.sha256((tmp_path / name).read_bytes()).hexdigest(),
+                        }
+                    ],
+                }
+                for name in (contract.dmg_name, contract.wheel_name)
+            ],
+        }
+    )
+    (tmp_path / contract.sbom_name).write_text(valid_sbom, encoding="utf-8")
 
     provenance = {
         "schema_version": 1,
@@ -102,6 +138,7 @@ def test_release_artifacts_require_exact_assets_checksums_and_provenance(tmp_pat
         "commit": "a" * 40,
         "built_at": "2026-07-23T00:00:00Z",
         "tools": {"python": "3.12.11", "flutter": "3.44.2"},
+        "candidate_appcast_sha256": "0" * 64,
     }
     (tmp_path / contract.provenance_name).write_text(json.dumps(provenance), encoding="utf-8")
 
@@ -112,8 +149,38 @@ def test_release_artifacts_require_exact_assets_checksums_and_provenance(tmp_pat
         lines.append(f"{digest}  {name}")
     (tmp_path / "SHA256SUMS").write_text("\n".join(lines) + "\n", encoding="ascii")
 
-    validate_release_artifacts(tmp_path, contract)
+    validate_release_artifacts(tmp_path, contract, expected_commit="a" * 40)
+    with pytest.raises(ReleaseContractError, match="provenance commit"):
+        validate_release_artifacts(tmp_path, contract, expected_commit="b" * 40)
 
+    (tmp_path / contract.sbom_name).write_text(
+        json.dumps(
+            {
+                "bomFormat": "CycloneDX",
+                "specVersion": "1.6",
+                "components": [{"type": "application", "name": "unrelated"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    lines = []
+    for name in sorted(checksum_targets):
+        digest = hashlib.sha256((tmp_path / name).read_bytes()).hexdigest()
+        lines.append(f"{digest}  {name}")
+    (tmp_path / "SHA256SUMS").write_text("\n".join(lines) + "\n", encoding="ascii")
+    with pytest.raises(ReleaseContractError, match="SBOM does not bind release artifact"):
+        validate_release_artifacts(tmp_path, contract)
+
+    (tmp_path / contract.sbom_name).write_text("{}", encoding="utf-8")
+    lines = []
+    for name in sorted(checksum_targets):
+        digest = hashlib.sha256((tmp_path / name).read_bytes()).hexdigest()
+        lines.append(f"{digest}  {name}")
+    (tmp_path / "SHA256SUMS").write_text("\n".join(lines) + "\n", encoding="ascii")
+    with pytest.raises(ReleaseContractError, match="CycloneDX"):
+        validate_release_artifacts(tmp_path, contract)
+
+    (tmp_path / contract.sbom_name).write_text(valid_sbom, encoding="utf-8")
     (tmp_path / contract.sbom_name).write_bytes(b"tampered")
     with pytest.raises(ReleaseContractError, match="checksum mismatch"):
         validate_release_artifacts(tmp_path, contract)
@@ -123,6 +190,38 @@ def test_single_preflight_validates_source_candidate_and_artifacts(tmp_path: Pat
     contract = load_release_contract(ROOT, "v2.0.0+90")
     for name in expected_artifact_names(contract) - {"SHA256SUMS", contract.provenance_name}:
         (tmp_path / name).write_bytes(name.encode())
+    (tmp_path / contract.sbom_name).write_text(
+        json.dumps(
+            {
+                "bomFormat": "CycloneDX",
+                "specVersion": "1.6",
+                "components": [
+                    {
+                        "type": "file",
+                        "name": name,
+                        "hashes": [
+                            {
+                                "alg": "SHA-256",
+                                "content": hashlib.sha256((tmp_path / name).read_bytes()).hexdigest(),
+                            }
+                        ],
+                    }
+                    for name in (contract.dmg_name, contract.wheel_name)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    candidate = tmp_path / contract.candidate_appcast_name
+    candidate.write_text(
+        f"""<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+<channel><item><enclosure url="{contract.download_url}"
+sparkle:version="{contract.build}" sparkle:shortVersionString="{contract.version}"
+sparkle:edSignature="{VALID_SPARKLE_SIGNATURE}" length="{(tmp_path / contract.dmg_name).stat().st_size}"
+type="application/octet-stream" /></item></channel></rss>
+""",
+        encoding="utf-8",
+    )
     provenance = {
         "schema_version": 1,
         "tag": contract.tag,
@@ -131,6 +230,7 @@ def test_single_preflight_validates_source_candidate_and_artifacts(tmp_path: Pat
         "commit": "b" * 40,
         "built_at": "2026-07-23T00:00:00Z",
         "tools": {"python": "3.12.11"},
+        "candidate_appcast_sha256": hashlib.sha256(candidate.read_bytes()).hexdigest(),
     }
     (tmp_path / contract.provenance_name).write_text(json.dumps(provenance), encoding="utf-8")
     checksum_targets = expected_artifact_names(contract) - {"SHA256SUMS"}
@@ -141,14 +241,8 @@ def test_single_preflight_validates_source_candidate_and_artifacts(tmp_path: Pat
         ),
         encoding="ascii",
     )
-    candidate = tmp_path / contract.candidate_appcast_name
-    candidate.write_text(
-        f"""<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
-<channel><item><enclosure url="{contract.download_url}"
-sparkle:version="{contract.build}" sparkle:shortVersionString="{contract.version}"
-sparkle:edSignature="signed" length="1" type="application/octet-stream" /></item></channel></rss>
-""",
-        encoding="utf-8",
-    )
+    assert run_preflight(ROOT, contract.tag, tmp_path, candidate, expected_commit="b" * 40) == contract
 
-    assert run_preflight(ROOT, contract.tag, tmp_path, candidate) == contract
+    candidate.write_text(candidate.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    with pytest.raises(ReleaseContractError, match="candidate Appcast checksum"):
+        run_preflight(ROOT, contract.tag, tmp_path, candidate, expected_commit="b" * 40)

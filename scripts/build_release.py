@@ -19,10 +19,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,16 +33,20 @@ try:
     from scripts.release_contract import (
         SPARKLE_NS,
         ReleaseContract,
+        ReleaseContractError,
         load_release_contract,
         validate_candidate_appcast,
+        validate_sparkle_signature,
     )
     from scripts.release_preflight import run_preflight
 except ModuleNotFoundError:
     from release_contract import (  # type: ignore[no-redef]
         SPARKLE_NS,
         ReleaseContract,
+        ReleaseContractError,
         load_release_contract,
         validate_candidate_appcast,
+        validate_sparkle_signature,
     )
     from release_preflight import run_preflight  # type: ignore[no-redef]
 
@@ -68,6 +74,7 @@ def write_release_metadata(
     directory: Path,
     contract: ReleaseContract,
     *,
+    candidate_appcast: Path,
     commit: str,
     tools: dict[str, str],
     built_at: str | None = None,
@@ -76,6 +83,8 @@ def write_release_metadata(
         raise ReleaseBuildError("release provenance requires a full Git SHA")
     if not tools:
         raise ReleaseBuildError("release provenance requires tool versions")
+    if not candidate_appcast.is_file():
+        raise ReleaseBuildError("release provenance requires a candidate Appcast")
     for name in (contract.dmg_name, contract.wheel_name, contract.sbom_name):
         if not (directory / name).is_file():
             raise ReleaseBuildError(f"release artifact is missing: {name}")
@@ -87,6 +96,7 @@ def write_release_metadata(
         "commit": commit,
         "built_at": built_at or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "tools": tools,
+        "candidate_appcast_sha256": _shasum(candidate_appcast),
     }
     (directory / contract.provenance_name).write_text(
         json.dumps(provenance, ensure_ascii=True, indent=2) + "\n",
@@ -103,14 +113,104 @@ def _tool_output(*command: str) -> str:
     return subprocess.check_output(command, text=True).strip().splitlines()[0]
 
 
-def collect_tool_versions() -> dict[str, str]:
+def collect_tool_versions(syft: Path) -> dict[str, str]:
     return {
         "python": sys.version.split()[0],
         "flutter": _tool_output("flutter", "--version"),
         "node": _tool_output("node", "--version"),
         "npm": _tool_output("npm", "--version"),
         "uv": _tool_output("uv", "--version"),
+        "syft": _tool_output(str(syft), "version"),
     }
+
+
+def verify_release_build_checkout(
+    root: Path,
+    *,
+    check_output=subprocess.check_output,
+) -> str:
+    def git(*args: str) -> str:
+        return check_output(["git", *args], cwd=root, text=True).strip()
+
+    if git("branch", "--show-current") != "main":
+        raise ReleaseBuildError("release build must run from main")
+    if git("status", "--porcelain"):
+        raise ReleaseBuildError("release build requires a clean checkout")
+    commit = git("rev-parse", "HEAD")
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise ReleaseBuildError("release build requires a full Git commit")
+    return commit
+
+
+def require_fresh_release_build(*, skip_build: bool) -> None:
+    if skip_build:
+        raise ReleaseBuildError("--skip-build is disabled for verifiable releases")
+
+
+def generate_release_sbom(
+    syft: Path,
+    artifacts: list[Path],
+    output: Path,
+    *,
+    run=subprocess.run,
+) -> None:
+    if not syft.is_file():
+        raise ReleaseBuildError(
+            f"verified Syft is missing: {syft}; run scripts/install_supply_chain_tools.sh first"
+        )
+    if not artifacts or any(not artifact.is_file() for artifact in artifacts):
+        raise ReleaseBuildError("release SBOM inputs are missing")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="zhiji-release-sbom-", dir=output.parent) as temporary:
+        source = Path(temporary)
+        for artifact in artifacts:
+            destination = source / artifact.name
+            try:
+                os.link(artifact, destination)
+            except OSError:
+                shutil.copy2(artifact, destination)
+        environment = os.environ.copy()
+        environment["SYFT_CHECK_FOR_APP_UPDATE"] = "false"
+        run(
+            [
+                str(syft),
+                "scan",
+                f"dir:{source}",
+                "--output",
+                f"cyclonedx-json={output}",
+            ],
+            check=True,
+            env=environment,
+        )
+    try:
+        payload = json.loads(output.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        output.unlink(missing_ok=True)
+        raise ReleaseBuildError("Syft did not produce valid JSON") from exc
+    if (
+        payload.get("bomFormat") != "CycloneDX"
+        or not payload.get("specVersion")
+        or not isinstance(payload.get("components"), list)
+        or not payload["components"]
+    ):
+        output.unlink(missing_ok=True)
+        raise ReleaseBuildError("Syft did not produce a populated CycloneDX SBOM")
+    artifact_names = {artifact.name for artifact in artifacts}
+    components = [
+        component
+        for component in payload["components"]
+        if not (component.get("type") == "file" and component.get("name") in artifact_names)
+    ]
+    components.extend(
+        {
+            "type": "file",
+            "name": artifact.name,
+            "hashes": [{"alg": "SHA-256", "content": _shasum(artifact)}],
+        }
+        for artifact in artifacts
+    )
+    payload["components"] = components
+    output.write_text(json.dumps(payload, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
 
 
 def build_flutter() -> bool:
@@ -171,7 +271,12 @@ def parse_sparkle_signature(output: str, *, expected_length: int) -> str:
         raise ReleaseBuildError("sign_update returned malformed output")
     if int(match.group(2)) != expected_length:
         raise ReleaseBuildError("sign_update length does not match DMG")
-    return match.group(1)
+    signature = match.group(1)
+    try:
+        validate_sparkle_signature(signature)
+    except ReleaseContractError as exc:
+        raise ReleaseBuildError("sign_update signature is invalid") from exc
+    return signature
 
 
 def sign_sparkle_update(
@@ -293,6 +398,8 @@ def main():
     parser.add_argument("--skip-build", action="store_true", help="跳过编译（使用已有产物）")
     args = parser.parse_args()
 
+    commit = verify_release_build_checkout(PROJECT_ROOT)
+    require_fresh_release_build(skip_build=args.skip_build)
     contract = load_release_contract(PROJECT_ROOT, args.tag)
     version = contract.version
     print(f"📦 知几桌面端 {contract.tag} 发布构建")
@@ -300,13 +407,8 @@ def main():
     print()
 
     # 1. 编译
-    if not args.skip_build:
-        if not build_flutter():
-            sys.exit(1)
-    elif not APP_BINARY.exists():
-        sys.exit(f"❌ 编译产物不存在: {APP_BINARY}")
-    else:
-        print("⏭️  跳过编译")
+    if not build_flutter():
+        sys.exit(1)
 
     # 签名 .app（Sparkle 要求证书签名，不能用 ad-hoc）
     # ⚠️ 必须每次执行：flutter build 只产 adhoc，--skip-build 时也不会自动签名
@@ -375,19 +477,26 @@ def main():
     )
     if not (RELEASE_DIR / contract.wheel_name).is_file():
         raise ReleaseBuildError(f"backend wheel name does not match release contract: {contract.wheel_name}")
-    subprocess.run(
-        [sys.executable, str(PROJECT_ROOT / "scripts" / "generate_lock_sbom.py"), str(RELEASE_DIR / contract.sbom_name)],
-        cwd=PROJECT_ROOT,
-        check=True,
+    syft = PROJECT_ROOT / ".tools" / "bin" / "syft"
+    generate_release_sbom(
+        syft,
+        [dmg_path, RELEASE_DIR / contract.wheel_name],
+        RELEASE_DIR / contract.sbom_name,
     )
-    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=PROJECT_ROOT, text=True).strip()
     write_release_metadata(
         RELEASE_DIR,
         contract,
+        candidate_appcast=candidate_appcast,
         commit=commit,
-        tools=collect_tool_versions(),
+        tools=collect_tool_versions(syft),
     )
-    run_preflight(PROJECT_ROOT, contract.tag, RELEASE_DIR, candidate_appcast)
+    run_preflight(
+        PROJECT_ROOT,
+        contract.tag,
+        RELEASE_DIR,
+        candidate_appcast,
+        expected_commit=commit,
+    )
     print(f"✅ 完整发布候选已通过 preflight: {contract.tag}")
     print("━" * 50)
 

@@ -65,14 +65,19 @@ npm run qa:cinematic-ingest:perf -- http://10.8.0.105:9120/#/ingest tmp/perf-qa-
 cd app/frontend
 npm run qa:cinematic-pages:production -- tmp/cinematic-pages-production-1440 1440x900
 
-# 桌面端构建
-export PATH="/Users/mrh/flutter/bin:$PATH"
-cd desktop && flutter build macos --release
+# 安装经过版本和摘要固定的供应链工具
+./scripts/install_supply_chain_tools.sh .tools/bin
 
-# 发布打包
-cd /Users/mrh/Documents/Projects/zhiji
-python3 scripts/build_release.py --skip-build
-python3 scripts/release-check.py X.Y.Z
+# 构建完整发布候选（DMG、wheel、CycloneDX SBOM、provenance、SHA256SUMS）
+python3 scripts/build_release.py v2.0.0+90
+
+# 独立复核发布候选
+python3 scripts/release_preflight.py v2.0.0+90 \
+  --artifacts-dir desktop/build/release \
+  --candidate-appcast desktop/build/release/appcast-2.0.0+90.candidate.xml
+
+# 查看原子部署器参数（实际执行示例见下文）
+python3 scripts/deploy_backend.py v2.0.0+90 --help
 
 # 统一检查（语法、版本一致性、旧代码扫描、前端构建、可选发布产物检查）
 ./scripts/check.sh
@@ -92,30 +97,49 @@ ZHIJI_SKIP_RELEASE_CHECK=1 ./scripts/check.sh
 - 远端运行目录：`/Users/mrh/Documents/KI`
 - 远端数据目录：`/Users/mrh/Documents/KI/data`
 - 远端 packages 目录：`/Users/mrh/Documents/KI/packages`
-- 远端 venv：`/Users/mrh/Documents/KI/runtime/venv`
+- 远端版本目录：`/Users/mrh/Documents/KI/runtime/versions`
+- 远端运行入口：`/Users/mrh/Documents/KI/runtime/current`
 - SSH alias：`zhiji-prod`
 
-标准部署流程：
+唯一发布与部署流程：
 
 ```bash
-# 1. 本机构建前端并打进 backend wheel（Python 3.12）
+# 1. 在干净的 main 上构建并验证候选；构建过程会嵌入前端
 cd /Users/yuk/Documents/zhiji/ki
 uv lock --check
 uv sync --frozen --group dev
-# 脚本会先执行 npm ci，再构建并嵌入前端产物。
-uv run --frozen python scripts/build_backend_wheel.py --outdir dist
+./scripts/install_supply_chain_tools.sh .tools/bin
+uv run --frozen python scripts/build_release.py v2.0.0+90
+uv run --frozen python scripts/release_preflight.py v2.0.0+90 \
+  --artifacts-dir desktop/build/release \
+  --candidate-appcast desktop/build/release/appcast-2.0.0+90.candidate.xml
 
-# 2. 上传 wheel 到远端 packages
-scp /Users/yuk/Documents/zhiji/ki/dist/zhiji_backend-2.0.0-py3-none-any.whl \
-  zhiji-prod:/Users/mrh/Documents/KI/packages/zhiji_backend-2.0.0-py3-none-any.whl
+# 2. 创建 Draft Release、上传、重新下载校验、发布 Release，最后发布 Appcast
+uv run --frozen python scripts/publish_release.py v2.0.0+90 \
+  --artifacts-dir desktop/build/release \
+  --candidate-appcast desktop/build/release/appcast-2.0.0+90.candidate.xml \
+  --notes desktop/build/release/RELEASE_NOTES.md
 
-# 3. 远端正式安装并重启服务
-ssh zhiji-prod "/Users/mrh/Documents/KI/runtime/venv/bin/python -m pip install --force-reinstall --no-deps /Users/mrh/Documents/KI/packages/zhiji_backend-2.0.0-py3-none-any.whl && launchctl kickstart -k gui/\$(id -u)/com.zhiji.backend"
+# 3. 上传后端部署所需文件和本提交中的部署器
+scp desktop/build/release/zhiji_backend-2.0.0-py3-none-any.whl \
+  desktop/build/release/SHA256SUMS scripts/deploy_backend.py \
+  zhiji-prod:/Users/mrh/Documents/KI/packages/
 
-# 4. 健康检查
-ssh zhiji-prod "sleep 2; curl -fsS http://127.0.0.1:9120/api/health"
-curl -fsS http://10.8.0.105:9120/api/health
+# 4. 在远端使用独立版本目录、原子 current 链接和自动回滚
+ssh zhiji-prod 'python3 /Users/mrh/Documents/KI/packages/deploy_backend.py v2.0.0+90 \
+  --runtime-root /Users/mrh/Documents/KI/runtime \
+  --zhiji-home /Users/mrh/Documents/KI \
+  --user-home /Users/mrh \
+  --database /Users/mrh/Documents/KI/data/intelligence.sqlite \
+  --backups-dir /Users/mrh/Documents/KI/backups \
+  --wheel /Users/mrh/Documents/KI/packages/zhiji_backend-2.0.0-py3-none-any.whl \
+  --checksums /Users/mrh/Documents/KI/packages/SHA256SUMS \
+  --launchd-plist /Users/mrh/Library/LaunchAgents/com.zhiji.backend.plist'
 ```
+
+部署器会先验证 wheel 版本和 SHA256，准备独立 venv，再停服并创建 SQLite 完整性备份。切换后依次检查 `/api/health`、`/api/system/health` 和 `/api/dashboard/summary`；失败时停止新服务、恢复数据库、切回旧版本并再次冒烟。成功后保留当前版本、前两个版本和最近 7 份每日部署备份。
+
+发布器会在创建 Draft 前执行 `git push --dry-run origin main`。若发布 Appcast 时遇到并发提交，会自动 fetch、rebase 并重试一次；若仍失败或 Appcast 本身冲突，正式 feed 仍保持旧版本。解决冲突或连接问题后，在原 `main` 工作区执行 `git push origin main` 重试现有 Appcast 提交，不要重建或重复发布 Release。
 
 依赖与供应链约束：
 
@@ -123,39 +147,6 @@ curl -fsS http://10.8.0.105:9120/api/health
 - Python、npm、Pub、Bundler 和 CocoaPods 安装必须使用仓库锁文件，不允许在 CI 隐式更新。
 - `desktop/macos/Podfile.lock` 变化时必须同步 `.github/security/cocoapods-security-coverage.yml`，确保外部 Pod 进入 OSV，Flutter/插件包装层由固定工具链或 Pub 锁覆盖。
 - CI 生成 Syft 源码 SBOM 和覆盖 Python、npm、Pub、Gem、CocoaPods 的精确锁文件 SBOM，并由 High/Critical 漏洞门禁统一检查。
-
-### 破坏性清理迁移备份与回滚
-
-`20260719_remove_retired_features` 不能使用上面的“安装后立即重启”步骤。生产服务目录为
-`/Users/mrh/Documents/KI`，数据库和配置分别为
-`/Users/mrh/Documents/KI/data/intelligence.sqlite` 与
-`/Users/mrh/Documents/KI/data/system_config.json`。`/Users/mrh/.zhiji/data` 可以是同一目录的符号链接；回滚清单始终记录解析后的绝对路径。
-
-```bash
-# 1. 停止后端和 worker
-ssh zhiji-prod 'launchctl bootout gui/$(id -u)/com.zhiji.backend || true'
-
-# 2. 安装新 wheel，但不要启动服务
-ssh zhiji-prod '/Users/mrh/Documents/KI/runtime/venv/bin/python -m pip install --force-reinstall --no-deps /Users/mrh/Documents/KI/packages/zhiji_backend-2.0.0-py3-none-any.whl'
-
-# 3. 创建数据库、system_config.json 和回滚清单；命令输出清单绝对路径
-ssh zhiji-prod '/Users/mrh/Documents/KI/runtime/venv/bin/zhiji backup-db --output-dir /Users/mrh/Documents/KI/backups'
-
-# 4. 记录输出的 rollback-manifest-*.json 路径后再启动服务
-ssh zhiji-prod 'launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.zhiji.backend.plist || launchctl kickstart -k gui/$(id -u)/com.zhiji.backend'
-```
-
-启动时会在同一个 `BEGIN IMMEDIATE` 迁移锁内验证清单、备份校验和、SQLite 完整性、时间窗口、迁移名和数据库/配置源身份。任一条件不满足都会在删表或删数据前中止。迁移提交后，ready marker 会被原子标记为 consumed。
-
-回滚时保持服务停止，使用清单同时恢复数据库和配置，再安装上一版 wheel。恢复会先把两个文件完整暂存并写入持久化 journal，之后才替换目标文件；如果命令中断或报错，必须先用同一清单重跑恢复，或显式恢复 journal，确认 journal 已删除后再安装上一版 wheel：
-
-```bash
-ssh zhiji-prod "/Users/mrh/Documents/KI/runtime/venv/bin/python -c \"from pathlib import Path; from zhiji_backend.database_backup import restore_rollback_backup; print(restore_rollback_backup(Path('/Users/mrh/Documents/KI/backups/rollback-manifest-YYYYMMDD-HHMMSS.json')))\""
-# 中断/失败时，也可显式恢复已暂存的 journal
-ssh zhiji-prod "/Users/mrh/Documents/KI/runtime/venv/bin/python -c \"from pathlib import Path; from zhiji_backend.database_backup import recover_rollback_restore; print(recover_rollback_restore(Path('/Users/mrh/Documents/KI/data/.intelligence.sqlite.rollback-restore.json')))\""
-ssh zhiji-prod '/Users/mrh/Documents/KI/runtime/venv/bin/python -m pip install --force-reinstall --no-deps /Users/mrh/Documents/KI/packages/PREVIOUS.whl'
-ssh zhiji-prod 'launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.zhiji.backend.plist || launchctl kickstart -k gui/$(id -u)/com.zhiji.backend'
-```
 
 内容采集页的标准 QA 视口是 `2560×1440`。视觉 QA 输出在 `app/frontend/tmp/`，性能基线输出在 `app/frontend/tmp/perf-*` 或调用时指定的临时目录；这些目录不进入 git。
 

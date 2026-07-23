@@ -44,6 +44,7 @@ class BackendDeployConfig:
     release_tag: str
     runtime_root: Path
     zhiji_home: Path
+    user_home: Path
     database_path: Path
     backups_dir: Path
     wheel: Path
@@ -94,6 +95,61 @@ class LaunchdServiceController:
             check=True,
         )
 
+
+def _validate_config(config: BackendDeployConfig) -> None:
+    paths = {
+        "runtime path": config.runtime_root,
+        "Zhiji home path": config.zhiji_home,
+        "user home path": config.user_home,
+        "database path": config.database_path,
+        "backups path": config.backups_dir,
+        "wheel path": config.wheel,
+        "checksums path": config.checksums,
+        "launchd plist path": config.launchd_plist,
+        "Python path": config.python_executable,
+    }
+    if any(not path.is_absolute() for path in paths.values()):
+        raise BackendDeployError("all deployment paths must be absolute")
+    expected = {
+        "runtime path": config.zhiji_home / "runtime",
+        "database path": config.zhiji_home / "data" / "intelligence.sqlite",
+        "backups path": config.zhiji_home / "backups",
+        "wheel path": config.zhiji_home / "packages" / config.wheel.name,
+        "checksums path": config.zhiji_home / "packages" / "SHA256SUMS",
+        "launchd plist path": (
+            config.user_home / "Library" / "LaunchAgents" / f"{config.launchd_label}.plist"
+        ),
+    }
+    for label, expected_path in expected.items():
+        if paths[label] != expected_path:
+            raise BackendDeployError(f"{label} is outside the configured deployment path")
+    for label, path in paths.items():
+        if path.is_symlink():
+            raise BackendDeployError(f"{label} must not be a symbolic link")
+    managed_directories = {
+        "runtime directory": config.runtime_root,
+        "versions directory": config.versions_dir,
+        "data directory": config.zhiji_home / "data",
+        "packages directory": config.zhiji_home / "packages",
+        "launchd parent directory": config.user_home / "Library",
+        "launchd directory": config.user_home / "Library" / "LaunchAgents",
+    }
+    for label, path in managed_directories.items():
+        if path.is_symlink():
+            raise BackendDeployError(f"{label} must not be a symbolic link")
+    if not re.fullmatch(r"[A-Za-z0-9.-]+", config.launchd_label):
+        raise BackendDeployError("launchd label is invalid")
+    origin = urllib.parse.urlsplit(config.health_origin)
+    if (
+        origin.scheme != "http"
+        or origin.hostname not in {"127.0.0.1", "localhost", "::1"}
+        or origin.username is not None
+        or origin.password is not None
+        or origin.path not in {"", "/"}
+        or origin.query
+        or origin.fragment
+    ):
+        raise BackendDeployError("health origin must be a loopback HTTP origin")
 
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -282,6 +338,8 @@ def _restore_database(backup: Path, database: Path) -> None:
                     raise BackendDeployError("rollback database failed integrity check")
         temporary.chmod(0o600)
         os.replace(temporary, database)
+        for suffix in ("-wal", "-shm"):
+            database.with_name(f"{database.name}{suffix}").unlink(missing_ok=True)
     finally:
         temporary.unlink(missing_ok=True)
 
@@ -325,10 +383,19 @@ def prune_versions(
         key=lambda path: path.stat().st_mtime_ns,
         reverse=True,
     )
-    previous = [path for path in entries if path.resolve() != current.resolve()][:keep_previous]
-    keep = {current.resolve(), *(path.resolve() for path in previous)}
-    if rollback_target is not None:
+    current = current.resolve()
+    keep = {current}
+    previous_count = 0
+    if rollback_target is not None and rollback_target.resolve() != current:
         keep.add(rollback_target.resolve())
+        previous_count = 1
+    for path in entries:
+        resolved = path.resolve()
+        if resolved in keep:
+            continue
+        if previous_count < keep_previous:
+            keep.add(resolved)
+            previous_count += 1
     for path in entries:
         if path.resolve() not in keep:
             shutil.rmtree(path)
@@ -357,6 +424,7 @@ def deploy_backend(
     installer: Callable[[Path, BackendDeployConfig], None] = _default_installer,
     now: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
 ) -> Path:
+    _validate_config(config)
     _verify_release_artifact(config)
     previous = _current_target(config)
     target = _prepare_version(config, installer)
@@ -380,7 +448,12 @@ def deploy_backend(
         service.start()
         stopped = False
         smoke_check()
-        prune_versions(config.versions_dir, current=target, keep_previous=2)
+        prune_versions(
+            config.versions_dir,
+            current=target,
+            rollback_target=previous,
+            keep_previous=2,
+        )
         prune_daily_backups(config.backups_dir, keep_days=7)
         return target
     except Exception as original:
@@ -429,6 +502,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("tag")
     parser.add_argument("--runtime-root", type=Path, required=True)
     parser.add_argument("--zhiji-home", type=Path, required=True)
+    parser.add_argument("--user-home", type=Path, required=True)
     parser.add_argument("--database", type=Path, required=True)
     parser.add_argument("--backups-dir", type=Path, required=True)
     parser.add_argument("--wheel", type=Path, required=True)
@@ -440,13 +514,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     config = BackendDeployConfig(
         release_tag=args.tag,
-        runtime_root=args.runtime_root.resolve(),
-        zhiji_home=args.zhiji_home.resolve(),
-        database_path=args.database.resolve(),
-        backups_dir=args.backups_dir.resolve(),
-        wheel=args.wheel.resolve(),
-        checksums=args.checksums.resolve(),
-        launchd_plist=args.launchd_plist.resolve(),
+        runtime_root=args.runtime_root.absolute(),
+        zhiji_home=args.zhiji_home.absolute(),
+        user_home=args.user_home.absolute(),
+        database_path=args.database.absolute(),
+        backups_dir=args.backups_dir.absolute(),
+        wheel=args.wheel.absolute(),
+        checksums=args.checksums.absolute(),
+        launchd_plist=args.launchd_plist.absolute(),
         launchd_label=args.launchd_label,
         health_origin=args.health_origin,
         python_executable=args.python,
