@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { Loader2, Save, Sparkles, Trash2, X } from 'lucide-react';
 import { apiFetch } from '../../api';
-import type { ChainNode, GlobalShare, Substitute } from './chainTypes';
+import { flattenGlobalShares, isGroupedGlobalShares, serializeGlobalShares } from './chainShares';
+import type { ChainNode, EditableGlobalShare, GlobalShare, Substitute } from './chainTypes';
 
 const TYPE_OPTIONS = ['原材料', '中间品', '零部件', '终端'];
 const emptyShare = (): GlobalShare => ({ c: '', p: 0, p_export_global: 0, p_export_ratio: 0, p_export_national: 0, d: 0, d_import_global: 0, d_import_ratio: 0, d_import_national: 0 });
 const emptySub = (): Substitute => ({ node: '', maturity: '', trigger: '', advantage: '', bottleneck: '' });
 type ShareMetricKey = Exclude<keyof GlobalShare, 'c'>;
 type SubstituteDetailKey = Exclude<keyof Substitute, 'node'>;
+type EditableChainNode = Omit<ChainNode, 'global_shares'> & { global_shares: EditableGlobalShare[] };
 
 function errorMessage(reason: unknown, fallback: string): string {
   return reason instanceof Error ? reason.message || fallback : fallback;
@@ -23,9 +25,13 @@ export function EditModal({ node, allNodes, defaultChain, onClose, onSaved }: { 
   const [deleteArmed, setDeleteArmed] = useState(false);
 
   const isNew = !node;
-  const [form, setForm] = useState<ChainNode>(node || {
+  const preserveShareGroups = isGroupedGlobalShares(node?.global_shares);
+  const [form, setForm] = useState<EditableChainNode>(() => node ? {
+    ...node,
+    global_shares: flattenGlobalShares(node.global_shares),
+  } : {
     id: '', chain: defaultChain || '光伏产业链', name: '', node_type: '原材料', description: '',
-    global_shares: [], substitutes: [], upstream_ids: [], data_sources: {}, sort_order: 0
+    global_shares: [], substitutes: [], upstream_ids: [], data_sources: {}, sort_order: 0,
   });
 
   // Build name→id map for upstream multi-select
@@ -36,7 +42,11 @@ export function EditModal({ node, allNodes, defaultChain, onClose, onSaved }: { 
     setActionError('');
     const url = isNew ? '/api/chains/nodes' : `/api/chains/nodes/${form.id}`;
     const method = isNew ? 'POST' : 'PUT';
-    const body: Partial<ChainNode> & { upstream_names: string[] } = { ...form, upstream_names: sameChainNodes.filter(n => form.upstream_ids.includes(n.id)).map(n => n.name) };
+    const body: Partial<ChainNode> & { upstream_names: string[] } = {
+      ...form,
+      global_shares: serializeGlobalShares(form.global_shares, preserveShareGroups),
+      upstream_names: sameChainNodes.filter(n => form.upstream_ids.includes(n.id)).map(n => n.name),
+    };
     if (!isNew) delete body.id;
     try {
       const response = await apiFetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -74,13 +84,22 @@ export function EditModal({ node, allNodes, defaultChain, onClose, onSaved }: { 
     }).then(r => r.json()).then(d => {
       if (d.ok) {
         setAiResult(`✅ ${d.summary || '更新完成'}（份额:${d.updated_shares ? '是' : '否'} 替代:${d.updated_subs ? '是' : '否'}）`);
-        if (d.global_shares?.length) setForm(f => ({ ...f, global_shares: d.global_shares }));
+        const updatedShares = flattenGlobalShares(d.global_shares);
+        if (updatedShares.length) setForm(f => ({ ...f, global_shares: updatedShares }));
         if (d.substitutes?.length) setForm(f => ({ ...f, substitutes: d.substitutes }));
       } else setAiResult(`❌ ${d.error || '失败'}`);
     }).catch(e => setAiResult(`❌ ${e.message}`)).finally(() => setAiLoading(false));
   }
 
-  function addShare() { setForm(f => ({ ...f, global_shares: [...f.global_shares, emptyShare()] })); }
+  function addShare() {
+    setForm(f => ({
+      ...f,
+      global_shares: [
+        ...f.global_shares,
+        { ...emptyShare(), ...(preserveShareGroups ? { __shareGroup: 'production' as const } : {}) },
+      ],
+    }));
+  }
   function updateShare(idx: number, patch: Partial<GlobalShare>) {
     setForm(f => ({ ...f, global_shares: f.global_shares.map((s, i) => i === idx ? { ...s, ...patch } : s) }));
   }

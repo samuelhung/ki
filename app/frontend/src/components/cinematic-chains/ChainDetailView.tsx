@@ -4,6 +4,7 @@ import type { LucideIcon } from 'lucide-react';
 import { apiFetch } from '../../api';
 import { ChainChatPanel, ChainReportPanel } from './ChainDetailPanels';
 import { createChainDetailCache } from './chainDetailCache.mjs';
+import { normalizeShareGroups } from './chainShares';
 import type { ChainNode, GlobalShare } from './chainTypes';
 
 const LUCIDE_ICON_MAP: Record<string, LucideIcon> = {
@@ -117,27 +118,6 @@ function Pill({ label, value, color, bg, bar }: { label: string; value: number; 
 
 // ── Share Group Helpers ──
 
-interface ShareGroup { production: GlobalShare[]; supply: GlobalShare[]; demand: GlobalShare[]; }
-
-function normalizeShares(raw: unknown): ShareGroup {
-  const empty = { production: [] as GlobalShare[], supply: [] as GlobalShare[], demand: [] as GlobalShare[] };
-  if (!raw) return empty;
-  try {
-    const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
-    if (data && typeof data === 'object' && !Array.isArray(data) && 'groups' in data && data.groups) {
-      const groups = data.groups as Partial<Record<keyof ShareGroup, GlobalShare[]>>;
-      return {
-        production: groups.production || [],
-        supply: groups.supply || [],
-        demand: groups.demand || [],
-      };
-    }
-    // 旧格式：flat array → 全归入 production
-    if (Array.isArray(data)) return { ...empty, production: data };
-  } catch {}
-  return empty;
-}
-
 function ShareGroupPanel({
   title,
   items,
@@ -153,8 +133,8 @@ function ShareGroupPanel({
   barColor: string;
   Icon: LucideIcon;
 }) {
-  if (!items.length) return <div className="text-[9px] text-gray-700 text-center py-2">暂无数据</div>;
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+  if (!items.length) return <div className="text-[9px] text-gray-700 text-center py-2">暂无数据</div>;
   return (
     <div>
       <div className="flex items-center gap-1 mb-1">
@@ -370,7 +350,7 @@ export function ChainDetailModal({ chainName, chainIcon, chainFlowSummary, nodes
             {/* Expanded node detail card */}
             {sorted.filter(n => expanded.has(n.id)).map(node => {
               const rawShares = node.global_shares;
-              const groups = normalizeShares(rawShares);
+              const groups = normalizeShareGroups(rawShares);
               const allCountryNames = [...groups.production, ...groups.supply, ...groups.demand].map(s => s.c);
               const totalCountries = new Set(allCountryNames).size;
               const subs = node.substitutes || [];

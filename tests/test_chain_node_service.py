@@ -13,7 +13,7 @@ from uuid import UUID
 import pytest
 from fastapi import HTTPException
 from fastapi.routing import APIRoute
-from pydantic import TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 
 from zhiji_backend import chain_node_service
 from zhiji_backend.main import app
@@ -290,6 +290,50 @@ def test_update_node_noop_and_missing_contract(database: Path) -> None:
         )
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "节点不存在"
+
+
+def test_update_node_accepts_grouped_global_shares(database: Path) -> None:
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "INSERT INTO industry_chain_nodes (id, name) VALUES (?, ?)",
+            ("node-1", "old"),
+        )
+
+    grouped = {
+        "groups": {
+            "production": [{"c": "中国", "p": 65}],
+            "supply": [],
+            "demand": [{"c": "德国", "d_import_global": 18}],
+        }
+    }
+    request = chain_routes.NodeUpdate(global_shares=grouped)
+    assert isinstance(
+        request.global_shares, chain_routes.GroupedGlobalSharesPayload
+    )
+    assert request.model_dump()["global_shares"] == grouped
+
+    assert chain_node_service.update_node(
+        "node-1", request, connect_fn=_connect(database)
+    ) == {"ok": True}
+    with sqlite3.connect(database) as connection:
+        stored = connection.execute(
+            "SELECT global_shares FROM industry_chain_nodes WHERE id = 'node-1'"
+        ).fetchone()[0]
+    assert json.loads(stored) == grouped
+
+
+@pytest.mark.parametrize(
+    "invalid_shares",
+    [
+        {"unexpected": []},
+        {"groups": []},
+        {"groups": {"production": {}, "supply": [], "demand": []}},
+        {"groups": {"production": [], "supply": []}},
+    ],
+)
+def test_update_node_rejects_invalid_grouped_global_shares(invalid_shares: dict) -> None:
+    with pytest.raises(ValidationError):
+        chain_routes.NodeUpdate(global_shares=invalid_shares)
 
 
 def test_create_node_explicit_upstream_and_exact_json_persistence(database: Path) -> None:

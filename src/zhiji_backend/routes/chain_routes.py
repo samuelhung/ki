@@ -8,7 +8,7 @@ import re
 import uuid
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .. import chain_node_service
 from ..ai_client import chat
@@ -37,11 +37,25 @@ class ChainReportRequest(BaseModel):
     cache_only: bool = False
 
 
+class GlobalShareGroupsPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    production: list[dict]
+    supply: list[dict]
+    demand: list[dict]
+
+
+class GroupedGlobalSharesPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    groups: GlobalShareGroupsPayload
+
+
 class NodeUpdate(BaseModel):
     name: str | None = None
     node_type: str | None = None
     description: str | None = None
-    global_shares: list | None = None
+    global_shares: list | GroupedGlobalSharesPayload | None = None
     substitutes: list | None = None
     upstream_names: list[str] | None = Field(default=None, max_length=100)
     data_sources: dict | None = None

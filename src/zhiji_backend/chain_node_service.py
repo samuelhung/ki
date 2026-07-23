@@ -8,12 +8,14 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from fastapi import HTTPException
+from pydantic import BaseModel
 
 type ConnectionContext = AbstractContextManager[sqlite3.Connection]
 type ConnectFn = Callable[[], ConnectionContext]
 type UUIDFactory = Callable[[], UUID]
 type JSONList = list[Any]
 type JSONDict = dict[Any, Any]
+type JSONCollection = JSONList | JSONDict | BaseModel
 
 
 class FlowSummaryRequest(Protocol):
@@ -25,7 +27,7 @@ class NodeUpdateRequest(Protocol):
     name: str | None
     node_type: str | None
     description: str | None
-    global_shares: JSONList | None
+    global_shares: JSONCollection | None
     substitutes: JSONList | None
     upstream_names: list[str] | None
     data_sources: JSONDict | None
@@ -132,7 +134,12 @@ def update_node(
         if req.description is not None:
             updates["description"] = req.description
         if req.global_shares is not None:
-            updates["global_shares"] = json.dumps(req.global_shares, ensure_ascii=False)
+            global_shares = (
+                req.global_shares.model_dump()
+                if isinstance(req.global_shares, BaseModel)
+                else req.global_shares
+            )
+            updates["global_shares"] = json.dumps(global_shares, ensure_ascii=False)
         if req.substitutes is not None:
             updates["substitutes"] = json.dumps(req.substitutes, ensure_ascii=False)
         if req.data_sources is not None:

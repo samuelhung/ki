@@ -4,13 +4,22 @@ export interface GlobalShare {
   d: number; d_import_global: number; d_import_ratio: number; d_import_national: number;
 }
 
+export type ShareGroupKey = 'production' | 'supply' | 'demand';
+export interface GlobalShareGroups {
+  groups: Record<ShareGroupKey, GlobalShare[]>;
+}
+export type GlobalShares = GlobalShare[] | GlobalShareGroups;
+export interface EditableGlobalShare extends GlobalShare {
+  __shareGroup?: ShareGroupKey;
+}
+
 export interface Substitute {
   node: string; maturity: string; trigger: string; advantage: string; bottleneck: string;
 }
 
 export interface ChainNode {
   id: string; chain: string; name: string; node_type: string; description: string;
-  global_shares: GlobalShare[]; substitutes: Substitute[]; upstream_ids: string[];
+  global_shares: GlobalShares; substitutes: Substitute[]; upstream_ids: string[];
   data_sources: Record<string, string>; sort_order: number; last_updated?: string;
 }
 
