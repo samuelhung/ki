@@ -192,6 +192,7 @@ ssh zhiji-prod "python3 '${REMOTE_STAGE}/deploy_backend.py' v2.0.0+90 \
   --wheel /Users/mrh/Documents/KI/packages/zhiji_backend-2.0.0-py3-none-any.whl \
   --checksums /Users/mrh/Documents/KI/packages/SHA256SUMS \
   --launchd-plist /Users/mrh/Library/LaunchAgents/com.zhiji.backend.plist \
+  --python /Users/mrh/Documents/KI/runtime/venv/bin/python \
   --bind-host 0.0.0.0 \
   --health-origin http://127.0.0.1:9120"
 ```
@@ -211,7 +212,8 @@ python3 scripts/preflight_backend_deploy.py \
   --expect-legacy present \
   --expect-current present \
   --expect-target present \
-  --health-url http://10.8.0.105:9120/api/system/health
+  --health-url http://10.8.0.105:9120/api/system/health \
+  --expected-health-version 2.0.0
 ```
 
 然后执行其余只读验收：

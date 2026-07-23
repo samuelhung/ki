@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -158,8 +157,10 @@ def test_ssh_stdin_worker_updates_and_compares_without_secret_argv(tmp_path: Pat
 
     def execute_loader(command: list[str], **kwargs):
         commands.append(command)
+        assert command[:2] == ["ssh", "test-host"]
+        assert len(command) == 3
         return subprocess.run(
-            [sys.executable, "-c", command[-1]],
+            ["/bin/sh", "-c", command[-1]],
             input=kwargs["input"],
             capture_output=True,
             check=False,

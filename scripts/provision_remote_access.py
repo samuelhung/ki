@@ -10,6 +10,7 @@ import json
 import os
 import re
 import secrets
+import shlex
 import stat
 import subprocess
 import sys
@@ -294,7 +295,8 @@ class SshRemoteExecutor:
                 "source": self.source_script.read_text(encoding="utf-8"),
             }
         ).encode()
-        command = ["ssh", self.host, "python3", "-c", self._LOADER]
+        remote_command = f"python3 -c {shlex.quote(self._LOADER)}"
+        command = ["ssh", self.host, remote_command]
         return self.run(command, input=envelope, capture_output=True, check=False)
 
     def update(self, payload: bytes) -> None:

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import secrets
+import shlex
 import shutil
 import sqlite3
 import stat
@@ -50,6 +51,7 @@ class PreflightConfig:
     expect_current: str = "either"
     expect_target: str = "absent"
     health_url: str | None = None
+    expected_health_version: str | None = None
 
     @property
     def versions(self) -> Path:
@@ -158,7 +160,15 @@ def remote_preflight(
     if _env_value(remote_env.data, "KI_ALLOWED_HOSTS") != ALLOWED_HOSTS:
         raise PreflightError("remote allowed hosts do not match")
     _real_directory(config.runtime_root, "runtime")
-    _real_directory(config.versions, "versions")
+    first_migration = (
+        config.expect_legacy == "absent"
+        and config.expect_current == "absent"
+        and config.expect_target == "absent"
+    )
+    if _exists_lstat(config.versions):
+        _real_directory(config.versions, "versions")
+    elif not first_migration:
+        raise PreflightError("versions is missing outside first-migration mode")
     free_bytes = shutil.disk_usage(config.runtime_root).free if disk_free is None else disk_free
     if free_bytes < config.minimum_free_bytes:
         raise PreflightError("remote disk free space is below threshold")
@@ -248,6 +258,7 @@ print(json.dumps(facts, sort_keys=True))
                     "expect_current": self.config.expect_current,
                     "expect_legacy": self.config.expect_legacy,
                     "expect_target": self.config.expect_target,
+                    "expected_health_version": None,
                     "health_url": None,
                     "legacy_name": self.config.legacy_name,
                     "local_env": str(self.config.local_env),
@@ -262,7 +273,8 @@ print(json.dumps(facts, sort_keys=True))
                 "token": request["token"],
             }
         ).encode()
-        command = ["ssh", self.host, "python3", "-c", self._LOADER]
+        remote_command = f"python3 -c {shlex.quote(self._LOADER)}"
+        command = ["ssh", self.host, remote_command]
         result = self.run(command, input=envelope, capture_output=True, check=False)
         if result.returncode != 0:
             raise PreflightError("remote preflight failed")
@@ -282,6 +294,8 @@ def preflight_backend_deploy(
     token = _env_value(local.data, "KI_REMOTE_API_TOKEN")
     if not token:
         raise PreflightError("KI_REMOTE_API_TOKEN must be non-empty")
+    if config.health_url and not config.expected_health_version:
+        raise PreflightError("expected health version is required with health URL")
     payload = json.dumps({"token": token}).encode()
     facts = remote_runner(payload)
     if token in json.dumps(facts, sort_keys=True):
@@ -300,12 +314,10 @@ def preflight_backend_deploy(
             raise
         except Exception as exc:
             raise PreflightError("authenticated health request failed") from exc
-        if (
-            health.get("ok") is not True
-            or not health.get("version")
-            or health.get("database", {}).get("ok") is not True
-        ):
+        if health.get("ok") is not True or health.get("database", {}).get("ok") is not True:
             raise PreflightError("authenticated health payload is not healthy")
+        if health.get("version") != config.expected_health_version:
+            raise PreflightError("authenticated health version mismatch")
         facts = {
             **facts,
             "authenticated_health": "ok",
@@ -329,6 +341,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--expect-current", choices=("present", "absent", "either"), default="either")
     parser.add_argument("--expect-target", choices=("present", "absent", "either"), default="absent")
     parser.add_argument("--health-url")
+    parser.add_argument("--expected-health-version")
     parser.add_argument("--remote-worker", action="store_true", help=argparse.SUPPRESS)
     return parser
 
@@ -355,6 +368,7 @@ def main(argv: list[str] | None = None) -> int:
         expect_current=args.expect_current,
         expect_target=args.expect_target,
         health_url=args.health_url,
+        expected_health_version=args.expected_health_version,
     )
     try:
         if args.remote_worker:

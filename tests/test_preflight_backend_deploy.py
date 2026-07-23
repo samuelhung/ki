@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -120,6 +121,68 @@ def test_remote_target_expectation_can_require_published_version(tmp_path: Path)
     assert facts["target"] == "present"
 
 
+def test_first_migration_allows_missing_versions_when_all_paths_are_absent(
+    tmp_path: Path,
+) -> None:
+    config = _remote_tree(tmp_path)
+    config.current.unlink()
+    shutil.rmtree(config.versions)
+    config = replace(
+        config,
+        expect_legacy="absent",
+        expect_current="absent",
+        expect_target="absent",
+    )
+
+    facts = remote_preflight(config, TOKEN, disk_free=4096, python_version=(3, 12, 0))
+
+    assert facts["legacy"] == "absent"
+    assert facts["current"] == "absent"
+    assert facts["target"] == "absent"
+
+
+@pytest.mark.parametrize(
+    ("legacy", "current", "target"),
+    [("present", "absent", "absent"), ("either", "either", "either")],
+)
+def test_missing_versions_is_rejected_outside_first_migration_mode(
+    tmp_path: Path, legacy: str, current: str, target: str
+) -> None:
+    config = _remote_tree(tmp_path)
+    config.current.unlink()
+    shutil.rmtree(config.versions)
+    config = replace(
+        config,
+        expect_legacy=legacy,
+        expect_current=current,
+        expect_target=target,
+    )
+
+    with pytest.raises(PreflightError, match="versions"):
+        remote_preflight(config, TOKEN, disk_free=4096, python_version=(3, 12, 0))
+
+
+@pytest.mark.parametrize("unsafe", ["symlink", "file"])
+def test_existing_versions_must_be_a_real_directory(tmp_path: Path, unsafe: str) -> None:
+    config = _remote_tree(tmp_path)
+    config.current.unlink()
+    real_versions = config.runtime_root / "real-versions"
+    config.versions.rename(real_versions)
+    if unsafe == "symlink":
+        config.versions.symlink_to(real_versions, target_is_directory=True)
+    else:
+        config.versions.write_text("not a directory", encoding="utf-8")
+    config = replace(
+        config,
+        expect_legacy="absent",
+        expect_current="absent",
+        expect_target="absent",
+    )
+
+    with pytest.raises(PreflightError, match="versions"):
+        remote_preflight(config, TOKEN, disk_free=4096, python_version=(3, 12, 0))
+
+
 @pytest.mark.parametrize("unsafe", ["corrupt", "symlink"])
 def test_remote_database_must_be_regular_and_pass_quick_check(
     tmp_path: Path, unsafe: str
@@ -150,7 +213,9 @@ def test_local_preflight_rejects_unsafe_or_empty_token_file(tmp_path: Path) -> N
 def test_local_authenticated_health_uses_token_in_memory_and_checks_json(tmp_path: Path) -> None:
     config = _remote_tree(tmp_path)
     config = replace(
-        config, health_url="http://10.8.0.105:9120/api/system/health"
+        config,
+        health_url="http://10.8.0.105:9120/api/system/health",
+        expected_health_version="2.0.0",
     )
     _secure_env(config.local_env, f"KI_REMOTE_API_TOKEN={TOKEN}\n")
     requests: list[urllib.request.Request] = []
@@ -183,6 +248,42 @@ def test_local_authenticated_health_uses_token_in_memory_and_checks_json(tmp_pat
     assert requests[0].headers["X-api-key"] == TOKEN
 
 
+def test_authenticated_health_rejects_missing_or_mismatched_expected_version(
+    tmp_path: Path,
+) -> None:
+    config = _remote_tree(tmp_path)
+    _secure_env(config.local_env, f"KI_REMOTE_API_TOKEN={TOKEN}\n")
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b'{"ok":true,"version":"2.0.0","database":{"ok":true}}'
+
+    with pytest.raises(PreflightError, match="expected health version"):
+        preflight_backend_deploy(
+            replace(config, health_url="http://10.8.0.105:9120/api/system/health"),
+            lambda _payload: {},
+            open_url=lambda _request, timeout: Response(),
+        )
+    with pytest.raises(PreflightError, match="version mismatch"):
+        preflight_backend_deploy(
+            replace(
+                config,
+                health_url="http://10.8.0.105:9120/api/system/health",
+                expected_health_version="2.0.1",
+            ),
+            lambda _payload: {},
+            open_url=lambda _request, timeout: Response(),
+        )
+
+
 def test_local_preflight_rejects_symlink_env(tmp_path: Path) -> None:
     config = _remote_tree(tmp_path)
     real = config.local_env.with_name("real.local.env")
@@ -201,6 +302,8 @@ def test_ssh_runner_keeps_secret_out_of_argv_and_output(tmp_path: Path, capsys) 
     def fake_run(command: list[str], **kwargs):
         commands.append(command)
         assert TOKEN in kwargs["input"].decode()
+        assert command[:2] == ["ssh", "test-host"]
+        assert len(command) == 3
         return subprocess.CompletedProcess(command, 0, stdout=b'{"database":"ok"}', stderr=b"")
 
     facts = preflight_backend_deploy(
@@ -220,8 +323,10 @@ def test_ssh_stdin_worker_executes_full_remote_preflight_locally(tmp_path: Path)
     _secure_env(config.local_env, f"KI_REMOTE_API_TOKEN={TOKEN}\n")
 
     def execute_loader(command: list[str], **kwargs):
+        assert command[:2] == ["ssh", "test-host"]
+        assert len(command) == 3
         result = subprocess.run(
-            [sys.executable, "-c", command[-1]],
+            ["/bin/sh", "-c", command[-1]],
             input=kwargs["input"],
             capture_output=True,
             check=False,

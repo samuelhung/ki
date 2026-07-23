@@ -76,6 +76,7 @@ def test_readme_documents_only_the_verified_release_and_atomic_deploy_flow() -> 
         "scripts/bootstrap_legacy_runtime.py",
         "packages/${SOURCE_SHA}",
         "scripts/deploy_backend.py",
+        "--expected-health-version 2.0.0",
         "npm run qa:cinematic-pages -- http://10.8.0.105:9120 tmp/deploy-smoke today,ingest,system",
         "截图和 JSON 报告",
         "legacy-2.0.0-pre-atomic",
@@ -88,6 +89,15 @@ def test_readme_documents_only_the_verified_release_and_atomic_deploy_flow() -> 
     build_position = independent_deploy_body.index("scripts/build_backend_wheel.py")
     upload_position = independent_deploy_body.index("scp ")
     assert preflight_position < build_position < upload_position
+    deploy_command = re.search(
+        r"deploy_backend\.py' v2\.0\.0\+90 (?P<arguments>.*?)(?=\n```)",
+        independent_deploy_body,
+        flags=re.DOTALL,
+    )
+    assert deploy_command is not None
+    assert "--python /Users/mrh/Documents/KI/runtime/venv/bin/python" in deploy_command.group(
+        "arguments"
+    )
     for prohibited_inline_implementation in (
         "<<'PY'",
         "secrets.token_urlsafe",
