@@ -14,6 +14,7 @@ from scripts.provision_remote_access import (
     SshRemoteExecutor,
     main,
     provision_remote_access,
+    recover_remote_access,
 )
 
 TOKEN = "generated_test_token_value"
@@ -305,6 +306,50 @@ def test_ssh_stdin_worker_updates_and_compares_without_secret_argv(tmp_path: Pat
     assert "UNRELATED=kept" in remote_env.read_text()
     assert all(TOKEN not in argument for command in commands for argument in command)
     assert all(command[-1].startswith(f"{Path(sys.executable)} -c ") for command in commands)
+
+
+def test_ssh_stdin_worker_creates_missing_remote_env(tmp_path: Path) -> None:
+    remote_env = tmp_path / "remote.env"
+
+    def execute_loader(command: list[str], **kwargs):
+        return subprocess.run(
+            ["/bin/sh", "-c", command[-1]],
+            input=kwargs["input"],
+            capture_output=True,
+            check=False,
+        )
+
+    executor = SshRemoteExecutor(
+        "test-host",
+        Path("scripts/provision_remote_access.py"),
+        remote_env,
+        Path(sys.executable),
+        run=execute_loader,
+    )
+
+    executor.update(
+        (f'{{"token":"{TOKEN}","allowed_hosts":"10.8.0.105,127.0.0.1,localhost"}}').encode()
+    )
+
+    assert remote_env.read_text() == (
+        f"KI_API_TOKEN={TOKEN}\n"
+        "KI_ALLOWED_HOSTS=10.8.0.105,127.0.0.1,localhost\n"
+    )
+    assert stat_mode(remote_env) == 0o600
+
+
+def test_recovery_uses_retained_local_token_to_create_missing_remote_env(
+    tmp_path: Path,
+) -> None:
+    local = tmp_path / ".env.local"
+    _secure_env(local, f"KI_REMOTE_API_TOKEN={TOKEN}\n")
+    remote = FakeRemote()
+
+    recover_remote_access(local, remote)
+
+    assert remote.token == TOKEN
+    assert [name for name, _payload in remote.calls] == ["compare", "update"]
+    assert local.read_text() == f"KI_REMOTE_API_TOKEN={TOKEN}\n"
 
 
 def test_real_ssh_worker_post_replace_fsync_failure_is_reported_uncertain(
