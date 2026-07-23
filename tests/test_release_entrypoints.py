@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -69,25 +71,30 @@ def test_readme_documents_only_the_verified_release_and_atomic_deploy_flow() -> 
     ):
         assert desktop_release_entrypoint not in independent_deploy_body
     for protected_remote_deploy_detail in (
-        "http://10.8.0.105:9120/api/system/health",
-        'Path("app/frontend/.env.local")',
-        'headers={"X-API-Key": token}',
+        "python3 scripts/provision_remote_access.py",
+        "python3 scripts/preflight_backend_deploy.py",
+        "scripts/bootstrap_legacy_runtime.py",
+        "packages/${SOURCE_SHA}",
+        "scripts/deploy_backend.py",
         "npm run qa:cinematic-pages -- http://10.8.0.105:9120 tmp/deploy-smoke today,ingest,system",
-        "secrets.token_urlsafe(48)",
-        "shlex.quote",
-        "input=payload",
-        "os.replace(temporary, path)",
-        "也接受不含插值和反斜杠转义的安全单引号或双引号普通值",
-        "require_real_directory(runtime)",
-        "require_real_directory(source)",
-        "require_real_directory(versions)",
-        "shutil.copytree(source, stage / \"venv\", symlinks=True)",
-        "fsync_directory(versions)",
-        'assert payload["ok"] is True',
-        'assert payload["version"] == "2.0.0"',
-        'assert payload["database"]["ok"] is True',
+        "截图和 JSON 报告",
+        "legacy-2.0.0-pre-atomic",
+        "7 个不同日期",
     ):
         assert protected_remote_deploy_detail in independent_deploy_body
+    preflight_position = independent_deploy_body.index(
+        "python3 scripts/preflight_backend_deploy.py"
+    )
+    build_position = independent_deploy_body.index("scripts/build_backend_wheel.py")
+    upload_position = independent_deploy_body.index("scp ")
+    assert preflight_position < build_position < upload_position
+    for prohibited_inline_implementation in (
+        "<<'PY'",
+        "secrets.token_urlsafe",
+        "shutil.copytree",
+        'headers={"X-API-Key": token}',
+    ):
+        assert prohibited_inline_implementation not in independent_deploy_body
     assert not re.search(
         r"(?m)^\s*curl\b[^\n]*/#/(?:ingest|system)(?:\s|$)",
         independent_deploy_body,
@@ -98,4 +105,13 @@ def test_readme_documents_only_the_verified_release_and_atomic_deploy_flow() -> 
 def test_frontend_remote_token_file_is_ignored() -> None:
     ignored_paths = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
 
-    assert "app/frontend/.env.local" in ignored_paths
+    assert "app/frontend/.env*.local" in ignored_paths
+
+
+def test_backend_deployment_tools_support_documented_direct_cli_entrypoints() -> None:
+    for script in (
+        "scripts/provision_remote_access.py",
+        "scripts/bootstrap_legacy_runtime.py",
+        "scripts/preflight_backend_deploy.py",
+    ):
+        subprocess.run([sys.executable, script, "--help"], cwd=ROOT, check=True)

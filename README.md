@@ -103,177 +103,20 @@ ZHIJI_SKIP_RELEASE_CHECK=1 ./scripts/check.sh
 
 ### 后端与 Web 独立部署
 
-本节只发布 Python wheel 及其中内嵌的 Web 静态文件，用于不发桌面客户端时更新后端与 Web。它不会执行 Sparkle、DMG、Git tag、GitHub Release 或 Appcast 操作，也不替代下方桌面发布的版本号、构建号和 tag 契约。
+本节只发布 Python wheel 及其中内嵌的 Web 静态文件，不执行 Sparkle、DMG、Git tag、GitHub Release 或 Appcast，也不替代下方桌面版本与 tag 契约。所有命令从已合并、干净且与 `origin/main` 一致的 `main` 执行；远端 `ZHIJI_HOME=/Users/mrh/Documents/KI`，访问地址为 `http://10.8.0.105:9120`。
 
-开始前必须满足以下条件：
-
-- 待部署提交已经合并到 `main`，本地位于干净且与远端一致的 `main`；记录本次完整 Git SHA，后续产物目录不得复用。
-- 远端 `ZHIJI_HOME=/Users/mrh/Documents/KI`。`ZHIJI_HOME/.env` 必须是非符号链接的普通文件、权限为 `0600`，包含非空 `KI_API_TOKEN`，并包含精确的 `KI_ALLOWED_HOSTS=10.8.0.105,127.0.0.1,localhost`；保留文件内所有无关配置键。
-- 本地 `app/frontend/.env.local` 已被 Git 忽略，必须是非符号链接的普通文件、权限为 `0600`，且包含与远端一致的非空 `KI_REMOTE_API_TOKEN`。该值只由 Vite 开发服务器在服务端代理请求时读取，绝不能进入浏览器 bundle。
-
-首次开通远程访问时，运行下面的一次性 provisioning。它调用 `secrets.token_urlsafe(48)` 生成规范 URL-safe token，只保存在本地 Python 进程内存中，并通过 SSH 子进程 stdin 的 JSON 送到远端 Python；`shlex.quote` 只引用远端程序，不引用 token。整个过程不打印 token，也不把 token 放入 argv、shell tracing、Git、浏览器 bundle 或日志。两个更新器都保留无关键、拒绝符号链接，并在目标同目录写临时文件，执行 `fsync`、`chmod 0600` 和 `os.replace`。
+远端 `.env` 必须是 `0600` 非符号链接普通文件，并保留精确的 `KI_ALLOWED_HOSTS=10.8.0.105,127.0.0.1,localhost`。本地 `app/frontend/.env.local` 同样必须是 `0600` 非符号链接普通文件且受 Git 忽略。首次配置或轮换 token 时只运行版本化入口；脚本在内存生成 token，通过 SSH stdin 更新远端，不接受 token 参数，也不输出 token、指纹或 env 内容：
 
 ```bash
-cd /Users/yuk/Documents/zhiji/ki
-set +x
-python3 - <<'PY'
-import json
-import os
-import re
-import secrets
-import shlex
-import stat
-import subprocess
-import tempfile
-from pathlib import Path
-
-LOCAL_ENV = Path("app/frontend/.env.local")
-REMOTE_ENV = "/Users/mrh/Documents/KI/.env"
-ALLOWED_HOSTS = "10.8.0.105,127.0.0.1,localhost"
-KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
-
-
-def read_secure(path: Path, *, must_exist: bool) -> str:
-    try:
-        metadata = path.lstat()
-    except FileNotFoundError:
-        if must_exist:
-            raise
-        return ""
-    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
-        raise RuntimeError(f"refusing non-regular env file: {path}")
-    if stat.S_IMODE(metadata.st_mode) != 0o600:
-        raise RuntimeError(f"env file must be mode 0600: {path}")
-    return path.read_text(encoding="utf-8")
-
-
-def render_dotenv(original: str, updates: dict[str, str]) -> str:
-    rendered = []
-    seen = set()
-    for line in original.splitlines():
-        if not line or line.lstrip().startswith("#"):
-            rendered.append(line)
-            continue
-        key, separator, value = line.partition("=")
-        if not separator or not KEY_PATTERN.fullmatch(key):
-            raise RuntimeError("unsupported dotenv assignment")
-        if "$" in value:
-            raise RuntimeError("dotenv interpolation is not supported")
-        if value[:1] in {"'", '"'} and (
-            len(value) < 2 or value[-1] != value[0] or "\\" in value
-        ):
-            raise RuntimeError("quoted backslash escapes are not supported")
-        if key in seen:
-            raise RuntimeError("duplicate dotenv key")
-        seen.add(key)
-        rendered.append(f"{key}={updates[key]}" if key in updates else line)
-    for key, value in updates.items():
-        if key not in seen:
-            rendered.append(f"{key}={value}")
-    return "\n".join(rendered) + "\n"
-
-
-def atomic_write(path: Path, contents: str, *, must_exist: bool) -> None:
-    read_secure(path, must_exist=must_exist)
-    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
-    temporary = Path(temporary_name)
-    try:
-        os.fchmod(descriptor, 0o600)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            stream.write(contents)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.chmod(temporary, 0o600)
-        read_secure(path, must_exist=must_exist)
-        os.replace(temporary, path)
-        directory_fd = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
-    finally:
-        temporary.unlink(missing_ok=True)
-
-
-remote_program = r'''
-import json, os, re, stat, sys, tempfile
-from pathlib import Path
-
-path = Path("/Users/mrh/Documents/KI/.env")
-metadata = path.lstat()
-if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
-    raise RuntimeError("refusing non-regular remote env file")
-if stat.S_IMODE(metadata.st_mode) != 0o600:
-    raise RuntimeError("remote env file must be mode 0600")
-payload = json.load(sys.stdin)
-updates = {
-    "KI_API_TOKEN": payload["token"],
-    "KI_ALLOWED_HOSTS": payload["allowed_hosts"],
-}
-key_pattern = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-rendered, seen = [], set()
-for line in path.read_text(encoding="utf-8").splitlines():
-    if not line or line.lstrip().startswith("#"):
-        rendered.append(line)
-        continue
-    key, separator, value = line.partition("=")
-    if not separator or not key_pattern.fullmatch(key):
-        raise RuntimeError("unsupported dotenv assignment")
-    if "$" in value:
-        raise RuntimeError("dotenv interpolation is not supported")
-    if value[:1] in {"'", '"'} and (len(value) < 2 or value[-1] != value[0] or "\\" in value):
-        raise RuntimeError("quoted backslash escapes are not supported")
-    if key in seen:
-        raise RuntimeError("duplicate dotenv key")
-    seen.add(key)
-    rendered.append(f"{key}={updates[key]}" if key in updates else line)
-for key, value in updates.items():
-    if key not in seen:
-        rendered.append(f"{key}={value}")
-contents = "\n".join(rendered) + "\n"
-descriptor, temporary_name = tempfile.mkstemp(prefix=".env.", dir=path.parent)
-temporary = Path(temporary_name)
-try:
-    os.fchmod(descriptor, 0o600)
-    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-        stream.write(contents)
-        stream.flush()
-        os.fsync(stream.fileno())
-    os.chmod(temporary, 0o600)
-    current = path.lstat()
-    if stat.S_ISLNK(current.st_mode) or not stat.S_ISREG(current.st_mode):
-        raise RuntimeError("remote env identity changed")
-    os.replace(temporary, path)
-    directory_fd = os.open(path.parent, os.O_RDONLY)
-    try:
-        os.fsync(directory_fd)
-    finally:
-        os.close(directory_fd)
-finally:
-    temporary.unlink(missing_ok=True)
-'''
-
-token = secrets.token_urlsafe(48)
-if not TOKEN_PATTERN.fullmatch(token):
-    raise RuntimeError("generated token is not canonical URL-safe text")
-payload = json.dumps({"token": token, "allowed_hosts": ALLOWED_HOSTS})
-subprocess.run(
-    ["ssh", "zhiji-prod", f"python3 -c {shlex.quote(remote_program)}"],
-    input=payload,
-    text=True,
-    check=True,
-    stdout=subprocess.DEVNULL,
-)
-local_original = read_secure(LOCAL_ENV, must_exist=False)
-local_contents = render_dotenv(local_original, {"KI_REMOTE_API_TOKEN": token})
-atomic_write(LOCAL_ENV, local_contents, must_exist=False)
-PY
+python3 scripts/provision_remote_access.py \
+  --local-env app/frontend/.env.local \
+  --ssh-host zhiji-prod \
+  --remote-env /Users/mrh/Documents/KI/.env
 ```
 
-保守 dotenv 子集推荐生成的 token 使用规范 URL-safe 未加引号值；实现也接受不含插值和反斜杠转义的安全单引号或双引号普通值。`${...}`/`$...` 插值和 quoted backslash escape 形式会被故意拒绝。初始化后以只读检查确认两个文件的类型、模式和必需键，任何不满足都停止，不得进入构建或部署。
+生成值采用规范 URL-safe dotenv 形式；插值和反斜杠转义会被拒绝。脚本先原子提交本地文件，再提交远端；远端异常时会执行无输出 compare，只有确认远端未提交才恢复本地，状态不确定则保留新本地 token 并明确失败。
 
-在干净的 `main` 上构建 SHA 专属 wheel，并独立生成和复核摘要及内嵌 Web 文件：
+版本化 preflight 入口把 worker 源码和请求都经 SSH stdin 发送，不要求远端预装脚本。在任何远端目录创建、wheel 构建或文件上传之前运行只读 preflight；首次迁移使用 `absent`，已有原子运行目录时改为 `present`：
 
 ```bash
 cd /Users/yuk/Documents/zhiji/ki
@@ -281,127 +124,66 @@ test "$(git branch --show-current)" = main
 test -z "$(git status --porcelain)"
 git fetch origin main
 test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
-
 SOURCE_SHA="$(git rev-parse HEAD)"
+REMOTE_STAGE="/Users/mrh/Documents/KI/packages/${SOURCE_SHA}"
+
+python3 scripts/preflight_backend_deploy.py \
+  --local-env app/frontend/.env.local \
+  --ssh-host zhiji-prod \
+  --remote-env /Users/mrh/Documents/KI/.env \
+  --runtime-root /Users/mrh/Documents/KI/runtime \
+  --database /Users/mrh/Documents/KI/data/intelligence.sqlite \
+  --python /Users/mrh/Documents/KI/runtime/venv/bin/python \
+  --legacy-name legacy-2.0.0-pre-atomic \
+  --target-name 2.0.0+90 \
+  --expect-legacy absent \
+  --expect-current absent
+```
+
+Preflight 只输出安全事实，并验证本地 `KI_REMOTE_API_TOKEN` 与远端 `KI_API_TOKEN` 相同、allowed hosts、磁盘空间、Python 3.12、legacy/current/target 预期、数据库普通文件与 `PRAGMA quick_check`。任何失败都停止流程。
+
+Preflight 通过后构建 SHA 专属 wheel，检查摘要以及 wheel 内的 `frontend_dist/index.html` 和 `assets/`，再把 wheel 与三个部署工具上传到同一 staging。运行任何远端工具前必须再次验证完整 `SHA256SUMS`：
+
+```bash
+ssh zhiji-prod "mkdir -p '$REMOTE_STAGE'"
 OUT="dist/backend-${SOURCE_SHA}"
 test ! -e "$OUT"
 mkdir -p "$OUT"
 /Users/yuk/Documents/zhiji/ki/.venv/bin/python scripts/build_backend_wheel.py --outdir "$OUT"
 WHEEL="$(find "$OUT" -maxdepth 1 -name 'zhiji_backend-2.0.0-*.whl' -print -quit)"
 test -n "$WHEEL"
-(cd "$OUT" && shasum -a 256 "$(basename "$WHEEL")" > SHA256SUMS)
+cp scripts/deploy_backend.py scripts/bootstrap_legacy_runtime.py \
+  scripts/preflight_backend_deploy.py scripts/provision_remote_access.py "$OUT/"
+(cd "$OUT" && shasum -a 256 "$(basename "$WHEEL")" \
+  deploy_backend.py bootstrap_legacy_runtime.py preflight_backend_deploy.py \
+  provision_remote_access.py > SHA256SUMS)
 (cd "$OUT" && shasum -a 256 -c SHA256SUMS)
 unzip -l "$WHEEL" | grep -q 'zhiji_backend/frontend_dist/index.html'
 unzip -l "$WHEEL" | grep -q 'zhiji_backend/frontend_dist/assets/'
+scp "$WHEEL" "$OUT/SHA256SUMS" "$OUT/deploy_backend.py" \
+  "$OUT/bootstrap_legacy_runtime.py" "$OUT/preflight_backend_deploy.py" \
+  "$OUT/provision_remote_access.py" "zhiji-prod:${REMOTE_STAGE}/"
+ssh zhiji-prod "cd '$REMOTE_STAGE' && shasum -a 256 -c SHA256SUMS"
 ```
 
-若 `runtime/current` 尚不存在，先做一次迁移。迁移只能复制现有 `runtime/venv`，不得移动或删除它：将副本写入 `runtime/versions` 下的同目录 staged 目录，验证 `bin/zhiji` 可执行且其中安装的 `zhiji-backend` 版本为 `2.0.0`，写入不含密钥的 `release.json`，再把 staged 目录改名为 `runtime/versions/legacy-2.0.0-pre-atomic`。最后在 `runtime` 同目录创建临时符号链接并用 `os.replace` 原子指向该副本。整个迁移期间 launchd 仍使用原始 `/Users/mrh/Documents/KI/runtime/venv/bin/zhiji`，不重启服务；完成后原始 venv 与复制快照必须同时保留。
+仅当 preflight 报告 legacy/current 均 absent 时执行首次 bootstrap。该脚本使用 `/usr/bin/ditto` 复制原 `runtime/venv`，不会移动或删除它；复制完成前 launchd 仍使用原路径：
 
 ```bash
-SOURCE_SHA="$(git rev-parse HEAD)"
-ssh zhiji-prod python3 - "$SOURCE_SHA" <<'PY'
-import json
-import os
-import shutil
-import stat
-import subprocess
-import sys
-from datetime import datetime, timezone
-from pathlib import Path
-
-source_sha = sys.argv[1]
-runtime = Path("/Users/mrh/Documents/KI/runtime")
-source = runtime / "venv"
-versions = runtime / "versions"
-stage = versions / ".legacy-2.0.0-pre-atomic.staged"
-target = versions / "legacy-2.0.0-pre-atomic"
-current = runtime / "current"
-
-
-def require_real_directory(path: Path) -> None:
-    metadata = path.lstat()
-    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
-        raise RuntimeError(f"expected non-symlink directory: {path}")
-
-
-def require_absent(path: Path) -> None:
-    try:
-        path.lstat()
-    except FileNotFoundError:
-        return
-    raise RuntimeError(f"path already exists: {path}")
-
-
-def fsync_directory(path: Path) -> None:
-    descriptor = os.open(path, os.O_RDONLY)
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-
-
-require_real_directory(runtime)
-require_real_directory(source)
-require_real_directory(versions)
-require_absent(current)
-require_absent(stage)
-require_absent(target)
-shutil.copytree(source, stage / "venv", symlinks=True)
-executable = stage / "venv/bin/zhiji"
-assert executable.is_file() and executable.stat().st_mode & stat.S_IXUSR
-subprocess.run(
-    [
-        str(stage / "venv/bin/python"),
-        "-c",
-        "import importlib.metadata as m; assert m.version('zhiji-backend') == '2.0.0'",
-    ],
-    check=True,
-)
-with (stage / "release.json").open("w", encoding="utf-8") as stream:
-    json.dump(
-        {
-            "release": "legacy-2.0.0-pre-atomic",
-            "source": str(source),
-            "migrated_at": datetime.now(timezone.utc).isoformat(),
-            "git_sha": source_sha,
-        },
-        stream,
-        indent=2,
-    )
-    stream.write("\n")
-    stream.flush()
-    os.fsync(stream.fileno())
-os.replace(stage, target)
-fsync_directory(versions)
-temporary = runtime / ".current.migration"
-temporary.symlink_to(target)
-os.replace(temporary, current)
-fsync_directory(runtime)
-PY
+ssh zhiji-prod "/Users/mrh/Documents/KI/runtime/venv/bin/python '${REMOTE_STAGE}/bootstrap_legacy_runtime.py' \
+  --runtime-root /Users/mrh/Documents/KI/runtime \
+  --expected-version 2.0.0 \
+  --snapshot-name legacy-2.0.0-pre-atomic \
+  --source-sha '${SOURCE_SHA}'"
 ```
 
-迁移后的只读验收命令如下；`release.json` 只能记录 release、来源路径、迁移时间和 Git SHA 等非秘密元数据：
+`legacy-2.0.0-pre-atomic` 是本次首次原子部署受保护的回滚目标；后续发布中它可能按版本保留策略老化退出。原始 `runtime/venv` 是长期紧急副本，在单独审计并明确批准退役前不得删除。
+
+将已校验 staging 中的 wheel 与摘要提升到部署器当前要求的 canonical packages 路径，再从 staging 运行匹配的部署器。命令不含 token flag：
 
 ```bash
-ssh zhiji-prod 'test -x /Users/mrh/Documents/KI/runtime/venv/bin/zhiji'
-ssh zhiji-prod 'test -x /Users/mrh/Documents/KI/runtime/versions/legacy-2.0.0-pre-atomic/venv/bin/zhiji'
-ssh zhiji-prod 'test "$(readlink /Users/mrh/Documents/KI/runtime/current)" = /Users/mrh/Documents/KI/runtime/versions/legacy-2.0.0-pre-atomic'
-ssh zhiji-prod 'python3 -m json.tool /Users/mrh/Documents/KI/runtime/versions/legacy-2.0.0-pre-atomic/release.json >/dev/null'
-ssh zhiji-prod 'launchctl print gui/$(id -u)/com.zhiji.backend | grep -F /Users/mrh/Documents/KI/runtime/venv/bin/zhiji'
-```
-
-只上传该 SHA 目录中的 wheel、对应的 `SHA256SUMS`，以及同一提交中的部署器；上传后再在远端复核摘要：
-
-```bash
-scp "$WHEEL" "$OUT/SHA256SUMS" scripts/deploy_backend.py \
-  zhiji-prod:/Users/mrh/Documents/KI/packages/
-ssh zhiji-prod 'cd /Users/mrh/Documents/KI/packages && shasum -a 256 -c SHA256SUMS'
-```
-
-确认远端安全配置预检通过后部署 `v2.0.0+90`。命令不接受也不得增加任何 token 参数：
-
-```bash
-ssh zhiji-prod 'python3 /Users/mrh/Documents/KI/packages/deploy_backend.py v2.0.0+90 \
+ssh zhiji-prod "cp '${REMOTE_STAGE}/$(basename "$WHEEL")' /Users/mrh/Documents/KI/packages/ && \
+  cp '${REMOTE_STAGE}/SHA256SUMS' /Users/mrh/Documents/KI/packages/"
+ssh zhiji-prod "python3 '${REMOTE_STAGE}/deploy_backend.py' v2.0.0+90 \
   --runtime-root /Users/mrh/Documents/KI/runtime \
   --zhiji-home /Users/mrh/Documents/KI \
   --user-home /Users/mrh \
@@ -411,69 +193,48 @@ ssh zhiji-prod 'python3 /Users/mrh/Documents/KI/packages/deploy_backend.py v2.0.
   --checksums /Users/mrh/Documents/KI/packages/SHA256SUMS \
   --launchd-plist /Users/mrh/Library/LaunchAgents/com.zhiji.backend.plist \
   --bind-host 0.0.0.0 \
-  --health-origin http://127.0.0.1:9120'
+  --health-origin http://127.0.0.1:9120"
 ```
 
-部署器在切换前创建数据库备份；新版本任一 smoke check 失败时会停止新服务、恢复数据库、原子切回旧 `current` 并重新启动旧服务。生产验证只做下列成功路径和只读检查，禁止为测试回滚而故意破坏生产服务：
+部署器任一 smoke check 失败会恢复数据库、切回旧 `current` 并重启旧服务。不得故意破坏生产来演练回滚。部署成功后再次运行只读 preflight：它从本机 `app/frontend/.env.local` 读取 token，在内存设置 `X-API-Key`，从本机请求远端 system health，并断言 HTTP 200、JSON `ok`、`version` 和 `database.ok`：
 
 ```bash
-# 回环公开健康检查
-ssh zhiji-prod 'curl -fsS http://127.0.0.1:9120/api/health >/dev/null'
-
-# 远端系统健康检查：未认证必须是 401
-test "$(curl -sS -o /dev/null -w '%{http_code}' http://10.8.0.105:9120/api/system/health)" = 401
-
-# 已认证检查必须从本机请求远端地址；token 只在本地 Python 内存中使用
-python3 - <<'PY'
-import json
-import re
-import stat
-import urllib.request
-from pathlib import Path
-
-env_path = Path("app/frontend/.env.local")
-metadata = env_path.lstat()
-assert stat.S_ISREG(metadata.st_mode) and not stat.S_ISLNK(metadata.st_mode)
-assert stat.S_IMODE(metadata.st_mode) == 0o600
-raw_token = next(
-    line.removeprefix("KI_REMOTE_API_TOKEN=")
-    for line in env_path.read_text(encoding="utf-8").splitlines()
-    if line.startswith("KI_REMOTE_API_TOKEN=")
-)
-token = raw_token[1:-1] if raw_token[:1] in {"'", '"'} and raw_token[-1:] == raw_token[:1] else raw_token
-assert re.fullmatch(r"[A-Za-z0-9_-]+", token)
-request = urllib.request.Request(
-    "http://10.8.0.105:9120/api/system/health",
-    headers={"X-API-Key": token},
-)
-with urllib.request.urlopen(request, timeout=10) as response:
-    assert response.status == 200
-    payload = json.load(response)
-assert payload["ok"] is True
-assert payload["version"] == "2.0.0"
-assert payload["database"]["ok"] is True
-PY
-
-# 数据库、版本指针、元数据与 launchd 参数
-ssh zhiji-prod 'sqlite3 /Users/mrh/Documents/KI/data/intelligence.sqlite "PRAGMA quick_check;" | grep -Fx ok'
-ssh zhiji-prod 'test -L /Users/mrh/Documents/KI/runtime/current && readlink /Users/mrh/Documents/KI/runtime/current'
-ssh zhiji-prod 'python3 -m json.tool /Users/mrh/Documents/KI/runtime/current/release.json >/dev/null'
-ssh zhiji-prod 'launchctl print gui/$(id -u)/com.zhiji.backend | grep -E -- "runtime/current/venv/bin/zhiji|--host|0.0.0.0|--port|9120"'
-
-# curl 只验证根页面 shell 和静态 asset 可达
-curl -fsS http://10.8.0.105:9120/ | grep -q '<div id="root">'
-curl -fsS http://10.8.0.105:9120/ | grep -q 'assets/'
-
-# 浏览器 QA 实际执行 /、/#/ingest、/#/system
-cd app/frontend
-npm run qa:cinematic-pages -- http://10.8.0.105:9120 tmp/deploy-smoke today,ingest,system
-
-# 回滚证据：原始 venv 和首次迁移快照均仍存在，不修改任何文件
-ssh zhiji-prod 'test -x /Users/mrh/Documents/KI/runtime/venv/bin/zhiji'
-ssh zhiji-prod 'test -x /Users/mrh/Documents/KI/runtime/versions/legacy-2.0.0-pre-atomic/venv/bin/zhiji'
+python3 scripts/preflight_backend_deploy.py \
+  --local-env app/frontend/.env.local \
+  --ssh-host zhiji-prod \
+  --remote-env /Users/mrh/Documents/KI/.env \
+  --runtime-root /Users/mrh/Documents/KI/runtime \
+  --database /Users/mrh/Documents/KI/data/intelligence.sqlite \
+  --python /Users/mrh/Documents/KI/runtime/current/venv/bin/python \
+  --legacy-name legacy-2.0.0-pre-atomic \
+  --target-name 2.0.0+90 \
+  --expect-legacy present \
+  --expect-current present \
+  --expect-target present \
+  --health-url http://10.8.0.105:9120/api/system/health
 ```
 
-浏览器 QA 必须全部通过并在 `app/frontend/tmp/deploy-smoke/` 生成三页截图和 DOM 记录。预期 route marker：today 包含 `cinematic-dashboard`、`今日知几`、`cinematic-scene-canvas`；ingest 包含 `ki-shell-legacy-ingest`、`ki-ingest-split-stage`、`ingest-detail-reader`、`dual-nav-action-menu`；system 包含 `ki-shell-system`、`ki-ingest-split-stage`、`system-detail-reader`、`system-function-list`。逐张检查截图无加载态、空白页或重叠后，部署验收才算完成。
+然后执行其余只读验收：
+
+```bash
+ssh zhiji-prod 'curl -fsS http://127.0.0.1:9120/api/health >/dev/null'
+test "$(curl -sS -o /dev/null -w '%{http_code}' http://10.8.0.105:9120/api/system/health)" = 401
+ssh zhiji-prod 'CURRENT=$(readlink /Users/mrh/Documents/KI/runtime/current) && test -d "$CURRENT" && test "$(basename "$CURRENT")" = 2.0.0+90'
+ssh zhiji-prod 'find /Users/mrh/Documents/KI/runtime/versions -mindepth 1 -maxdepth 1 -type d -print | sort'
+ssh zhiji-prod 'python3 -m json.tool /Users/mrh/Documents/KI/runtime/current/release.json >/dev/null'
+ssh zhiji-prod 'test -x /Users/mrh/Documents/KI/runtime/venv/bin/zhiji'
+ssh zhiji-prod 'test -x /Users/mrh/Documents/KI/runtime/versions/legacy-2.0.0-pre-atomic/venv/bin/zhiji'
+ssh zhiji-prod 'sqlite3 /Users/mrh/Documents/KI/data/intelligence.sqlite "PRAGMA quick_check;" | grep -Fx ok'
+ssh zhiji-prod 'launchctl print gui/$(id -u)/com.zhiji.backend | grep -E -- "runtime/current/venv/bin/zhiji|--host|0.0.0.0|--port|9120"'
+ssh zhiji-prod 'find /Users/mrh/Documents/KI/backups -type f -name "deploy-*.sqlite" -print | sort'
+ssh zhiji-prod 'COUNT=$(find /Users/mrh/Documents/KI/backups -type f -name "deploy-*.sqlite" -print | sed -E "s/.*deploy-([0-9]{8})-.*/\\1/" | sort -u | wc -l | tr -d " ") && test "$COUNT" -le 7 && printf "%s\\n" "$COUNT"'
+curl -fsS http://10.8.0.105:9120/ | grep -q '<div id="root">'
+curl -fsS http://10.8.0.105:9120/ | grep -q 'assets/'
+cd app/frontend
+npm run qa:cinematic-pages -- http://10.8.0.105:9120 tmp/deploy-smoke today,ingest,system
+```
+
+`current` 必须指向本次真实版本目录，版本目录清单必须同时保留当前与回滚目标。每日备份策略只保留最近至多 7 个不同日期且每个日期 1 份；已有至少 7 天历史时，上述日期计数应为 7。浏览器 QA 必须通过 today、ingest、system 的 route markers，并在 `app/frontend/tmp/deploy-smoke/` 生成三页截图和 JSON 报告；逐张确认无加载态、空白页或重叠。
 
 ## 桌面完整发布与后端部署
 
