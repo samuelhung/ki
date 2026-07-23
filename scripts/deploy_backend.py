@@ -12,6 +12,7 @@ import plistlib
 import re
 import shutil
 import sqlite3
+import stat
 import subprocess
 import sys
 import tempfile
@@ -107,8 +108,48 @@ def _is_loopback_bind(bind_host: str) -> bool:
         raise BackendDeployError("bind host must be an IP literal or localhost") from exc
 
 
+def _env_value(path: Path, key: str) -> str:
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line.removeprefix("export ").strip()
+        candidate, separator, value = line.partition("=")
+        if separator and candidate.strip() == key:
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+                value = value[1:-1]
+            return value
+    return ""
+
+
+def _validate_remote_bind_environment(config: BackendDeployConfig) -> None:
+    if _is_loopback_bind(config.bind_host):
+        return
+
+    env_file = config.zhiji_home / ".env"
+    try:
+        env_stat = env_file.lstat()
+    except FileNotFoundError as exc:
+        raise BackendDeployError("secure .env is required for a non-loopback bind") from exc
+    except OSError as exc:
+        raise BackendDeployError("unable to inspect secure .env") from exc
+
+    if not stat.S_ISREG(env_stat.st_mode):
+        raise BackendDeployError(".env must be a regular non-symlink file")
+    if stat.S_IMODE(env_stat.st_mode) != 0o600:
+        raise BackendDeployError(".env must have mode 0600")
+    try:
+        api_token = _env_value(env_file, "KI_API_TOKEN")
+    except (OSError, UnicodeError) as exc:
+        raise BackendDeployError("unable to read secure .env") from exc
+    if not api_token:
+        raise BackendDeployError("KI_API_TOKEN must be non-empty for a non-loopback bind")
+
+
 def _validate_config(config: BackendDeployConfig) -> None:
-    _is_loopback_bind(config.bind_host)
+    _validate_remote_bind_environment(config)
     paths = {
         "runtime path": config.runtime_root,
         "Zhiji home path": config.zhiji_home,
@@ -214,6 +255,7 @@ def _atomic_write(path: Path, payload: bytes, *, mode: int = 0o600) -> None:
 
 
 def write_launchd_plist(config: BackendDeployConfig) -> None:
+    _validate_remote_bind_environment(config)
     executable = config.current_link / "venv" / "bin" / "zhiji"
     payload = {
         "Label": config.launchd_label,

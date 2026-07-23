@@ -91,10 +91,11 @@ def _install(stage: Path, _config: BackendDeployConfig) -> None:
     executable.write_text("executable", encoding="utf-8")
 
 
-def _write_secure_env(config: BackendDeployConfig) -> None:
-    env_file = config.zhiji_home / ".env"
-    env_file.write_text("ZHIJI_TEST_SECRET=configured\n", encoding="utf-8")
+def _write_secure_api_token(home: Path, value: str = "test-only-token") -> Path:
+    env_file = home / ".env"
+    env_file.write_text(f"KI_API_TOKEN={value}\n", encoding="utf-8")
     env_file.chmod(0o600)
+    return env_file
 
 
 def test_deploy_installs_immutable_version_and_atomically_switches_current(tmp_path: Path) -> None:
@@ -217,7 +218,7 @@ def test_launchd_defaults_to_loopback_bind_and_health_origin_port(tmp_path: Path
 def test_bind_host_accepts_ip_literals_and_localhost(tmp_path: Path, bind_host: str) -> None:
     config = replace(_config(tmp_path), bind_host=bind_host)
     if bind_host not in {"::1", "localhost"}:
-        _write_secure_env(config)
+        _write_secure_api_token(config.zhiji_home)
 
     deploy_backend(
         config,
@@ -230,6 +231,92 @@ def test_bind_host_accepts_ip_literals_and_localhost(tmp_path: Path, bind_host: 
     arguments = payload["ProgramArguments"]
     assert arguments[arguments.index("--host") + 1] == bind_host
     assert arguments[arguments.index("--port") + 1] == "19120"
+
+
+@pytest.mark.parametrize(
+    "token",
+    [None, "", "   "],
+    ids=["missing-env", "empty-token", "whitespace-token"],
+)
+def test_public_bind_requires_secure_env_with_nonempty_api_token(
+    tmp_path: Path,
+    token: str | None,
+) -> None:
+    config = replace(_config(tmp_path), bind_host="0.0.0.0")
+    if token is not None:
+        _write_secure_api_token(config.zhiji_home, token)
+    service = FakeService()
+
+    match = (
+        r"secure \.env is required for a non-loopback bind"
+        if token is None
+        else "KI_API_TOKEN"
+    )
+    with pytest.raises(BackendDeployError, match=match):
+        deploy_backend(config, service=service, installer=_install, smoke_check=lambda: None)
+
+    assert service.events == []
+    assert not config.current_link.exists()
+    assert not config.versions_dir.exists()
+
+
+def test_public_bind_rejects_symlinked_env_before_service_stop(tmp_path: Path) -> None:
+    config = replace(_config(tmp_path), bind_host="0.0.0.0")
+    external = tmp_path.parent / f"{tmp_path.name}-external.env"
+    external.write_text("KI_API_TOKEN=test-only-token\n", encoding="utf-8")
+    external.chmod(0o600)
+    (config.zhiji_home / ".env").symlink_to(external)
+    service = FakeService()
+
+    with pytest.raises(BackendDeployError, match="regular non-symlink file"):
+        deploy_backend(config, service=service, installer=_install, smoke_check=lambda: None)
+
+    assert service.events == []
+    assert not config.current_link.exists()
+    assert not config.versions_dir.exists()
+
+
+@pytest.mark.parametrize("mode", [0o400, 0o640, 0o644, 0o660])
+def test_public_bind_rejects_env_mode_other_than_0600_before_service_stop(
+    tmp_path: Path,
+    mode: int,
+) -> None:
+    config = replace(_config(tmp_path), bind_host="0.0.0.0")
+    env_file = _write_secure_api_token(config.zhiji_home)
+    env_file.chmod(mode)
+    service = FakeService()
+
+    with pytest.raises(BackendDeployError, match="0600"):
+        deploy_backend(config, service=service, installer=_install, smoke_check=lambda: None)
+
+    assert service.events == []
+    assert not config.current_link.exists()
+    assert not config.versions_dir.exists()
+
+
+def test_loopback_bind_does_not_require_api_token(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+
+    deploy_backend(
+        config,
+        service=FakeService(),
+        installer=_install,
+        smoke_check=lambda: None,
+    )
+
+    assert config.current_link.resolve() == config.versions_dir / "2.0.0+90"
+
+
+def test_launchd_refuses_public_bind_without_secure_env(tmp_path: Path) -> None:
+    config = replace(_config(tmp_path), bind_host="0.0.0.0")
+
+    with pytest.raises(
+        BackendDeployError,
+        match=r"secure \.env is required for a non-loopback bind",
+    ):
+        write_launchd_plist(config)
+
+    assert not config.launchd_plist.exists()
 
 
 @pytest.mark.parametrize(
