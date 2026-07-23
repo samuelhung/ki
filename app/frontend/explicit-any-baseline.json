@@ -21,7 +21,7 @@
   "src/pages/GlobalDockQuestionOverlay.tsx": 1,
   "src/pages/GlobalDockSourcesOverlay.tsx": 4,
   "src/pages/GlobalDockTaskOverlay.tsx": 1,
-  "src/pages/Ingest.tsx": 23,
+  "src/pages/Ingest.tsx": 5,
   "src/pages/SeriesDetail.tsx": 5,
   "src/pages/StudyDetail.tsx": 4
 }

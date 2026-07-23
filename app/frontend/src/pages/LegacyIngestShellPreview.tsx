@@ -12,7 +12,7 @@ export default function LegacyIngestShellPreview() {
     <KiNavigationShell className="ki-shell-ingest-preview">
       <section className="ki-shell-content" aria-label="旧版内容采集工作区">
         <div className="ki-shell-legacy-ingest">
-          <Ingest embedded />
+          <Ingest />
         </div>
       </section>
     </KiNavigationShell>
