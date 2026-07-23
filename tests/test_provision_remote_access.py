@@ -9,6 +9,8 @@ import pytest
 
 from scripts.provision_remote_access import (
     ProvisionError,
+    RemoteTransportError,
+    RemoteWorkerError,
     SshRemoteExecutor,
     main,
     provision_remote_access,
@@ -28,11 +30,11 @@ class FakeRemote:
         self.calls.append(("update", payload))
         token = TOKEN
         if self.fail == "precommit":
-            raise ProvisionError("remote update failed")
+            raise RemoteWorkerError("remote update failed")
         self.token = token
         self.contents += "KI_API_TOKEN=updated\nKI_ALLOWED_HOSTS=hosts\n"
         if self.fail == "response-lost":
-            raise ProvisionError("remote response lost")
+            raise RemoteTransportError("remote response lost")
 
     def compare(self, payload: bytes) -> bool | None:
         self.calls.append(("compare", payload))
@@ -87,6 +89,24 @@ def test_remote_commit_with_lost_response_keeps_new_local_token(tmp_path: Path) 
     remote = FakeRemote(fail="response-lost")
 
     provision_remote_access(local, remote, token_factory=lambda _length: TOKEN)
+
+    assert f"KI_REMOTE_API_TOKEN={TOKEN}" in local.read_text()
+    assert [name for name, _payload in remote.calls] == ["update", "compare"]
+
+
+def test_explicit_remote_failure_with_matching_token_is_uncertain(tmp_path: Path) -> None:
+    local = tmp_path / ".env.local"
+    remote = FakeRemote(fail="response-lost")
+
+    def fail_after_commit(payload: bytes) -> None:
+        remote.calls.append(("update", payload))
+        remote.token = TOKEN
+        raise RemoteWorkerError("remote worker rejected update")
+
+    remote.update = fail_after_commit
+
+    with pytest.raises(ProvisionError, match="remote commit durability/state uncertain"):
+        provision_remote_access(local, remote, token_factory=lambda _length: TOKEN)
 
     assert f"KI_REMOTE_API_TOKEN={TOKEN}" in local.read_text()
     assert [name for name, _payload in remote.calls] == ["update", "compare"]
@@ -247,6 +267,79 @@ def test_ssh_stdin_worker_updates_and_compares_without_secret_argv(tmp_path: Pat
     assert all(command[-1].startswith(f"{Path(sys.executable)} -c ") for command in commands)
 
 
+def test_real_ssh_worker_post_replace_fsync_failure_is_reported_uncertain(
+    tmp_path: Path, capsys
+) -> None:
+    local_env = tmp_path / "local.env"
+    remote_env = tmp_path / "remote.env"
+    _secure_env(remote_env, "UNRELATED=kept\nKI_API_TOKEN=old\n")
+    source = Path("scripts/provision_remote_access.py").read_text(encoding="utf-8")
+    source = source.replace(
+        "def _fsync_directory(path: Path) -> None:\n"
+        "    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)\n"
+        "    try:\n"
+        "        os.fsync(descriptor)\n"
+        "    finally:\n"
+        "        os.close(descriptor)\n",
+        "def _fsync_directory(path: Path) -> None:\n"
+        "    raise OSError('injected remote directory fsync failure')\n",
+    )
+    worker_source = tmp_path / "provision_remote_access.py"
+    worker_source.write_text(source, encoding="utf-8")
+    commands: list[list[str]] = []
+
+    def execute_loader(command: list[str], **kwargs):
+        commands.append(command)
+        return subprocess.run(
+            ["/bin/sh", "-c", command[-1]],
+            input=kwargs["input"],
+            capture_output=True,
+            check=False,
+        )
+
+    remote = SshRemoteExecutor(
+        "test-host",
+        worker_source,
+        remote_env,
+        Path(sys.executable),
+        run=execute_loader,
+    )
+
+    with pytest.raises(ProvisionError, match="remote commit durability/state uncertain"):
+        provision_remote_access(local_env, remote, token_factory=lambda _length: TOKEN)
+
+    captured = capsys.readouterr()
+    assert f"KI_REMOTE_API_TOKEN={TOKEN}" in local_env.read_text()
+    assert f"KI_API_TOKEN={TOKEN}" in remote_env.read_text()
+    assert len(commands) == 2
+    assert all(TOKEN not in argument for command in commands for argument in command)
+    assert TOKEN not in captured.out + captured.err
+
+
+def test_ssh_transport_loss_with_matching_compare_remains_successful(tmp_path: Path) -> None:
+    local_env = tmp_path / "local.env"
+    commands: list[list[str]] = []
+
+    def lose_update_response(command: list[str], **_kwargs):
+        commands.append(command)
+        returncode = 255 if len(commands) == 1 else 0
+        return subprocess.CompletedProcess(command, returncode, stdout=b"", stderr=b"")
+
+    remote = SshRemoteExecutor(
+        "test-host",
+        Path("scripts/provision_remote_access.py"),
+        Path("/remote/.env"),
+        Path(sys.executable),
+        run=lose_update_response,
+    )
+
+    provision_remote_access(local_env, remote, token_factory=lambda _length: TOKEN)
+
+    assert f"KI_REMOTE_API_TOKEN={TOKEN}" in local_env.read_text()
+    assert len(commands) == 2
+    assert all(TOKEN not in argument for command in commands for argument in command)
+
+
 @pytest.mark.parametrize("remote_python", [Path("python3"), Path("/bad\npython")])
 def test_ssh_executor_rejects_unsafe_remote_python(remote_python: Path) -> None:
     with pytest.raises(ProvisionError, match="remote Python"):
@@ -268,3 +361,37 @@ def test_cli_rejects_token_options_without_echoing_value(capsys) -> None:
     captured = capsys.readouterr()
     assert TOKEN not in captured.out
     assert TOKEN not in captured.err
+
+
+def test_cli_never_reports_complete_after_explicit_uncertain_remote_commit(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    class ExplicitFailure:
+        def update(self, _payload: bytes) -> None:
+            raise RemoteWorkerError("remote worker failed")
+
+        def compare(self, _payload: bytes) -> bool:
+            return True
+
+    monkeypatch.setattr(
+        "scripts.provision_remote_access.SshRemoteExecutor",
+        lambda *_args, **_kwargs: ExplicitFailure(),
+    )
+    monkeypatch.setattr("scripts.provision_remote_access.secrets.token_urlsafe", lambda _n: TOKEN)
+
+    result = main(
+        [
+            "--local-env",
+            str(tmp_path / ".env.local"),
+            "--remote-env",
+            "/remote/.env",
+            "--remote-python",
+            str(Path(sys.executable)),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert result == 2
+    assert "provisioning complete" not in captured.out
+    assert "durability/state uncertain" in captured.err
+    assert TOKEN not in captured.out + captured.err

@@ -31,6 +31,14 @@ class ProvisionError(RuntimeError):
     pass
 
 
+class RemoteWorkerError(ProvisionError):
+    """The remote worker explicitly rejected or failed an update."""
+
+
+class RemoteTransportError(ProvisionError):
+    """SSH transport or response delivery failed without a worker result."""
+
+
 class RemoteExecutor(Protocol):
     def update(self, payload: bytes) -> None: ...
 
@@ -283,6 +291,10 @@ def provision_remote_access(
             except Exception:
                 committed = None
             if committed is True:
+                if isinstance(remote_error, RemoteWorkerError):
+                    raise ProvisionError(
+                        "remote commit durability/state uncertain; retained the matching local token"
+                    ) from remote_error
                 return
             if committed is False:
                 _restore_local(local_env, original, updated)
@@ -335,9 +347,14 @@ class SshRemoteExecutor:
         return self.run(command, input=envelope, capture_output=True, check=False)
 
     def update(self, payload: bytes) -> None:
-        result = self._run("--remote-worker", payload)
+        try:
+            result = self._run("--remote-worker", payload)
+        except Exception as exc:
+            raise RemoteTransportError("remote update transport failed") from exc
+        if result.returncode == 2:
+            raise RemoteWorkerError("remote worker failed")
         if result.returncode != 0:
-            raise ProvisionError("remote update failed")
+            raise RemoteTransportError("remote update response was lost")
 
     def compare(self, payload: bytes) -> bool | None:
         result = self._run("--remote-compare", payload)
