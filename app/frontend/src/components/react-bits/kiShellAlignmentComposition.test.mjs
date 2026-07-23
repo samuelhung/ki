@@ -40,7 +40,7 @@ test('toolbox and system content use the same inner edges as content ingest', ()
   assert.match(toolboxCss, /\.ki-shell-toolbox \.toolbox-detail-reader\s*\{[^}]*width:\s*auto\s*!important[^}]*left:\s*12px\s*!important[^}]*right:\s*0\s*!important/s);
   assert.match(toolboxCss, /@media \(max-width:\s*1280px\)[\s\S]*\.ki-shell-toolbox \.toolbox-detail-reader\s*\{[^}]*left:\s*6px\s*!important/s);
   assert.match(systemCss, /\.ki-shell-system \.system-function-list\s*\{[^}]*padding-top:\s*0/s);
-  assert.match(systemCss, /\.ki-shell-system \.cinematic-ingest\.cinematic-system \.system-function-list\s*\{[^}]*padding:\s*0 18px 18px 4px\s*!important/s);
+  assert.match(systemCss, /\.ki-shell-system \.cinematic-ingest\.cinematic-system \.system-function-list\s*\{[^}]*padding:\s*0 0 18px\s*!important/s);
 });
 
 test('industry chains keep the shared compact workspace origin', () => {
