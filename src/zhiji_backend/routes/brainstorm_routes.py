@@ -4,13 +4,13 @@ from __future__ import annotations
 import json
 import logging
 import re
-import uuid
 from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, field_validator
 
+from .. import brainstorm_question_service
 from ..ai_client import chat
 from ..classifier import classify_content
 from ..db import connect
@@ -49,74 +49,33 @@ def list_brainstorm_questions(
     limit: int = Query(200, ge=1, le=MAX_PAGE_SIZE),
 ) -> dict[str, object]:
     """List brainstorm questions, newest first. Optional topic filter."""
-    query = """
-        SELECT b.id, b.event_id, b.question, b.status, b.created_at, b.topic,
-               (SELECT json_group_array(bel.event_id) FROM brainstorm_event_links bel WHERE bel.question_id = b.id) as answered_event_ids,
-               e.title, e.title_cn, e.source_id, e.url
-        FROM brainstorm_questions b
-        LEFT JOIN events e ON e.id = b.event_id
-        WHERE 1=1
-    """
-    params: dict[str, object] = {}
-    if status:
-        query += " AND b.status = :status"
-        params["status"] = status
-    if topic:
-        query += " AND b.topic = :topic"
-        params["topic"] = topic
-    query += " ORDER BY b.created_at DESC LIMIT :limit OFFSET :offset"
-    params["limit"] = max(1, min(500, limit))
-    params["offset"] = max(0, offset)
-
-    with connect() as conn:
-        rows = conn.execute(query, params).fetchall()
-    return {"questions": [dict(row) for row in rows]}
+    return brainstorm_question_service.list_brainstorm_questions(
+        status,
+        topic,
+        offset,
+        limit,
+        connect_fn=connect,
+        logger=logger,
+    )
 
 
 @router.get("/api/brainstorm/topic-counts")
 def brainstorm_topic_counts() -> dict[str, int]:
     """Return question counts per topic for brainstorm tabs."""
-    topics = ["格局", "财富", "认知", "前瞻"]
-    result: dict[str, int] = {}
-    with connect() as conn:
-        for t in topics:
-            cnt = conn.execute(
-                "SELECT COUNT(*) FROM brainstorm_questions WHERE topic = ?",
-                (t,),
-            ).fetchone()[0]
-            result[t] = int(cnt)
-    return result
+    return brainstorm_question_service.brainstorm_topic_counts(
+        connect_fn=connect, logger=logger
+    )
 
 
 @router.get("/api/brainstorm/{question_id}")
 def get_brainstorm_question(question_id: SafeIdentifier) -> dict[str, object]:
     """Get a single brainstorm question with its answered_event_ids and latest answer."""
-    with connect() as conn:
-        row = conn.execute(
-            "SELECT id, event_id, question, status, created_at, answer, summary_created_at FROM brainstorm_questions WHERE id = ?",
-            (question_id,),
-        ).fetchone()
-    if row is None:
-        raise HTTPException(status_code=404, detail="Question not found")
-    result = dict(row)
-    # Get linked event IDs from join table
-    with connect() as conn:
-        event_rows = conn.execute(
-            "SELECT event_id FROM brainstorm_event_links WHERE question_id = ?",
-            (question_id,),
-        ).fetchall()
-    result["answered_event_ids"] = json.dumps([r["event_id"] for r in event_rows])
-    # Get judged (contemplated) event IDs with relevance
-    with connect() as conn:
-        judged_rows = conn.execute(
-            "SELECT event_id, relevance FROM brainstorm_contemplate_cache WHERE question_id = ?",
-            (question_id,),
-        ).fetchall()
-    result["judged_events"] = json.dumps([{"event_id": r["event_id"], "relevance": r["relevance"]} for r in judged_rows])
-    # Read latest answer from .md file
-    md = _brainstorm_md_path(question_id)
-    result["md_content"] = md.read_text(encoding="utf-8") if md.exists() else ""
-    return result
+    return brainstorm_question_service.get_brainstorm_question(
+        question_id,
+        connect_fn=connect,
+        markdown_path_fn=_brainstorm_md_path,
+        logger=logger,
+    )
 
 
 def _extract_latest_answer(md_path: Path) -> str:
@@ -149,45 +108,24 @@ class CreateQuestionRequest(BaseModel):
 @router.post("/api/brainstorm")
 def create_brainstorm_question(request: CreateQuestionRequest) -> dict[str, object]:
     """Manually create a brainstorm question and its .md file."""
-    q_id = str(uuid.uuid4())
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    with connect() as conn:
-        conn.execute(
-            "INSERT INTO brainstorm_questions (id, event_id, question) VALUES (?, '', ?)",
-            (q_id, request.question),
-        )
-    # Create .md file and sync content_md
-    md = _brainstorm_md_path(q_id)
-    md_content = (
-        f"# 问题\n\n{request.question}\n\n"
-        f"创建时间：{now}\n\n"
-        f"---\n\n"
+    return brainstorm_question_service.create_brainstorm_question(
+        request,
+        connect_fn=connect,
+        classify_fn=classify_content,
+        markdown_path_fn=_brainstorm_md_path,
+        logger=logger,
     )
-    md.write_text(md_content, encoding="utf-8")
-    with connect() as conn:
-        conn.execute("UPDATE brainstorm_questions SET content_md = ? WHERE id = ?", (md_content, q_id))
-    # Auto-classify the question
-    topic = "认知"  # default fallback
-    try:
-        topic = classify_content(request.question, "")
-        with connect() as conn:
-            conn.execute("UPDATE brainstorm_questions SET topic = ? WHERE id = ?", (topic, q_id))
-    except Exception:
-        pass  # best-effort, don't block creation
-    return {"ok": True, "id": q_id, "question": request.question, "topic": topic}
 
 
 @router.delete("/api/brainstorm/{question_id}")
 def delete_brainstorm_question(question_id: SafeIdentifier) -> dict[str, object]:
     """Delete a brainstorm question and its .md file."""
-    with connect() as conn:
-        existing = conn.execute("SELECT id FROM brainstorm_questions WHERE id = ?", (question_id,)).fetchone()
-        if existing is None:
-            raise HTTPException(status_code=404, detail="Question not found")
-        conn.execute("DELETE FROM brainstorm_questions WHERE id = ?", (question_id,))
-    # Also delete .md file
-    _safe_brainstorm_unlink(question_id)
-    return {"ok": True, "deleted": question_id}
+    return brainstorm_question_service.delete_brainstorm_question(
+        question_id,
+        connect_fn=connect,
+        unlink_fn=_safe_brainstorm_unlink,
+        logger=logger,
+    )
 
 
 class QuestionBatchRequest(BaseModel):
@@ -197,29 +135,20 @@ class QuestionBatchRequest(BaseModel):
 @router.post("/api/brainstorm/batch-delete")
 def batch_delete_brainstorm_questions(payload: QuestionBatchRequest) -> dict[str, object]:
     """Delete multiple brainstorm questions and their .md files."""
-    question_ids = payload.question_ids
-    deleted = 0
-    for qid in question_ids:
-        qid_str = qid
-        with connect() as conn:
-            existing = conn.execute("SELECT id FROM brainstorm_questions WHERE id = ?", (qid_str,)).fetchone()
-            if existing is None:
-                continue
-            conn.execute("DELETE FROM brainstorm_questions WHERE id = ?", (qid_str,))
-        _safe_brainstorm_unlink(qid_str)
-        deleted += 1
-    return {"ok": True, "deleted": deleted}
+    return brainstorm_question_service.batch_delete_brainstorm_questions(
+        payload,
+        connect_fn=connect,
+        unlink_fn=_safe_brainstorm_unlink,
+        logger=logger,
+    )
 
 
 @router.post("/api/brainstorm/{question_id}/done")
 def mark_brainstorm_done(question_id: SafeIdentifier) -> dict[str, object]:
     """Mark a brainstorm question as done."""
-    with connect() as conn:
-        existing = conn.execute("SELECT id FROM brainstorm_questions WHERE id = ?", (question_id,)).fetchone()
-        if existing is None:
-            raise HTTPException(status_code=404, detail="Question not found")
-        conn.execute("UPDATE brainstorm_questions SET status = 'done' WHERE id = ?", (question_id,))
-    return {"ok": True, "id": question_id, "status": "done"}
+    return brainstorm_question_service.mark_brainstorm_done(
+        question_id, connect_fn=connect, logger=logger
+    )
 
 
 class AnswerRequest(BaseModel):
