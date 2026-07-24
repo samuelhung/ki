@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .. import (
+    chain_analysis_service,
     chain_chat_service,
     chain_collection_service,
     chain_hint_service,
@@ -114,99 +115,19 @@ def list_nodes():
 @router.post("/analyze")
 def analyze_chain_impact(req: AnalyzeRequest):
     """分析一条事件对产业链的影响。传入 event_id 则从 DB 读取事件；或直接传入 title+summary。"""
-    event_id = req.event_id
-    event_title = req.event_title
-    event_summary = req.event_summary
-    if event_id:
-        with connect() as conn:
-            conn.row_factory = lambda c, r: dict(zip([col[0] for col in c.description], r))
-            ev = conn.execute(
-                "SELECT title, ai_summary, raw_summary FROM events WHERE id = ?", (event_id,)
-            ).fetchone()
-            if not ev:
-                return {"error": "事件不存在"}
-            event_title = ev.get("title", "") or ""
-            event_summary = ev.get("ai_summary", "") or ev.get("raw_summary", "") or ""
+    return chain_analysis_service.analyze_chain_impact(
+        req,
+        connect_fn=connect,
+        chat_fn=chat,
+        detect_new_chains_fn=_detect_new_chains,
+        service_logger=logger,
+    )
 
-    if not event_summary:
-        return {"error": "没有事件内容可分析"}
 
-    # 读取所有产业链节点
-    with connect() as conn:
-        conn.row_factory = lambda c, r: dict(zip([col[0] for col in c.description], r))
-        nodes = conn.execute("""
-            SELECT id, chain, name, node_type, description, global_shares, substitutes
-            FROM industry_chain_nodes ORDER BY chain, sort_order
-        """).fetchall()
+def _detect_new_chains(event_id: str):
+    from ..chain_detector import detect_new_chains
 
-    # 构建产业链上下文
-    chain_context = _build_chain_context(nodes)
-
-    prompt = f"""你是一位产业分析专家。以下是已知的产业链知识库和一条新闻事件。
-
-{chain_context}
-
----
-## 事件
-标题：{event_title}
-内容：{event_summary[:4000]}
----
-
-请分析该事件对产业链的影响，按以下结构生成报告：
-
-## 一、直接冲击
-- 受直接影响的产业链节点及程度（严重/中等/轻微）
-- 基于全球份额数据量化影响
-
-## 二、上下游传导
-- 按产业链逐级推演传导路径
-- 标注每个环节受影响的方向（↑成本上升/↓需求下降）和时滞（即时/短期/中期）
-
-## 三、价格趋势预判
-- 涉及的关键原材料、中间品、终端产品价格走势
-- 涨幅/跌幅区间估计
-
-## 四、替代效应
-- 哪些替代材料/替代技术可能受益
-- 替代可行性和时点判断
-
-## 五、资本市场映射
-- 受影响的A股/港股板块和代表性公司
-- 受益方和受损方分别列出
-
-请用简洁专业的中文，数据引用标注来源。（如全球份额数据、替代材料可行性等）"""
-
-    try:
-        result = chat(
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=4096,
-            module="chain_analysis",
-            task="analyze"
-        )
-        if not result:
-            return {"error": "AI 分析返回空结果"}
-        # 二阶段：从分析结果中提取结构化数据点
-        extracted_hints = _extract_hints_from_analysis(result, event_title, event_summary[:3000])
-
-        # 持久化分析结果到 events 表
-        if event_id:
-            with connect() as conn:
-                conn.execute(
-                    "UPDATE events SET chain_analysis = ? WHERE id = ?",
-                    (result, event_id),
-                )
-
-        # 异步触发新链检测（不阻塞返回）
-        try:
-            from ..chain_detector import detect_new_chains
-            detect_new_chains(event_id)
-        except Exception:
-            logger.warning("detect_new_chains failed for %s during analyze", event_id, exc_info=True)
-
-        return {"analysis": result, "matched_nodes": len(nodes), "extracted_hints": extracted_hints}
-    except Exception as e:
-        return {"error": str(e)}
+    return detect_new_chains(event_id)
 
 
 @router.post("/report")
@@ -352,57 +273,6 @@ def chain_report(req: ChainReportRequest):
         return {"error": str(e)}
 
 
-
-
-def _extract_hints_from_analysis(analysis: str, title: str, summary: str) -> list:
-    """从分析报告中提取可同步到产业链的结构化数据点。"""
-    try:
-        prompt = f"""从以下产业分析报告中提取**可量化的数据点**，格式为 JSON 数组。
-
-分析报告:
-{analysis[:3000]}
-
-事件标题: {title}
-
-提取规则:
-1. 只提取包含具体数字的数据点（百分比、价格区间、排名等）
-2. 每个数据点要注明对应的产业链节点名（尽量匹配已有的节点名）
-3. 如果无法确定节点名，用 "建议新建" 作为 node_name
-
-输出 JSON 数组，每个元素:
-{{
-  "node_name": "节点名（如 锂矿、原油、小麦）",
-  "field": "字段描述（如 全球产量占比、价格涨幅）",
-  "value": "数据值（如 中国占比65%）",
-  "source_quote": "报告中支撑该数据的原文引用"
-}}
-
-如果没有可提取的量化数据，返回空数组: []
-只输出 JSON。"""
-
-        from ..ai_client import chat
-        result = chat(
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            max_tokens=1024,
-            module="chain_analysis",
-            task="extract_hints"
-        )
-        if not result:
-            return []
-
-        result = result.strip()
-        if "```json" in result:
-            result = result.split("```json")[1].split("```")[0].strip()
-        elif "```" in result:
-            result = result.split("```")[1].split("```")[0].strip()
-
-        import json
-        hints = json.loads(result)
-        return hints if isinstance(hints, list) else []
-
-    except Exception:
-        return []
 
 
 # ── CRUD ──
@@ -601,78 +471,6 @@ def ai_collect_chain_all(req: AiCollectRequest):
 
 
 # ── Helpers ──
-
-
-def _build_chain_context(nodes: list[dict]) -> str:
-    """将节点数据构建为 AI 可读的上下文"""
-    chains: dict[str, list] = {}
-    for n in nodes:
-        chain_name = n["chain"]
-        if chain_name not in chains:
-            chains[chain_name] = []
-        chains[chain_name].append(n)
-
-    parts = []
-    for chain_name, chain_nodes in chains.items():
-        parts.append(f"### {chain_name}")
-        for n in chain_nodes:
-            shares_str = ""
-            if n["global_shares"]:
-                try:
-                    raw = json.loads(n["global_shares"]) if isinstance(n["global_shares"], str) else n["global_shares"]
-                    # 兼容新格式 {"groups":{...}} 和旧格式 [{...}]
-                    all_shares = []
-                    groups = raw.get("groups") if isinstance(raw, dict) else None
-                    if groups:
-                        for gname in ("production", "supply", "demand"):
-                            all_shares.extend(groups.get(gname, []))
-                    elif isinstance(raw, list):
-                        all_shares = raw
-                    items = []
-                    for s in all_shares:
-                        parts_s = [s['c']]
-                        if s.get("p", 0) > 0:
-                            parts_s.append(f"产量占全球{s['p']}%")
-                            if s.get("p_export_global", 0) > 0:
-                                parts_s.append(f"出口占全球{s['p_export_global']}%")
-                            if s.get("p_export_ratio", 0) > 0:
-                                parts_s.append(f"出口/产量比{s['p_export_ratio']}%")
-                            if s.get("p_export_national", 0) > 0:
-                                parts_s.append(f"占本国总出口{s['p_export_national']}%")
-                        if s.get("d", 0) > 0:
-                            parts_s.append(f"消费占全球{s['d']}%")
-                            if s.get("d_import_global", 0) > 0:
-                                parts_s.append(f"进口占全球{s['d_import_global']}%")
-                            if s.get("d_import_ratio", 0) > 0:
-                                parts_s.append(f"进口/消费比{s['d_import_ratio']}%")
-                            if s.get("d_import_national", 0) > 0:
-                                parts_s.append(f"占本国总进口{s['d_import_national']}%")
-                        items.append(" | ".join(parts_s))
-                    shares_str = "  ".join(items)
-                except (json.JSONDecodeError, TypeError):
-                    pass
-
-            subs_str = ""
-            if n["substitutes"]:
-                try:
-                    subs = json.loads(n["substitutes"]) if isinstance(n["substitutes"], str) else n["substitutes"]
-                    items = []
-                    for s in subs:
-                        items.append(f"{s['node']}({s['maturity']}, 触发:{s['trigger']})")
-                    subs_str = "替代品: " + "; ".join(items)
-                except (json.JSONDecodeError, TypeError):
-                    pass
-
-            desc = n.get("description", "") or ""
-            type_tag = n["node_type"]
-            parts.append(f"- [{type_tag}] {n['name']}: {desc}")
-            if shares_str:
-                parts.append(f"  全球份额: {shares_str}")
-            if subs_str:
-                parts.append(f"  {subs_str}")
-        parts.append("")
-
-    return "\n".join(parts)
 
 
 # ── 数据更新提示 API ──
