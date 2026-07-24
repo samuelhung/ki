@@ -40,13 +40,14 @@ function browserRuntime(): MediaTransportRuntime {
   return {
     origin: window.location.origin,
     register() {
-      if (!('serviceWorker' in navigator)) {
+      const serviceWorker = navigator.serviceWorker;
+      if (!serviceWorker) {
         return Promise.reject(new Error('Service workers are unavailable'));
       }
       if (!browserRegistration) {
-        browserRegistration = navigator.serviceWorker
+        browserRegistration = serviceWorker
           .register('/ki-media-sw.js', { scope: '/' })
-          .then(async (registration) => registration.active ? registration : navigator.serviceWorker.ready)
+          .then(async (registration) => registration.active ? registration : serviceWorker.ready)
           .catch((error) => {
             browserRegistration = null;
             throw error;
@@ -55,10 +56,10 @@ function browserRuntime(): MediaTransportRuntime {
       return browserRegistration;
     },
     addEventListener(type, listener) {
-      navigator.serviceWorker.addEventListener(type, listener as EventListener);
+      navigator.serviceWorker?.addEventListener(type, listener as EventListener);
     },
     removeEventListener(type, listener) {
-      navigator.serviceWorker.removeEventListener(type, listener as EventListener);
+      navigator.serviceWorker?.removeEventListener(type, listener as EventListener);
     },
   };
 }
