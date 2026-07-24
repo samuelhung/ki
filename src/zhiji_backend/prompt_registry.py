@@ -36,7 +36,7 @@ MODULE_MAP: dict[str, dict[str, tuple[str, list[str]]]] = {
         ),
     },
     "brainstorm": {
-        "answer": ("routes/brainstorm_routes.py", ["get_answer_for_question"]),
+        "answer": ("brainstorm_answer_service.py", ["get_answer_for_question"]),
         "summary": (
             "routes/brainstorm_routes.py",
             ["_extract_latest_answer", "start_conversation"],
@@ -193,5 +193,13 @@ def get_all_prompts() -> dict[str, dict[str, dict[str, str]]]:
                         task_prompts.update(prompts)
 
             result[module][task] = task_prompts
+
+    # The legacy route-wide regex exposed the answer prompt under other tasks too.
+    brainstorm_prompts = result.get("brainstorm")
+    if brainstorm_prompts:
+        answer_filename = MODULE_MAP["brainstorm"]["answer"][0]
+        legacy_prompts = _extract_prompts_by_function(BACKEND_DIR / answer_filename)
+        for task in ("summary", "concept_extract"):
+            brainstorm_prompts[task].update(legacy_prompts.get("__module__", {}))
 
     return result

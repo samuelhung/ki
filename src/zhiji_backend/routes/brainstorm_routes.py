@@ -1,4 +1,5 @@
 """Brainstorm question CRUD, answering, conversation, and contemplation endpoints."""
+
 from __future__ import annotations
 
 import json
@@ -11,7 +12,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, field_validator
 
-from .. import brainstorm_question_service
+from .. import brainstorm_answer_service, brainstorm_question_service
 from ..ai_client import chat
 from ..classifier import classify_content
 from ..db import connect
@@ -29,6 +30,7 @@ from ..security.paths import resolve_under, safe_unlink_under
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
 
 def _brainstorm_md_path(question_id: str) -> Path:
     safe_identifier(question_id)
@@ -80,26 +82,7 @@ def get_brainstorm_question(question_id: SafeIdentifier) -> dict[str, object]:
 
 
 def _extract_latest_answer(md_path: Path) -> str:
-    """Extract the latest answer from a brainstorm .md file."""
-    if not md_path.exists():
-        return ""
-    content = md_path.read_text(encoding="utf-8")
-    blocks = content.split("## 回答")
-    if len(blocks) < 2:
-        return ""
-    last = blocks[-1]
-    lines = last.strip().split("\n")
-    answer_lines = []
-    started = False
-    for line in lines:
-        if not started:
-            # Skip timestamp line like "(2026-06-08 14:58)"
-            started = True
-            continue
-        if line.strip() == "---":
-            break
-        answer_lines.append(line)
-    return "\n".join(answer_lines).strip()
+    return brainstorm_answer_service._extract_latest_answer(md_path)
 
 
 class CreateQuestionRequest(BaseModel):
@@ -136,7 +119,9 @@ class QuestionBatchRequest(BaseModel):
 
 
 @router.post("/api/brainstorm/batch-delete")
-def batch_delete_brainstorm_questions(payload: QuestionBatchRequest) -> dict[str, object]:
+def batch_delete_brainstorm_questions(
+    payload: QuestionBatchRequest,
+) -> dict[str, object]:
     """Delete multiple brainstorm questions and their .md files."""
     return brainstorm_question_service.batch_delete_brainstorm_questions(
         payload,
@@ -165,91 +150,13 @@ def get_answer_for_question(request: AnswerRequest) -> dict[str, object]:
     """Given a brainstorm question and selected events, find the answer from the articles.
     Saves the answer to the question's .md file and tracks answered_event_ids.
     """
-    if not request.event_ids:
-        return {"answer": "请至少选择一个事件作为参考文档。", "event_ids": []}
-
-    articles: list[dict[str, str]] = []
-    with connect() as conn:
-        placeholders = ",".join(["?" for _ in request.event_ids])
-        rows = conn.execute(
-            f"SELECT id, ai_summary, raw_summary, title FROM events WHERE id IN ({placeholders})",
-            tuple(request.event_ids),
-        ).fetchall()
-
-    if not rows:
-        return {"answer": "未找到所选事件。", "event_ids": request.event_ids}
-
-    for row in rows:
-        text = (row["ai_summary"] or "") or (row["raw_summary"] or "")
-        if text.strip():
-            title = row["title"] or "未命名"
-            articles.append({"title": title, "text": text[:3000] if len(text) > 3000 else text})
-
-    if not articles:
-        return {"answer": "所选事件没有可用的文本内容。", "event_ids": request.event_ids}
-
-    # Generate answer for each article independently
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    md_parts: list[str] = []
-    display_parts: list[str] = []
-
-    for art in articles:
-        prompt = (
-            "你是一个文章分析助手。请严格基于以下文章内容，回答用户的问题。\n"
-            "规则：只使用文章中的信息；如果文章没有涉及该问题，请明确说明'本文未涉及该问题'；\n"
-            "回答简洁，控制在300字以内。\n\n"
-            f"问题：{request.question}\n\n"
-            f"文章内容：\n{art['text']}"
-        )
-
-        messages = [
-            {"role": "system", "content": "你是严谨的文章分析助手，只基于给定文章回答问题，绝不编造。"},
-            {"role": "user", "content": prompt},
-        ]
-
-        answer = chat(messages, temperature=0.3, max_tokens=800, timeout=60,
-                      module="brainstorm", task="contemplate")
-        if answer is None:
-            logger.warning("Answer extraction failed for article '%s': API unavailable", art['title'])
-            answer = "（AI 回答生成失败）"
-
-        md_parts.append(f"### 基于「{art['title']}」回答\n\n{answer}\n")
-        display_parts.append(f"### 基于「{art['title']}」回答\n\n{answer}\n")
-
-    combined_display = "\n---\n\n".join(display_parts)
-    combined_md = "\n".join(md_parts) + "\n"
-
-    # Save answer to .md file
-    md = _brainstorm_md_path(request.question_id)
-    answer_block = (
-        f"## 回答 ({now})\n\n"
-        f"{combined_md}"
-        f"---\n\n"
+    return brainstorm_answer_service.get_answer_for_question(
+        request,
+        connect_fn=connect,
+        chat_fn=chat,
+        markdown_path_fn=_brainstorm_md_path,
+        logger=logger,
     )
-    with open(md, "a", encoding="utf-8") as f:
-        f.write(answer_block)
-
-    # Update event links + content_md in DB
-    with connect() as conn:
-        for eid in request.event_ids:
-            conn.execute(
-                "INSERT OR IGNORE INTO brainstorm_event_links (question_id, event_id) VALUES (?, ?)",
-                (request.question_id, eid),
-            )
-        # Read full .md content for sync
-        full_md = md.read_text(encoding="utf-8") if md.exists() else ""
-        conn.execute(
-            "UPDATE brainstorm_questions SET content_md = ? WHERE id = ?",
-            (full_md, request.question_id),
-        )
-        # Get merged event_ids
-        event_rows = conn.execute(
-            "SELECT event_id FROM brainstorm_event_links WHERE question_id = ?",
-            (request.question_id,),
-        ).fetchall()
-    merged = [r["event_id"] for r in event_rows]
-
-    return {"answer": combined_display, "event_ids": request.event_ids, "answered_event_ids": merged}
 
 
 # ---------------------------------------------------------------------------
