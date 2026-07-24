@@ -16,6 +16,7 @@ from fastapi.routing import APIRoute
 from pydantic import TypeAdapter, ValidationError
 
 from zhiji_backend import (
+    chain_ai_update_service,
     chain_analysis_service,
     chain_chat_service,
     chain_collection_service,
@@ -436,6 +437,7 @@ def test_extracted_route_order_signatures_and_openapi_contract_are_unchanged() -
         (6, "/api/chains/nodes/{node_id}", {"PUT"}, "update_node"),
         (7, "/api/chains/nodes", {"POST"}, "create_node"),
         (8, "/api/chains/nodes/{node_id}", {"DELETE"}, "delete_node"),
+        (9, "/api/chains/nodes/ai-update", {"POST"}, "ai_update_node"),
         (15, "/api/chains/suggestions", {"GET"}, "list_suggestions"),
         (16, "/api/chains/suggestions/count", {"GET"}, "count_suggestions"),
         (
@@ -474,6 +476,7 @@ def test_extracted_route_order_signatures_and_openapi_contract_are_unchanged() -
         ],
         "create_node": [("req", chain_routes.NodeCreate)],
         "delete_node": [("node_id", chain_routes.SafeIdentifier)],
+        "ai_update_node": [("req", chain_routes.AiUpdateRequest)],
         "list_suggestions": [("status", str), ("limit", int)],
         "count_suggestions": [],
         "adopt_suggestion": [("sid", chain_routes.SafeIdentifier)],
@@ -500,6 +503,7 @@ def test_extracted_route_order_signatures_and_openapi_contract_are_unchanged() -
         ("/api/chains/nodes/{node_id}", "put"): "NodeUpdate",
         ("/api/chains/nodes", "post"): "NodeCreate",
         ("/api/chains/nodes/{node_id}", "delete"): None,
+        ("/api/chains/nodes/ai-update", "post"): "AiUpdateRequest",
         ("/api/chains/suggestions", "get"): None,
         ("/api/chains/suggestions/count", "get"): None,
         ("/api/chains/suggestions/{sid}/adopt", "post"): None,
@@ -822,4 +826,25 @@ def test_chain_report_wrapper_forwards_call_time_dependencies(monkeypatch) -> No
     )
 
     assert chain_routes.chain_report(request) == {"report": "结果"}
+    assert calls == [(request, sentinel_connect, sentinel_chat)]
+
+
+def test_chain_ai_update_wrapper_forwards_call_time_dependencies(monkeypatch) -> None:
+    sentinel_connect = cast(chain_node_service.ConnectFn, object())
+    sentinel_chat = object()
+    request = chain_routes.AiUpdateRequest(node_id="node-1", source_text="来源")
+    calls: list[tuple[object, ...]] = []
+
+    monkeypatch.setattr(chain_routes, "connect", sentinel_connect)
+    monkeypatch.setattr(chain_routes, "chat", sentinel_chat)
+    monkeypatch.setattr(
+        chain_ai_update_service,
+        "update_node_from_source",
+        lambda req, *, connect_fn, chat_fn: calls.append(
+            (req, connect_fn, chat_fn)
+        )
+        or {"ok": True},
+    )
+
+    assert chain_routes.ai_update_node(request) == {"ok": True}
     assert calls == [(request, sentinel_connect, sentinel_chat)]
