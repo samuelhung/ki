@@ -685,12 +685,20 @@ def test_contemplation_routes_forward_model_and_call_time_dependencies(
     service = _service_module("brainstorm_contemplation_service")
     _assert_historical_service_logger(service)
     calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
-    names = ("contemplate", "get_linked_questions")
+    names = (
+        "contemplate",
+        "get_linked_questions",
+        "_contemplate_event_to_questions",
+        "_contemplate_question_to_events",
+        "_call_contemplate_deepseek",
+    )
     _stub_service_functions(monkeypatch, service, names, calls)
     sentinel_connect = object()
     sentinel_chat = object()
+    sentinel_logger = object()
     monkeypatch.setattr(brainstorm_routes, "connect", sentinel_connect)
     monkeypatch.setattr(brainstorm_routes, "chat", sentinel_chat)
+    monkeypatch.setattr(brainstorm_routes, "logger", sentinel_logger)
     request = brainstorm_routes.ContemplateRequest(
         direction="event_to_questions", entity_id="event-1"
     )
@@ -700,14 +708,26 @@ def test_contemplation_routes_forward_model_and_call_time_dependencies(
     assert brainstorm_routes.get_linked_questions("event-1") == {
         "route": "get_linked_questions"
     }
+    assert brainstorm_routes._contemplate_event_to_questions("event-1") == {
+        "route": "_contemplate_event_to_questions"
+    }
+    assert brainstorm_routes._contemplate_question_to_events("question-1") == {
+        "route": "_contemplate_question_to_events"
+    }
+    assert brainstorm_routes._call_contemplate_deepseek("prompt") == {
+        "route": "_call_contemplate_deepseek"
+    }
     assert calls == [
         (
             "contemplate",
             (request,),
             {
-                "connect_fn": sentinel_connect,
-                "chat_fn": sentinel_chat,
-                "logger": brainstorm_routes.logger,
+                "contemplate_event_to_questions_fn": (
+                    brainstorm_routes._contemplate_event_to_questions
+                ),
+                "contemplate_question_to_events_fn": (
+                    brainstorm_routes._contemplate_question_to_events
+                ),
             },
         ),
         (
@@ -715,9 +735,99 @@ def test_contemplation_routes_forward_model_and_call_time_dependencies(
             ("event-1",),
             {"connect_fn": sentinel_connect},
         ),
+        (
+            "_contemplate_event_to_questions",
+            ("event-1",),
+            {
+                "connect_fn": sentinel_connect,
+                "call_contemplate_deepseek_fn": (
+                    brainstorm_routes._call_contemplate_deepseek
+                ),
+            },
+        ),
+        (
+            "_contemplate_question_to_events",
+            ("question-1",),
+            {
+                "connect_fn": sentinel_connect,
+                "call_contemplate_deepseek_fn": (
+                    brainstorm_routes._call_contemplate_deepseek
+                ),
+            },
+        ),
+        (
+            "_call_contemplate_deepseek",
+            ("prompt",),
+            {"chat_fn": sentinel_chat, "logger": sentinel_logger},
+        ),
     ]
     assert calls[0][1][0] is request
     assert _request_snapshot(request) == snapshot
+
+
+def test_contemplate_endpoint_uses_route_dispatch_helpers_at_call_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, str]] = []
+
+    def event_helper(entity_id: str) -> dict[str, str]:
+        calls.append(("event", entity_id))
+        return {"patched": "event"}
+
+    def question_helper(entity_id: str) -> dict[str, str]:
+        calls.append(("question", entity_id))
+        return {"patched": "question"}
+
+    monkeypatch.setattr(
+        brainstorm_routes, "_contemplate_event_to_questions", event_helper
+    )
+    monkeypatch.setattr(
+        brainstorm_routes, "_contemplate_question_to_events", question_helper
+    )
+
+    event_request = brainstorm_routes.ContemplateRequest(
+        direction="event_to_questions", entity_id="event-1"
+    )
+    question_request = brainstorm_routes.ContemplateRequest(
+        direction="question_to_events", entity_id="question-1"
+    )
+    assert brainstorm_routes.contemplate(event_request) == {"patched": "event"}
+    assert brainstorm_routes.contemplate(question_request) == {"patched": "question"}
+    assert calls == [("event", "event-1"), ("question", "question-1")]
+
+
+def test_contemplate_endpoint_uses_route_ai_helper_through_matching_facade(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _service_module("brainstorm_contemplation_service")
+    calls: list[tuple[str, object]] = []
+    sentinel_connect = object()
+
+    def ai_helper(prompt: str) -> list[dict[str, str]]:
+        calls.append(("ai", prompt))
+        return [{"patched": "match"}]
+
+    def matching_helper(
+        event_id: str,
+        *,
+        connect_fn: object,
+        call_contemplate_deepseek_fn: Any,
+    ) -> dict[str, object]:
+        calls.append(("match", (event_id, connect_fn)))
+        return {"matches": call_contemplate_deepseek_fn("route prompt")}
+
+    monkeypatch.setattr(brainstorm_routes, "connect", sentinel_connect)
+    monkeypatch.setattr(brainstorm_routes, "_call_contemplate_deepseek", ai_helper)
+    monkeypatch.setattr(service, "_contemplate_event_to_questions", matching_helper)
+    request = brainstorm_routes.ContemplateRequest(
+        direction="event_to_questions", entity_id="event-1"
+    )
+
+    assert brainstorm_routes.contemplate(request) == {"matches": [{"patched": "match"}]}
+    assert calls == [
+        ("match", ("event-1", sentinel_connect)),
+        ("ai", "route prompt"),
+    ]
 
 
 def test_concept_routes_forward_model_and_call_time_dependencies(

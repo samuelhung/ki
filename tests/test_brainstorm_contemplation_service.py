@@ -13,7 +13,6 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 from zhiji_backend import prompt_registry
-from zhiji_backend.routes import brainstorm_routes
 
 
 def _service() -> ModuleType:
@@ -117,30 +116,21 @@ def _request(direction: str, entity_id: str) -> SimpleNamespace:
     return SimpleNamespace(direction=direction, entity_id=entity_id)
 
 
-def test_dispatch_preserves_invalid_direction_and_injected_dependencies(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_dispatch_preserves_invalid_direction_and_injected_dependencies() -> None:
     service = _service()
-    calls: list[tuple[str, str, dict[str, object]]] = []
-    connect_fn = object()
-    chat_fn = object()
-    sentinel_logger = logging.getLogger("test.contemplate")
+    calls: list[tuple[str, str]] = []
 
-    def event_stub(entity_id: str, **kwargs: object) -> dict[str, object]:
-        calls.append(("event", entity_id, kwargs))
+    def event_stub(entity_id: str) -> dict[str, object]:
+        calls.append(("event", entity_id))
         return {"kind": "event"}
 
-    def question_stub(entity_id: str, **kwargs: object) -> dict[str, object]:
-        calls.append(("question", entity_id, kwargs))
+    def question_stub(entity_id: str) -> dict[str, object]:
+        calls.append(("question", entity_id))
         return {"kind": "question"}
 
-    monkeypatch.setattr(service, "_contemplate_event_to_questions", event_stub)
-    monkeypatch.setattr(service, "_contemplate_question_to_events", question_stub)
-
     dependencies = {
-        "connect_fn": connect_fn,
-        "chat_fn": chat_fn,
-        "logger": sentinel_logger,
+        "contemplate_event_to_questions_fn": event_stub,
+        "contemplate_question_to_events_fn": question_stub,
     }
     assert service.contemplate(
         _request("event_to_questions", "event-1"), **dependencies
@@ -154,50 +144,8 @@ def test_dispatch_preserves_invalid_direction_and_injected_dependencies(
         "error": "invalid direction",
     }
     assert calls == [
-        ("event", "event-1", dependencies),
-        ("question", "question-1", dependencies),
-    ]
-
-
-def test_historical_route_helper_facades_forward_call_time_dependencies(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    service = _service()
-    calls: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
-
-    def stub(name: str):
-        def record(*args: object, **kwargs: object) -> object:
-            calls.append((name, args, kwargs))
-            return name
-
-        return record
-
-    monkeypatch.setattr(service, "_contemplate_event_to_questions", stub("event"))
-    monkeypatch.setattr(service, "_contemplate_question_to_events", stub("question"))
-    monkeypatch.setattr(service, "_call_contemplate_deepseek", stub("call"))
-    sentinel_connect = object()
-    sentinel_chat = object()
-    sentinel_logger = logging.getLogger("test.route.contemplate")
-    monkeypatch.setattr(brainstorm_routes, "connect", sentinel_connect)
-    monkeypatch.setattr(brainstorm_routes, "chat", sentinel_chat)
-    monkeypatch.setattr(brainstorm_routes, "logger", sentinel_logger)
-
-    assert brainstorm_routes._contemplate_event_to_questions("event-1") == "event"
-    assert brainstorm_routes._contemplate_question_to_events("question-1") == "question"
-    assert brainstorm_routes._call_contemplate_deepseek("prompt") == "call"
-    dependencies = {
-        "connect_fn": sentinel_connect,
-        "chat_fn": sentinel_chat,
-        "logger": sentinel_logger,
-    }
-    assert calls == [
-        ("event", ("event-1",), dependencies),
-        ("question", ("question-1",), dependencies),
-        (
-            "call",
-            ("prompt",),
-            {"chat_fn": sentinel_chat, "logger": sentinel_logger},
-        ),
+        ("event", "event-1"),
+        ("question", "question-1"),
     ]
 
 
@@ -268,8 +216,9 @@ def test_event_to_questions_preserves_missing_and_empty_responses(
     result = service._contemplate_event_to_questions(
         "event-1",
         connect_fn=database.connect,
-        chat_fn=lambda *_args, **_kwargs: pytest.fail("chat should not be used"),
-        logger=service.logger,
+        call_contemplate_deepseek_fn=lambda _prompt: pytest.fail(
+            "AI helper should not be used"
+        ),
     )
 
     assert result == expected
@@ -312,17 +261,16 @@ def test_event_to_questions_preserves_prompt_cache_persistence_and_sorting(
             ("q-done", "event-1", "high", "not open"),
         ],
     )
-    calls: list[tuple[list[dict[str, str]], dict[str, object]]] = []
+    calls: list[str] = []
 
-    def chat_fn(messages: list[dict[str, str]], **kwargs: object) -> str:
-        calls.append((messages, kwargs))
-        return '```json\n[{"index": 0, "relevance": "high", "reason": "direct"}]\n```'
+    def call_contemplate_deepseek(prompt: str) -> list[dict[str, object]]:
+        calls.append(prompt)
+        return [{"index": 0, "relevance": "high", "reason": "direct"}]
 
     result = service._contemplate_event_to_questions(
         "event-1",
         connect_fn=database.connect,
-        chat_fn=chat_fn,
-        logger=service.logger,
+        call_contemplate_deepseek_fn=call_contemplate_deepseek,
     )
 
     prompt = (
@@ -339,24 +287,7 @@ def test_event_to_questions_preserves_prompt_cache_persistence_and_sorting(
         f"文章内容：\n{'文' * 3000}\n\n"
         "待评估问题：\n[0] high?\n[1] low?"
     )
-    assert calls == [
-        (
-            [
-                {
-                    "role": "system",
-                    "content": "You are a JSON-only API. Always output valid JSON array, nothing else.",
-                },
-                {"role": "user", "content": prompt},
-            ],
-            {
-                "temperature": 0.1,
-                "max_tokens": 4096,
-                "timeout": 120,
-                "module": "brainstorm",
-                "task": "concept_extract",
-            },
-        )
-    ]
+    assert calls == [prompt]
     assert result == {
         "entity_id": "event-1",
         "entity_title": "Article",
@@ -409,8 +340,9 @@ def test_event_to_questions_preserves_prompt_cache_persistence_and_sorting(
     cached_result = service._contemplate_event_to_questions(
         "event-1",
         connect_fn=database.connect,
-        chat_fn=lambda *_args, **_kwargs: pytest.fail("cached pairs must skip chat"),
-        logger=service.logger,
+        call_contemplate_deepseek_fn=lambda _prompt: pytest.fail(
+            "cached pairs must skip AI helper"
+        ),
     )
     assert [item["question_id"] for item in cached_result["suggestions"]] == [
         "q-new-high",
@@ -451,8 +383,9 @@ def test_question_to_events_preserves_missing_and_no_candidate_responses(
     result = service._contemplate_question_to_events(
         "question-1",
         connect_fn=database.connect,
-        chat_fn=lambda *_args, **_kwargs: pytest.fail("chat should not be used"),
-        logger=service.logger,
+        call_contemplate_deepseek_fn=lambda _prompt: pytest.fail(
+            "AI helper should not be used"
+        ),
     )
 
     assert result == expected
@@ -486,17 +419,16 @@ def test_question_to_events_preserves_filters_prompt_persistence_and_sorting(
         "INSERT INTO brainstorm_contemplate_cache VALUES (?, ?, ?, ?)",
         [("question-1", "event-cached", "medium", None)],
     )
-    calls: list[tuple[list[dict[str, str]], dict[str, object]]] = []
+    calls: list[str] = []
 
-    def chat_fn(messages: list[dict[str, str]], **kwargs: object) -> str:
-        calls.append((messages, kwargs))
-        return '[{"index": 0, "relevance": "high", "reason": "answers"}]'
+    def call_contemplate_deepseek(prompt: str) -> list[dict[str, object]]:
+        calls.append(prompt)
+        return [{"index": 0, "relevance": "high", "reason": "answers"}]
 
     result = service._contemplate_question_to_events(
         "question-1",
         connect_fn=database.connect,
-        chat_fn=chat_fn,
-        logger=service.logger,
+        call_contemplate_deepseek_fn=call_contemplate_deepseek,
     )
 
     prompt = (
@@ -511,24 +443,7 @@ def test_question_to_events_preserves_filters_prompt_persistence_and_sorting(
         "问题：why?\n\n"
         f"待评估文章：\n[0] High\n内容：{'高' * 3000}\n\n[1] Low\n内容：low"
     )
-    assert calls == [
-        (
-            [
-                {
-                    "role": "system",
-                    "content": "You are a JSON-only API. Always output valid JSON array, nothing else.",
-                },
-                {"role": "user", "content": prompt},
-            ],
-            {
-                "temperature": 0.1,
-                "max_tokens": 4096,
-                "timeout": 120,
-                "module": "brainstorm",
-                "task": "concept_extract",
-            },
-        )
-    ]
+    assert calls == [prompt]
     assert result == {
         "entity_id": "question-1",
         "entity_title": "why?",
@@ -561,8 +476,9 @@ def test_question_to_events_preserves_filters_prompt_persistence_and_sorting(
     cached_result = service._contemplate_question_to_events(
         "question-1",
         connect_fn=database.connect,
-        chat_fn=lambda *_args, **_kwargs: pytest.fail("cached pairs must skip chat"),
-        logger=service.logger,
+        call_contemplate_deepseek_fn=lambda _prompt: pytest.fail(
+            "cached pairs must skip AI helper"
+        ),
     )
     assert [item["event_id"] for item in cached_result["suggestions"]] == [
         "event-new-high",
@@ -589,8 +505,9 @@ def test_question_to_events_preserves_closed_connection_stale_cache_behavior(
         service._contemplate_question_to_events(
             "question-1",
             connect_fn=database.connect,
-            chat_fn=lambda *_args, **_kwargs: pytest.fail("chat should not be used"),
-            logger=service.logger,
+            call_contemplate_deepseek_fn=lambda _prompt: pytest.fail(
+                "AI helper should not be used"
+            ),
         )
 
     assert database.statements[-1] == (

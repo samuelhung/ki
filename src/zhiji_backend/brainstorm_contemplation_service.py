@@ -9,6 +9,8 @@ from typing import Any
 
 type ConnectFn = Callable[[], Any]
 type ChatFn = Callable[..., str | None]
+type ContemplateFn = Callable[[str], dict[str, object]]
+type CallContemplateFn = Callable[[str], list[dict]]
 
 
 logger = logging.getLogger("zhiji_backend.routes.brainstorm_routes")
@@ -17,24 +19,13 @@ logger = logging.getLogger("zhiji_backend.routes.brainstorm_routes")
 def contemplate(
     request: Any,
     *,
-    connect_fn: ConnectFn,
-    chat_fn: ChatFn,
-    logger: logging.Logger,
+    contemplate_event_to_questions_fn: ContemplateFn,
+    contemplate_question_to_events_fn: ContemplateFn,
 ) -> dict[str, object]:
     if request.direction == "event_to_questions":
-        return _contemplate_event_to_questions(
-            request.entity_id,
-            connect_fn=connect_fn,
-            chat_fn=chat_fn,
-            logger=logger,
-        )
+        return contemplate_event_to_questions_fn(request.entity_id)
     if request.direction == "question_to_events":
-        return _contemplate_question_to_events(
-            request.entity_id,
-            connect_fn=connect_fn,
-            chat_fn=chat_fn,
-            logger=logger,
-        )
+        return contemplate_question_to_events_fn(request.entity_id)
     return {
         "entity_id": request.entity_id,
         "suggestions": [],
@@ -62,8 +53,7 @@ def _contemplate_event_to_questions(
     event_id: str,
     *,
     connect_fn: ConnectFn,
-    chat_fn: ChatFn,
-    logger: logging.Logger,
+    call_contemplate_deepseek_fn: CallContemplateFn,
 ) -> dict[str, object]:
     """Find which brainstorm questions an event might answer."""
     with connect_fn() as conn:
@@ -153,7 +143,7 @@ def _contemplate_event_to_questions(
             f"文章内容：\n{event_snippet}\n\n"
             f"待评估问题：\n" + "\n".join(question_lines)
         )
-        matches = _call_contemplate_deepseek(prompt, chat_fn=chat_fn, logger=logger)
+        matches = call_contemplate_deepseek_fn(prompt)
         matched_indices: set[int] = set()
         with connect_fn() as conn:
             for match in matches:
@@ -217,8 +207,7 @@ def _contemplate_question_to_events(
     question_id: str,
     *,
     connect_fn: ConnectFn,
-    chat_fn: ChatFn,
-    logger: logging.Logger,
+    call_contemplate_deepseek_fn: CallContemplateFn,
 ) -> dict[str, object]:
     with connect_fn() as conn:
         question = conn.execute(
@@ -313,7 +302,7 @@ def _contemplate_question_to_events(
             f"待评估文章：\n" + "\n\n".join(event_lines)
         )
 
-        matches = _call_contemplate_deepseek(prompt, chat_fn=chat_fn, logger=logger)
+        matches = call_contemplate_deepseek_fn(prompt)
 
         matched_indices: set[int] = set()
         with connect_fn() as conn:

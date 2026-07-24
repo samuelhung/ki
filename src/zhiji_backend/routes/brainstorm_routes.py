@@ -298,9 +298,8 @@ def contemplate(request: ContemplateRequest) -> dict[str, object]:
     """
     return brainstorm_contemplation_service.contemplate(
         request,
-        connect_fn=connect,
-        chat_fn=chat,
-        logger=logger,
+        contemplate_event_to_questions_fn=_contemplate_event_to_questions,
+        contemplate_question_to_events_fn=_contemplate_question_to_events,
     )
 
 
@@ -316,8 +315,7 @@ def _contemplate_event_to_questions(event_id: str) -> dict[str, object]:
     return brainstorm_contemplation_service._contemplate_event_to_questions(
         event_id,
         connect_fn=connect,
-        chat_fn=chat,
-        logger=logger,
+        call_contemplate_deepseek_fn=_call_contemplate_deepseek,
     )
 
 
@@ -325,8 +323,7 @@ def _contemplate_question_to_events(question_id: str) -> dict[str, object]:
     return brainstorm_contemplation_service._contemplate_question_to_events(
         question_id,
         connect_fn=connect,
-        chat_fn=chat,
-        logger=logger,
+        call_contemplate_deepseek_fn=_call_contemplate_deepseek,
     )
 
 
