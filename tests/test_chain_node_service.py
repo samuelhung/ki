@@ -20,6 +20,7 @@ from zhiji_backend import (
     chain_hint_service,
     chain_merge_service,
     chain_node_service,
+    chain_suggestion_service,
 )
 from zhiji_backend.main import app
 from zhiji_backend.routes import chain_routes
@@ -620,4 +621,73 @@ def test_chain_hint_wrappers_forward_call_time_dependencies(monkeypatch) -> None
         ("list", "pending", 10, sentinel_connect),
         ("count", sentinel_connect),
         ("resolve", "hint-1", request, sentinel_connect),
+    ]
+
+
+def test_chain_suggestion_wrappers_forward_call_time_dependencies(monkeypatch) -> None:
+    sentinel_connect = cast(chain_node_service.ConnectFn, object())
+    sentinel_chat = object()
+    sentinel_logger = object()
+    sentinel_uuid = UUID("12345678-1234-5678-1234-567812345678")
+    calls: list[tuple[object, ...]] = []
+
+    monkeypatch.setattr(chain_routes, "connect", sentinel_connect)
+    monkeypatch.setattr(chain_routes, "chat", sentinel_chat)
+    monkeypatch.setattr(chain_routes, "logger", sentinel_logger)
+    monkeypatch.setattr(chain_routes.uuid, "uuid4", lambda: sentinel_uuid)
+    monkeypatch.setattr(
+        chain_suggestion_service,
+        "list_suggestions",
+        lambda *, status, limit, connect_fn: calls.append(
+            ("list", status, limit, connect_fn)
+        )
+        or {"suggestions": []},
+    )
+    monkeypatch.setattr(
+        chain_suggestion_service,
+        "count_suggestions",
+        lambda *, connect_fn: calls.append(("count", connect_fn)) or {"pending": 0},
+    )
+    monkeypatch.setattr(
+        chain_suggestion_service,
+        "adopt_suggestion",
+        lambda sid, *, connect_fn, uuid_factory, icon_suggester: calls.append(
+            ("adopt", sid, connect_fn, uuid_factory(), icon_suggester)
+        )
+        or {"ok": True},
+    )
+    monkeypatch.setattr(
+        chain_suggestion_service,
+        "dismiss_suggestion",
+        lambda sid, *, connect_fn: calls.append(("dismiss", sid, connect_fn))
+        or {"ok": True},
+    )
+    monkeypatch.setattr(
+        chain_suggestion_service,
+        "suggest_icon",
+        lambda chain_name, *, chat_fn, service_logger: calls.append(
+            ("icon", chain_name, chat_fn, service_logger)
+        )
+        or "Factory",
+    )
+
+    assert chain_routes.list_suggestions(status="pending", limit=10) == {
+        "suggestions": []
+    }
+    assert chain_routes.count_suggestions() == {"pending": 0}
+    assert chain_routes.adopt_suggestion("suggestion-1") == {"ok": True}
+    assert chain_routes.dismiss_suggestion("suggestion-1") == {"ok": True}
+    assert chain_routes._suggest_icon("新链") == "Factory"
+    assert calls == [
+        ("list", "pending", 10, sentinel_connect),
+        ("count", sentinel_connect),
+        (
+            "adopt",
+            "suggestion-1",
+            sentinel_connect,
+            sentinel_uuid,
+            chain_routes._suggest_icon,
+        ),
+        ("dismiss", "suggestion-1", sentinel_connect),
+        ("icon", "新链", sentinel_chat, sentinel_logger),
     ]
