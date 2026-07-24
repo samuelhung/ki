@@ -171,6 +171,43 @@ def _path_recorder(path: Path, calls: list[str]) -> Callable[[str], Path]:
     return markdown_path
 
 
+def _workflow_helpers(
+    connect_fn: Callable[[], object],
+    chat_fn: Callable[..., str | None],
+    *,
+    include_history: bool = False,
+    now_fn: Callable[[], object] = FixedDateTime.now,
+) -> dict[str, object]:
+    def call_ai_chat(
+        messages: list[dict],
+        temperature: float = 0.3,
+        max_tokens: int = 2000,
+        module: str = "",
+        task: str = "",
+    ) -> str:
+        return brainstorm_conversation_service._call_ai_chat(
+            messages,
+            temperature,
+            max_tokens,
+            module,
+            task,
+            chat_fn=chat_fn,
+        )
+
+    helpers: dict[str, object] = {
+        "call_ai_chat_fn": call_ai_chat,
+        "parse_refs_fn": brainstorm_conversation_service._parse_refs_from_answer,
+        "now_fn": now_fn,
+    }
+    if include_history:
+        helpers["build_conversation_messages_fn"] = lambda question_id: (
+            brainstorm_conversation_service._build_conversation_messages(
+                question_id, connect_fn=connect_fn
+            )
+        )
+    return helpers
+
+
 def _start_system_prompt() -> str:
     return (
         "你是严谨的研究分析助手。请基于以下参考文档回答用户问题。\n"
@@ -353,12 +390,16 @@ def test_start_validation_and_missing_documents_do_not_use_unneeded_dependencies
             "question-1",
             StartRequest([], "问题"),
             connect_fn=lambda: pytest.fail("database should not be used"),
-            chat_fn=lambda *_args, **_kwargs: pytest.fail("chat should not be used"),
             build_reference_docs_fn=lambda _ids: pytest.fail(
                 "helper should not be used"
             ),
             markdown_path_fn=lambda _id: pytest.fail("path should not be used"),
             logger=brainstorm_conversation_service.logger,
+            **_workflow_helpers(
+                lambda: pytest.fail("database should not be used"),
+                lambda *_args, **_kwargs: pytest.fail("chat should not be used"),
+                now_fn=lambda: pytest.fail("clock should not be used"),
+            ),
         )
     assert (error.value.status_code, error.value.detail) == (
         400,
@@ -369,17 +410,20 @@ def test_start_validation_and_missing_documents_do_not_use_unneeded_dependencies
         "question-1",
         StartRequest(["event-1"], "问题"),
         connect_fn=lambda: pytest.fail("database should not be used"),
-        chat_fn=lambda *_args, **_kwargs: pytest.fail("chat should not be used"),
         build_reference_docs_fn=lambda _ids: ([], {}),
         markdown_path_fn=lambda _id: pytest.fail("path should not be used"),
         logger=brainstorm_conversation_service.logger,
+        **_workflow_helpers(
+            lambda: pytest.fail("database should not be used"),
+            lambda *_args, **_kwargs: pytest.fail("chat should not be used"),
+            now_fn=lambda: pytest.fail("clock should not be used"),
+        ),
     ) == {"error": "所选事件没有可用的文本内容"}
 
 
 def test_start_preserves_exact_ai_writes_markdown_response_and_injections(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(brainstorm_conversation_service, "datetime", FixedDateTime)
     database = Database()
     database.execute(
         "INSERT INTO brainstorm_questions (id, question, content_md) VALUES (?, ?, ?)",
@@ -407,10 +451,10 @@ def test_start_preserves_exact_ai_writes_markdown_response_and_injections(
         "question-1",
         request,
         connect_fn=database.connect,
-        chat_fn=chat,
         build_reference_docs_fn=build_docs,
         markdown_path_fn=_path_recorder(markdown, path_calls),
         logger=brainstorm_conversation_service.logger,
+        **_workflow_helpers(database.connect, chat),
     )
 
     assert helper_calls == [request.event_ids]
@@ -491,10 +535,13 @@ def test_start_ai_failure_preserves_error_and_warning(
         "question-1",
         StartRequest(["event-a"], "问题"),
         connect_fn=lambda: pytest.fail("database should not be used"),
-        chat_fn=lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("boom")),
         build_reference_docs_fn=lambda _ids: _docs(),
         markdown_path_fn=lambda _id: tmp_path / "unused.md",
         logger=brainstorm_conversation_service.logger,
+        **_workflow_helpers(
+            lambda: pytest.fail("database should not be used"),
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("boom")),
+        ),
     )
 
     assert result == {"error": "AI 回答生成失败: boom"}
@@ -509,12 +556,17 @@ def test_follow_up_validation_requires_content_and_locked_documents() -> None:
             "question-1",
             MessageRequest("   "),
             connect_fn=lambda: pytest.fail("database should not be used"),
-            chat_fn=lambda *_args, **_kwargs: pytest.fail("chat should not be used"),
             build_reference_docs_fn=lambda _ids: pytest.fail(
                 "helper should not be used"
             ),
             markdown_path_fn=lambda _id: pytest.fail("path should not be used"),
             logger=brainstorm_conversation_service.logger,
+            **_workflow_helpers(
+                lambda: pytest.fail("database should not be used"),
+                lambda *_args, **_kwargs: pytest.fail("chat should not be used"),
+                include_history=True,
+                now_fn=lambda: pytest.fail("clock should not be used"),
+            ),
         )
     assert (error.value.status_code, error.value.detail) == (400, "追问内容不能为空")
 
@@ -524,12 +576,17 @@ def test_follow_up_validation_requires_content_and_locked_documents() -> None:
             "question-1",
             MessageRequest("追问"),
             connect_fn=database.connect,
-            chat_fn=lambda *_args, **_kwargs: pytest.fail("chat should not be used"),
             build_reference_docs_fn=lambda _ids: pytest.fail(
                 "helper should not be used"
             ),
             markdown_path_fn=lambda _id: pytest.fail("path should not be used"),
             logger=brainstorm_conversation_service.logger,
+            **_workflow_helpers(
+                database.connect,
+                lambda *_args, **_kwargs: pytest.fail("chat should not be used"),
+                include_history=True,
+                now_fn=lambda: pytest.fail("clock should not be used"),
+            ),
         )
     assert (error.value.status_code, error.value.detail) == (
         400,
@@ -538,9 +595,8 @@ def test_follow_up_validation_requires_content_and_locked_documents() -> None:
 
 
 def test_follow_up_preserves_history_ai_writes_and_response(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(brainstorm_conversation_service, "datetime", FixedDateTime)
     database = Database()
     database.execute(
         "INSERT INTO brainstorm_questions (id, question, content_md) VALUES (?, ?, ?)",
@@ -576,12 +632,12 @@ def test_follow_up_preserves_history_ai_writes_and_response(
         "question-1",
         MessageRequest("继续？"),
         connect_fn=database.connect,
-        chat_fn=chat,
         build_reference_docs_fn=lambda ids: (
             _docs() if ids == ["event-a", "event-b"] else pytest.fail(str(ids))
         ),
         markdown_path_fn=lambda _id: markdown,
         logger=brainstorm_conversation_service.logger,
+        **_workflow_helpers(database.connect, chat, include_history=True),
     )
 
     assert chat_calls == [
@@ -645,12 +701,14 @@ def test_follow_up_ai_failure_preserves_error_and_warning(
         "question-1",
         MessageRequest("追问"),
         connect_fn=database.connect,
-        chat_fn=lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            RuntimeError("offline")
-        ),
         build_reference_docs_fn=lambda _ids: _docs(),
         markdown_path_fn=lambda _id: tmp_path / "unused.md",
         logger=brainstorm_conversation_service.logger,
+        **_workflow_helpers(
+            database.connect,
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("offline")),
+            include_history=True,
+        ),
     )
 
     assert result == {"error": "AI 回答生成失败: offline"}
@@ -724,12 +782,17 @@ def test_summary_preconditions_cover_missing_question_documents_and_history() ->
     database = Database()
     dependencies = {
         "connect_fn": database.connect,
-        "chat_fn": lambda *_args, **_kwargs: pytest.fail("chat should not be used"),
         "build_reference_docs_fn": lambda _ids: pytest.fail(
             "helper should not be used"
         ),
         "markdown_path_fn": lambda _id: pytest.fail("path should not be used"),
         "logger": brainstorm_conversation_service.logger,
+        **_workflow_helpers(
+            database.connect,
+            lambda *_args, **_kwargs: pytest.fail("chat should not be used"),
+            include_history=True,
+            now_fn=lambda: pytest.fail("clock should not be used"),
+        ),
     }
     with pytest.raises(HTTPException) as error:
         brainstorm_conversation_service.generate_conversation_summary(
@@ -763,9 +826,8 @@ def test_summary_preconditions_cover_missing_question_documents_and_history() ->
 
 
 def test_summary_preserves_concepts_prompt_ai_persistence_and_response(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(brainstorm_conversation_service, "datetime", FixedDateTime)
     database = Database()
     database.execute(
         "INSERT INTO brainstorm_questions (id, question, content_md) VALUES (?, ?, ?)",
@@ -804,12 +866,12 @@ def test_summary_preserves_concepts_prompt_ai_persistence_and_response(
     result = brainstorm_conversation_service.generate_conversation_summary(
         "question-1",
         connect_fn=database.connect,
-        chat_fn=chat,
         build_reference_docs_fn=lambda ids: (
             _docs() if ids == ["event-a"] else pytest.fail(str(ids))
         ),
         markdown_path_fn=lambda _id: markdown,
         logger=brainstorm_conversation_service.logger,
+        **_workflow_helpers(database.connect, chat, include_history=True),
     )
 
     assert chat_calls == [
@@ -891,10 +953,10 @@ def test_summary_with_no_concepts_and_no_reference_text_preserves_fallback_promp
     brainstorm_conversation_service.generate_conversation_summary(
         "question-1",
         connect_fn=database.connect,
-        chat_fn=chat,
         build_reference_docs_fn=lambda _ids: ([], {}),
         markdown_path_fn=lambda _id: markdown,
         logger=brainstorm_conversation_service.logger,
+        **_workflow_helpers(database.connect, chat, include_history=True),
     )
 
     assert "参考文档：\n\n\n系统已有概念：\n（暂无）" in captured[0][1]["content"]
@@ -919,12 +981,14 @@ def test_summary_ai_failure_preserves_error_and_warning(
     result = brainstorm_conversation_service.generate_conversation_summary(
         "question-1",
         connect_fn=database.connect,
-        chat_fn=lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            ValueError("bad summary")
-        ),
         build_reference_docs_fn=lambda _ids: _docs(),
         markdown_path_fn=lambda _id: tmp_path / "unused.md",
         logger=brainstorm_conversation_service.logger,
+        **_workflow_helpers(
+            database.connect,
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("bad summary")),
+            include_history=True,
+        ),
     )
 
     assert result == {"error": "AI 总结生成失败: bad summary"}
@@ -934,24 +998,45 @@ def test_summary_ai_failure_preserves_error_and_warning(
 
 
 def test_conversation_dependencies_are_required_and_logger_is_historical() -> None:
-    for function_name in (
-        "start_conversation",
-        "send_conversation_message",
-        "generate_conversation_summary",
-    ):
+    expected_dependencies = {
+        "start_conversation": (
+            "connect_fn",
+            "call_ai_chat_fn",
+            "build_reference_docs_fn",
+            "parse_refs_fn",
+            "markdown_path_fn",
+            "now_fn",
+            "logger",
+        ),
+        "send_conversation_message": (
+            "connect_fn",
+            "call_ai_chat_fn",
+            "build_reference_docs_fn",
+            "build_conversation_messages_fn",
+            "parse_refs_fn",
+            "markdown_path_fn",
+            "now_fn",
+            "logger",
+        ),
+        "generate_conversation_summary": (
+            "connect_fn",
+            "call_ai_chat_fn",
+            "build_reference_docs_fn",
+            "build_conversation_messages_fn",
+            "parse_refs_fn",
+            "markdown_path_fn",
+            "now_fn",
+            "logger",
+        ),
+    }
+    for function_name, dependency_names in expected_dependencies.items():
         parameters = inspect.signature(
             getattr(brainstorm_conversation_service, function_name)
         ).parameters
-        assert tuple(parameters)[-5:] == (
-            "connect_fn",
-            "chat_fn",
-            "build_reference_docs_fn",
-            "markdown_path_fn",
-            "logger",
-        )
+        assert tuple(parameters)[-len(dependency_names) :] == dependency_names
         assert all(
             parameters[name].default is inspect.Parameter.empty
-            for name in tuple(parameters)[-5:]
+            for name in dependency_names
         )
     assert tuple(
         inspect.signature(brainstorm_conversation_service.get_conversation).parameters

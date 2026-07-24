@@ -599,11 +599,23 @@ def test_conversation_routes_forward_models_and_call_time_dependencies(
     )
     _stub_service_functions(monkeypatch, service, names, calls)
     sentinel_connect = object()
-    sentinel_chat = object()
+    sentinel_call_ai = object()
     sentinel_build_docs = object()
+    sentinel_build_messages = object()
+    sentinel_parse_refs = object()
+    sentinel_now = object()
     monkeypatch.setattr(brainstorm_routes, "connect", sentinel_connect)
-    monkeypatch.setattr(brainstorm_routes, "chat", sentinel_chat)
+    monkeypatch.setattr(brainstorm_routes, "_call_ai_chat", sentinel_call_ai)
     monkeypatch.setattr(brainstorm_routes, "_build_reference_docs", sentinel_build_docs)
+    monkeypatch.setattr(
+        brainstorm_routes, "_build_conversation_messages", sentinel_build_messages
+    )
+    monkeypatch.setattr(
+        brainstorm_routes, "_parse_refs_from_answer", sentinel_parse_refs
+    )
+    monkeypatch.setattr(
+        brainstorm_routes, "datetime", SimpleNamespace(now=sentinel_now)
+    )
     start_request = brainstorm_routes.ConversationStartRequest(
         event_ids=["event-1", "event-2"], question="why"
     )
@@ -626,23 +638,29 @@ def test_conversation_routes_forward_models_and_call_time_dependencies(
         "route": "generate_conversation_summary"
     }
 
-    service_dependencies = {
+    start_dependencies = {
         "connect_fn": sentinel_connect,
-        "chat_fn": sentinel_chat,
+        "call_ai_chat_fn": sentinel_call_ai,
         "build_reference_docs_fn": sentinel_build_docs,
+        "parse_refs_fn": sentinel_parse_refs,
         "markdown_path_fn": brainstorm_routes._brainstorm_md_path,
+        "now_fn": sentinel_now,
         "logger": brainstorm_routes.logger,
+    }
+    continued_dependencies = {
+        **start_dependencies,
+        "build_conversation_messages_fn": sentinel_build_messages,
     }
     assert calls == [
         (
             "start_conversation",
             ("question-1", start_request),
-            service_dependencies,
+            start_dependencies,
         ),
         (
             "send_conversation_message",
             ("question-1", message_request),
-            service_dependencies,
+            continued_dependencies,
         ),
         (
             "get_conversation",
@@ -652,7 +670,7 @@ def test_conversation_routes_forward_models_and_call_time_dependencies(
         (
             "generate_conversation_summary",
             ("question-1",),
-            service_dependencies,
+            continued_dependencies,
         ),
     ]
     assert calls[0][1][1] is start_request

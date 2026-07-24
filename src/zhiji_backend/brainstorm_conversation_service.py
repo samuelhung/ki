@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable
-from datetime import datetime
 from typing import Any
 
 from fastapi import HTTPException
@@ -48,15 +47,14 @@ def _call_ai_chat(
 
 
 def _brainstorm_chat(
-    messages: list[dict], max_tokens: int, task: str, chat_fn: ChatFn
+    messages: list[dict], max_tokens: int, task: str, call_ai_chat_fn: ChatFn
 ) -> str:
-    return _call_ai_chat(
+    return call_ai_chat_fn(
         messages,
         temperature=0.3,
         max_tokens=max_tokens,
         module="brainstorm",
         task=task,
-        chat_fn=chat_fn,
     )
 
 
@@ -115,9 +113,11 @@ def start_conversation(
     request: Any,
     *,
     connect_fn: ConnectFn,
-    chat_fn: ChatFn,
+    call_ai_chat_fn: ChatFn,
     build_reference_docs_fn: BuildReferenceDocsFn,
+    parse_refs_fn: Callable[[str, dict[str, str]], list[str]],
     markdown_path_fn: MarkdownPathFn,
+    now_fn: Callable[[], Any],
     logger: logging.Logger,
 ) -> dict[str, object]:
     if not request.event_ids:
@@ -142,14 +142,14 @@ def start_conversation(
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": request.question},
         ]
-        answer = _brainstorm_chat(messages, 2000, "answer", chat_fn)
+        answer = _brainstorm_chat(messages, 2000, "answer", call_ai_chat_fn)
     except Exception as error:
         logger.warning(
             "Conversation start failed for question %s: %s", question_id, error
         )
         return {"error": f"AI 回答生成失败: {error}"}
-    refs = _parse_refs_from_answer(answer, id_to_idx)
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    refs = parse_refs_fn(answer, id_to_idx)
+    now = now_fn().strftime("%Y-%m-%d %H:%M")
     with connect_fn() as conn:
         conn.execute(
             "INSERT INTO brainstorm_messages (question_id, role, content, refs_json, created_at) VALUES (?, 'user', ?, '[]', ?)",
@@ -190,9 +190,12 @@ def send_conversation_message(
     request: Any,
     *,
     connect_fn: ConnectFn,
-    chat_fn: ChatFn,
+    call_ai_chat_fn: ChatFn,
     build_reference_docs_fn: BuildReferenceDocsFn,
+    build_conversation_messages_fn: Callable[[str], list[dict]],
+    parse_refs_fn: Callable[[str, dict[str, str]], list[str]],
     markdown_path_fn: MarkdownPathFn,
+    now_fn: Callable[[], Any],
     logger: logging.Logger,
 ) -> dict[str, object]:
     if not request.content.strip():
@@ -205,9 +208,8 @@ def send_conversation_message(
     locked_ids = [row["event_id"] for row in event_rows]
     if not locked_ids:
         raise HTTPException(status_code=400, detail="请先选择参考文档并开始对话")
-
     articles, id_to_idx = build_reference_docs_fn(locked_ids)
-    history = _build_conversation_messages(question_id, connect_fn=connect_fn)
+    history = build_conversation_messages_fn(question_id)
     try:
         docs_text = "\n\n".join(
             f"[文档{a['index']}] 《{a['title']}》\n{a['text']}" for a in articles
@@ -224,14 +226,14 @@ def send_conversation_message(
         messages = [{"role": "system", "content": system_prompt}]
         messages.extend(history)
         messages.append({"role": "user", "content": request.content})
-        answer = _brainstorm_chat(messages, 2000, "answer", chat_fn)
+        answer = _brainstorm_chat(messages, 2000, "answer", call_ai_chat_fn)
     except Exception as error:
         logger.warning(
             "Conversation message failed for question %s: %s", question_id, error
         )
         return {"error": f"AI 回答生成失败: {error}"}
-    refs = _parse_refs_from_answer(answer, id_to_idx)
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    refs = parse_refs_fn(answer, id_to_idx)
+    now = now_fn().strftime("%Y-%m-%d %H:%M")
     with connect_fn() as conn:
         conn.execute(
             "INSERT INTO brainstorm_messages (question_id, role, content, refs_json, created_at) VALUES (?, 'user', ?, '[]', ?)",
@@ -250,7 +252,6 @@ def send_conversation_message(
             "UPDATE brainstorm_questions SET content_md = ? WHERE id = ?",
             (full_markdown, question_id),
         )
-
     return {
         "message": {
             "role": "assistant",
@@ -276,7 +277,6 @@ def get_conversation(question_id: str, *, connect_fn: ConnectFn) -> dict[str, ob
             "SELECT id, role, content, refs_json, created_at FROM brainstorm_messages WHERE question_id = ? ORDER BY id ASC",
             (question_id,),
         ).fetchall()
-
     locked_ids = [row["event_id"] for row in event_rows]
     messages: list[dict] = []
     for row in message_rows:
@@ -301,9 +301,12 @@ def generate_conversation_summary(
     question_id: str,
     *,
     connect_fn: ConnectFn,
-    chat_fn: ChatFn,
+    call_ai_chat_fn: ChatFn,
     build_reference_docs_fn: BuildReferenceDocsFn,
+    build_conversation_messages_fn: Callable[[str], list[dict]],
+    parse_refs_fn: Callable[[str, dict[str, str]], list[str]],
     markdown_path_fn: MarkdownPathFn,
+    now_fn: Callable[[], Any],
     logger: logging.Logger,
 ) -> dict[str, object]:
     with connect_fn() as conn:
@@ -317,13 +320,11 @@ def generate_conversation_summary(
             "SELECT event_id FROM brainstorm_event_links WHERE question_id = ?",
             (question_id,),
         ).fetchall()
-
     locked_ids = [row["event_id"] for row in event_rows]
     if not locked_ids:
         return {"error": "请先选择参考文档并开始对话"}
-
     articles, id_to_idx = build_reference_docs_fn(locked_ids)
-    history = _build_conversation_messages(question_id, connect_fn=connect_fn)
+    history = build_conversation_messages_fn(question_id)
     if not history:
         return {"error": "没有对话历史可总结"}
 
@@ -378,15 +379,15 @@ def generate_conversation_summary(
             },
             {"role": "user", "content": prompt},
         ]
-        summary = _brainstorm_chat(messages, 3000, "summary", chat_fn)
+        summary = _brainstorm_chat(messages, 3000, "summary", call_ai_chat_fn)
     except Exception as error:
         logger.warning(
             "Summary generation failed for question %s: %s", question_id, error
         )
         return {"error": f"AI 总结生成失败: {error}"}
 
-    refs = _parse_refs_from_answer(summary, id_to_idx)
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    refs = parse_refs_fn(summary, id_to_idx)
+    now = now_fn().strftime("%Y-%m-%d %H:%M")
     with connect_fn() as conn:
         markdown_path = markdown_path_fn(question_id)
         md_block = f"## 总结 ({now})\n\n{summary}\n\n---\n\n"

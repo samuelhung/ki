@@ -222,9 +222,11 @@ def start_conversation(
         question_id,
         request,
         connect_fn=connect,
-        chat_fn=chat,
+        call_ai_chat_fn=_call_ai_chat,
         build_reference_docs_fn=_build_reference_docs,
+        parse_refs_fn=_parse_refs_from_answer,
         markdown_path_fn=_brainstorm_md_path,
+        now_fn=datetime.now,
         logger=logger,
     )
 
@@ -238,9 +240,12 @@ def send_conversation_message(
         question_id,
         request,
         connect_fn=connect,
-        chat_fn=chat,
+        call_ai_chat_fn=_call_ai_chat,
         build_reference_docs_fn=_build_reference_docs,
+        build_conversation_messages_fn=_build_conversation_messages,
+        parse_refs_fn=_parse_refs_from_answer,
         markdown_path_fn=_brainstorm_md_path,
+        now_fn=datetime.now,
         logger=logger,
     )
 
@@ -259,9 +264,12 @@ def generate_conversation_summary(question_id: SafeIdentifier) -> dict[str, obje
     return brainstorm_conversation_service.generate_conversation_summary(
         question_id,
         connect_fn=connect,
-        chat_fn=chat,
+        call_ai_chat_fn=_call_ai_chat,
         build_reference_docs_fn=_build_reference_docs,
+        build_conversation_messages_fn=_build_conversation_messages,
+        parse_refs_fn=_parse_refs_from_answer,
         markdown_path_fn=_brainstorm_md_path,
+        now_fn=datetime.now,
         logger=logger,
     )
 
@@ -270,9 +278,8 @@ def generate_conversation_summary(question_id: SafeIdentifier) -> dict[str, obje
 # Contemplate: bidirectional matching between events and brainstorm questions
 # ---------------------------------------------------------------------------
 
-
 class ContemplateRequest(BaseModel):
-    direction: str  # "event_to_questions" or "question_to_events"
+    direction: str   # "event_to_questions" or "question_to_events"
     entity_id: str
 
     @field_validator("entity_id")
@@ -293,11 +300,7 @@ def contemplate(request: ContemplateRequest) -> dict[str, object]:
     elif request.direction == "question_to_events":
         return _contemplate_question_to_events(request.entity_id)
     else:
-        return {
-            "entity_id": request.entity_id,
-            "suggestions": [],
-            "error": "invalid direction",
-        }
+        return {"entity_id": request.entity_id, "suggestions": [], "error": "invalid direction"}
 
 
 @router.get("/api/brainstorm/event/{event_id}/linked-questions")
@@ -325,8 +328,7 @@ def _contemplate_event_to_questions(event_id: str) -> dict[str, object]:
     # 1. Get the event
     with connect() as conn:
         event = conn.execute(
-            "SELECT id, title, ai_summary, raw_summary FROM events WHERE id = ?",
-            (event_id,),
+            "SELECT id, title, ai_summary, raw_summary FROM events WHERE id = ?", (event_id,)
         ).fetchone()
     if not event:
         return {"entity_id": event_id, "suggestions": [], "error": "事件不存在"}
@@ -338,8 +340,7 @@ def _contemplate_event_to_questions(event_id: str) -> dict[str, object]:
     # 2. Get already-linked question IDs
     with connect() as conn:
         linked_rows = conn.execute(
-            "SELECT question_id FROM brainstorm_event_links WHERE event_id = ?",
-            (event_id,),
+            "SELECT question_id FROM brainstorm_event_links WHERE event_id = ?", (event_id,)
         ).fetchall()
     linked_ids = {r["question_id"] for r in linked_rows}
 
@@ -349,10 +350,7 @@ def _contemplate_event_to_questions(event_id: str) -> dict[str, object]:
             "SELECT question_id, relevance, reason FROM brainstorm_contemplate_cache WHERE event_id = ?",
             (event_id,),
         ).fetchall()
-    cached: dict[str, dict] = {
-        r["question_id"]: {"relevance": r["relevance"], "reason": r["reason"]}
-        for r in cached_rows
-    }
+    cached: dict[str, dict] = {r["question_id"]: {"relevance": r["relevance"], "reason": r["reason"]} for r in cached_rows}
     cached_ids = set(cached.keys())
 
     # 4. Get all open questions
@@ -363,11 +361,7 @@ def _contemplate_event_to_questions(event_id: str) -> dict[str, object]:
 
     # Split: linked, cached (unlinked), new candidates
     all_questions = [dict(r) for r in rows]
-    candidates = [
-        q
-        for q in all_questions
-        if q["id"] not in linked_ids and q["id"] not in cached_ids
-    ]
+    candidates = [q for q in all_questions if q["id"] not in linked_ids and q["id"] not in cached_ids]
 
     # Build linked suggestions (always at the end)
     linked_suggestions = []
@@ -375,30 +369,26 @@ def _contemplate_event_to_questions(event_id: str) -> dict[str, object]:
         if q["id"] in linked_ids:
             # Look up relevance from cache if available, else mark as linked
             j = cached.get(q["id"])
-            linked_suggestions.append(
-                {
-                    "question_id": q["id"],
-                    "question_text": q["question"],
-                    "relevance": j["relevance"] if j else "high",
-                    "reason": j["reason"] if j else "已关联",
-                    "link_status": "linked",
-                }
-            )
+            linked_suggestions.append({
+                "question_id": q["id"],
+                "question_text": q["question"],
+                "relevance": j["relevance"] if j else "high",
+                "reason": j["reason"] if j else "已关联",
+                "link_status": "linked",
+            })
 
     # Build cached suggestions (unlinked, already judged)
     cached_suggestions = []
     for q in all_questions:
         if q["id"] not in linked_ids and q["id"] in cached_ids:
             j = cached[q["id"]]
-            cached_suggestions.append(
-                {
-                    "question_id": q["id"],
-                    "question_text": q["question"],
-                    "relevance": j["relevance"],
-                    "reason": j["reason"] or "",
-                    "link_status": "unlinked",
-                }
-            )
+            cached_suggestions.append({
+                "question_id": q["id"],
+                "question_text": q["question"],
+                "relevance": j["relevance"],
+                "reason": j["reason"] or "",
+                "link_status": "unlinked",
+            })
 
     # 5. Ask AI for new candidates
     new_suggestions: list[dict] = []
@@ -441,15 +431,13 @@ def _contemplate_event_to_questions(event_id: str) -> dict[str, object]:
                         "INSERT OR REPLACE INTO brainstorm_contemplate_cache (question_id, event_id, relevance, reason) VALUES (?, ?, ?, ?)",
                         (q["id"], event_id, relevance, reason),
                     )
-                    new_suggestions.append(
-                        {
-                            "question_id": q["id"],
-                            "question_text": q["question"],
-                            "relevance": relevance,
-                            "reason": reason,
-                            "link_status": "unlinked",
-                        }
-                    )
+                    new_suggestions.append({
+                        "question_id": q["id"],
+                        "question_text": q["question"],
+                        "relevance": relevance,
+                        "reason": reason,
+                        "link_status": "unlinked",
+                    })
             # Cache unmatched candidates as "low"
             for i, q in enumerate(candidates):
                 if i not in matched_indices:
@@ -457,22 +445,18 @@ def _contemplate_event_to_questions(event_id: str) -> dict[str, object]:
                         "INSERT OR REPLACE INTO brainstorm_contemplate_cache (question_id, event_id, relevance, reason) VALUES (?, ?, ?, ?)",
                         (q["id"], event_id, "low", ""),
                     )
-                    new_suggestions.append(
-                        {
-                            "question_id": q["id"],
-                            "question_text": q["question"],
-                            "relevance": "low",
-                            "reason": "",
-                            "link_status": "unlinked",
-                        }
-                    )
+                    new_suggestions.append({
+                        "question_id": q["id"],
+                        "question_text": q["question"],
+                        "relevance": "low",
+                        "reason": "",
+                        "link_status": "unlinked",
+                    })
 
     # 7. Sort: new (high→medium→low) → cached (high→medium→low) → linked
     def _sort_key(s: dict) -> tuple:
-        group = (
-            0
-            if s.get("link_status") != "linked" and s not in cached_suggestions
-            else (1 if s.get("link_status") != "linked" else 2)
+        group = 0 if s.get("link_status") != "linked" and s not in cached_suggestions else (
+            1 if s.get("link_status") != "linked" else 2
         )
         rel_order = {"high": 0, "medium": 1, "low": 2}
         return (group, rel_order.get(s.get("relevance", "low"), 2))
@@ -505,8 +489,7 @@ def _contemplate_question_to_events(question_id: str) -> dict[str, object]:
     # 2. Get already-linked event IDs
     with connect() as conn:
         linked = conn.execute(
-            "SELECT event_id FROM brainstorm_event_links WHERE question_id = ?",
-            (question_id,),
+            "SELECT event_id FROM brainstorm_event_links WHERE question_id = ?", (question_id,)
         ).fetchall()
     linked_ids = {r["event_id"] for r in linked}
 
@@ -516,10 +499,7 @@ def _contemplate_question_to_events(question_id: str) -> dict[str, object]:
             "SELECT event_id, relevance, reason FROM brainstorm_contemplate_cache WHERE question_id = ?",
             (question_id,),
         ).fetchall()
-    cached: dict[str, dict] = {
-        r["event_id"]: {"relevance": r["relevance"], "reason": r["reason"]}
-        for r in cached_rows
-    }
+    cached: dict[str, dict] = {r["event_id"]: {"relevance": r["relevance"], "reason": r["reason"]} for r in cached_rows}
     cached_ids = set(cached.keys())
 
     # 4. Get all non-RSS events with text, excluding linked AND cached
@@ -532,9 +512,7 @@ def _contemplate_question_to_events(question_id: str) -> dict[str, object]:
                ORDER BY created_at DESC LIMIT 60"""
         ).fetchall()
 
-    candidates = [
-        dict(r) for r in rows if r["id"] not in linked_ids and r["id"] not in cached_ids
-    ]
+    candidates = [dict(r) for r in rows if r["id"] not in linked_ids and r["id"] not in cached_ids]
 
     # Build cached suggestions (skipped from AI call)
     cached_suggestions = []
@@ -550,29 +528,18 @@ def _contemplate_question_to_events(question_id: str) -> dict[str, object]:
                 if evt_row is None:
                     # Event has been deleted from the events table — skip stale cache entry
                     continue
-                if evt_row["source_id"] not in (
-                    "douyin",
-                    "user-upload",
-                    "user-concept",
-                ):
+                if evt_row["source_id"] not in ("douyin", "user-upload", "user-concept"):
                     continue
             title = evt_row["title"] if evt_row else event_id
-            cached_suggestions.append(
-                {
-                    "event_id": event_id,
-                    "event_title": title,
-                    "relevance": judgment["relevance"],
-                    "reason": judgment["reason"] or "",
-                }
-            )
+            cached_suggestions.append({
+                "event_id": event_id,
+                "event_title": title,
+                "relevance": judgment["relevance"],
+                "reason": judgment["reason"] or "",
+            })
 
     if not candidates and not cached_suggestions:
-        return {
-            "entity_id": question_id,
-            "entity_title": q["question"],
-            "suggestions": [],
-            "note": "所有内容已关联或已判断",
-        }
+        return {"entity_id": question_id, "entity_title": q["question"], "suggestions": [], "note": "所有内容已关联或已判断"}
 
     # 5. Ask AI for new candidates (full text, not snippet)
     new_suggestions: list[dict] = []
@@ -590,7 +557,7 @@ def _contemplate_question_to_events(question_id: str) -> dict[str, object]:
             "- 如果文章部分相关或可提供背景信息，标为 medium\n"
             "- 如果完全无关，标为 low\n"
             "注意：不要因为文章标题或关键词看起来相关就误判，必须基于内容的实质关联。\n"
-            '只输出 JSON 数组：[{"index": 0, "relevance": "high", "reason": "一句话原因"}, ...]\n'
+            "只输出 JSON 数组：[{\"index\": 0, \"relevance\": \"high\", \"reason\": \"一句话原因\"}, ...]\n"
             "只输出 high 或 medium，low 跳过。\n\n"
             f"问题：{q['question']}\n\n"
             f"待评估文章：\n" + "\n\n".join(event_lines)
@@ -612,14 +579,12 @@ def _contemplate_question_to_events(question_id: str) -> dict[str, object]:
                         "INSERT OR REPLACE INTO brainstorm_contemplate_cache (question_id, event_id, relevance, reason) VALUES (?, ?, ?, ?)",
                         (question_id, evt["id"], relevance, reason),
                     )
-                    new_suggestions.append(
-                        {
-                            "event_id": evt["id"],
-                            "event_title": evt["title"],
-                            "relevance": relevance,
-                            "reason": reason,
-                        }
-                    )
+                    new_suggestions.append({
+                        "event_id": evt["id"],
+                        "event_title": evt["title"],
+                        "relevance": relevance,
+                        "reason": reason,
+                    })
             # Cache unmatched candidates as "low"
             for i, evt in enumerate(candidates):
                 if i not in matched_indices:
@@ -631,7 +596,7 @@ def _contemplate_question_to_events(question_id: str) -> dict[str, object]:
     # Combine cached + new
     all_suggestions = cached_suggestions + new_suggestions
     # Sort: high first, then medium
-    all_suggestions.sort(key=lambda s: 0 if s["relevance"] == "high" else 1)
+    all_suggestions.sort(key=lambda s: (0 if s["relevance"] == "high" else 1))
 
     return {
         "entity_id": question_id,
@@ -643,20 +608,11 @@ def _contemplate_question_to_events(question_id: str) -> dict[str, object]:
 def _call_contemplate_deepseek(prompt: str) -> list[dict]:
     """Call DeepSeek for contemplation matching. Returns parsed JSON list."""
     messages = [
-        {
-            "role": "system",
-            "content": "You are a JSON-only API. Always output valid JSON array, nothing else.",
-        },
+        {"role": "system", "content": "You are a JSON-only API. Always output valid JSON array, nothing else."},
         {"role": "user", "content": prompt},
     ]
-    raw = chat(
-        messages,
-        temperature=0.1,
-        max_tokens=4096,
-        timeout=120,
-        module="brainstorm",
-        task="concept_extract",
-    )
+    raw = chat(messages, temperature=0.1, max_tokens=4096, timeout=120,
+               module="brainstorm", task="concept_extract")
     if raw is None:
         return []
 
@@ -670,18 +626,14 @@ def _call_contemplate_deepseek(prompt: str) -> list[dict]:
     try:
         return json.loads(raw)
     except json.JSONDecodeError as e:
-        logger.warning(
-            "Contemplate JSON parse error at line %d col %d — trying partial recovery",
-            e.lineno,
-            e.colno,
-        )
+        logger.warning("Contemplate JSON parse error at line %d col %d — trying partial recovery", e.lineno, e.colno)
         # Try to recover by truncating at the error position
         try:
-            truncated = raw[: e.pos]
+            truncated = raw[:e.pos]
             # Find last valid '}' to close the array
-            last_brace = truncated.rfind("}")
+            last_brace = truncated.rfind('}')
             if last_brace > 0:
-                partial = truncated[: last_brace + 1] + "]"
+                partial = truncated[:last_brace + 1] + ']'
                 return json.loads(partial)
         except Exception:
             pass
@@ -691,7 +643,6 @@ def _call_contemplate_deepseek(prompt: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Concept precipitation: extract concepts from summary and save to event store
 # ---------------------------------------------------------------------------
-
 
 class PrecipitateConceptRequest(BaseModel):
     question_id: SafeIdentifier
@@ -704,10 +655,7 @@ def list_summary_concepts(question_id: SafeIdentifier) -> dict[str, object]:
     """Parse concepts from the summary — both primary concepts (概念定义) and related concepts (相关概念).
     Returns each concept with its description and whether it already exists in the system."""
     with connect() as conn:
-        q = conn.execute(
-            "SELECT id, question, answer FROM brainstorm_questions WHERE id = ?",
-            (question_id,),
-        ).fetchone()
+        q = conn.execute("SELECT id, question, answer FROM brainstorm_questions WHERE id = ?", (question_id,)).fetchone()
     if not q:
         raise HTTPException(status_code=404, detail="Question not found")
     answer = q["answer"] or ""
@@ -729,9 +677,7 @@ def list_summary_concepts(question_id: SafeIdentifier) -> dict[str, object]:
             # Try to extract the definition line: - **定义**：...
             rest_start = m.end()
             rest = section[rest_start:]
-            def_match = re.match(
-                r".*?定义\*\*[：:]\s*(.+?)(?=\n- |\n###|\n\n|\Z)", rest, re.DOTALL
-            )
+            def_match = re.match(r".*?定义\*\*[：:]\s*(.+?)(?=\n- |\n###|\n\n|\Z)", rest, re.DOTALL)
             desc = def_match.group(1).strip() if def_match else name
             concepts.append({"name": name, "description": desc})
             seen.add(name)
@@ -740,9 +686,7 @@ def list_summary_concepts(question_id: SafeIdentifier) -> dict[str, object]:
     rel_section = re.search(r"## 相关概念\n+(.*?)(?=\n## |\Z)", answer, re.DOTALL)
     if rel_section:
         section = rel_section.group(1).strip()
-        for m in re.finditer(
-            r"- \*\*(.+?)\*\*[：:]\s*(.+?)(?=\n- \*\*|\n$|\Z)", section, re.DOTALL
-        ):
+        for m in re.finditer(r"- \*\*(.+?)\*\*[：:]\s*(.+?)(?=\n- \*\*|\n$|\Z)", section, re.DOTALL):
             name = m.group(1).strip()
             if name in seen:
                 continue
@@ -757,21 +701,18 @@ def list_summary_concepts(question_id: SafeIdentifier) -> dict[str, object]:
             rows = conn.execute(
                 "SELECT title FROM events WHERE content_type = 'concept' AND title IN ({})".format(
                     ",".join("?" for _ in concepts)
-                ),
-                [c["name"] for c in concepts],
+                ), [c["name"] for c in concepts]
             ).fetchall()
             existing_titles = {r["title"] for r in rows}
 
     result = []
     for c in concepts:
         exists = c["name"] in existing_titles
-        result.append(
-            {
-                "name": c["name"],
-                "description": c["description"],
-                "precipitated": exists,
-            }
-        )
+        result.append({
+            "name": c["name"],
+            "description": c["description"],
+            "precipitated": exists,
+        })
 
     return {"question_id": question_id, "concepts": result}
 
@@ -784,22 +725,16 @@ def precipitate_concept(req: PrecipitateConceptRequest) -> dict[str, object]:
     # Dup check
     with connect() as conn:
         existing = conn.execute(
-            "SELECT id FROM events WHERE content_type = 'concept' AND title = ?",
-            (req.name,),
+            "SELECT id FROM events WHERE content_type = 'concept' AND title = ?", (req.name,)
         ).fetchone()
     if existing:
-        return {
-            "status": "exists",
-            "event_id": existing["id"],
-            "message": f"概念「{req.name}」已存在",
-        }
+        return {"status": "exists", "event_id": existing["id"], "message": f"概念「{req.name}」已存在"}
 
     # Fetch linked documents for context
     context_docs: list[dict[str, str]] = []
     with connect() as conn:
         link_rows = conn.execute(
-            "SELECT event_id FROM brainstorm_event_links WHERE question_id = ?",
-            (req.question_id,),
+            "SELECT event_id FROM brainstorm_event_links WHERE question_id = ?", (req.question_id,)
         ).fetchall()
     linked_ids = [r["event_id"] for r in link_rows]
     if linked_ids:
@@ -807,24 +742,15 @@ def precipitate_concept(req: PrecipitateConceptRequest) -> dict[str, object]:
         context_docs = [{"title": a["title"], "content": a["text"]} for a in articles]
 
     try:
-        result = _create_concept(
-            req.name,
-            "uncategorized",
-            req.description,
-            force_ai=True,
-            context_docs=context_docs if context_docs else None,
-        )
+        result = _create_concept(req.name, "uncategorized", req.description,
+                                 force_ai=True, context_docs=context_docs if context_docs else None)
         # Link concept back to the question
         with connect() as conn:
             conn.execute(
                 "INSERT OR IGNORE INTO brainstorm_event_links (question_id, event_id) VALUES (?, ?)",
                 (req.question_id, result["event_id"]),
             )
-        return {
-            "status": "created",
-            "event_id": result["event_id"],
-            "ai_summary": result.get("ai_summary", ""),
-        }
+        return {"status": "created", "event_id": result["event_id"], "ai_summary": result.get("ai_summary", "")}
     except Exception as e:
         logger.warning("Concept precipitation failed for %s: %s", req.name, e)
         raise HTTPException(status_code=500, detail=f"沉淀失败: {e}")
