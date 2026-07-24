@@ -21,6 +21,7 @@ from zhiji_backend import (
     chain_merge_service,
     chain_node_service,
     chain_suggestion_service,
+    chain_sync_service,
 )
 from zhiji_backend.main import app
 from zhiji_backend.routes import chain_routes
@@ -444,6 +445,7 @@ def test_extracted_route_order_signatures_and_openapi_contract_are_unchanged() -
             {"POST"},
             "dismiss_suggestion",
         ),
+        (19, "/api/chains/hints/sync", {"POST"}, "sync_extracted_hints"),
     ]
     actual_routes = [
         (index, route.path, route.methods, route.endpoint.__name__)
@@ -468,6 +470,7 @@ def test_extracted_route_order_signatures_and_openapi_contract_are_unchanged() -
         "count_suggestions": [],
         "adopt_suggestion": [("sid", chain_routes.SafeIdentifier)],
         "dismiss_suggestion": [("sid", chain_routes.SafeIdentifier)],
+        "sync_extracted_hints": [("req", chain_routes.SyncHintsRequest)],
     }
     for name, expected in expected_signatures.items():
         hints = inspect.get_annotations(getattr(chain_routes, name), eval_str=True)
@@ -490,6 +493,7 @@ def test_extracted_route_order_signatures_and_openapi_contract_are_unchanged() -
         ("/api/chains/suggestions/count", "get"): None,
         ("/api/chains/suggestions/{sid}/adopt", "post"): None,
         ("/api/chains/suggestions/{sid}/dismiss", "post"): None,
+        ("/api/chains/hints/sync", "post"): "SyncHintsRequest",
     }
     for (path, method), request_model in expected_openapi.items():
         operation = schema["paths"][path][method]
@@ -713,3 +717,28 @@ def test_chain_suggestion_wrappers_forward_call_time_dependencies(monkeypatch) -
         ("dismiss", "suggestion-1", sentinel_connect),
         ("icon", "新链", sentinel_chat, sentinel_logger),
     ]
+
+
+def test_chain_sync_wrapper_forwards_call_time_dependencies(monkeypatch) -> None:
+    sentinel_connect = cast(chain_node_service.ConnectFn, object())
+    sentinel_uuid = UUID("12345678-1234-5678-1234-567812345678")
+    request = chain_routes.SyncHintsRequest(hints=[])
+    calls: list[tuple[object, ...]] = []
+
+    monkeypatch.setattr(chain_routes, "connect", sentinel_connect)
+    monkeypatch.setattr(chain_routes.uuid, "uuid4", lambda: sentinel_uuid)
+    monkeypatch.setattr(
+        chain_sync_service,
+        "sync_extracted_hints",
+        lambda req, *, connect_fn, uuid_factory: calls.append(
+            (req, connect_fn, uuid_factory())
+        )
+        or {"ok": True, "saved_hints": 0, "new_suggestions": 0},
+    )
+
+    assert chain_routes.sync_extracted_hints(request) == {
+        "ok": True,
+        "saved_hints": 0,
+        "new_suggestions": 0,
+    }
+    assert calls == [(request, sentinel_connect, sentinel_uuid)]
