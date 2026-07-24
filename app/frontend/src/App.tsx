@@ -11,6 +11,8 @@ import { CurtainProvider, useCurtain } from './CurtainContext';
 import { CinematicBackdropProvider } from './components/cinematic/CinematicBackdropContext';
 import { apiFetch } from './api';
 import { useMediaTransportConnection } from './components/ingest/useAuthenticatedMediaUrl';
+import RemoteUnlockGate from './components/auth/RemoteUnlockGate';
+import { useRemoteUnlock } from './components/auth/useRemoteUnlock';
 
 const CinematicHome = lazy(() => import('./pages/CinematicHome'));
 const CinematicBriefings = lazy(() => import('./pages/CinematicBriefings'));
@@ -111,6 +113,7 @@ function CurtainOverlay() {
 function Layout() {
   const location = useLocation();
   useMediaTransportConnection();
+  const remoteUnlock = useRemoteUnlock();
   const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest' || location.pathname === '/briefings' || location.pathname === '/events' || location.pathname.startsWith('/events/') || location.pathname === '/sources' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series' || location.pathname.startsWith('/series/') || location.pathname === '/study' || location.pathname.startsWith('/study/') || location.pathname === '/study-mistakes' || location.pathname === '/industry-chains' || location.pathname === '/chains' || location.pathname === '/brainstorm' || location.pathname.startsWith('/brainstorm/') || location.pathname === '/tasks';
 
   // ---- Offline detection ----
@@ -207,15 +210,22 @@ function Layout() {
     }
   }, []);
 
+  const routedContent = remoteUnlock.locked ? (
+    <>
+      <CinematicHome />
+      <RemoteUnlockGate onUnlock={remoteUnlock.unlock} />
+    </>
+  ) : <Outlet />;
+
   return (
     <CurtainProvider>
       <CinematicBackdropProvider>
       <div
         className="h-screen w-full bg-[#0B0C10] overflow-hidden font-sans relative"
-        onDragEnter={handleDragEnter}
-        onDragLeave={handleDragLeave}
-        onDragOver={handleDragOver}
-        onDrop={handleDrop}
+        onDragEnter={remoteUnlock.locked ? undefined : handleDragEnter}
+        onDragLeave={remoteUnlock.locked ? undefined : handleDragLeave}
+        onDragOver={remoteUnlock.locked ? undefined : handleDragOver}
+        onDrop={remoteUnlock.locked ? undefined : handleDrop}
       >
         {/* Offline banner */}
         {!isOnline && (
@@ -262,7 +272,7 @@ function Layout() {
               <div className="flex-1 overflow-auto custom-scrollbar">
                 <ErrorBoundary>
                   <Suspense fallback={<PageLoading />}>
-                    <Outlet />
+                    {routedContent}
                   </Suspense>
                 </ErrorBoundary>
               </div>
@@ -277,7 +287,7 @@ function Layout() {
                 <div className="flex-1 overflow-auto custom-scrollbar">
                   <ErrorBoundary>
                     <Suspense fallback={<PageLoading />}>
-                      <Outlet />
+                      {routedContent}
                     </Suspense>
                   </ErrorBoundary>
                 </div>
@@ -290,7 +300,7 @@ function Layout() {
               <div className="flex-1 overflow-auto custom-scrollbar">
                 <ErrorBoundary>
                   <Suspense fallback={<PageLoading />}>
-                    <Outlet />
+                    {routedContent}
                   </Suspense>
                 </ErrorBoundary>
               </div>
