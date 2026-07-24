@@ -570,25 +570,15 @@ def ai_collect_chain_all(req: AiCollectRequest):
             raise HTTPException(status_code=404, detail="节点不存在")
 
         chain_name = node["chain"]
-        # 找出该链所有 global_shares 为空或为 '[]' 的节点
-        nodes = conn.execute(
-            """SELECT id, name FROM industry_chain_nodes
+        full_nodes = conn.execute(
+            """SELECT * FROM industry_chain_nodes
                WHERE chain = ? AND (global_shares IS NULL OR global_shares = '[]')
                ORDER BY sort_order""",
             (chain_name,)
         ).fetchall()
 
-    if not nodes:
+    if not full_nodes:
         return {"ok": True, "collected": 0, "message": "该链所有节点已有数据"}
-
-    # 读完整节点数据
-    full_nodes = []
-    for n in nodes:
-        row = conn.execute(
-            "SELECT * FROM industry_chain_nodes WHERE id = ?", (n["id"],)
-        ).fetchone()
-        if row:
-            full_nodes.append(row)
 
     collected = []
     for node in full_nodes:
