@@ -43,7 +43,7 @@ MODULE_MAP: dict[str, dict[str, tuple[str, list[str]]]] = {
             ["generate_conversation_summary", "start_conversation"],
         ),
         "contemplate": (
-            "routes/brainstorm_routes.py",
+            "brainstorm_contemplation_service.py",
             ["_contemplate_question_to_events", "_contemplate_event_to_questions"],
         ),
         "concept_extract": ("routes/brainstorm_routes.py", ["precipitate_concept"]),
@@ -86,7 +86,8 @@ PROMPT_SOURCES: dict[str, dict[str, dict[str, PromptSource]]] = {
         },
         "contemplate": {
             "prompt": PromptSource(
-                "routes/brainstorm_routes.py", "_contemplate_event_to_questions"
+                "brainstorm_contemplation_service.py",
+                "_contemplate_event_to_questions",
             ),
         },
         "concept_extract": {

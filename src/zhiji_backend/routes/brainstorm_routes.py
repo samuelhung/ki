@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 import uuid
@@ -14,6 +13,7 @@ from pydantic import BaseModel, field_validator
 
 from .. import (
     brainstorm_answer_service,
+    brainstorm_contemplation_service,
     brainstorm_conversation_service,
     brainstorm_question_service,
 )
@@ -278,8 +278,9 @@ def generate_conversation_summary(question_id: SafeIdentifier) -> dict[str, obje
 # Contemplate: bidirectional matching between events and brainstorm questions
 # ---------------------------------------------------------------------------
 
+
 class ContemplateRequest(BaseModel):
-    direction: str   # "event_to_questions" or "question_to_events"
+    direction: str  # "event_to_questions" or "question_to_events"
     entity_id: str
 
     @field_validator("entity_id")
@@ -295,349 +296,44 @@ def contemplate(request: ContemplateRequest) -> dict[str, object]:
     - question_to_events: given a question, find events that might answer it
     Skips already-linked pairs.
     """
-    if request.direction == "event_to_questions":
-        return _contemplate_event_to_questions(request.entity_id)
-    elif request.direction == "question_to_events":
-        return _contemplate_question_to_events(request.entity_id)
-    else:
-        return {"entity_id": request.entity_id, "suggestions": [], "error": "invalid direction"}
+    return brainstorm_contemplation_service.contemplate(
+        request,
+        connect_fn=connect,
+        chat_fn=chat,
+        logger=logger,
+    )
 
 
 @router.get("/api/brainstorm/event/{event_id}/linked-questions")
 def get_linked_questions(event_id: SafeIdentifier) -> dict[str, object]:
     """Return brainstorm questions already linked to this event via brainstorm_event_links."""
-    with connect() as conn:
-        rows = conn.execute(
-            """SELECT bq.id, bq.question, bq.topic, bq.created_at
-               FROM brainstorm_event_links bel
-               JOIN brainstorm_questions bq ON bq.id = bel.question_id
-               WHERE bel.event_id = ?
-               ORDER BY bq.created_at DESC""",
-            (event_id,),
-        ).fetchall()
-    return {
-        "event_id": event_id,
-        "linked_questions": [dict(r) for r in rows],
-    }
+    return brainstorm_contemplation_service.get_linked_questions(
+        event_id, connect_fn=connect
+    )
 
 
 def _contemplate_event_to_questions(event_id: str) -> dict[str, object]:
-    """Given an event, find which brainstorm questions it might answer.
-    Uses cache table so repeated contemplation skips already-judged pairs.
-    """
-    # 1. Get the event
-    with connect() as conn:
-        event = conn.execute(
-            "SELECT id, title, ai_summary, raw_summary FROM events WHERE id = ?", (event_id,)
-        ).fetchone()
-    if not event:
-        return {"entity_id": event_id, "suggestions": [], "error": "事件不存在"}
-
-    event_text = (event["ai_summary"] or "") or (event["raw_summary"] or "")
-    if not event_text.strip():
-        return {"entity_id": event_id, "suggestions": [], "error": "事件没有文本内容"}
-
-    # 2. Get already-linked question IDs
-    with connect() as conn:
-        linked_rows = conn.execute(
-            "SELECT question_id FROM brainstorm_event_links WHERE event_id = ?", (event_id,)
-        ).fetchall()
-    linked_ids = {r["question_id"] for r in linked_rows}
-
-    # 3. Get cached judgments for this event
-    with connect() as conn:
-        cached_rows = conn.execute(
-            "SELECT question_id, relevance, reason FROM brainstorm_contemplate_cache WHERE event_id = ?",
-            (event_id,),
-        ).fetchall()
-    cached: dict[str, dict] = {r["question_id"]: {"relevance": r["relevance"], "reason": r["reason"]} for r in cached_rows}
-    cached_ids = set(cached.keys())
-
-    # 4. Get all open questions
-    with connect() as conn:
-        rows = conn.execute(
-            "SELECT id, question FROM brainstorm_questions WHERE status = 'open' ORDER BY created_at DESC LIMIT 50"
-        ).fetchall()
-
-    # Split: linked, cached (unlinked), new candidates
-    all_questions = [dict(r) for r in rows]
-    candidates = [q for q in all_questions if q["id"] not in linked_ids and q["id"] not in cached_ids]
-
-    # Build linked suggestions (always at the end)
-    linked_suggestions = []
-    for q in all_questions:
-        if q["id"] in linked_ids:
-            # Look up relevance from cache if available, else mark as linked
-            j = cached.get(q["id"])
-            linked_suggestions.append({
-                "question_id": q["id"],
-                "question_text": q["question"],
-                "relevance": j["relevance"] if j else "high",
-                "reason": j["reason"] if j else "已关联",
-                "link_status": "linked",
-            })
-
-    # Build cached suggestions (unlinked, already judged)
-    cached_suggestions = []
-    for q in all_questions:
-        if q["id"] not in linked_ids and q["id"] in cached_ids:
-            j = cached[q["id"]]
-            cached_suggestions.append({
-                "question_id": q["id"],
-                "question_text": q["question"],
-                "relevance": j["relevance"],
-                "reason": j["reason"] or "",
-                "link_status": "unlinked",
-            })
-
-    # 5. Ask AI for new candidates
-    new_suggestions: list[dict] = []
-    if candidates:
-        event_title = event["title"] or ""
-        event_snippet = event_text[:3000] if len(event_text) > 3000 else event_text
-
-        question_lines = []
-        for i, q in enumerate(candidates):
-            question_lines.append(f"[{i}] {q['question']}")
-
-        prompt = (
-            "你是一个内容匹配助手。以下是一篇文章，请判断它能回答下面哪些问题。\n"
-            "对每个问题，判断是否可以基于文章内容回答：\n"
-            "- 如果文章直接涉及该问题的主题，标为 high\n"
-            "- 如果文章部分相关或可提供背景，标为 medium\n"
-            "- 如果完全无关，标为 low\n"
-            "注意：不要因为问题关键词看起来匹配就误判，必须基于文章内容的实质关联。\n"
-            "只输出 JSON 数组，不要其他内容。格式：\n"
-            '[{"index": 0, "relevance": "high", "reason": "一句话原因"}, ...]\n'
-            "只输出 relevance 为 high 或 medium 的项，low 的跳过不输出。\n\n"
-            f"文章标题：{event_title}\n"
-            f"文章内容：\n{event_snippet}\n\n"
-            f"待评估问题：\n" + "\n".join(question_lines)
-        )
-
-        matches = _call_contemplate_deepseek(prompt)
-
-        # 6. Persist results to cache (including low for unmatched candidates)
-        matched_indices: set[int] = set()
-        with connect() as conn:
-            for m in matches:
-                idx = m.get("index")
-                if idx is not None and 0 <= idx < len(candidates):
-                    matched_indices.add(idx)
-                    q = candidates[idx]
-                    relevance = m.get("relevance", "medium")
-                    reason = m.get("reason", "")
-                    conn.execute(
-                        "INSERT OR REPLACE INTO brainstorm_contemplate_cache (question_id, event_id, relevance, reason) VALUES (?, ?, ?, ?)",
-                        (q["id"], event_id, relevance, reason),
-                    )
-                    new_suggestions.append({
-                        "question_id": q["id"],
-                        "question_text": q["question"],
-                        "relevance": relevance,
-                        "reason": reason,
-                        "link_status": "unlinked",
-                    })
-            # Cache unmatched candidates as "low"
-            for i, q in enumerate(candidates):
-                if i not in matched_indices:
-                    conn.execute(
-                        "INSERT OR REPLACE INTO brainstorm_contemplate_cache (question_id, event_id, relevance, reason) VALUES (?, ?, ?, ?)",
-                        (q["id"], event_id, "low", ""),
-                    )
-                    new_suggestions.append({
-                        "question_id": q["id"],
-                        "question_text": q["question"],
-                        "relevance": "low",
-                        "reason": "",
-                        "link_status": "unlinked",
-                    })
-
-    # 7. Sort: new (high→medium→low) → cached (high→medium→low) → linked
-    def _sort_key(s: dict) -> tuple:
-        group = 0 if s.get("link_status") != "linked" and s not in cached_suggestions else (
-            1 if s.get("link_status") != "linked" else 2
-        )
-        rel_order = {"high": 0, "medium": 1, "low": 2}
-        return (group, rel_order.get(s.get("relevance", "low"), 2))
-
-    new_suggestions.sort(key=_sort_key)
-    cached_suggestions.sort(key=_sort_key)
-    linked_suggestions.sort(key=_sort_key)
-
-    all_suggestions = new_suggestions + cached_suggestions + linked_suggestions
-
-    return {
-        "entity_id": event_id,
-        "entity_title": event["title"],
-        "suggestions": all_suggestions,
-    }
+    return brainstorm_contemplation_service._contemplate_event_to_questions(
+        event_id,
+        connect_fn=connect,
+        chat_fn=chat,
+        logger=logger,
+    )
 
 
 def _contemplate_question_to_events(question_id: str) -> dict[str, object]:
-    """Given a question, find which events might answer it.
-    Uses full text for matching; persists results so repeated contemplation skips already-judged pairs.
-    """
-    # 1. Get the question
-    with connect() as conn:
-        q = conn.execute(
-            "SELECT id, question FROM brainstorm_questions WHERE id = ?", (question_id,)
-        ).fetchone()
-    if not q:
-        return {"entity_id": question_id, "suggestions": [], "error": "问题不存在"}
-
-    # 2. Get already-linked event IDs
-    with connect() as conn:
-        linked = conn.execute(
-            "SELECT event_id FROM brainstorm_event_links WHERE question_id = ?", (question_id,)
-        ).fetchall()
-    linked_ids = {r["event_id"] for r in linked}
-
-    # 3. Get cached judgments for this question
-    with connect() as conn:
-        cached_rows = conn.execute(
-            "SELECT event_id, relevance, reason FROM brainstorm_contemplate_cache WHERE question_id = ?",
-            (question_id,),
-        ).fetchall()
-    cached: dict[str, dict] = {r["event_id"]: {"relevance": r["relevance"], "reason": r["reason"]} for r in cached_rows}
-    cached_ids = set(cached.keys())
-
-    # 4. Get all non-RSS events with text, excluding linked AND cached
-    with connect() as conn:
-        rows = conn.execute(
-            """SELECT id, title, ai_summary, raw_summary FROM events
-               WHERE source_id IN ('douyin', 'user-upload')
-                 AND (ai_summary != '' OR raw_summary != '')
-                 AND status = 'completed'
-               ORDER BY created_at DESC LIMIT 60"""
-        ).fetchall()
-
-    candidates = [dict(r) for r in rows if r["id"] not in linked_ids and r["id"] not in cached_ids]
-
-    # Build cached suggestions (skipped from AI call)
-    cached_suggestions = []
-    for event_id, judgment in cached.items():
-        if event_id not in linked_ids:
-            # Look up title from rows, fallback to direct DB query for older events
-            evt_row = next((r for r in rows if r["id"] == event_id), None)
-            if evt_row is None:
-                evt_row = conn.execute(
-                    "SELECT title, source_id FROM events WHERE id = ?", (event_id,)
-                ).fetchone()
-                # Skip RSS-sourced events from cache (source_ids like bbc-world, reuters-world, etc.)
-                if evt_row is None:
-                    # Event has been deleted from the events table — skip stale cache entry
-                    continue
-                if evt_row["source_id"] not in ("douyin", "user-upload", "user-concept"):
-                    continue
-            title = evt_row["title"] if evt_row else event_id
-            cached_suggestions.append({
-                "event_id": event_id,
-                "event_title": title,
-                "relevance": judgment["relevance"],
-                "reason": judgment["reason"] or "",
-            })
-
-    if not candidates and not cached_suggestions:
-        return {"entity_id": question_id, "entity_title": q["question"], "suggestions": [], "note": "所有内容已关联或已判断"}
-
-    # 5. Ask AI for new candidates (full text, not snippet)
-    new_suggestions: list[dict] = []
-    if candidates:
-        event_lines = []
-        for i, evt in enumerate(candidates):
-            text = (evt["ai_summary"] or "") or (evt["raw_summary"] or "")
-            full_text = text[:3000] if len(text) > 3000 else text
-            event_lines.append(f"[{i}] {evt['title']}\n内容：{full_text}")
-
-        prompt = (
-            "你是一个内容匹配助手。以下是一个问题，请判断下面哪些文章可以用于回答它。\n"
-            "对每篇文章，仔细阅读全文后判断是否可基于其内容回答问题：\n"
-            "- 如果文章直接涉及该问题的核心，标为 high\n"
-            "- 如果文章部分相关或可提供背景信息，标为 medium\n"
-            "- 如果完全无关，标为 low\n"
-            "注意：不要因为文章标题或关键词看起来相关就误判，必须基于内容的实质关联。\n"
-            "只输出 JSON 数组：[{\"index\": 0, \"relevance\": \"high\", \"reason\": \"一句话原因\"}, ...]\n"
-            "只输出 high 或 medium，low 跳过。\n\n"
-            f"问题：{q['question']}\n\n"
-            f"待评估文章：\n" + "\n\n".join(event_lines)
-        )
-
-        matches = _call_contemplate_deepseek(prompt)
-
-        # 6. Persist results to cache (including low for unmatched candidates)
-        matched_indices: set[int] = set()
-        with connect() as conn:
-            for m in matches:
-                idx = m.get("index")
-                if idx is not None and 0 <= idx < len(candidates):
-                    matched_indices.add(idx)
-                    evt = candidates[idx]
-                    relevance = m.get("relevance", "medium")
-                    reason = m.get("reason", "")
-                    conn.execute(
-                        "INSERT OR REPLACE INTO brainstorm_contemplate_cache (question_id, event_id, relevance, reason) VALUES (?, ?, ?, ?)",
-                        (question_id, evt["id"], relevance, reason),
-                    )
-                    new_suggestions.append({
-                        "event_id": evt["id"],
-                        "event_title": evt["title"],
-                        "relevance": relevance,
-                        "reason": reason,
-                    })
-            # Cache unmatched candidates as "low"
-            for i, evt in enumerate(candidates):
-                if i not in matched_indices:
-                    conn.execute(
-                        "INSERT OR REPLACE INTO brainstorm_contemplate_cache (question_id, event_id, relevance, reason) VALUES (?, ?, ?, ?)",
-                        (question_id, evt["id"], "low", ""),
-                    )
-
-    # Combine cached + new
-    all_suggestions = cached_suggestions + new_suggestions
-    # Sort: high first, then medium
-    all_suggestions.sort(key=lambda s: (0 if s["relevance"] == "high" else 1))
-
-    return {
-        "entity_id": question_id,
-        "entity_title": q["question"],
-        "suggestions": all_suggestions,
-    }
+    return brainstorm_contemplation_service._contemplate_question_to_events(
+        question_id,
+        connect_fn=connect,
+        chat_fn=chat,
+        logger=logger,
+    )
 
 
 def _call_contemplate_deepseek(prompt: str) -> list[dict]:
-    """Call DeepSeek for contemplation matching. Returns parsed JSON list."""
-    messages = [
-        {"role": "system", "content": "You are a JSON-only API. Always output valid JSON array, nothing else."},
-        {"role": "user", "content": prompt},
-    ]
-    raw = chat(messages, temperature=0.1, max_tokens=4096, timeout=120,
-               module="brainstorm", task="concept_extract")
-    if raw is None:
-        return []
-
-    # Parse JSON — handle markdown code fences
-    if raw.startswith("```"):
-        raw = raw.split("\n", 1)[-1]
-        if raw.endswith("```"):
-            raw = raw[:-3]
-
-    # Fault-tolerant JSON parse — AI output may be truncated or malformed
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError as e:
-        logger.warning("Contemplate JSON parse error at line %d col %d — trying partial recovery", e.lineno, e.colno)
-        # Try to recover by truncating at the error position
-        try:
-            truncated = raw[:e.pos]
-            # Find last valid '}' to close the array
-            last_brace = truncated.rfind('}')
-            if last_brace > 0:
-                partial = truncated[:last_brace + 1] + ']'
-                return json.loads(partial)
-        except Exception:
-            pass
-        return []
+    return brainstorm_contemplation_service._call_contemplate_deepseek(
+        prompt, chat_fn=chat, logger=logger
+    )
 
 
 # ---------------------------------------------------------------------------
