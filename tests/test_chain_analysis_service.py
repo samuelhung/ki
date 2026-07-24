@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from zhiji_backend import chain_analysis_service
 
 
@@ -178,6 +180,54 @@ def test_analyze_event_prefers_ai_summary_persists_and_tolerates_detector_failur
         ).fetchone()[0]
     assert stored == "分析结果"
     assert "detect_new_chains failed for event-1 during analyze" in caplog.text
+
+
+def test_analyze_event_falls_back_to_raw_summary(tmp_path: Path) -> None:
+    database = tmp_path / "chains.sqlite"
+    _create_schema(database)
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            """INSERT INTO events (id, title, ai_summary, raw_summary)
+               VALUES ('event-1', '事件标题', '', '原始摘要')"""
+        )
+    calls: list[dict[str, Any]] = []
+
+    def chat_fn(**kwargs):
+        calls.append(kwargs)
+        return "分析结果" if kwargs["task"] == "analyze" else "[]"
+
+    result = chain_analysis_service.analyze_chain_impact(
+        AnalyzeRequest(event_id="event-1"),
+        connect_fn=lambda: _connect(database),
+        chat_fn=chat_fn,
+        detect_new_chains_fn=lambda _event_id: None,
+        service_logger=logging.getLogger("test.chain-analysis"),
+    )
+
+    assert result["analysis"] == "分析结果"
+    assert "内容：原始摘要" in calls[0]["messages"][0]["content"]
+
+
+def test_chain_context_preserves_parsing_exception_boundaries() -> None:
+    base_node = {
+        "chain": "新能源",
+        "name": "锂矿",
+        "node_type": "原材料",
+        "description": "",
+        "substitutes": "[]",
+    }
+
+    malformed_json = {**base_node, "global_shares": "not-json"}
+    assert chain_analysis_service.build_chain_context([malformed_json]) == (
+        "### 新能源\n- [原材料] 锂矿: \n  替代品: \n"
+    )
+
+    missing_required_key = {
+        **base_node,
+        "global_shares": json.dumps([{"p": 65}]),
+    }
+    with pytest.raises(KeyError):
+        chain_analysis_service.build_chain_context([missing_required_key])
 
 
 def test_analyze_preserves_input_and_ai_error_contracts(tmp_path: Path) -> None:
