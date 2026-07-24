@@ -16,6 +16,7 @@ from fastapi.routing import APIRoute
 from pydantic import TypeAdapter, ValidationError
 
 from zhiji_backend import (
+    chain_analysis_service,
     chain_chat_service,
     chain_collection_service,
     chain_hint_service,
@@ -429,6 +430,7 @@ def test_extracted_route_order_signatures_and_openapi_contract_are_unchanged() -
         (1, "/api/chains/meta", {"GET"}, "list_chain_meta"),
         (2, "/api/chains/flow-summary", {"POST"}, "save_flow_summary"),
         (3, "/api/chains/nodes", {"GET"}, "list_nodes"),
+        (4, "/api/chains/analyze", {"POST"}, "analyze_chain_impact"),
         (6, "/api/chains/nodes/{node_id}", {"PUT"}, "update_node"),
         (7, "/api/chains/nodes", {"POST"}, "create_node"),
         (8, "/api/chains/nodes/{node_id}", {"DELETE"}, "delete_node"),
@@ -462,6 +464,7 @@ def test_extracted_route_order_signatures_and_openapi_contract_are_unchanged() -
         "list_chain_meta": [],
         "save_flow_summary": [("body", chain_routes.FlowSummaryReq)],
         "list_nodes": [],
+        "analyze_chain_impact": [("req", chain_routes.AnalyzeRequest)],
         "update_node": [
             ("node_id", chain_routes.SafeIdentifier),
             ("req", chain_routes.NodeUpdate),
@@ -489,6 +492,7 @@ def test_extracted_route_order_signatures_and_openapi_contract_are_unchanged() -
         ("/api/chains/meta", "get"): None,
         ("/api/chains/flow-summary", "post"): "FlowSummaryReq",
         ("/api/chains/nodes", "get"): None,
+        ("/api/chains/analyze", "post"): "AnalyzeRequest",
         ("/api/chains/nodes/{node_id}", "put"): "NodeUpdate",
         ("/api/chains/nodes", "post"): "NodeCreate",
         ("/api/chains/nodes/{node_id}", "delete"): None,
@@ -767,3 +771,30 @@ def test_chain_chat_wrapper_forwards_call_time_dependencies(monkeypatch) -> None
 
     assert chain_routes.chain_chat(request) == {"reply": "回答"}
     assert calls == [(request, sentinel_connect, sentinel_chat)]
+
+
+def test_chain_analysis_wrapper_forwards_call_time_dependencies(monkeypatch) -> None:
+    sentinel_connect = cast(chain_node_service.ConnectFn, object())
+    sentinel_chat = object()
+    sentinel_logger = object()
+    sentinel_detector = object()
+    request = chain_routes.AnalyzeRequest(event_summary="内容")
+    calls: list[tuple[object, ...]] = []
+
+    monkeypatch.setattr(chain_routes, "connect", sentinel_connect)
+    monkeypatch.setattr(chain_routes, "chat", sentinel_chat)
+    monkeypatch.setattr(chain_routes, "logger", sentinel_logger)
+    monkeypatch.setattr(chain_routes, "_detect_new_chains", sentinel_detector)
+    monkeypatch.setattr(
+        chain_analysis_service,
+        "analyze_chain_impact",
+        lambda req, *, connect_fn, chat_fn, detect_new_chains_fn, service_logger: calls.append(
+            (req, connect_fn, chat_fn, detect_new_chains_fn, service_logger)
+        )
+        or {"analysis": "结果"},
+    )
+
+    assert chain_routes.analyze_chain_impact(request) == {"analysis": "结果"}
+    assert calls == [
+        (request, sentinel_connect, sentinel_chat, sentinel_detector, sentinel_logger)
+    ]
