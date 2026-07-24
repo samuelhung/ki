@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import json
 from typing import Any
 
 import pytest
@@ -30,6 +31,33 @@ def _body_schema(path: str, method: str) -> dict[str, Any] | None:
         .get("application/json", {})
         .get("schema")
     )
+
+
+def _parameter(
+    name: str,
+    annotation: Any,
+    default: Any = inspect.Parameter.empty,
+) -> inspect.Parameter:
+    return inspect.Parameter(
+        name,
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        default=default,
+        annotation=annotation,
+    )
+
+
+def _signature(*parameters: inspect.Parameter) -> inspect.Signature:
+    return inspect.Signature(
+        parameters,
+        return_annotation=inspect.Signature.empty,
+    )
+
+
+def _request_snapshot(request: Any) -> str:
+    value = (
+        request.model_dump(mode="json") if hasattr(request, "model_dump") else request
+    )
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def test_all_series_routes_preserve_order_metadata_signatures_and_body_schemas() -> (
@@ -94,63 +122,60 @@ def test_all_series_routes_preserve_order_metadata_signatures_and_body_schemas()
     assert actual_routes == expected_routes
 
     expected_signatures = {
-        "list_series": [("include_candidates", bool, False)],
-        "list_candidates": [],
-        "discover_series": [],
-        "discover_stage1": [],
-        "discover_stage2": [
-            ("data", series_routes.SeriesDiscoveryRequest, inspect.Parameter.empty)
-        ],
-        "discover_by_topic": [("data", dict, inspect.Parameter.empty)],
-        "expand_series": [
-            ("series_id", series_routes.SafeIdentifier, inspect.Parameter.empty)
-        ],
-        "suggest_series_name": [
-            ("data", series_routes.SeriesNameRequest, inspect.Parameter.empty)
-        ],
-        "create_series": [
-            ("data", series_routes.SeriesCreateRequest, inspect.Parameter.empty)
-        ],
-        "delete_series": [
-            ("series_id", series_routes.SafeIdentifier, inspect.Parameter.empty)
-        ],
-        "update_series": [
-            ("series_id", series_routes.SafeIdentifier, inspect.Parameter.empty),
-            ("data", dict, inspect.Parameter.empty),
-        ],
-        "merge_series": [
-            ("data", series_routes.SeriesMergeRequest, inspect.Parameter.empty)
-        ],
-        "get_series_detail": [
-            ("series_id", series_routes.SafeIdentifier, inspect.Parameter.empty)
-        ],
-        "generate_series_intro": [
-            ("series_id", series_routes.SafeIdentifier, inspect.Parameter.empty)
-        ],
-        "generate_series_summary": [
-            ("series_id", series_routes.SafeIdentifier, inspect.Parameter.empty)
-        ],
-        "generate_series_paper": [
-            ("series_id", series_routes.SafeIdentifier, inspect.Parameter.empty)
-        ],
-        "reorder_series": [
-            ("series_id", series_routes.SafeIdentifier, inspect.Parameter.empty),
-            ("data", series_routes.SeriesOrderRequest, inspect.Parameter.empty),
-        ],
-        "get_series_suggestions": [
-            ("series_id", series_routes.SafeIdentifier, inspect.Parameter.empty)
-        ],
-        "add_series_members": [
-            ("series_id", series_routes.SafeIdentifier, inspect.Parameter.empty),
-            ("data", series_routes.SeriesMembersRequest, inspect.Parameter.empty),
-        ],
+        "list_series": _signature(_parameter("include_candidates", bool, False)),
+        "list_candidates": _signature(),
+        "discover_series": _signature(),
+        "discover_stage1": _signature(),
+        "discover_stage2": _signature(
+            _parameter("data", series_routes.SeriesDiscoveryRequest)
+        ),
+        "discover_by_topic": _signature(_parameter("data", dict)),
+        "expand_series": _signature(
+            _parameter("series_id", series_routes.SafeIdentifier)
+        ),
+        "suggest_series_name": _signature(
+            _parameter("data", series_routes.SeriesNameRequest)
+        ),
+        "create_series": _signature(
+            _parameter("data", series_routes.SeriesCreateRequest)
+        ),
+        "delete_series": _signature(
+            _parameter("series_id", series_routes.SafeIdentifier)
+        ),
+        "update_series": _signature(
+            _parameter("series_id", series_routes.SafeIdentifier),
+            _parameter("data", dict),
+        ),
+        "merge_series": _signature(
+            _parameter("data", series_routes.SeriesMergeRequest)
+        ),
+        "get_series_detail": _signature(
+            _parameter("series_id", series_routes.SafeIdentifier)
+        ),
+        "generate_series_intro": _signature(
+            _parameter("series_id", series_routes.SafeIdentifier)
+        ),
+        "generate_series_summary": _signature(
+            _parameter("series_id", series_routes.SafeIdentifier)
+        ),
+        "generate_series_paper": _signature(
+            _parameter("series_id", series_routes.SafeIdentifier)
+        ),
+        "reorder_series": _signature(
+            _parameter("series_id", series_routes.SafeIdentifier),
+            _parameter("data", series_routes.SeriesOrderRequest),
+        ),
+        "get_series_suggestions": _signature(
+            _parameter("series_id", series_routes.SafeIdentifier)
+        ),
+        "add_series_members": _signature(
+            _parameter("series_id", series_routes.SafeIdentifier),
+            _parameter("data", series_routes.SeriesMembersRequest),
+        ),
     }
-    for name, expected in expected_signatures.items():
-        parameters = inspect.signature(getattr(series_routes, name)).parameters.values()
-        assert [
-            (parameter.name, parameter.annotation, parameter.default)
-            for parameter in parameters
-        ] == expected
+    assert set(expected_signatures) == {route[3] for route in expected_routes}
+    for name, expected_signature in expected_signatures.items():
+        assert inspect.signature(getattr(series_routes, name)) == expected_signature
 
     object_schema = {
         "additionalProperties": True,
@@ -214,7 +239,15 @@ def test_discovery_routes_forward_call_time_dependencies(monkeypatch) -> None:
     sentinel_init_db = object()
     sentinel_chat = object()
     request = series_routes.SeriesDiscoveryRequest(event_ids=["event-a", "event-b"])
+    request_snapshot = _request_snapshot(request)
     calls: list[tuple[object, ...]] = []
+
+    def discover_stage2_stub(
+        data, *, connect_fn, init_db_fn, chat_fn
+    ) -> dict[str, str]:
+        assert data is request
+        calls.append(("stage2", data, connect_fn, init_db_fn, chat_fn))
+        return {"route": "stage2"}
 
     monkeypatch.setattr(series_routes, "connect", sentinel_connect)
     monkeypatch.setattr(series_routes, "init_db", sentinel_init_db)
@@ -238,15 +271,13 @@ def test_discovery_routes_forward_call_time_dependencies(monkeypatch) -> None:
     monkeypatch.setattr(
         service,
         "discover_stage2",
-        lambda data, *, connect_fn, init_db_fn, chat_fn: (
-            calls.append(("stage2", data, connect_fn, init_db_fn, chat_fn))
-            or {"route": "stage2"}
-        ),
+        discover_stage2_stub,
     )
 
     assert series_routes.discover_series() == {"route": "discover"}
     assert series_routes.discover_stage1() == {"route": "stage1"}
     assert series_routes.discover_stage2(request) == {"route": "stage2"}
+    assert _request_snapshot(request) == request_snapshot
     assert calls == [
         ("discover", sentinel_connect, sentinel_init_db, sentinel_chat),
         ("stage1", sentinel_connect, sentinel_init_db, sentinel_chat),
@@ -260,7 +291,15 @@ def test_topic_discovery_route_forwards_call_time_dependencies(monkeypatch) -> N
     sentinel_init_db = object()
     sentinel_chat = object()
     request = {"topic": "world"}
+    request_snapshot = _request_snapshot(request)
     calls: list[tuple[object, ...]] = []
+
+    def discover_by_topic_stub(
+        data, *, connect_fn, init_db_fn, chat_fn
+    ) -> dict[str, str]:
+        assert data is request
+        calls.append((data, connect_fn, init_db_fn, chat_fn))
+        return {"route": "by-topic"}
 
     monkeypatch.setattr(series_routes, "connect", sentinel_connect)
     monkeypatch.setattr(series_routes, "init_db", sentinel_init_db)
@@ -268,13 +307,11 @@ def test_topic_discovery_route_forwards_call_time_dependencies(monkeypatch) -> N
     monkeypatch.setattr(
         service,
         "discover_by_topic",
-        lambda data, *, connect_fn, init_db_fn, chat_fn: (
-            calls.append((data, connect_fn, init_db_fn, chat_fn))
-            or {"route": "by-topic"}
-        ),
+        discover_by_topic_stub,
     )
 
     assert series_routes.discover_by_topic(request) == {"route": "by-topic"}
+    assert _request_snapshot(request) == request_snapshot
     assert calls == [
         (request, sentinel_connect, sentinel_init_db, sentinel_chat),
     ]
@@ -288,7 +325,15 @@ def test_expansion_routes_forward_call_time_dependencies(monkeypatch) -> None:
     request = series_routes.SeriesNameRequest(
         member_ids=["event-a", "event-b"], current_name="Current"
     )
+    request_snapshot = _request_snapshot(request)
     calls: list[tuple[object, ...]] = []
+
+    def suggest_series_name_stub(
+        data, *, connect_fn, init_db_fn, chat_fn
+    ) -> dict[str, str]:
+        assert data is request
+        calls.append(("suggest-name", data, connect_fn, init_db_fn, chat_fn))
+        return {"route": "suggest-name"}
 
     monkeypatch.setattr(series_routes, "connect", sentinel_connect)
     monkeypatch.setattr(series_routes, "init_db", sentinel_init_db)
@@ -304,14 +349,12 @@ def test_expansion_routes_forward_call_time_dependencies(monkeypatch) -> None:
     monkeypatch.setattr(
         service,
         "suggest_series_name",
-        lambda data, *, connect_fn, init_db_fn, chat_fn: (
-            calls.append(("suggest-name", data, connect_fn, init_db_fn, chat_fn))
-            or {"route": "suggest-name"}
-        ),
+        suggest_series_name_stub,
     )
 
     assert series_routes.expand_series("series-1") == {"route": "expand"}
     assert series_routes.suggest_series_name(request) == {"route": "suggest-name"}
+    assert _request_snapshot(request) == request_snapshot
     assert calls == [
         ("expand", "series-1", sentinel_connect, sentinel_init_db, sentinel_chat),
         ("suggest-name", request, sentinel_connect, sentinel_init_db, sentinel_chat),
