@@ -361,6 +361,9 @@ def _create_concept(
     )
 
 
+_DEFAULT_CREATE_CONCEPT = _create_concept
+
+
 @router.get("/api/brainstorm/{question_id}/concepts")
 def list_summary_concepts(question_id: SafeIdentifier) -> dict[str, object]:
     """Parse concepts from the summary — both primary concepts (概念定义) and related concepts (相关概念).
@@ -373,10 +376,17 @@ def list_summary_concepts(question_id: SafeIdentifier) -> dict[str, object]:
 @router.post("/api/brainstorm/concepts/precipitate")
 def precipitate_concept(req: PrecipitateConceptRequest) -> dict[str, object]:
     """Save a concept from the brainstom summary into the event store as a concept entry."""
+    from ..routes.ingest_routes import _create_concept as ingest_create_concept
+
+    create_concept_fn = (
+        ingest_create_concept
+        if _create_concept is _DEFAULT_CREATE_CONCEPT
+        else _create_concept
+    )
     return brainstorm_concept_service.precipitate_concept(
         req,
         connect_fn=connect,
         build_reference_docs_fn=_build_reference_docs,
-        create_concept_fn=_create_concept,
+        create_concept_fn=create_concept_fn,
         logger=logger,
     )

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import builtins
 import hashlib
 import importlib
 import inspect
 import json
+import logging
+from contextlib import nullcontext
 from dataclasses import fields, is_dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -26,6 +29,31 @@ def _service_module(name: str) -> Any:
         if error.name != module_name:
             raise
         pytest.fail(f"{module_name} has not been extracted")
+
+
+def _record_ingest_creator_import(
+    events: list[object], error: Exception | None = None
+) -> Any:
+    real_import = builtins.__import__
+
+    def tracking_import(
+        name: str,
+        globals: dict[str, Any] | None = None,
+        locals: dict[str, Any] | None = None,
+        fromlist: tuple[str, ...] = (),
+        level: int = 0,
+    ) -> Any:
+        if (
+            name == "routes.ingest_routes"
+            and level == 2
+            and "_create_concept" in fromlist
+        ):
+            events.append("import")
+            if error is not None:
+                raise error
+        return real_import(name, globals, locals, fromlist, level)
+
+    return tracking_import
 
 
 def _body_schema(path: str, method: str) -> dict[str, Any] | None:
@@ -878,3 +906,92 @@ def test_concept_routes_forward_model_and_call_time_dependencies(
     ]
     assert calls[1][1][0] is request
     assert _request_snapshot(request) == snapshot
+
+
+def test_precipitate_endpoint_imports_creator_before_duplicate_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    result = SimpleNamespace(fetchone=lambda: {"id": "concept-existing"})
+    connection = SimpleNamespace(
+        execute=lambda _sql, _params: events.append("duplicate-check") or result
+    )
+    monkeypatch.setattr(builtins, "__import__", _record_ingest_creator_import(events))
+    monkeypatch.setattr(brainstorm_routes, "connect", lambda: nullcontext(connection))
+    request = brainstorm_routes.PrecipitateConceptRequest(
+        question_id="question-1", name="Concept", description="Definition"
+    )
+
+    assert brainstorm_routes.precipitate_concept(request) == {
+        "status": "exists",
+        "event_id": "concept-existing",
+        "message": "概念「Concept」已存在",
+    }
+    assert events == ["import", "duplicate-check"]
+
+
+def test_precipitate_endpoint_import_failure_precedes_duplicate_without_warning(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    events: list[str] = []
+    result = SimpleNamespace(fetchone=lambda: {"id": "concept-existing"})
+    connection = SimpleNamespace(
+        execute=lambda _sql, _params: events.append("duplicate-check") or result
+    )
+    monkeypatch.setattr(
+        builtins,
+        "__import__",
+        _record_ingest_creator_import(
+            events, ImportError("ingest creator unavailable")
+        ),
+    )
+    monkeypatch.setattr(brainstorm_routes, "connect", lambda: nullcontext(connection))
+    request = brainstorm_routes.PrecipitateConceptRequest(
+        question_id="question-1", name="Concept", description="Definition"
+    )
+
+    with caplog.at_level(
+        logging.WARNING, logger="zhiji_backend.routes.brainstorm_routes"
+    ):
+        with pytest.raises(ImportError, match="ingest creator unavailable"):
+            brainstorm_routes.precipitate_concept(request)
+
+    assert events == ["import"]
+    assert caplog.records == []
+
+
+def test_precipitate_endpoint_prefers_patched_route_creator_after_runtime_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = _service_module("brainstorm_concept_service")
+    events: list[object] = []
+
+    def patched_creator(*_args: object, **_kwargs: object) -> dict[str, object]:
+        events.append("patched-creator")
+        return {"status": "patched"}
+
+    def service_stub(
+        req: object,
+        *,
+        connect_fn: object,
+        build_reference_docs_fn: object,
+        create_concept_fn: Any,
+        logger: object,
+    ) -> dict[str, object]:
+        events.append(("service", create_concept_fn))
+        return create_concept_fn()
+
+    monkeypatch.setattr(builtins, "__import__", _record_ingest_creator_import(events))
+    monkeypatch.setattr(brainstorm_routes, "_create_concept", patched_creator)
+    monkeypatch.setattr(service, "precipitate_concept", service_stub)
+    request = brainstorm_routes.PrecipitateConceptRequest(
+        question_id="question-1", name="Concept", description="Definition"
+    )
+
+    assert brainstorm_routes.precipitate_concept(request) == {"status": "patched"}
+    assert events == [
+        "import",
+        ("service", patched_creator),
+        "patched-creator",
+    ]
