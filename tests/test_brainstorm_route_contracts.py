@@ -149,11 +149,17 @@ def _stub_service_functions(
     calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]],
 ) -> None:
     for name in names:
+
         def stub(*args: Any, _name: str = name, **kwargs: Any) -> dict[str, str]:
             calls.append((_name, args, kwargs))
             return {"route": _name}
 
         monkeypatch.setattr(service, name, stub)
+
+
+def _assert_historical_service_logger(service: Any) -> None:
+    assert service.logger is brainstorm_routes.logger
+    assert service.logger.name == "zhiji_backend.routes.brainstorm_routes"
 
 
 EXPECTED_ROUTES = [
@@ -347,7 +353,9 @@ def test_brainstorm_openapi_request_body_schemas_are_unchanged() -> None:
         ),
     ]
 
-    assert [(path, method, _body_schema(path, method)) for path, method, _ in expected] == expected
+    assert [
+        (path, method, _body_schema(path, method)) for path, method, _ in expected
+    ] == expected
 
 
 def test_brainstorm_prompt_registry_tasks_and_contents_match_snapshots() -> None:
@@ -389,10 +397,16 @@ def test_brainstorm_path_facade_resolves_route_directory_at_call_time(
     second_root.mkdir()
 
     monkeypatch.setattr(brainstorm_routes, "BRAINSTORM_DIR", first_root)
-    assert brainstorm_routes._brainstorm_md_path("question-1") == first_root / "question-1.md"
+    assert (
+        brainstorm_routes._brainstorm_md_path("question-1")
+        == first_root / "question-1.md"
+    )
 
     monkeypatch.setattr(brainstorm_routes, "BRAINSTORM_DIR", second_root)
-    assert brainstorm_routes._brainstorm_md_path("question-1") == second_root / "question-1.md"
+    assert (
+        brainstorm_routes._brainstorm_md_path("question-1")
+        == second_root / "question-1.md"
+    )
 
 
 def test_brainstorm_logger_keeps_historical_namespace(
@@ -411,6 +425,7 @@ def test_question_routes_forward_models_and_call_time_dependencies(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = _service_module("brainstorm_question_service")
+    _assert_historical_service_logger(service)
     calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
     names = (
         "list_brainstorm_questions",
@@ -458,19 +473,63 @@ def test_question_routes_forward_models_and_call_time_dependencies(
         "route": "mark_brainstorm_done"
     }
 
-    assert [call[0] for call in calls] == list(names)
-    assert calls[0][1] == ("open", "认知", 3, 10)
-    assert calls[2][1] == ("question-1",)
+    logger = brainstorm_routes.logger
+    assert calls == [
+        (
+            "list_brainstorm_questions",
+            ("open", "认知", 3, 10),
+            {"connect_fn": sentinel_connect, "logger": logger},
+        ),
+        (
+            "brainstorm_topic_counts",
+            (),
+            {"connect_fn": sentinel_connect, "logger": logger},
+        ),
+        (
+            "get_brainstorm_question",
+            ("question-1",),
+            {
+                "connect_fn": sentinel_connect,
+                "markdown_path_fn": brainstorm_routes._brainstorm_md_path,
+                "logger": logger,
+            },
+        ),
+        (
+            "create_brainstorm_question",
+            (create_request,),
+            {
+                "connect_fn": sentinel_connect,
+                "classify_fn": sentinel_classify,
+                "markdown_path_fn": brainstorm_routes._brainstorm_md_path,
+                "logger": logger,
+            },
+        ),
+        (
+            "delete_brainstorm_question",
+            ("question-1",),
+            {
+                "connect_fn": sentinel_connect,
+                "unlink_fn": brainstorm_routes._safe_brainstorm_unlink,
+                "logger": logger,
+            },
+        ),
+        (
+            "batch_delete_brainstorm_questions",
+            (batch_request,),
+            {
+                "connect_fn": sentinel_connect,
+                "unlink_fn": brainstorm_routes._safe_brainstorm_unlink,
+                "logger": logger,
+            },
+        ),
+        (
+            "mark_brainstorm_done",
+            ("question-1",),
+            {"connect_fn": sentinel_connect, "logger": logger},
+        ),
+    ]
     assert calls[3][1][0] is create_request
-    assert calls[4][1] == ("question-1",)
     assert calls[5][1][0] is batch_request
-    assert calls[6][1] == ("question-1",)
-    assert all(call[2]["connect_fn"] is sentinel_connect for call in calls)
-    assert calls[2][2]["markdown_path_fn"] is brainstorm_routes._brainstorm_md_path
-    assert calls[3][2]["markdown_path_fn"] is brainstorm_routes._brainstorm_md_path
-    assert calls[3][2]["classify_fn"] is sentinel_classify
-    assert calls[4][2]["unlink_fn"] is brainstorm_routes._safe_brainstorm_unlink
-    assert calls[5][2]["unlink_fn"] is brainstorm_routes._safe_brainstorm_unlink
     assert _request_snapshot(create_request) == snapshots[id(create_request)]
     assert _request_snapshot(batch_request) == snapshots[id(batch_request)]
 
@@ -479,6 +538,7 @@ def test_answer_route_forwards_model_and_call_time_dependencies(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = _service_module("brainstorm_answer_service")
+    _assert_historical_service_logger(service)
     calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
     _stub_service_functions(monkeypatch, service, ("get_answer_for_question",), calls)
     sentinel_connect = object()
@@ -495,15 +555,19 @@ def test_answer_route_forwards_model_and_call_time_dependencies(
     assert brainstorm_routes.get_answer_for_question(request) == {
         "route": "get_answer_for_question"
     }
-    assert len(calls) == 1
-    assert calls[0][0] == "get_answer_for_question"
+    assert calls == [
+        (
+            "get_answer_for_question",
+            (request,),
+            {
+                "connect_fn": sentinel_connect,
+                "chat_fn": sentinel_chat,
+                "markdown_path_fn": brainstorm_routes._brainstorm_md_path,
+                "logger": brainstorm_routes.logger,
+            },
+        )
+    ]
     assert calls[0][1][0] is request
-    assert calls[0][2] == {
-        "connect_fn": sentinel_connect,
-        "chat_fn": sentinel_chat,
-        "markdown_path_fn": brainstorm_routes._brainstorm_md_path,
-        "logger": brainstorm_routes.logger,
-    }
     assert _request_snapshot(request) == snapshot
 
 
@@ -511,6 +575,7 @@ def test_conversation_routes_forward_models_and_call_time_dependencies(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = _service_module("brainstorm_conversation_service")
+    _assert_historical_service_logger(service)
     calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
     names = (
         "start_conversation",
@@ -547,19 +612,37 @@ def test_conversation_routes_forward_models_and_call_time_dependencies(
         "route": "generate_conversation_summary"
     }
 
-    assert [call[0] for call in calls] == list(names)
-    assert calls[0][1][0] == "question-1"
+    service_dependencies = {
+        "connect_fn": sentinel_connect,
+        "chat_fn": sentinel_chat,
+        "build_reference_docs_fn": sentinel_build_docs,
+        "markdown_path_fn": brainstorm_routes._brainstorm_md_path,
+        "logger": brainstorm_routes.logger,
+    }
+    assert calls == [
+        (
+            "start_conversation",
+            ("question-1", start_request),
+            service_dependencies,
+        ),
+        (
+            "send_conversation_message",
+            ("question-1", message_request),
+            service_dependencies,
+        ),
+        (
+            "get_conversation",
+            ("question-1",),
+            {"connect_fn": sentinel_connect},
+        ),
+        (
+            "generate_conversation_summary",
+            ("question-1",),
+            service_dependencies,
+        ),
+    ]
     assert calls[0][1][1] is start_request
-    assert calls[1][1][0] == "question-1"
     assert calls[1][1][1] is message_request
-    assert calls[2][1] == ("question-1",)
-    assert calls[3][1] == ("question-1",)
-    assert all(call[2]["connect_fn"] is sentinel_connect for call in calls)
-    for call in (calls[0], calls[1], calls[3]):
-        assert call[2]["chat_fn"] is sentinel_chat
-        assert call[2]["build_reference_docs_fn"] is sentinel_build_docs
-        assert call[2]["markdown_path_fn"] is brainstorm_routes._brainstorm_md_path
-        assert call[2]["logger"] is brainstorm_routes.logger
     assert _request_snapshot(start_request) == snapshots[id(start_request)]
     assert _request_snapshot(message_request) == snapshots[id(message_request)]
 
@@ -568,6 +651,7 @@ def test_contemplation_routes_forward_model_and_call_time_dependencies(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = _service_module("brainstorm_contemplation_service")
+    _assert_historical_service_logger(service)
     calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
     names = ("contemplate", "get_linked_questions")
     _stub_service_functions(monkeypatch, service, names, calls)
@@ -584,18 +668,23 @@ def test_contemplation_routes_forward_model_and_call_time_dependencies(
     assert brainstorm_routes.get_linked_questions("event-1") == {
         "route": "get_linked_questions"
     }
-    assert calls[0][0] == "contemplate"
+    assert calls == [
+        (
+            "contemplate",
+            (request,),
+            {
+                "connect_fn": sentinel_connect,
+                "chat_fn": sentinel_chat,
+                "logger": brainstorm_routes.logger,
+            },
+        ),
+        (
+            "get_linked_questions",
+            ("event-1",),
+            {"connect_fn": sentinel_connect},
+        ),
+    ]
     assert calls[0][1][0] is request
-    assert calls[0][2] == {
-        "connect_fn": sentinel_connect,
-        "chat_fn": sentinel_chat,
-        "logger": brainstorm_routes.logger,
-    }
-    assert calls[1] == (
-        "get_linked_questions",
-        ("event-1",),
-        {"connect_fn": sentinel_connect},
-    )
     assert _request_snapshot(request) == snapshot
 
 
@@ -603,6 +692,7 @@ def test_concept_routes_forward_model_and_call_time_dependencies(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     service = _service_module("brainstorm_concept_service")
+    _assert_historical_service_logger(service)
     calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
     names = ("list_summary_concepts", "precipitate_concept")
     _stub_service_functions(monkeypatch, service, names, calls)
@@ -623,17 +713,22 @@ def test_concept_routes_forward_model_and_call_time_dependencies(
     assert brainstorm_routes.precipitate_concept(request) == {
         "route": "precipitate_concept"
     }
-    assert calls[0] == (
-        "list_summary_concepts",
-        ("question-1",),
-        {"connect_fn": sentinel_connect},
-    )
-    assert calls[1][0] == "precipitate_concept"
+    assert calls == [
+        (
+            "list_summary_concepts",
+            ("question-1",),
+            {"connect_fn": sentinel_connect},
+        ),
+        (
+            "precipitate_concept",
+            (request,),
+            {
+                "connect_fn": sentinel_connect,
+                "build_reference_docs_fn": sentinel_build_docs,
+                "create_concept_fn": sentinel_create_concept,
+                "logger": brainstorm_routes.logger,
+            },
+        ),
+    ]
     assert calls[1][1][0] is request
-    assert calls[1][2] == {
-        "connect_fn": sentinel_connect,
-        "build_reference_docs_fn": sentinel_build_docs,
-        "create_concept_fn": sentinel_create_concept,
-        "logger": brainstorm_routes.logger,
-    }
     assert _request_snapshot(request) == snapshot
