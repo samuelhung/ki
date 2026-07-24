@@ -64,6 +64,7 @@ jobs:
       - name: Run unified check
         env:
           ZHIJI_EXPLICIT_ANY_BASE_REF: ${{ github.event.pull_request.base.sha }}
+          ZHIJI_STRUCTURE_BASE_REF: ${{ github.event.pull_request.base.sha }}
         run: ZHIJI_SKIP_RELEASE_CHECK=1 ./scripts/check.sh
       - name: Analyze Flutter desktop shell
         run: flutter analyze
