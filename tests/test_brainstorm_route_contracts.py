@@ -552,8 +552,12 @@ def test_answer_route_forwards_model_and_call_time_dependencies(
     _stub_service_functions(monkeypatch, service, ("get_answer_for_question",), calls)
     sentinel_connect = object()
     sentinel_chat = object()
+    sentinel_now = object()
     monkeypatch.setattr(brainstorm_routes, "connect", sentinel_connect)
     monkeypatch.setattr(brainstorm_routes, "chat", sentinel_chat)
+    monkeypatch.setattr(
+        brainstorm_routes, "datetime", SimpleNamespace(now=sentinel_now)
+    )
     request = brainstorm_routes.AnswerRequest(
         question_id="question-1",
         question="why",
@@ -573,6 +577,7 @@ def test_answer_route_forwards_model_and_call_time_dependencies(
                 "chat_fn": sentinel_chat,
                 "markdown_path_fn": brainstorm_routes._brainstorm_md_path,
                 "logger": brainstorm_routes.logger,
+                "now_fn": sentinel_now,
             },
         )
     ]

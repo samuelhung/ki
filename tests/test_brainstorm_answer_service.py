@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import logging
 from collections.abc import Callable
@@ -321,6 +322,14 @@ def test_answer_preserves_ai_markdown_database_and_response_contract(
     ]
 
 
+def test_answer_service_requires_callers_to_inject_clock() -> None:
+    now_parameter = inspect.signature(
+        brainstorm_answer_service.get_answer_for_question
+    ).parameters["now_fn"]
+
+    assert now_parameter.default is inspect.Parameter.empty
+
+
 def test_answer_prompt_registry_points_to_service_without_digest_drift() -> None:
     assert prompt_registry.MODULE_MAP["brainstorm"]["answer"] == (
         "brainstorm_answer_service.py",
@@ -338,3 +347,24 @@ def test_answer_prompt_registry_points_to_service_without_digest_drift() -> None
     assert brainstorm_answer_service.logger.name == (
         "zhiji_backend.routes.brainstorm_routes"
     )
+
+
+def test_brainstorm_prompt_registry_does_not_leak_unrelated_answer_prompts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    extract_built_prompts = prompt_registry._extract_built_prompts_regex
+
+    def extract_with_unrelated_prompt(source: str, prompts: dict[str, str]) -> None:
+        extract_built_prompts(source, prompts)
+        prompts["unrelated_prompt"] = "not public"
+
+    monkeypatch.setattr(
+        prompt_registry,
+        "_extract_built_prompts_regex",
+        extract_with_unrelated_prompt,
+    )
+
+    prompts = prompt_registry.get_all_prompts()["brainstorm"]
+
+    assert "unrelated_prompt" not in prompts["summary"]
+    assert "unrelated_prompt" not in prompts["concept_extract"]

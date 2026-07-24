@@ -156,6 +156,7 @@ def get_answer_for_question(request: AnswerRequest) -> dict[str, object]:
         chat_fn=chat,
         markdown_path_fn=_brainstorm_md_path,
         logger=logger,
+        now_fn=datetime.now,
     )
 
 

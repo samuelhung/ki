@@ -6,7 +6,6 @@ import logging
 import sqlite3
 from collections.abc import Callable
 from contextlib import AbstractContextManager
-from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
@@ -73,7 +72,7 @@ def get_answer_for_question(
     chat_fn: ChatFn,
     markdown_path_fn: MarkdownPathFn,
     logger: logging.Logger,
-    now_fn: NowFn | None = None,
+    now_fn: NowFn,
 ) -> dict[str, object]:
     if not request.event_ids:
         return {"answer": "请至少选择一个事件作为参考文档。", "event_ids": []}
@@ -106,8 +105,6 @@ def get_answer_for_question(
             "event_ids": request.event_ids,
         }
 
-    if now_fn is None:
-        now_fn = datetime.now
     now = now_fn().strftime("%Y-%m-%d %H:%M")
     md_parts: list[str] = []
     display_parts: list[str] = []

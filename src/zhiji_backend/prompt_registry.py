@@ -11,6 +11,7 @@ from __future__ import annotations
 import ast
 import re
 from pathlib import Path
+from typing import Literal, NamedTuple
 
 BACKEND_DIR = Path(__file__).resolve().parent
 
@@ -56,6 +57,45 @@ MODULE_MAP: dict[str, dict[str, tuple[str, list[str]]]] = {
     },
     "concept": {
         "auto_complete": ("classifier.py", ["classify_content"]),
+    },
+}
+
+
+class PromptSource(NamedTuple):
+    filename: str
+    function: str
+    extraction: Literal["scoped", "legacy_built"] = "scoped"
+
+
+PROMPT_SOURCES: dict[str, dict[str, dict[str, PromptSource]]] = {
+    "brainstorm": {
+        "answer": {
+            "prompt": PromptSource(
+                "brainstorm_answer_service.py", "get_answer_for_question"
+            ),
+        },
+        "summary": {
+            "prompt": PromptSource(
+                "brainstorm_answer_service.py",
+                "get_answer_for_question",
+                "legacy_built",
+            ),
+            "system_prompt": PromptSource(
+                "routes/brainstorm_routes.py", "start_conversation"
+            ),
+        },
+        "contemplate": {
+            "prompt": PromptSource(
+                "routes/brainstorm_routes.py", "_contemplate_event_to_questions"
+            ),
+        },
+        "concept_extract": {
+            "prompt": PromptSource(
+                "brainstorm_answer_service.py",
+                "get_answer_for_question",
+                "legacy_built",
+            ),
+        },
     },
 }
 
@@ -144,6 +184,42 @@ def _extract_built_prompts_regex(source: str, prompts: dict[str, str]):
             prompts[varname] = "\n".join(lines)
 
 
+def _extract_function_source(filepath: Path, function: str) -> str | None:
+    if not filepath.exists():
+        return None
+    try:
+        source = filepath.read_text(encoding="utf-8")
+    except Exception:
+        return None
+    tree = ast.parse(source)
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
+            node.name == function
+        ):
+            return ast.get_source_segment(source, node)
+    return None
+
+
+def _extract_mapped_prompts(
+    sources: dict[str, PromptSource],
+) -> dict[str, str]:
+    prompts: dict[str, str] = {}
+    for variable, source in sources.items():
+        filepath = BACKEND_DIR / source.filename
+        if source.extraction == "legacy_built":
+            function_source = _extract_function_source(filepath, source.function)
+            scoped_prompts: dict[str, str] = {}
+            if function_source is not None:
+                _extract_built_prompts_regex(function_source, scoped_prompts)
+        else:
+            scoped_prompts = _extract_prompts_by_function(filepath).get(
+                source.function, {}
+            )
+        if variable in scoped_prompts:
+            prompts[variable] = scoped_prompts[variable]
+    return prompts
+
+
 def _resolve_actual_function_name(filepath: Path, hint: str) -> str | None:
     """Given a hint like '_paper_analysis', find the actual function name in the file.
     Returns the actual name or None."""
@@ -171,6 +247,11 @@ def get_all_prompts() -> dict[str, dict[str, dict[str, str]]]:
     for module, tasks in MODULE_MAP.items():
         result[module] = {}
         for task, (filename, hints) in tasks.items():
+            mapped_sources = PROMPT_SOURCES.get(module, {}).get(task)
+            if mapped_sources is not None:
+                result[module][task] = _extract_mapped_prompts(mapped_sources)
+                continue
+
             filepath = BACKEND_DIR / filename
             func_prompts = _extract_prompts_by_function(filepath)
 
@@ -193,13 +274,4 @@ def get_all_prompts() -> dict[str, dict[str, dict[str, str]]]:
                         task_prompts.update(prompts)
 
             result[module][task] = task_prompts
-
-    # The legacy route-wide regex exposed the answer prompt under other tasks too.
-    brainstorm_prompts = result.get("brainstorm")
-    if brainstorm_prompts:
-        answer_filename = MODULE_MAP["brainstorm"]["answer"][0]
-        legacy_prompts = _extract_prompts_by_function(BACKEND_DIR / answer_filename)
-        for task in ("summary", "concept_extract"):
-            brainstorm_prompts[task].update(legacy_prompts.get("__module__", {}))
-
     return result
