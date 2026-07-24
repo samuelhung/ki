@@ -19,7 +19,6 @@
     "src/zhiji_backend/routes/brainstorm_routes.py": 1121,
     "src/zhiji_backend/routes/event_routes.py": 513,
     "src/zhiji_backend/routes/ingest_routes.py": 736,
-    "src/zhiji_backend/routes/series_routes.py": 1370,
     "src/zhiji_backend/routes/study_routes.py": 532,
     "src/zhiji_backend/security/redaction.py": 409,
     "src/zhiji_backend/series_service.py": 499,

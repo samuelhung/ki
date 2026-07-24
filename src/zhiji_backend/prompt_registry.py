@@ -5,6 +5,7 @@ Used by /api/system/prompts to display live prompt templates in System Settings.
 Now function-scoped: when a source file serves multiple tasks, prompts are
 associated with their enclosing function so each task only sees its own.
 """
+
 from __future__ import annotations
 
 import ast
@@ -16,22 +17,34 @@ BACKEND_DIR = Path(__file__).resolve().parent
 # Module → task → (filename, function hints)
 MODULE_MAP: dict[str, dict[str, tuple[str, list[str]]]] = {
     "ingest_pipeline": {
-        "summarize": ("summarizer.py", ["summarize_event", "generate_title", "generate_overview"]),
+        "summarize": (
+            "summarizer.py",
+            ["summarize_event", "generate_title", "generate_overview"],
+        ),
         "classify": ("classifier.py", ["classify_event"]),
         "tag": ("tagger.py", ["extract_tags"]),
         "translate": ("translator.py", ["translate_to_en"]),
     },
     "series": {
-        "discover": ("routes/series_routes.py", ["discover_series"]),
-        "intro": ("routes/series_routes.py", ["generate_series_intro"]),
-        "summary": ("routes/series_routes.py", ["generate_series_summary"]),
-        "paper": ("routes/series_routes.py", ["generate_series_paper"]),
-        "auto_suggest": ("routes/series_routes.py", ["auto_suggest_series"]),
+        "discover": ("series_discovery_service.py", ["discover_series"]),
+        "intro": ("series_generation_service.py", ["generate_series_intro"]),
+        "summary": ("series_generation_service.py", ["generate_series_summary"]),
+        "paper": ("series_generation_service.py", ["generate_series_paper"]),
+        "auto_suggest": (
+            "series_auto_suggest_service.py",
+            ["auto_suggest_series"],
+        ),
     },
     "brainstorm": {
         "answer": ("routes/brainstorm_routes.py", ["get_answer_for_question"]),
-        "summary": ("routes/brainstorm_routes.py", ["_extract_latest_answer", "start_conversation"]),
-        "contemplate": ("routes/brainstorm_routes.py", ["_contemplate_question_to_events", "_contemplate_event_to_questions"]),
+        "summary": (
+            "routes/brainstorm_routes.py",
+            ["_extract_latest_answer", "start_conversation"],
+        ),
+        "contemplate": (
+            "routes/brainstorm_routes.py",
+            ["_contemplate_question_to_events", "_contemplate_event_to_questions"],
+        ),
         "concept_extract": ("routes/brainstorm_routes.py", ["precipitate_concept"]),
     },
     "briefing": {
@@ -141,10 +154,10 @@ def _resolve_actual_function_name(filepath: Path, hint: str) -> str | None:
     except Exception:
         return None
     # Exact match
-    if re.search(rf'\bdef\s+{re.escape(hint)}\b', source):
+    if re.search(rf"\bdef\s+{re.escape(hint)}\b", source):
         return hint
     # Try case-insensitive
-    for m in re.finditer(r'\bdef\s+(\w+)', source):
+    for m in re.finditer(r"\bdef\s+(\w+)", source):
         name = m.group(1)
         if name.lower() == hint.lower():
             return name
