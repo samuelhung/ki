@@ -9,7 +9,12 @@ import uuid
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from .. import chain_collection_service, chain_merge_service, chain_node_service
+from .. import (
+    chain_collection_service,
+    chain_hint_service,
+    chain_merge_service,
+    chain_node_service,
+)
 from ..ai_client import chat
 from ..db import connect
 from ..security.constraints import MAX_PAGE_SIZE, SafeIdentifier
@@ -681,27 +686,17 @@ def list_hints(
     limit: int = Query(50, ge=1, le=MAX_PAGE_SIZE),
 ):
     """列出产业链数据更新提示。status: pending / reviewed / accepted / rejected"""
-    with connect() as conn:
-        rows = conn.execute(
-            """SELECT h.*, n.name as node_name
-               FROM chain_data_hints h
-               LEFT JOIN industry_chain_nodes n ON n.id = h.node_id
-               WHERE h.status = ?
-               ORDER BY h.created_at DESC
-               LIMIT ?""",
-            (status, limit),
-        ).fetchall()
-    return {"hints": [dict(r) for r in rows]}
+    return chain_hint_service.list_hints(
+        status=status,
+        limit=limit,
+        connect_fn=connect,
+    )
 
 
 @router.get("/hints/count")
 def count_hints():
     """获取待处理提示数量（用于前端徽标）"""
-    with connect() as conn:
-        row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM chain_data_hints WHERE status = 'pending'"
-        ).fetchone()
-    return {"pending": row["cnt"] if row else 0}
+    return chain_hint_service.count_hints(connect_fn=connect)
 
 
 @router.post("/hints/{hint_id}/resolve")
@@ -710,103 +705,11 @@ def resolve_hint(hint_id: SafeIdentifier, req: HintResolve):
     accept: 将 suggested_value 写入对应节点字段
     reject: 标记为已拒绝
     可选的 edited_value 用于用户微调"""
-    with connect() as conn:
-        hint = conn.execute(
-            "SELECT * FROM chain_data_hints WHERE id = ?", (hint_id,)
-        ).fetchone()
-        if not hint:
-            raise HTTPException(404, "提示不存在")
-
-        hint = dict(hint)
-
-        if req.action == "accept":
-            # 使用用户微调值或建议值
-            final_value = req.edited_value.strip() if req.edited_value.strip() else hint["suggested_value"]
-
-            # 更新节点数据
-            node = conn.execute(
-                "SELECT global_shares, substitutes FROM industry_chain_nodes WHERE id = ?",
-                (hint["node_id"],),
-            ).fetchone()
-            if node:
-                _apply_hint_update(conn, hint, final_value, dict(node))
-
-            # 标记已接受
-            conn.execute(
-                """UPDATE chain_data_hints SET status = 'accepted', reviewed_at = datetime('now'),
-                   resolved_value = ? WHERE id = ?""",
-                (final_value, hint_id),
-            )
-        elif req.action == "reject":
-            conn.execute(
-                """UPDATE chain_data_hints SET status = 'rejected', reviewed_at = datetime('now')
-                   WHERE id = ?""",
-                (hint_id,),
-            )
-        else:
-            raise HTTPException(400, f"未知 action: {req.action}")
-
-    return {"ok": True, "action": req.action}
-
-
-def _apply_hint_update(conn, hint: dict, new_value: str, node: dict):
-    """将 hint 的建议值写入节点数据。"""
-    import json as _json
-
-    field = hint.get("field", "")
-    field_lower = field.lower()
-
-    shares = _json.loads(node.get("global_shares", "[]")) if isinstance(node.get("global_shares"), str) else (node.get("global_shares") or [])
-    updated = False
-
-    # 尝试匹配国家+指标组合
-    for s in shares:
-        country = s.get("c", "")
-        if country and country in field:
-            _try_parse_and_set(s, new_value, field)
-            updated = True
-            break
-
-    if not updated and "替代" in field_lower:
-        # 待后续实现更智能的替代方案更新
-        pass
-
-    if updated:
-        conn.execute(
-            "UPDATE industry_chain_nodes SET global_shares = ?, last_updated = datetime('now') WHERE id = ?",
-            (_json.dumps(shares, ensure_ascii=False), hint["node_id"]),
-        )
-
-
-def _try_parse_and_set(share: dict, new_value: str, field: str):
-    """尝试从 new_value 字符串中解析数字并设置到 share dict 的对应字段。"""
-    import re as _re
-
-    numbers = _re.findall(r"(\d+(?:\.\d+)?)\s*%?", new_value)
-    if not numbers:
-        return
-
-    val = float(numbers[0])
-
-    field_lower = field.lower()
-    if "出口占全球" in field_lower:
-        share["p_export_global"] = val
-    elif "出口/产量" in field_lower or "出口占产量" in field_lower:
-        share["p_export_ratio"] = val
-    elif "出口占本国" in field_lower or "出口占总出口" in field_lower:
-        share["p_export_national"] = val
-    elif "进口占全球" in field_lower:
-        share["d_import_global"] = val
-    elif "进口/消费" in field_lower or "进口占消费" in field_lower:
-        share["d_import_ratio"] = val
-    elif "进口占本国" in field_lower or "进口占总进口" in field_lower:
-        share["d_import_national"] = val
-    elif "消费" in field_lower:
-        share["d"] = val
-    else:
-        share["p"] = val  # 默认产量
-
-
+    return chain_hint_service.resolve_hint(
+        hint_id,
+        req,
+        connect_fn=connect,
+    )
 
 
 # ── 新链建议 API ──
