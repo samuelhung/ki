@@ -39,8 +39,8 @@ MODULE_MAP: dict[str, dict[str, tuple[str, list[str]]]] = {
     "brainstorm": {
         "answer": ("brainstorm_answer_service.py", ["get_answer_for_question"]),
         "summary": (
-            "routes/brainstorm_routes.py",
-            ["_extract_latest_answer", "start_conversation"],
+            "brainstorm_conversation_service.py",
+            ["generate_conversation_summary", "start_conversation"],
         ),
         "contemplate": (
             "routes/brainstorm_routes.py",
@@ -81,7 +81,7 @@ PROMPT_SOURCES: dict[str, dict[str, dict[str, PromptSource]]] = {
                 "legacy_built",
             ),
             "system_prompt": PromptSource(
-                "routes/brainstorm_routes.py", "start_conversation"
+                "brainstorm_conversation_service.py", "start_conversation"
             ),
         },
         "contemplate": {
