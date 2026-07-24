@@ -107,6 +107,26 @@ def test_chain_chat_builds_compact_context_and_filters_history(tmp_path: Path) -
                     json.dumps(["raw"]),
                     1,
                 ),
+                (
+                    "blank",
+                    "",
+                    "下游",
+                    "",
+                    "[]",
+                    json.dumps([{"node": ""}]),
+                    "[]",
+                    2,
+                ),
+                (
+                    "terminal",
+                    "终端",
+                    "终端",
+                    "",
+                    "[]",
+                    "[]",
+                    json.dumps(["blank"]),
+                    3,
+                ),
             ],
         )
 
@@ -143,6 +163,8 @@ def test_chain_chat_builds_compact_context_and_filters_history(tmp_path: Path) -
     assert "- [中游] 电芯" in system_prompt
     assert "日本(产量12%)" in system_prompt
     assert "上游: 锂矿" in system_prompt
+    assert "- [下游] \n  替代: \n" in system_prompt
+    assert "- [终端] 终端\n  上游: \n" in system_prompt
     assert messages[1:-1] == [
         {"role": "user", "content": "旧问题3"},
         {"role": "user", "content": "旧问题4"},

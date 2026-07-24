@@ -79,11 +79,11 @@ def _format_node(node: dict[str, Any], nodes: list[dict[str, Any]]) -> str:
         parts.append(f"  全球份额: {shares_text}")
 
     substitutes_text = _format_substitutes(node.get("substitutes"))
-    if substitutes_text:
+    if substitutes_text is not None:
         parts.append(f"  替代: {substitutes_text}")
 
     upstream_text = _format_upstream(node.get("upstream_ids"), nodes)
-    if upstream_text:
+    if upstream_text is not None:
         parts.append(f"  上游: {upstream_text}")
     return "\n".join(parts)
 
@@ -120,9 +120,9 @@ def _format_global_shares(raw_shares: Any) -> str:
         return ""
 
 
-def _format_substitutes(raw_substitutes: Any) -> str:
+def _format_substitutes(raw_substitutes: Any) -> str | None:
     if not raw_substitutes or raw_substitutes == "[]":
-        return ""
+        return None
     try:
         substitutes = (
             json.loads(raw_substitutes)
@@ -131,12 +131,14 @@ def _format_substitutes(raw_substitutes: Any) -> str:
         )
         return ", ".join(item.get("node", "?") for item in substitutes[:3])
     except Exception:
-        return ""
+        return None
 
 
-def _format_upstream(raw_upstream: Any, nodes: list[dict[str, Any]]) -> str:
+def _format_upstream(
+    raw_upstream: Any, nodes: list[dict[str, Any]]
+) -> str | None:
     if not raw_upstream or raw_upstream == "[]":
-        return ""
+        return None
     try:
         upstream_ids = (
             json.loads(raw_upstream) if isinstance(raw_upstream, str) else raw_upstream
@@ -149,4 +151,4 @@ def _format_upstream(raw_upstream: Any, nodes: list[dict[str, Any]]) -> str:
                     break
         return " → ".join(names)
     except Exception:
-        return ""
+        return None
