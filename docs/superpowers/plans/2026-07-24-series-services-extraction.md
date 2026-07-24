@@ -29,12 +29,14 @@
 - Create: `src/zhiji_backend/series_discovery_service.py`
 - Create: `src/zhiji_backend/series_topic_discovery_service.py`
 - Modify: `src/zhiji_backend/routes/series_routes.py`
+- Modify: `src/zhiji_backend/prompt_registry.py`
 - Create: `tests/test_series_discovery_services.py`
 
 - [ ] Add failing service tests for duplicate detection, stale-candidate cleanup, fenced JSON parsing, exact AI arguments, candidate insert/update behavior, invalid/empty AI responses, insufficient-event responses, ID bracket cleanup, and database writes.
 - [ ] Move `_find_duplicate()` and `_cleanup_stale_candidates()` into `series_candidate_service.py`, retaining the exact thresholds, SQL, date format, and malformed-member fallback.
 - [ ] Move `discover_series()`, `discover_stage1()`, and `discover_stage2()` business logic into `series_discovery_service.py`; expose dependency-injected functions while keeping exact prompts, limits, error dictionaries, logging, and persistence behavior.
 - [ ] Move `discover_by_topic()` into `series_topic_discovery_service.py`, preserving keyword bigrams, SQL ordering/limit, AI parameters, de-duplication, and response shape.
+- [ ] Point Prompt registry task `series.discover` at the extracted owner while preserving its prompt keys and content digest.
 - [ ] Replace route bodies with thin wrappers and run the focused tests until green.
 - [ ] Confirm each new production module is at most 400 lines and commit as `refactor: extract series discovery services`.
 
