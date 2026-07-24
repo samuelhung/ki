@@ -17,7 +17,7 @@
     "src/zhiji_backend/ingest/douyin.py": 541,
     "src/zhiji_backend/main.py": 401,
     "src/zhiji_backend/routes/brainstorm_routes.py": 1121,
-    "src/zhiji_backend/routes/chain_routes.py": 828,
+    "src/zhiji_backend/routes/chain_routes.py": 626,
     "src/zhiji_backend/routes/event_routes.py": 513,
     "src/zhiji_backend/routes/ingest_routes.py": 736,
     "src/zhiji_backend/routes/series_routes.py": 1370,
