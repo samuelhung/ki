@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib
 import inspect
 import json
@@ -50,6 +51,21 @@ def _signature(*parameters: inspect.Parameter) -> inspect.Signature:
     return inspect.Signature(
         parameters,
         return_annotation=inspect.Signature.empty,
+    )
+
+
+def _resolved_signature(function: Any) -> inspect.Signature:
+    signature = inspect.signature(function)
+    annotations = inspect.get_annotations(function, eval_str=True)
+    parameters = [
+        parameter.replace(
+            annotation=annotations.get(parameter.name, inspect.Parameter.empty)
+        )
+        for parameter in signature.parameters.values()
+    ]
+    return signature.replace(
+        parameters=parameters,
+        return_annotation=annotations.get("return", inspect.Signature.empty),
     )
 
 
@@ -114,12 +130,20 @@ def test_all_series_routes_preserve_order_metadata_signatures_and_body_schemas()
             "add_series_members",
         ),
     ]
-    actual_routes = [
-        (index, route.path, route.methods, route.endpoint.__name__)
+    indexed_api_routes = [
+        (index, route)
         for index, route in enumerate(series_routes.router.routes)
         if isinstance(route, APIRoute)
     ]
+    actual_routes = [
+        (index, route.path, route.methods, route.endpoint.__name__)
+        for index, route in indexed_api_routes
+    ]
     assert actual_routes == expected_routes
+    for (_, route), (_, _, _, expected_name) in zip(
+        indexed_api_routes, expected_routes, strict=True
+    ):
+        assert route.endpoint is getattr(series_routes, expected_name)
 
     expected_signatures = {
         "list_series": _signature(_parameter("include_candidates", bool, False)),
@@ -175,7 +199,7 @@ def test_all_series_routes_preserve_order_metadata_signatures_and_body_schemas()
     }
     assert set(expected_signatures) == {route[3] for route in expected_routes}
     for name, expected_signature in expected_signatures.items():
-        assert inspect.signature(getattr(series_routes, name)) == expected_signature
+        assert _resolved_signature(getattr(series_routes, name)) == expected_signature
 
     object_schema = {
         "additionalProperties": True,
@@ -419,10 +443,39 @@ def test_generation_routes_forward_call_time_dependencies(monkeypatch) -> None:
     ]
 
 
-def test_series_prompt_registry_tasks_are_exact_and_non_empty() -> None:
+def test_series_prompt_registry_tasks_and_contents_match_snapshots() -> None:
     prompts = get_all_prompts()["series"]
+    expected = {
+        "discover": (
+            ("prompt",),
+            "7637ce0d88df3fa40894b1350b6e3a18c56a3f691c47bc1485bdfb170808dd6d",
+        ),
+        "intro": (
+            ("prompt",),
+            "74e8f82a5db151d9121c5d9bb2046594cf4e71800535f375169f988fcdc20a01",
+        ),
+        "summary": (
+            ("prompt",),
+            "526ba633ea8075823b1cc9d61f4d8cc56061dea2fb4cf7a269360086b239a126",
+        ),
+        "paper": (
+            ("prompt",),
+            "1337a2a847334d92741376d6cfe11d7627fabba015c42202da081d5b622a0d61",
+        ),
+        "auto_suggest": (
+            ("prompt",),
+            "ff87cb934443e575e795183a78b8f54a89ba16676c7a62629c690bb08dae0e32",
+        ),
+    }
 
-    assert set(prompts) == {"discover", "intro", "summary", "paper", "auto_suggest"}
-    for task_prompts in prompts.values():
-        assert task_prompts
-        assert all(value.strip() for value in task_prompts.values())
+    assert set(prompts) == set(expected)
+    for task, task_prompts in prompts.items():
+        variable_names, expected_digest = expected[task]
+        prompt_items = sorted(task_prompts.items())
+        payload = json.dumps(
+            prompt_items,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        assert tuple(sorted(task_prompts)) == variable_names
+        assert hashlib.sha256(payload.encode()).hexdigest() == expected_digest

@@ -12,7 +12,6 @@ import pytest
 from fastapi import HTTPException
 
 from zhiji_backend.db import connect, init_db
-from zhiji_backend.main import app
 from zhiji_backend.routes import series_routes
 
 
@@ -490,100 +489,3 @@ def test_suggestions_support_legacy_strings_and_new_objects(series_db) -> None:
     assert set(suggestions) == {"legacy", "object"}
     assert suggestions["legacy"]["reason"] == ""
     assert suggestions["object"]["reason"] == "Relevant"
-
-
-def test_extracted_route_signatures_are_unchanged() -> None:
-    expected = {
-        "list_series": [("include_candidates", bool, False)],
-        "list_candidates": [],
-        "create_series": [("data", series_routes.SeriesCreateRequest, inspect.Parameter.empty)],
-        "delete_series": [("series_id", series_routes.SafeIdentifier, inspect.Parameter.empty)],
-        "update_series": [
-            ("series_id", series_routes.SafeIdentifier, inspect.Parameter.empty),
-            ("data", dict, inspect.Parameter.empty),
-        ],
-        "merge_series": [("data", series_routes.SeriesMergeRequest, inspect.Parameter.empty)],
-        "get_series_detail": [
-            ("series_id", series_routes.SafeIdentifier, inspect.Parameter.empty)
-        ],
-        "reorder_series": [
-            ("series_id", series_routes.SafeIdentifier, inspect.Parameter.empty),
-            ("data", series_routes.SeriesOrderRequest, inspect.Parameter.empty),
-        ],
-        "get_series_suggestions": [
-            ("series_id", series_routes.SafeIdentifier, inspect.Parameter.empty)
-        ],
-        "add_series_members": [
-            ("series_id", series_routes.SafeIdentifier, inspect.Parameter.empty),
-            ("data", series_routes.SeriesMembersRequest, inspect.Parameter.empty),
-        ],
-    }
-
-    for name, parameter_specs in expected.items():
-        parameters = list(inspect.signature(getattr(series_routes, name)).parameters.values())
-        assert [
-            (parameter.name, parameter.annotation, parameter.default)
-            for parameter in parameters
-        ] == parameter_specs
-
-
-def test_extracted_openapi_paths_methods_and_request_schemas_are_unchanged() -> None:
-    schema = app.openapi()
-    paths = schema["paths"]
-    expected = {
-        "/api/ingest/series": {
-            "get": None,
-            "post": {"$ref": "#/components/schemas/SeriesCreateRequest"},
-        },
-        "/api/ingest/series/candidates": {"get": None},
-        "/api/ingest/series/suggest-name": {
-            "post": {"$ref": "#/components/schemas/SeriesNameRequest"}
-        },
-        "/api/ingest/series/{series_id}": {
-            "delete": None,
-            "put": {
-                "type": "object",
-                "additionalProperties": True,
-                "title": "Data",
-            },
-            "get": None,
-        },
-        "/api/ingest/series/merge": {
-            "post": {"$ref": "#/components/schemas/SeriesMergeRequest"}
-        },
-        "/api/ingest/series/{series_id}/sort": {
-            "put": {"$ref": "#/components/schemas/SeriesOrderRequest"}
-        },
-        "/api/ingest/series/{series_id}/suggestions": {"get": None},
-        "/api/ingest/series/{series_id}/members": {
-            "post": {"$ref": "#/components/schemas/SeriesMembersRequest"}
-        },
-    }
-
-    for path, methods in expected.items():
-        actual_methods = {
-            method
-            for method in paths[path]
-            if method in {"get", "post", "put", "delete", "patch"}
-        }
-        assert actual_methods == set(methods)
-        for method, body_schema in methods.items():
-            actual_body_schema = (
-                paths[path][method]
-                .get("requestBody", {})
-                .get("content", {})
-                .get("application/json", {})
-                .get("schema")
-            )
-            assert actual_body_schema == body_schema
-
-
-def test_static_series_routes_precede_dynamic_series_detail_route() -> None:
-    route_positions = {
-        route.endpoint: index for index, route in enumerate(series_routes.router.routes)
-    }
-    dynamic_position = route_positions[series_routes.get_series_detail]
-
-    assert route_positions[series_routes.list_candidates] < dynamic_position
-    assert route_positions[series_routes.suggest_series_name] < dynamic_position
-    assert route_positions[series_routes.merge_series] < dynamic_position
