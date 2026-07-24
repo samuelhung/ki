@@ -68,9 +68,15 @@ def test_overlap_detection_preserves_scoring_and_response_shape(tmp_path: Path) 
                 "nodes_a_count": 1,
                 "nodes_b_count": 1,
                 "exact_shared": ["共同节点"],
-                "fuzzy_shared": [],
-                "overlap_score": 0.5,
-                "reason": "同名节点: 共同节点；「甲链」终端 ←→ 「乙链」原材料, 可合并为上下游",
+                "fuzzy_shared": [
+                    "终端「共同节点」(甲链) ↔ 原材料「共同节点」(乙链)"
+                ],
+                "overlap_score": 0.65,
+                "reason": (
+                    "同名节点: 共同节点；"
+                    "关键词重叠: 终端「共同节点」(甲链) ↔ 原材料「共同节点」(乙链)；"
+                    "「甲链」终端 ←→ 「乙链」原材料, 可合并为上下游"
+                ),
             }
         ],
         "total_chains": 2,
