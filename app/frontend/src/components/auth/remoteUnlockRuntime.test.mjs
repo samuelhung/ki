@@ -35,3 +35,14 @@ test('auth-required subscription receives one event and cleans up', () => {
   assert.equal(calls, 1);
   assert.equal(REMOTE_AUTH_REQUIRED_EVENT, 'ki-auth-required');
 });
+
+test('auth-required subscription catches a notification published before mount', () => {
+  const target = new EventTarget();
+  notifyRemoteAuthRequired(target);
+
+  let calls = 0;
+  const cleanup = subscribeRemoteAuthRequired(() => { calls += 1; }, target);
+
+  assert.equal(calls, 1);
+  cleanup();
+});
