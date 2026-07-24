@@ -15,7 +15,11 @@ from fastapi import HTTPException
 from fastapi.routing import APIRoute
 from pydantic import TypeAdapter, ValidationError
 
-from zhiji_backend import chain_merge_service, chain_node_service
+from zhiji_backend import (
+    chain_collection_service,
+    chain_merge_service,
+    chain_node_service,
+)
 from zhiji_backend.main import app
 from zhiji_backend.routes import chain_routes
 
@@ -549,4 +553,29 @@ def test_chain_merge_route_wrappers_forward_call_time_dependencies(monkeypatch) 
             chain_routes._suggest_icon,
             sentinel_logger,
         ),
+    ]
+
+
+def test_chain_collection_wrapper_forwards_call_time_dependencies(monkeypatch) -> None:
+    sentinel_connect = cast(chain_node_service.ConnectFn, object())
+    sentinel_chat = object()
+    sentinel_logger = object()
+    node = {"id": "node-1", "name": "node"}
+    calls: list[tuple[object, bool, object, object, object]] = []
+
+    monkeypatch.setattr(chain_routes, "connect", sentinel_connect)
+    monkeypatch.setattr(chain_routes, "chat", sentinel_chat)
+    monkeypatch.setattr(chain_routes, "logger", sentinel_logger)
+    monkeypatch.setattr(
+        chain_collection_service,
+        "collect_node_data",
+        lambda item, *, use_web, connect_fn, chat_fn, service_logger: calls.append(
+            (item, use_web, connect_fn, chat_fn, service_logger)
+        )
+        or {"ok": True},
+    )
+
+    assert chain_routes._do_collect(node, use_web=True) == {"ok": True}
+    assert calls == [
+        (node, True, sentinel_connect, sentinel_chat, sentinel_logger),
     ]
