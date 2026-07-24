@@ -4,6 +4,7 @@ import hashlib
 import importlib
 import inspect
 import json
+from dataclasses import fields, is_dataclass
 from pathlib import Path
 from typing import Any
 
@@ -36,14 +37,43 @@ def _body_schema(path: str, method: str) -> dict[str, Any] | None:
     )
 
 
+def _evaluated_value_contract(value: Any) -> Any:
+    if is_dataclass(value) and not isinstance(value, type):
+        return (
+            type(value),
+            tuple(
+                (field.name, _evaluated_value_contract(getattr(value, field.name)))
+                for field in fields(value)
+            ),
+        )
+    if isinstance(value, dict):
+        return tuple(
+            (key, _evaluated_value_contract(value[key])) for key in sorted(value)
+        )
+    if isinstance(value, (list, tuple)):
+        return tuple(_evaluated_value_contract(item) for item in value)
+    if callable(value):
+        return value
+    if hasattr(value, "__dict__") and not isinstance(value, type):
+        return (
+            type(value),
+            tuple(
+                (key, _evaluated_value_contract(item))
+                for key, item in sorted(vars(value).items())
+            ),
+        )
+    return value
+
+
 def _default_contract(default: Any) -> Any:
     if default is inspect.Parameter.empty:
         return inspect.Parameter.empty
     if isinstance(default, Query):
+        fastapi_state = {"in_": default.in_, **vars(default)}
         return (
-            Query,
-            default.default,
-            tuple(repr(item) for item in default.metadata),
+            type(default),
+            _evaluated_value_contract(default.asdict()),
+            _evaluated_value_contract(fastapi_state),
         )
     return default
 
@@ -64,6 +94,23 @@ def _resolved_signature_contract(function: Any) -> tuple[tuple[Any, ...], Any]:
         parameters,
         annotations.get("return", inspect.Signature.empty),
     )
+
+
+@pytest.mark.parametrize(
+    "changed_default",
+    [
+        Query(0, ge=0, le=10, alias="start"),
+        Query(0, ge=0, le=10, include_in_schema=False),
+        Query(0, ge=0, le=10, description="Starting offset"),
+        Query(0, ge=0, le=10, deprecated=True),
+    ],
+)
+def test_query_default_contract_includes_api_relevant_field_state(
+    changed_default: Query,
+) -> None:
+    baseline = _default_contract(Query(0, ge=0, le=10))
+
+    assert _default_contract(changed_default) != baseline
 
 
 def _parameter(
@@ -183,8 +230,14 @@ def test_all_brainstorm_routes_preserve_order_metadata_and_endpoint_identity() -
 
 
 def test_all_brainstorm_route_signatures_are_unchanged() -> None:
-    query_offset = (Query, 0, ("Ge(ge=0)", "Le(le=1000000)"))
-    query_limit = (Query, 200, ("Ge(ge=1)", "Le(le=200)"))
+    expected_offset = Query(0, ge=0, le=1_000_000)
+    expected_offset.annotation = int
+    expected_offset.alias = "offset"
+    query_offset = _default_contract(expected_offset)
+    expected_limit = Query(200, ge=1, le=200)
+    expected_limit.annotation = int
+    expected_limit.alias = "limit"
+    query_limit = _default_contract(expected_limit)
     expected = {
         "list_brainstorm_questions": _signature(
             _parameter("status", str | None, None),
