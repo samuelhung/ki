@@ -137,6 +137,40 @@ test('controller changes resend current config and config requests receive bound
   assert.deepEqual([...listeners.keys()], []);
 });
 
+test('insecure origins without a service worker keep application startup non-fatal', async () => {
+  const media = await loadClientModule();
+  const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: { location: { origin: 'http://10.8.0.105:9120' } },
+  });
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: { serviceWorker: undefined },
+  });
+
+  try {
+    const detach = media.attachMediaTransportRecovery(() => ({
+      backendUrl: '',
+      token: '',
+    }));
+    detach();
+    await assert.rejects(
+      media.synchronizeMediaTransport(
+        { backendUrl: '', token: '', path: '/ingest/video.mp4' },
+        new AbortController().signal,
+      ),
+      /Service workers are unavailable/,
+    );
+  } finally {
+    if (windowDescriptor) Object.defineProperty(globalThis, 'window', windowDescriptor);
+    else delete globalThis.window;
+    if (navigatorDescriptor) Object.defineProperty(globalThis, 'navigator', navigatorDescriptor);
+    else delete globalThis.navigator;
+  }
+});
+
 test('missing worker config requests one acknowledgment then streams one upstream response', async () => {
   let messageHandler;
   let requestMessage;
