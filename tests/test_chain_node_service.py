@@ -15,7 +15,7 @@ from fastapi import HTTPException
 from fastapi.routing import APIRoute
 from pydantic import TypeAdapter, ValidationError
 
-from zhiji_backend import chain_node_service
+from zhiji_backend import chain_merge_service, chain_node_service
 from zhiji_backend.main import app
 from zhiji_backend.routes import chain_routes
 
@@ -503,4 +503,50 @@ def test_route_wrappers_forward_call_time_dependencies(monkeypatch) -> None:
     assert calls == [
         ("list", sentinel_connect, None),
         ("create", sentinel_connect, sentinel_uuid),
+    ]
+
+
+def test_chain_merge_route_wrappers_forward_call_time_dependencies(monkeypatch) -> None:
+    sentinel_connect = cast(chain_node_service.ConnectFn, object())
+    sentinel_chat = object()
+    sentinel_logger = object()
+    request = chain_routes.MergeRequest(chain_a="a", chain_b="b", into="a")
+    calls: list[tuple[str, object, ...]] = []
+
+    monkeypatch.setattr(chain_routes, "connect", sentinel_connect)
+    monkeypatch.setattr(chain_routes, "chat", sentinel_chat)
+    monkeypatch.setattr(chain_routes, "logger", sentinel_logger)
+    monkeypatch.setattr(
+        chain_merge_service,
+        "check_chain_overlaps",
+        lambda *, connect_fn: calls.append(("overlap", connect_fn)) or {"ok": True},
+    )
+    monkeypatch.setattr(
+        chain_merge_service,
+        "merge_chains",
+        lambda req, *, connect_fn, chat_fn, icon_suggester, service_logger: calls.append(
+            (
+                "merge",
+                req,
+                connect_fn,
+                chat_fn,
+                icon_suggester,
+                service_logger,
+            )
+        )
+        or {"ok": True},
+    )
+
+    assert chain_routes.check_chain_overlaps() == {"ok": True}
+    assert chain_routes.merge_chains(request) == {"ok": True}
+    assert calls == [
+        ("overlap", sentinel_connect),
+        (
+            "merge",
+            request,
+            sentinel_connect,
+            sentinel_chat,
+            chain_routes._suggest_icon,
+            sentinel_logger,
+        ),
     ]
