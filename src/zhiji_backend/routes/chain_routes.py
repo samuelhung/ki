@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .. import (
+    chain_chat_service,
     chain_collection_service,
     chain_hint_service,
     chain_merge_service,
@@ -794,124 +795,11 @@ class FlowSummaryReq(BaseModel):
 @router.post("/chat")
 def chain_chat(req: ChatRequest):
     """产业链智能答疑：基于节点数据回答用户问题。"""
-    # 读取该链全部节点
-    with connect() as conn:
-        conn.row_factory = lambda c, r: dict(zip([col[0] for col in c.description], r))
-        nodes = conn.execute("""
-            SELECT id, chain, name, node_type, description, global_shares, substitutes,
-                   upstream_ids, data_sources
-            FROM industry_chain_nodes WHERE chain = ? ORDER BY sort_order
-        """, (req.chain_name,)).fetchall()
-
-    if not nodes:
-        return {"error": f"未找到产业链: {req.chain_name}"}
-
-    # 构建节点上下文（简洁版，控制 token）
-    node_lines = []
-    for n in nodes:
-        parts = [f"- [{n['node_type']}] {n['name']}"]
-        if n.get("description"):
-            parts.append(f"  描述: {n['description']}")
-        shares = n.get("global_shares")
-        if shares and shares != "[]":
-            try:
-                if isinstance(shares, str):
-                    shares = json.loads(shares)
-                # 兼容新格式 {"groups":{...}} 和旧格式 [{...}]
-                all_share_items = []
-                groups = shares.get("groups") if isinstance(shares, dict) else None
-                if groups:
-                    for gname in ("production", "supply", "demand"):
-                        all_share_items.extend(groups.get(gname, []))
-                elif isinstance(shares, list):
-                    all_share_items = shares
-                country_parts = []
-                for s in all_share_items:
-                    c = s.get("c", "未知")
-                    nums = []
-                    if s.get("p", 0) > 0:
-                        nums.append(f"产量{s['p']}%")
-                    if s.get("d", 0) > 0:
-                        nums.append(f"消费{s['d']}%")
-                    if s.get("p_export_global", 0) > 0:
-                        nums.append(f"出口/全球{s['p_export_global']}%")
-                    if s.get("d_import_global", 0) > 0:
-                        nums.append(f"进口/全球{s['d_import_global']}%")
-                    if nums:
-                        country_parts.append(f"{c}({', '.join(nums)})")
-                if country_parts:
-                    parts.append(f"  全球份额: {'; '.join(country_parts[:5])}")
-            except Exception:
-                pass
-        subs = n.get("substitutes")
-        if subs and subs != "[]":
-            try:
-                if isinstance(subs, str):
-                    subs = json.loads(subs)
-                sub_names = [s.get("node", "?") for s in subs[:3]]
-                if sub_names:
-                    parts.append(f"  替代: {', '.join(sub_names)}")
-            except Exception:
-                pass
-        # 上游关系
-        upstream = n.get("upstream_ids")
-        if upstream and upstream != "[]":
-            try:
-                if isinstance(upstream, str):
-                    upstream = json.loads(upstream)
-                upstream_names = []
-                for uid in upstream:
-                    for n2 in nodes:
-                        if n2["id"] == uid:
-                            upstream_names.append(n2["name"])
-                            break
-                if upstream_names:
-                    parts.append(f"  上游: {' → '.join(upstream_names)}")
-            except Exception:
-                pass
-        node_lines.append("\n".join(parts))
-
-    nodes_context = "\n".join(node_lines)
-
-    system_prompt = f"""你是一位产业链分析专家。以下是「{req.chain_name}」的完整数据，请基于这些数据回答用户问题。
-
-## 产业链数据
-
-{nodes_context}
-
-规则:
-1. 优先使用上述数据中的具体数字和信息
-2. 数据中没有提到的内容，可以基于你对产业的了解补充，但要明确标注「据一般了解」或「估算」
-3. 回答要简洁专业，控制在 300 字以内
-4. 如果用户问的问题和数据完全无关，从产业常识角度回答
-5. 用中文回答"""
-
-    messages = [{"role": "system", "content": system_prompt}]
-    for h in req.history[-10:]:  # 最多保留 10 轮
-        role = h.get("role", "user")
-        content = h.get("content", "")
-        if role in ("user", "assistant"):
-            messages.append({"role": role, "content": content})
-    messages.append({"role": "user", "content": req.message})
-
-    try:
-        result = chat(
-            messages=messages,
-            temperature=0.3,
-            max_tokens=1024,
-            module="chain_chat",
-            task="chat"
-        )
-        if not result:
-            return {"error": "AI 返回空结果"}
-        return {"reply": result}
-    except Exception as e:
-        return {"error": str(e)}
-        if not result:
-            return {"error": "AI 返回空结果"}
-        return {"reply": result}
-    except Exception as e:
-        return {"error": str(e)}
+    return chain_chat_service.chain_chat(
+        req,
+        connect_fn=connect,
+        chat_fn=chat,
+    )
 
 
 # ── 产业链重叠检测 ──

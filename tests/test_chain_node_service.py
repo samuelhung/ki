@@ -16,6 +16,7 @@ from fastapi.routing import APIRoute
 from pydantic import TypeAdapter, ValidationError
 
 from zhiji_backend import (
+    chain_chat_service,
     chain_collection_service,
     chain_hint_service,
     chain_merge_service,
@@ -446,6 +447,7 @@ def test_extracted_route_order_signatures_and_openapi_contract_are_unchanged() -
             "dismiss_suggestion",
         ),
         (19, "/api/chains/hints/sync", {"POST"}, "sync_extracted_hints"),
+        (20, "/api/chains/chat", {"POST"}, "chain_chat"),
     ]
     actual_routes = [
         (index, route.path, route.methods, route.endpoint.__name__)
@@ -471,6 +473,7 @@ def test_extracted_route_order_signatures_and_openapi_contract_are_unchanged() -
         "adopt_suggestion": [("sid", chain_routes.SafeIdentifier)],
         "dismiss_suggestion": [("sid", chain_routes.SafeIdentifier)],
         "sync_extracted_hints": [("req", chain_routes.SyncHintsRequest)],
+        "chain_chat": [("req", chain_routes.ChatRequest)],
     }
     for name, expected in expected_signatures.items():
         hints = inspect.get_annotations(getattr(chain_routes, name), eval_str=True)
@@ -494,6 +497,7 @@ def test_extracted_route_order_signatures_and_openapi_contract_are_unchanged() -
         ("/api/chains/suggestions/{sid}/adopt", "post"): None,
         ("/api/chains/suggestions/{sid}/dismiss", "post"): None,
         ("/api/chains/hints/sync", "post"): "SyncHintsRequest",
+        ("/api/chains/chat", "post"): "ChatRequest",
     }
     for (path, method), request_model in expected_openapi.items():
         operation = schema["paths"][path][method]
@@ -742,3 +746,24 @@ def test_chain_sync_wrapper_forwards_call_time_dependencies(monkeypatch) -> None
         "new_suggestions": 0,
     }
     assert calls == [(request, sentinel_connect, sentinel_uuid)]
+
+
+def test_chain_chat_wrapper_forwards_call_time_dependencies(monkeypatch) -> None:
+    sentinel_connect = cast(chain_node_service.ConnectFn, object())
+    sentinel_chat = object()
+    request = chain_routes.ChatRequest(chain_name="链", message="问题")
+    calls: list[tuple[object, ...]] = []
+
+    monkeypatch.setattr(chain_routes, "connect", sentinel_connect)
+    monkeypatch.setattr(chain_routes, "chat", sentinel_chat)
+    monkeypatch.setattr(
+        chain_chat_service,
+        "chain_chat",
+        lambda req, *, connect_fn, chat_fn: calls.append(
+            (req, connect_fn, chat_fn)
+        )
+        or {"reply": "回答"},
+    )
+
+    assert chain_routes.chain_chat(request) == {"reply": "回答"}
+    assert calls == [(request, sentinel_connect, sentinel_chat)]
