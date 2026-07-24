@@ -22,7 +22,7 @@ MODULE_MAP: dict[str, dict[str, tuple[str, list[str]]]] = {
         "translate": ("translator.py", ["translate_to_en"]),
     },
     "series": {
-        "discover": ("routes/series_routes.py", ["discover_series"]),
+        "discover": ("series_discovery_service.py", ["discover_series"]),
         "intro": ("routes/series_routes.py", ["generate_series_intro"]),
         "summary": ("routes/series_routes.py", ["generate_series_summary"]),
         "paper": ("routes/series_routes.py", ["generate_series_paper"]),
