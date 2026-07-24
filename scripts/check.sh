@@ -1206,6 +1206,9 @@ PYTHONPATH=src "${PYTHON_BIN[@]}" -m compileall -q src/zhiji_backend
 echo "== Python lint =="
 "${PYTHON_BIN[@]}" -m ruff check src tests scripts
 
+echo "== Structure baseline =="
+"${PYTHON_BIN[@]}" scripts/check_structure_baseline.py
+
 echo "== Version consistency =="
 PYTHONPATH=src "${PYTHON_BIN[@]}" - "$VERSION" <<'PY'
 from pathlib import Path

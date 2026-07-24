@@ -43,3 +43,19 @@ def test_repository_check_prevents_explicit_any_regressions() -> None:
     )
     assert baseline
     assert all(path.startswith("src/") and count > 0 for path, count in baseline.items())
+
+
+def test_repository_check_prevents_structural_regressions() -> None:
+    check_script = (ROOT / "scripts" / "check.sh").read_text(encoding="utf-8")
+    assert "scripts/check_structure_baseline.py" in check_script
+
+    workflow = (ROOT / ".github" / "workflows" / "zhiji-check.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "ZHIJI_STRUCTURE_BASE_REF: ${{ github.event.pull_request.base.sha }}" in workflow
+
+    baseline = json.loads(
+        (ROOT / "structure-baseline.json").read_text(encoding="utf-8")
+    )
+    assert baseline["schema_version"] == 1
+    assert baseline["oversized_files"]
