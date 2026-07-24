@@ -37,15 +37,32 @@ test('apiFetch returns the raw Response without interpreting HTTP status', async
   assert.equal(harness.calls.length, 1);
 });
 
-test('apiFetch returns a protected 401 without bootstrapping or replaying', async () => {
+test('apiFetch publishes protected 401 once without replaying the request', async () => {
   const first = new Response(null, { status: 401 });
   const unexpected = new Response(null, { status: 200 });
-  const harness = createRuntime([first, unexpected]);
+  let notifications = 0;
+  const harness = createRuntime([first, unexpected], {
+    onUnauthorized: () => { notifications += 1; },
+  });
   const apiFetch = api.createApiFetch(harness.runtime);
 
   const actual = await apiFetch('/api/protected', { method: 'POST' });
 
   assert.equal(actual, first);
+  assert.equal(harness.calls.length, 1);
+  assert.equal(notifications, 1);
+});
+
+test('apiFetch does not publish 401 for unrelated absolute requests', async () => {
+  let notifications = 0;
+  const harness = createRuntime([new Response(null, { status: 401 })], {
+    onUnauthorized: () => { notifications += 1; },
+  });
+  const apiFetch = api.createApiFetch(harness.runtime);
+
+  await apiFetch('https://example.com/public');
+
+  assert.equal(notifications, 0);
   assert.equal(harness.calls.length, 1);
 });
 

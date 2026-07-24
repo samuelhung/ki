@@ -6,6 +6,7 @@ export interface ApiFetchRuntime {
   getBackendUrl(): string;
   prepareInit(init?: ApiFetchRuntimeInit): ApiFetchRuntimeInit | undefined;
   request(input: RequestInfo | URL, init?: ApiFetchRuntimeInit): Promise<Response>;
+  onUnauthorized?(): void;
 }
 
 const PROTECTED_BACKEND_PREFIXES = ['/api/', '/ingest/', '/releases/'];
@@ -21,7 +22,9 @@ export function createApiFetch(runtime: ApiFetchRuntime) {
   ): Promise<Response> {
     if (typeof input === 'string' && isProtectedBackendPath(input)) {
       const requestInit = runtime.prepareInit(init);
-      return runtime.request(runtime.getBackendUrl() + input, requestInit);
+      const response = await runtime.request(runtime.getBackendUrl() + input, requestInit);
+      if (response.status === 401) runtime.onUnauthorized?.();
+      return response;
     }
     return runtime.request(input, init);
   };
