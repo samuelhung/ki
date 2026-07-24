@@ -5,10 +5,8 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-import uuid
 from collections.abc import Callable
 from contextlib import AbstractContextManager
-from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
@@ -18,6 +16,14 @@ type ConnectFn = Callable[[], AbstractContextManager[sqlite3.Connection]]
 type ClassifyFn = Callable[[str, str], str]
 type MarkdownPathFn = Callable[[str], Path]
 type UnlinkFn = Callable[[str], None]
+type UUIDFn = Callable[[], object]
+
+
+class Timestamp(Protocol):
+    def strftime(self, format: str) -> str: ...
+
+
+type NowFn = Callable[[], Timestamp]
 
 
 class CreateQuestionRequest(Protocol):
@@ -126,10 +132,12 @@ def create_brainstorm_question(
     connect_fn: ConnectFn,
     classify_fn: ClassifyFn,
     markdown_path_fn: MarkdownPathFn,
+    uuid_fn: UUIDFn,
+    now_fn: NowFn,
     logger: logging.Logger,
 ) -> dict[str, object]:
-    question_id = str(uuid.uuid4())
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    question_id = str(uuid_fn())
+    now = now_fn().strftime("%Y-%m-%d %H:%M")
     with connect_fn() as conn:
         conn.execute(
             "INSERT INTO brainstorm_questions (id, event_id, question) VALUES (?, '', ?)",

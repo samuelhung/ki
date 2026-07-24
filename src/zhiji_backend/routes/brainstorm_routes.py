@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -113,6 +114,8 @@ def create_brainstorm_question(request: CreateQuestionRequest) -> dict[str, obje
         connect_fn=connect,
         classify_fn=classify_content,
         markdown_path_fn=_brainstorm_md_path,
+        uuid_fn=uuid.uuid4,
+        now_fn=datetime.now,
         logger=logger,
     )
 

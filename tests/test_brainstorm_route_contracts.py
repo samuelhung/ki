@@ -6,6 +6,7 @@ import inspect
 import json
 from dataclasses import fields, is_dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -439,8 +440,14 @@ def test_question_routes_forward_models_and_call_time_dependencies(
     _stub_service_functions(monkeypatch, service, names, calls)
     sentinel_connect = object()
     sentinel_classify = object()
+    sentinel_uuid = object()
+    sentinel_now = object()
     monkeypatch.setattr(brainstorm_routes, "connect", sentinel_connect)
     monkeypatch.setattr(brainstorm_routes, "classify_content", sentinel_classify)
+    monkeypatch.setattr(brainstorm_routes, "uuid", SimpleNamespace(uuid4=sentinel_uuid))
+    monkeypatch.setattr(
+        brainstorm_routes, "datetime", SimpleNamespace(now=sentinel_now)
+    )
 
     create_request = brainstorm_routes.CreateQuestionRequest(question="why")
     batch_request = brainstorm_routes.QuestionBatchRequest(
@@ -501,6 +508,8 @@ def test_question_routes_forward_models_and_call_time_dependencies(
                 "connect_fn": sentinel_connect,
                 "classify_fn": sentinel_classify,
                 "markdown_path_fn": brainstorm_routes._brainstorm_md_path,
+                "uuid_fn": sentinel_uuid,
+                "now_fn": sentinel_now,
                 "logger": logger,
             },
         ),

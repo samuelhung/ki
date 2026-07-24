@@ -229,9 +229,7 @@ def test_get_question_serializes_links_and_judgments_and_reads_markdown(
     }
 
 
-def test_create_question_preserves_write_order_content_and_classification(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_create_question_preserves_write_order_content_and_classification() -> None:
     question_id = UUID("11111111-1111-1111-1111-111111111111")
     events: list[tuple[object, ...]] = []
 
@@ -247,14 +245,6 @@ def test_create_question_preserves_write_order_content_and_classification(
     def connect_fn():
         yield RecordingConnection()
 
-    class FixedDateTime:
-        @staticmethod
-        def now():
-            return SimpleNamespace(strftime=lambda _format: "2026-07-24 09:30")
-
-    monkeypatch.setattr(brainstorm_question_service.uuid, "uuid4", lambda: question_id)
-    monkeypatch.setattr(brainstorm_question_service, "datetime", FixedDateTime)
-
     def classify(question: str, content: str) -> str:
         events.append(("classify", question, content))
         return "前瞻"
@@ -264,6 +254,8 @@ def test_create_question_preserves_write_order_content_and_classification(
         connect_fn=connect_fn,
         classify_fn=classify,
         markdown_path_fn=lambda _question_id: RecordingPath(),
+        uuid_fn=lambda: question_id,
+        now_fn=lambda: SimpleNamespace(strftime=lambda _format: "2026-07-24 09:30"),
         logger=logging.getLogger("test.brainstorm"),
     )
     markdown = "# 问题\n\n未来如何？\n\n创建时间：2026-07-24 09:30\n\n---\n\n"
@@ -296,18 +288,19 @@ def test_create_question_preserves_write_order_content_and_classification(
 
 
 def test_create_question_keeps_default_topic_when_classification_fails(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     database = tmp_path / "brainstorm.sqlite"
     _create_schema(database)
     question_id = UUID("22222222-2222-2222-2222-222222222222")
-    monkeypatch.setattr(brainstorm_question_service.uuid, "uuid4", lambda: question_id)
 
     result = brainstorm_question_service.create_brainstorm_question(
         SimpleNamespace(question="fallback"),
         connect_fn=_connect_fn(database),
         classify_fn=lambda *_args: (_ for _ in ()).throw(RuntimeError("offline")),
         markdown_path_fn=lambda qid: tmp_path / f"{qid}.md",
+        uuid_fn=lambda: question_id,
+        now_fn=lambda: SimpleNamespace(strftime=lambda _format: "2026-07-24 09:30"),
         logger=logging.getLogger("test.brainstorm"),
     )
 
