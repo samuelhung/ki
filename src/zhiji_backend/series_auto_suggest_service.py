@@ -2,11 +2,24 @@
 
 import json
 import logging
-from collections.abc import Callable
+from typing import Protocol
 
 from .series_service import ConnectFn
 
-type ChatFn = Callable[..., str | None]
+
+class ChatFn(Protocol):
+    def __call__(
+        self,
+        /,
+        messages: list[dict[str, str]],
+        *,
+        temperature: float,
+        max_tokens: int,
+        timeout: int,
+        module: str,
+        task: str,
+    ) -> str | None: ...
+
 
 # Preserve the historical logger namespace after moving the implementation.
 logger = logging.getLogger("zhiji_backend.routes.series_routes")

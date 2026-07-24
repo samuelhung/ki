@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 import time
+import types
 from pathlib import Path
 
 import pytest
@@ -43,6 +44,13 @@ class _FailingProcess:
 
     def communicate(self, timeout=None):
         return "", "runner failed"
+
+
+class _SuccessfulProcess:
+    returncode = 0
+
+    def communicate(self, timeout=None):
+        return "completed", ""
 
 
 class _BlockingProcess:
@@ -1135,6 +1143,35 @@ def test_process_reference_is_cleared_after_ordinary_failure(tmp_path, monkeypat
 
     assert task_queue._active_process is None
     assert task_queue._active_task_id is None
+
+
+def test_success_calls_auto_suggest_with_task_queue_dependencies(tmp_path, monkeypatch):
+    from zhiji_backend import ai_client, series_auto_suggest_service
+
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    init_db()
+    task_id = _insert_processing_task(
+        event_id="evt-auto-suggest", task_id="task-auto-suggest"
+    )
+    monkeypatch.setattr(
+        task_queue.subprocess, "Popen", lambda *args, **kwargs: _SuccessfulProcess()
+    )
+    calls = []
+
+    def auto_suggest_stub(event_id, *, connect_fn, chat_fn):
+        calls.append((event_id, connect_fn, chat_fn))
+
+    monkeypatch.setattr(
+        series_auto_suggest_service, "auto_suggest_series", auto_suggest_stub
+    )
+    chain_detector = types.ModuleType("zhiji_backend.chain_detector")
+    chain_detector.detect_chain_data_hints = lambda event_id: 0
+    chain_detector.detect_new_chains = lambda event_id: 0
+    monkeypatch.setitem(sys.modules, "zhiji_backend.chain_detector", chain_detector)
+
+    task_queue._process_one(task_id)
+
+    assert calls == [("evt-auto-suggest", task_queue.connect, ai_client.chat)]
 
 
 def test_stop_worker_without_active_child_is_idempotent():

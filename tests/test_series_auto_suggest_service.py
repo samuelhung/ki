@@ -6,7 +6,7 @@ import inspect
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, get_type_hints
 
 import pytest
 
@@ -101,6 +101,46 @@ def test_entrypoint_has_dependency_injected_types() -> None:
         "connect_fn": ConnectFn,
         "chat_fn": service.ChatFn,
         "return": None,
+    }
+
+
+def test_chat_protocol_has_explicit_callable_signature_and_type_hints() -> None:
+    service = _service()
+
+    assert inspect.isclass(service.ChatFn)
+    assert issubclass(service.ChatFn, Protocol)
+    assert inspect.signature(service.ChatFn.__call__) == inspect.Signature(
+        parameters=[
+            inspect.Parameter("self", inspect.Parameter.POSITIONAL_ONLY),
+            inspect.Parameter(
+                "messages",
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                annotation=list[dict[str, str]],
+            ),
+            inspect.Parameter(
+                "temperature",
+                inspect.Parameter.KEYWORD_ONLY,
+                annotation=float,
+            ),
+            inspect.Parameter(
+                "max_tokens", inspect.Parameter.KEYWORD_ONLY, annotation=int
+            ),
+            inspect.Parameter(
+                "timeout", inspect.Parameter.KEYWORD_ONLY, annotation=int
+            ),
+            inspect.Parameter("module", inspect.Parameter.KEYWORD_ONLY, annotation=str),
+            inspect.Parameter("task", inspect.Parameter.KEYWORD_ONLY, annotation=str),
+        ],
+        return_annotation=str | None,
+    )
+    assert get_type_hints(service.ChatFn.__call__) == {
+        "messages": list[dict[str, str]],
+        "temperature": float,
+        "max_tokens": int,
+        "timeout": int,
+        "module": str,
+        "task": str,
+        "return": str | None,
     }
 
 
