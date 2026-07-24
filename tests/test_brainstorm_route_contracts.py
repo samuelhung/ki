@@ -14,7 +14,7 @@ from fastapi.params import Query
 from fastapi.routing import APIRoute
 
 from zhiji_backend.main import app
-from zhiji_backend.prompt_registry import get_all_prompts
+from zhiji_backend.prompt_registry import MODULE_MAP, get_all_prompts
 from zhiji_backend.routes import brainstorm_routes
 
 
@@ -360,6 +360,10 @@ def test_brainstorm_openapi_request_body_schemas_are_unchanged() -> None:
 
 
 def test_brainstorm_prompt_registry_tasks_and_contents_match_snapshots() -> None:
+    assert MODULE_MAP["brainstorm"]["concept_extract"] == (
+        "brainstorm_concept_service.py",
+        ["precipitate_concept"],
+    )
     prompts = get_all_prompts()["brainstorm"]
     expected = {
         "answer": (

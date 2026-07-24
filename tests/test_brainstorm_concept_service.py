@@ -49,10 +49,20 @@ class ConnectionContext(AbstractContextManager[RecordingConnection]):
         self.database.events.append(("enter", self.number))
         return self.connection
 
-    def __exit__(self, *args: object) -> None:
-        self.connection.connection.commit()
-        self.connection.connection.close()
-        self.database.events.append(("exit", self.number))
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: object,
+    ) -> None:
+        try:
+            if exc_type is None:
+                self.connection.connection.commit()
+            else:
+                self.connection.connection.rollback()
+        finally:
+            self.connection.connection.close()
+            self.database.events.append(("exit", self.number))
         return None
 
 
