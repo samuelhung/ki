@@ -432,6 +432,7 @@ def test_extracted_route_order_signatures_and_openapi_contract_are_unchanged() -
         (2, "/api/chains/flow-summary", {"POST"}, "save_flow_summary"),
         (3, "/api/chains/nodes", {"GET"}, "list_nodes"),
         (4, "/api/chains/analyze", {"POST"}, "analyze_chain_impact"),
+        (5, "/api/chains/report", {"POST"}, "chain_report"),
         (6, "/api/chains/nodes/{node_id}", {"PUT"}, "update_node"),
         (7, "/api/chains/nodes", {"POST"}, "create_node"),
         (8, "/api/chains/nodes/{node_id}", {"DELETE"}, "delete_node"),
@@ -466,6 +467,7 @@ def test_extracted_route_order_signatures_and_openapi_contract_are_unchanged() -
         "save_flow_summary": [("body", chain_routes.FlowSummaryReq)],
         "list_nodes": [],
         "analyze_chain_impact": [("req", chain_routes.AnalyzeRequest)],
+        "chain_report": [("req", chain_routes.ChainReportRequest)],
         "update_node": [
             ("node_id", chain_routes.SafeIdentifier),
             ("req", chain_routes.NodeUpdate),
@@ -494,6 +496,7 @@ def test_extracted_route_order_signatures_and_openapi_contract_are_unchanged() -
         ("/api/chains/flow-summary", "post"): "FlowSummaryReq",
         ("/api/chains/nodes", "get"): None,
         ("/api/chains/analyze", "post"): "AnalyzeRequest",
+        ("/api/chains/report", "post"): "ChainReportRequest",
         ("/api/chains/nodes/{node_id}", "put"): "NodeUpdate",
         ("/api/chains/nodes", "post"): "NodeCreate",
         ("/api/chains/nodes/{node_id}", "delete"): None,
