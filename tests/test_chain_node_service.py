@@ -22,6 +22,7 @@ from zhiji_backend import (
     chain_hint_service,
     chain_merge_service,
     chain_node_service,
+    chain_report_service,
     chain_suggestion_service,
     chain_sync_service,
 )
@@ -431,6 +432,7 @@ def test_extracted_route_order_signatures_and_openapi_contract_are_unchanged() -
         (2, "/api/chains/flow-summary", {"POST"}, "save_flow_summary"),
         (3, "/api/chains/nodes", {"GET"}, "list_nodes"),
         (4, "/api/chains/analyze", {"POST"}, "analyze_chain_impact"),
+        (5, "/api/chains/report", {"POST"}, "chain_report"),
         (6, "/api/chains/nodes/{node_id}", {"PUT"}, "update_node"),
         (7, "/api/chains/nodes", {"POST"}, "create_node"),
         (8, "/api/chains/nodes/{node_id}", {"DELETE"}, "delete_node"),
@@ -465,6 +467,7 @@ def test_extracted_route_order_signatures_and_openapi_contract_are_unchanged() -
         "save_flow_summary": [("body", chain_routes.FlowSummaryReq)],
         "list_nodes": [],
         "analyze_chain_impact": [("req", chain_routes.AnalyzeRequest)],
+        "chain_report": [("req", chain_routes.ChainReportRequest)],
         "update_node": [
             ("node_id", chain_routes.SafeIdentifier),
             ("req", chain_routes.NodeUpdate),
@@ -493,6 +496,7 @@ def test_extracted_route_order_signatures_and_openapi_contract_are_unchanged() -
         ("/api/chains/flow-summary", "post"): "FlowSummaryReq",
         ("/api/chains/nodes", "get"): None,
         ("/api/chains/analyze", "post"): "AnalyzeRequest",
+        ("/api/chains/report", "post"): "ChainReportRequest",
         ("/api/chains/nodes/{node_id}", "put"): "NodeUpdate",
         ("/api/chains/nodes", "post"): "NodeCreate",
         ("/api/chains/nodes/{node_id}", "delete"): None,
@@ -798,3 +802,24 @@ def test_chain_analysis_wrapper_forwards_call_time_dependencies(monkeypatch) -> 
     assert calls == [
         (request, sentinel_connect, sentinel_chat, sentinel_detector, sentinel_logger)
     ]
+
+
+def test_chain_report_wrapper_forwards_call_time_dependencies(monkeypatch) -> None:
+    sentinel_connect = cast(chain_node_service.ConnectFn, object())
+    sentinel_chat = object()
+    request = chain_routes.ChainReportRequest(chain_name="新能源")
+    calls: list[tuple[object, ...]] = []
+
+    monkeypatch.setattr(chain_routes, "connect", sentinel_connect)
+    monkeypatch.setattr(chain_routes, "chat", sentinel_chat)
+    monkeypatch.setattr(
+        chain_report_service,
+        "generate_chain_report",
+        lambda req, *, connect_fn, chat_fn: calls.append(
+            (req, connect_fn, chat_fn)
+        )
+        or {"report": "结果"},
+    )
+
+    assert chain_routes.chain_report(request) == {"report": "结果"}
+    assert calls == [(request, sentinel_connect, sentinel_chat)]
