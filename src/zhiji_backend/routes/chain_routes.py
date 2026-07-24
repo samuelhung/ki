@@ -14,6 +14,7 @@ from .. import (
     chain_hint_service,
     chain_merge_service,
     chain_node_service,
+    chain_suggestion_service,
 )
 from ..ai_client import chat
 from ..db import connect
@@ -721,117 +722,43 @@ def list_suggestions(
     limit: int = Query(30, ge=1, le=MAX_PAGE_SIZE),
 ):
     """列出AI建议的新产业链。"""
-    with connect() as conn:
-        rows = conn.execute(
-            """SELECT * FROM chain_suggestions
-               WHERE status = ?
-               ORDER BY created_at DESC
-               LIMIT ?""",
-            (status, limit),
-        ).fetchall()
-    items = []
-    for r in rows:
-        d = dict(r)
-        d["nodes_json"] = json.loads(d["nodes_json"]) if isinstance(d["nodes_json"], str) else d["nodes_json"]
-        items.append(d)
-    return {"suggestions": items}
+    return chain_suggestion_service.list_suggestions(
+        status=status,
+        limit=limit,
+        connect_fn=connect,
+    )
 
 
 @router.get("/suggestions/count")
 def count_suggestions():
     """获取待处理新链建议数量。"""
-    with connect() as conn:
-        row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM chain_suggestions WHERE status = 'pending'"
-        ).fetchone()
-    return {"pending": row["cnt"] if row else 0}
+    return chain_suggestion_service.count_suggestions(connect_fn=connect)
 
 
 @router.post("/suggestions/{sid}/adopt")
 def adopt_suggestion(sid: SafeIdentifier):
     """采用一条新链建议：创建链和所有节点 + AI 选图标。"""
-    with connect() as conn:
-        sug = conn.execute("SELECT * FROM chain_suggestions WHERE id = ?", (sid,)).fetchone()
-        if not sug:
-            raise HTTPException(404, "建议不存在")
-
-        sug = dict(sug)
-        nodes = json.loads(sug["nodes_json"]) if isinstance(sug["nodes_json"], str) else sug["nodes_json"]
-
-        created = []
-        for i, n in enumerate(nodes):
-            node_id = str(uuid.uuid4())
-            # 自动串联：每个节点(序号>0)的上游 = 前一个节点
-            upstream = json.dumps([created[-1]["id"]]) if created else None
-            conn.execute(
-                """INSERT INTO industry_chain_nodes (id, chain, name, node_type, description, sort_order, upstream_ids)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (node_id, sug["chain_name"], n.get("name", "?"), n.get("node_type", "原材料"),
-                 n.get("description", ""), i, upstream),
-            )
-            created.append({"id": node_id, "name": n.get("name", "?")})
-
-        conn.execute(
-            "UPDATE chain_suggestions SET status = 'adopted', reviewed_at = datetime('now') WHERE id = ?",
-            (sid,),
-        )
-
-    # AI 推荐图标
-    icon = _suggest_icon(sug["chain_name"])
-
-    # 存入 chain_meta
-    with connect() as conn:
-        conn.execute(
-            "INSERT OR REPLACE INTO chain_meta (chain_name, icon, created_at) VALUES (?, ?, datetime('now'))",
-            (sug["chain_name"], icon),
-        )
-
-    return {"ok": True, "chain_name": sug["chain_name"], "icon": icon,
-            "nodes_created": len(created), "nodes": created}
+    return chain_suggestion_service.adopt_suggestion(
+        sid,
+        connect_fn=connect,
+        uuid_factory=uuid.uuid4,
+        icon_suggester=_suggest_icon,
+    )
 
 
 def _suggest_icon(chain_name: str) -> str:
     """用 AI 为产业链名匹配最合适的 Lucide 图标名。"""
-    icon_list = [
-        "Zap", "Sun", "Cpu", "Factory", "Wheat", "Flame", "Hammer",
-        "Shirt", "Truck", "Heart", "Building", "Cloud", "DollarSign",
-        "Leaf", "Anchor", "Microscope", "Droplets", "ShoppingCart",
-        "Ship", "Plane", "Shield", "Radio", "Globe", "Database",
-    ]
-    prompt = f"""从以下 Lucide 图标名中选择最适合「{chain_name}」的一个图标。
-
-可选图标: {', '.join(icon_list)}
-
-规则:
-1. 只返回图标名，不要加引号或其他文字
-2. 根据产业链的核心实物/活动来选择（如粮食→Wheat, 石油→Droplets, 钢铁→Hammer, 服装→Shirt, 医药→Heart, 物流→Truck, 航空→Plane, 金融→DollarSign, 农业→Leaf, 建筑→Building, 军工→Shield, 云计算→Cloud, 通信→Radio）
-3. 如果都不合适，返回 Factory"""
-    try:
-        result = chat(
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            max_tokens=32,
-            module="chain_meta",
-            task="suggest_icon"
-        )
-        if result:
-            icon = result.strip().strip('"').strip("'")
-            if icon in icon_list:
-                return icon
-    except Exception:
-        logger.warning("_suggest_icon failed for %s", chain_name, exc_info=True)
-    return "Factory"
+    return chain_suggestion_service.suggest_icon(
+        chain_name,
+        chat_fn=chat,
+        service_logger=logger,
+    )
 
 
 @router.post("/suggestions/{sid}/dismiss")
 def dismiss_suggestion(sid: SafeIdentifier):
     """忽略一条新链建议。"""
-    with connect() as conn:
-        conn.execute(
-            "UPDATE chain_suggestions SET status = 'dismissed', reviewed_at = datetime('now') WHERE id = ?",
-            (sid,),
-        )
-    return {"ok": True}
+    return chain_suggestion_service.dismiss_suggestion(sid, connect_fn=connect)
 
 
 # ── 分析反哺：同步 extracted_hints 到 hints 表 ──

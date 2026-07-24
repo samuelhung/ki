@@ -430,6 +430,20 @@ def test_extracted_route_order_signatures_and_openapi_contract_are_unchanged() -
         (6, "/api/chains/nodes/{node_id}", {"PUT"}, "update_node"),
         (7, "/api/chains/nodes", {"POST"}, "create_node"),
         (8, "/api/chains/nodes/{node_id}", {"DELETE"}, "delete_node"),
+        (15, "/api/chains/suggestions", {"GET"}, "list_suggestions"),
+        (16, "/api/chains/suggestions/count", {"GET"}, "count_suggestions"),
+        (
+            17,
+            "/api/chains/suggestions/{sid}/adopt",
+            {"POST"},
+            "adopt_suggestion",
+        ),
+        (
+            18,
+            "/api/chains/suggestions/{sid}/dismiss",
+            {"POST"},
+            "dismiss_suggestion",
+        ),
     ]
     actual_routes = [
         (index, route.path, route.methods, route.endpoint.__name__)
@@ -450,6 +464,10 @@ def test_extracted_route_order_signatures_and_openapi_contract_are_unchanged() -
         ],
         "create_node": [("req", chain_routes.NodeCreate)],
         "delete_node": [("node_id", chain_routes.SafeIdentifier)],
+        "list_suggestions": [("status", str), ("limit", int)],
+        "count_suggestions": [],
+        "adopt_suggestion": [("sid", chain_routes.SafeIdentifier)],
+        "dismiss_suggestion": [("sid", chain_routes.SafeIdentifier)],
     }
     for name, expected in expected_signatures.items():
         hints = inspect.get_annotations(getattr(chain_routes, name), eval_str=True)
@@ -468,6 +486,10 @@ def test_extracted_route_order_signatures_and_openapi_contract_are_unchanged() -
         ("/api/chains/nodes/{node_id}", "put"): "NodeUpdate",
         ("/api/chains/nodes", "post"): "NodeCreate",
         ("/api/chains/nodes/{node_id}", "delete"): None,
+        ("/api/chains/suggestions", "get"): None,
+        ("/api/chains/suggestions/count", "get"): None,
+        ("/api/chains/suggestions/{sid}/adopt", "post"): None,
+        ("/api/chains/suggestions/{sid}/dismiss", "post"): None,
     }
     for (path, method), request_model in expected_openapi.items():
         operation = schema["paths"][path][method]

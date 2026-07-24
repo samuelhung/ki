@@ -179,7 +179,9 @@ def test_adopt_missing_suggestion_preserves_not_found_contract(tmp_path: Path) -
 def test_dismiss_suggestion_remains_idempotent(tmp_path: Path) -> None:
     database = tmp_path / "chains.sqlite"
     _create_schema(database)
-    connect_fn = lambda: _connect(database)
+
+    def connect_fn():
+        return _connect(database)
 
     assert chain_suggestion_service.dismiss_suggestion(
         "suggestion-new", connect_fn=connect_fn
