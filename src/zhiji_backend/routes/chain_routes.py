@@ -142,13 +142,6 @@ def chain_report(req: ChainReportRequest):
         chat_fn=chat,
     )
 
-
-
-
-# ── CRUD ──
-
-
-
 _resolve_upstream_ids = chain_node_service.resolve_upstream_ids
 
 
@@ -251,9 +244,6 @@ def ai_collect_chain_all(req: AiCollectRequest):
             logger.warning("ai_collect_all: failed for node %s: %s", node["id"], e)
 
     return {"ok": True, "chain": chain_name, "collected": len(collected), "nodes": collected}
-
-
-# ── Helpers ──
 
 
 # ── 数据更新提示 API ──
