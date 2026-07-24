@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import uuid
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from .. import chain_node_service
+from .. import chain_merge_service, chain_node_service
 from ..ai_client import chat
 from ..db import connect
 from ..security.constraints import MAX_PAGE_SIZE, SafeIdentifier
@@ -1383,104 +1382,7 @@ def chain_chat(req: ChatRequest):
 @router.get("/overlap-check")
 def check_chain_overlaps():
     """检测产业链之间的重叠节点和上下游承接关系，建议合并。"""
-    from collections import defaultdict
-
-    with connect() as conn:
-        rows = conn.execute(
-            "SELECT id, chain, name, node_type, sort_order FROM industry_chain_nodes ORDER BY chain, sort_order"
-        ).fetchall()
-
-    chains: dict[str, list[dict]] = defaultdict(list)
-    for r in rows:
-        r = dict(r)
-        chains[r["chain"]].append(r)
-
-    chain_names = sorted(chains.keys())
-    overlaps: list[dict] = []
-
-    # 1. Exact name match across chains
-    name_to_chains: dict[str, set[str]] = defaultdict(set)
-    for r in rows:
-        r = dict(r)
-        name_to_chains[r["name"]].add(r["chain"])
-    exact_shared = {name: cs for name, cs in name_to_chains.items() if len(cs) > 1}
-
-    # 2. Node↔Chain name cross-match: if a node name contains key chars of another chain name
-    def strip_chain(name: str) -> str:
-        """去掉"产业链"后缀"""
-        return name.replace("产业链", "")
-
-    # 3. Build overlap suggestions per chain pair
-    for i in range(len(chain_names)):
-        for j in range(i + 1, len(chain_names)):
-            a, b = chain_names[i], chain_names[j]
-            nodes_a = chains[a]
-            nodes_b = chains[b]
-            types_a = {n["node_type"] for n in nodes_a}
-            types_b = {n["node_type"] for n in nodes_b}
-
-            fuzzy_shared: list[str] = []
-
-            # a) Node name ↔ other chain name
-            a_stripped = strip_chain(a)
-            b_stripped = strip_chain(b)
-            for n in nodes_b:
-                if a_stripped in n["name"] or n["name"] in a_stripped:
-                    fuzzy_shared.append(f"「{a}」链名 ↔ 节点「{n['name']}」({b})")
-            for n in nodes_a:
-                if b_stripped in n["name"] or n["name"] in b_stripped:
-                    fuzzy_shared.append(f"「{b}」链名 ↔ 节点「{n['name']}」({a})")
-
-            # b) Terminal ↔ Raw material substring match
-            a_terms = [n for n in nodes_a if n["node_type"] == "终端"]
-            b_raws = [n for n in nodes_b if n["node_type"] == "原材料"]
-            b_terms = [n for n in nodes_b if n["node_type"] == "终端"]
-            a_raws = [n for n in nodes_a if n["node_type"] == "原材料"]
-
-            for at in a_terms:
-                for br in b_raws:
-                    if at["name"] in br["name"] or br["name"] in at["name"]:
-                        fuzzy_shared.append(f"终端「{at['name']}」({a}) ↔ 原材料「{br['name']}」({b})")
-
-            for bt in b_terms:
-                for ar in a_raws:
-                    if bt["name"] in ar["name"] or ar["name"] in bt["name"]:
-                        fuzzy_shared.append(f"终端「{bt['name']}」({b}) ↔ 原材料「{ar['name']}」({a})")
-
-            # Build overlap entry if exact or fuzzy match found
-            exact = [name for name, cs in exact_shared.items() if a in cs and b in cs]
-            if exact or fuzzy_shared:
-                reason_parts = []
-                score = 0.0
-
-                if exact:
-                    score += len(exact) / max(len(nodes_a) + len(nodes_b), 1) * 0.8
-                    reason_parts.append(f"同名节点: {', '.join(exact)}")
-
-                if fuzzy_shared:
-                    score += min(len(fuzzy_shared) * 0.15, 0.4)
-                    reason_parts.append(f"关键词重叠: {'; '.join(fuzzy_shared)}")
-
-                if "终端" in types_a and "原材料" in types_b:
-                    score += 0.1
-                    reason_parts.append(f"「{a}」终端 ←→ 「{b}」原材料, 可合并为上下游")
-                if "终端" in types_b and "原材料" in types_a:
-                    score += 0.1
-                    reason_parts.append(f"「{b}」终端 ←→ 「{a}」原材料, 可合并为上下游")
-
-                overlaps.append({
-                    "chain_a": a,
-                    "chain_b": b,
-                    "nodes_a_count": len(nodes_a),
-                    "nodes_b_count": len(nodes_b),
-                    "exact_shared": exact,
-                    "fuzzy_shared": fuzzy_shared,
-                    "overlap_score": round(min(score, 1.0), 3),
-                    "reason": "；".join(reason_parts),
-                })
-
-    overlaps.sort(key=lambda x: -x["overlap_score"])
-    return {"overlaps": overlaps, "total_chains": len(chain_names)}
+    return chain_merge_service.check_chain_overlaps(connect_fn=connect)
 
 
 class MergeRequest(BaseModel):
@@ -1492,176 +1394,10 @@ class MergeRequest(BaseModel):
 @router.post("/merge")
 def merge_chains(req: MergeRequest):
     """合并两条产业链。into = "a" 保留链A并把B并入；"b" 保留B并入A；"new:名称" 创建新链。"""
-
-    into_a = req.into == "a"
-    into_b = req.into == "b"
-    into_new = req.into.startswith("new:")
-    target_chain = ""
-    removed_chain = ""
-
-    if into_a:
-        target_chain = req.chain_a
-        removed_chain = req.chain_b
-    elif into_b:
-        target_chain = req.chain_b
-        removed_chain = req.chain_a
-    elif into_new:
-        target_chain = req.into[4:]  # after "new:"
-        removed_chain = ""
-    else:
-        raise HTTPException(400, "into must be 'a', 'b', or 'new:name'")
-
-    if into_new and (target_chain == req.chain_a or target_chain == req.chain_b):
-        raise HTTPException(400, "新链名不能与现有链名相同")
-
-    with connect() as conn:
-        # Fetch all nodes from both chains
-        nodes_a = [dict(r) for r in conn.execute(
-            "SELECT * FROM industry_chain_nodes WHERE chain = ? ORDER BY sort_order",
-            (req.chain_a,)
-        ).fetchall()]
-        nodes_b = [dict(r) for r in conn.execute(
-            "SELECT * FROM industry_chain_nodes WHERE chain = ? ORDER BY sort_order",
-            (req.chain_b,)
-        ).fetchall()]
-
-        # Collect existing names in target (if target is one of A/B, its nodes stay)
-        existing_names: set[str] = set()
-        merged_nodes: list[dict] = []
-
-        if into_a:
-            merged_nodes = nodes_a
-            existing_names = {n["name"] for n in nodes_a}
-            for n in nodes_b:
-                if n["name"] not in existing_names:
-                    merged_nodes.append(n)
-                    existing_names.add(n["name"])
-        elif into_b:
-            merged_nodes = nodes_b
-            existing_names = {n["name"] for n in nodes_b}
-            for n in nodes_a:
-                if n["name"] not in existing_names:
-                    merged_nodes.append(n)
-                    existing_names.add(n["name"])
-        else:
-            # into_new: merge both, A first (keep A nodes, skip B duplicates)
-            existing_names = {n["name"] for n in nodes_a}
-            merged_nodes = list(nodes_a)
-            for n in nodes_b:
-                if n["name"] not in existing_names:
-                    merged_nodes.append(n)
-                    existing_names.add(n["name"])
-
-        # AI-assisted re-sort: ask AI to order nodes by real industrial flow
-        try:
-            node_list = "\n".join(
-                f"- [{n['node_type']}] {n['name']}" + (f" — {n.get('description','')[:60]}" if n.get('description') else "")
-                for n in merged_nodes
-            )
-            prompt = f"""你是一位产业链分析师。以下节点来自两条合并的产业链：
-原链A「{req.chain_a}」和原链B「{req.chain_b}」已合并为「{target_chain}」。
-
-请根据产业链的真实生产流转逻辑，将这些节点重新排序。规则：
-1. 原材料在上游，中间品/零部件在中间，终端/应用在下游
-2. 同一物质如果同时出现在两条链中（如A的产物是B的原料），按上下游串联
-3. 并列的原材料放在一起，并列的终端放在一起
-4. 返回纯 JSON 数组，只包含节点名，不要任何其他内容
-
-节点列表：
-{node_list}
-
-格式示例：["硫磺","合成氨","尿素","化肥","柴油","粮食种植","粮食作物","食品价格"]"""
-
-            ai_raw = chat(
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1,
-                max_tokens=1024,
-                timeout=30,
-                response_format={"type": "json_object"},
-            )
-            if ai_raw:
-                # Parse AI response — may be wrapped in json_object or raw array
-                arr_match = re.search(r'\[.*?\]', ai_raw.strip(), re.DOTALL)
-                if arr_match:
-                    ai_order = json.loads(arr_match.group())
-                    if isinstance(ai_order, dict):
-                        # json_object wraps array in a key — extract first array value
-                        for v in ai_order.values():
-                            if isinstance(v, list) and v:
-                                ai_order = v
-                                break
-                    if isinstance(ai_order, list):
-                        # Build lookup: name → node dict
-                        name_map = {n["name"]: n for n in merged_nodes}
-                        ai_sorted = [name_map[name] for name in ai_order if name in name_map]
-                        # Append any nodes AI missed
-                        covered = {n["name"] for n in ai_sorted}
-                        for n in merged_nodes:
-                            if n["name"] not in covered:
-                                ai_sorted.append(n)
-                                covered.add(n["name"])
-                        merged_nodes = ai_sorted
-                        logger.info("AI sorted %d nodes for merged chain '%s'", len(ai_sorted), target_chain)
-        except Exception as e:
-            logger.warning("AI merge sort failed, falling back to type-based sort: %s", e)
-            # Fallback: type-based sort
-            TYPE_ORDER = {"原材料": 0, "中间品": 1, "零部件": 2, "终端": 3}
-            primary_chain = req.chain_a if into_a else (req.chain_b if into_b else req.chain_a)
-            merged_nodes.sort(key=lambda n: (TYPE_ORDER.get(n["node_type"], 99), 0 if n["chain"] == primary_chain else 1, n["sort_order"]))
-
-        # Reassign sort_order
-        for i, n in enumerate(merged_nodes):
-            conn.execute(
-                "UPDATE industry_chain_nodes SET chain = ?, sort_order = ? WHERE id = ?",
-                (target_chain, i, n["id"]),
-            )
-
-        # Remove old chain_meta for absorbed chains
-        if into_a:
-            conn.execute("DELETE FROM chain_meta WHERE chain_name = ?", (req.chain_b,))
-        elif into_b:
-            conn.execute("DELETE FROM chain_meta WHERE chain_name = ?", (req.chain_a,))
-        else:
-            conn.execute("DELETE FROM chain_meta WHERE chain_name = ?", (req.chain_a,))
-            conn.execute("DELETE FROM chain_meta WHERE chain_name = ?", (req.chain_b,))
-
-        # Ensure target chain_meta exists (assign icon if missing)
-        existing_meta = conn.execute(
-            "SELECT icon FROM chain_meta WHERE chain_name = ?", (target_chain,)
-        ).fetchone()
-        if not existing_meta:
-            icon = _suggest_icon(target_chain)
-            conn.execute(
-                "INSERT OR IGNORE INTO chain_meta (chain_name, icon) VALUES (?, ?)",
-                (target_chain, icon),
-            )
-
-        # Update chain_data_hints for absorbed chains
-        if removed_chain:
-            conn.execute(
-                "UPDATE chain_data_hints SET chain = ? WHERE chain = ?",
-                (target_chain, removed_chain),
-            )
-        else:
-            # into_new: update both
-            conn.execute(
-                "UPDATE chain_data_hints SET chain = ? WHERE chain = ?",
-                (target_chain, req.chain_a),
-            )
-            conn.execute(
-                "UPDATE chain_data_hints SET chain = ? WHERE chain = ?",
-                (target_chain, req.chain_b),
-            )
-
-        conn.commit()
-
-    return {
-        "ok": True,
-        "target_chain": target_chain,
-        "removed": removed_chain if removed_chain else [req.chain_a, req.chain_b],
-        "node_count": len(merged_nodes),
-        "flow": [
-            {"name": n["name"], "type": n["node_type"], "sort_order": i}
-            for i, n in enumerate(merged_nodes)
-        ],
-    }
+    return chain_merge_service.merge_chains(
+        req,
+        connect_fn=connect,
+        chat_fn=chat,
+        icon_suggester=_suggest_icon,
+        service_logger=logger,
+    )
