@@ -17,6 +17,7 @@ from pydantic import TypeAdapter, ValidationError
 
 from zhiji_backend import (
     chain_collection_service,
+    chain_hint_service,
     chain_merge_service,
     chain_node_service,
 )
@@ -578,4 +579,45 @@ def test_chain_collection_wrapper_forwards_call_time_dependencies(monkeypatch) -
     assert chain_routes._do_collect(node, use_web=True) == {"ok": True}
     assert calls == [
         (node, True, sentinel_connect, sentinel_chat, sentinel_logger),
+    ]
+
+
+def test_chain_hint_wrappers_forward_call_time_dependencies(monkeypatch) -> None:
+    sentinel_connect = cast(chain_node_service.ConnectFn, object())
+    request = chain_routes.HintResolve(action="reject")
+    calls: list[tuple[object, ...]] = []
+
+    monkeypatch.setattr(chain_routes, "connect", sentinel_connect)
+    monkeypatch.setattr(
+        chain_hint_service,
+        "list_hints",
+        lambda *, status, limit, connect_fn: calls.append(
+            ("list", status, limit, connect_fn)
+        )
+        or {"hints": []},
+    )
+    monkeypatch.setattr(
+        chain_hint_service,
+        "count_hints",
+        lambda *, connect_fn: calls.append(("count", connect_fn)) or {"pending": 0},
+    )
+    monkeypatch.setattr(
+        chain_hint_service,
+        "resolve_hint",
+        lambda hint_id, req, *, connect_fn: calls.append(
+            ("resolve", hint_id, req, connect_fn)
+        )
+        or {"ok": True, "action": req.action},
+    )
+
+    assert chain_routes.list_hints(status="pending", limit=10) == {"hints": []}
+    assert chain_routes.count_hints() == {"pending": 0}
+    assert chain_routes.resolve_hint("hint-1", request) == {
+        "ok": True,
+        "action": "reject",
+    }
+    assert calls == [
+        ("list", "pending", 10, sentinel_connect),
+        ("count", sentinel_connect),
+        ("resolve", "hint-1", request, sentinel_connect),
     ]
