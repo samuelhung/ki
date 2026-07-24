@@ -1,14 +1,22 @@
 """AI-generated content workflows for series."""
 
 import json
-import logging
+from collections.abc import Callable
 
 from fastapi import HTTPException
 
-logger = logging.getLogger("zhiji_backend.routes.series_routes")
+from .series_service import ConnectFn, InitDbFn
+
+type ChatFn = Callable[..., str | None]
 
 
-def generate_series_intro(series_id, *, connect_fn, init_db_fn, chat_fn):
+def generate_series_intro(
+    series_id: str,
+    *,
+    connect_fn: ConnectFn,
+    init_db_fn: InitDbFn,
+    chat_fn: ChatFn,
+) -> dict[str, str]:
     """Generate a narrative intro connecting all member overviews."""
     init_db_fn()
     with connect_fn() as conn:
@@ -83,7 +91,13 @@ def generate_series_intro(series_id, *, connect_fn, init_db_fn, chat_fn):
     return {"intro": intro.strip()}
 
 
-def generate_series_summary(series_id, *, connect_fn, init_db_fn, chat_fn):
+def generate_series_summary(
+    series_id: str,
+    *,
+    connect_fn: ConnectFn,
+    init_db_fn: InitDbFn,
+    chat_fn: ChatFn,
+) -> dict[str, str]:
     """Generate the structured series summary."""
     init_db_fn()
     with connect_fn() as conn:
@@ -188,7 +202,13 @@ def generate_series_summary(series_id, *, connect_fn, init_db_fn, chat_fn):
     return {"summary": summary.strip()}
 
 
-def generate_series_paper(series_id, *, connect_fn, init_db_fn, chat_fn):
+def generate_series_paper(
+    series_id: str,
+    *,
+    connect_fn: ConnectFn,
+    init_db_fn: InitDbFn,
+    chat_fn: ChatFn,
+) -> dict[str, str]:
     """Generate the paper-style deep analysis for a series."""
     init_db_fn()
     with connect_fn() as conn:

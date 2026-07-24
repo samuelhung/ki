@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import inspect
 import json
 import re
 from contextlib import contextmanager
@@ -11,6 +12,7 @@ import pytest
 from fastapi import HTTPException
 
 from zhiji_backend.db import connect, init_db
+from zhiji_backend.series_service import ConnectFn, InitDbFn
 
 
 @pytest.fixture
@@ -235,8 +237,20 @@ CASES = [
 ]
 
 
-def test_logger_preserves_series_routes_namespace() -> None:
-    assert _service().logger.name == "zhiji_backend.routes.series_routes"
+@pytest.mark.parametrize("function_name", [case[0] for case in CASES])
+def test_generation_entrypoints_have_complete_service_types(function_name) -> None:
+    service = _service()
+    annotations = inspect.get_annotations(
+        getattr(service, function_name), eval_str=True
+    )
+
+    assert annotations == {
+        "series_id": str,
+        "connect_fn": ConnectFn,
+        "init_db_fn": InitDbFn,
+        "chat_fn": getattr(service, "ChatFn", None),
+        "return": dict[str, str],
+    }
 
 
 @pytest.mark.parametrize("function_name", [case[0] for case in CASES])
@@ -345,7 +359,10 @@ def test_empty_ai_output_returns_500_without_updating_series(
     assert row["updated_at"] is None
 
 
-def test_member_query_order_and_connection_commit_boundaries_are_preserved() -> None:
+@pytest.mark.parametrize("function_name,field", [(case[0], case[1]) for case in CASES])
+def test_member_query_order_and_connection_commit_boundaries_are_preserved(
+    function_name, field
+) -> None:
     events: list[Any] = []
 
     class Result:
@@ -408,14 +425,14 @@ def test_member_query_order_and_connection_commit_boundaries_are_preserved() -> 
         ]
         prompt = messages[1]["content"]
         assert prompt.index("[1] First returned") < prompt.index("[2] Second returned")
-        return " intro "
+        return " generated "
 
     assert _call(
-        "generate_series_intro",
+        function_name,
         chat,
         connect_fn=tracked_connect,
         init_db_fn=lambda: events.append("init"),
-    ) == {"intro": "intro"}
+    ) == {field: "generated"}
     assert events[0] == "init"
     assert events[2] == (
         "connection-1",
@@ -437,14 +454,17 @@ def test_member_query_order_and_connection_commit_boundaries_are_preserved() -> 
     assert update[0:3] == (
         "connection-2",
         "execute",
-        "UPDATE series SET intro = ?, updated_at = ? WHERE id = ?",
+        f"UPDATE series SET {field} = ?, updated_at = ? WHERE id = ?",
     )
-    assert update[3][0] == "intro"
+    assert update[3][0] == "generated"
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}", update[3][1])
     assert update[3][2] == "series-1"
 
 
-def test_ai_exceptions_propagate_without_opening_update_connection(series_db) -> None:
+@pytest.mark.parametrize("function_name", [case[0] for case in CASES])
+def test_ai_exceptions_propagate_without_opening_update_connection(
+    series_db, function_name
+) -> None:
     _insert_event("event-1", "First title", "First overview")
     _insert_event("event-2", "Second title", "Second overview")
     _insert_series(["event-1", "event-2"])
@@ -459,6 +479,6 @@ def test_ai_exceptions_propagate_without_opening_update_connection(series_db) ->
         raise RuntimeError("chat failed")
 
     with pytest.raises(RuntimeError, match="chat failed"):
-        _call("generate_series_intro", chat, connect_fn=tracked_connect)
+        _call(function_name, chat, connect_fn=tracked_connect)
 
     assert connect_calls == 1
