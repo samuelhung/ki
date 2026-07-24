@@ -9,6 +9,7 @@ from scripts.check_structure_baseline import (
     BaselineError,
     compare_baselines,
     load_baseline,
+    main,
     scan_structure,
 )
 
@@ -110,3 +111,31 @@ def test_load_baseline_rejects_malformed_data(
 
     with pytest.raises(BaselineError):
         load_baseline(path)
+
+
+def test_main_requires_exact_checked_baseline(tmp_path: Path, capsys) -> None:
+    _write(tmp_path / "src/zhiji_backend/large.py", "line\n" * 401)
+    _write(tmp_path / "pyproject.toml", "[tool.ruff.lint.per-file-ignores]\n")
+    (tmp_path / "structure-baseline.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "oversized_files": {},
+                "ruff_per_file_ignores": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert main(["--root", str(tmp_path)]) == 1
+    assert "structure baseline is stale" in capsys.readouterr().err
+
+
+def test_main_writes_deterministic_baseline(tmp_path: Path) -> None:
+    _write(tmp_path / "src/zhiji_backend/large.py", "line\n" * 401)
+    _write(tmp_path / "pyproject.toml", "[tool.ruff.lint.per-file-ignores]\n")
+
+    assert main(["--root", str(tmp_path), "--write-baseline"]) == 0
+    assert load_baseline(tmp_path / "structure-baseline.json")[
+        "oversized_files"
+    ] == {"src/zhiji_backend/large.py": 401}
