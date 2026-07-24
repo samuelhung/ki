@@ -1,5 +1,6 @@
 import { fetchWithPolicy, type ApiRequestInit } from './apiRequestPolicy';
 import { createApiFetch } from './apiFetchRuntime';
+import { notifyRemoteAuthRequired } from './components/auth/remoteUnlockRuntime';
 import { notifyMediaTransportConnectionChanged } from './mediaTransport';
 
 const origin = window.location.origin;
@@ -57,6 +58,7 @@ const runtimeApiFetch = createApiFetch({
   getBackendUrl,
   prepareInit: withAuth,
   request: fetchWithPolicy,
+  onUnauthorized: notifyRemoteAuthRequired,
 });
 
 export async function apiFetch(input: RequestInfo | URL, init?: ApiRequestInit): Promise<Response> {
