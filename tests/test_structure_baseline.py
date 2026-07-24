@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from scripts.check_structure_baseline import (
+    BASELINE_NAME,
     BaselineError,
+    _baseline_at_reference,
     compare_baselines,
     load_baseline,
     main,
@@ -139,3 +142,32 @@ def test_main_writes_deterministic_baseline(tmp_path: Path) -> None:
     assert load_baseline(tmp_path / "structure-baseline.json")[
         "oversized_files"
     ] == {"src/zhiji_backend/large.py": 401}
+
+
+def test_scan_rejects_non_list_ruff_ignores(tmp_path: Path) -> None:
+    _write(
+        tmp_path / "pyproject.toml",
+        '[tool.ruff.lint.per-file-ignores]\n"bad.py" = "E402"\n',
+    )
+
+    with pytest.raises(BaselineError, match="must be a list of rules"):
+        scan_structure(tmp_path)
+
+
+def test_reference_lookup_rejects_show_failure_for_tracked_baseline(
+    tmp_path: Path, monkeypatch
+) -> None:
+    results = iter(
+        [
+            SimpleNamespace(returncode=0, stdout="commit\n", stderr=""),
+            SimpleNamespace(returncode=0, stdout=f"{BASELINE_NAME}\n", stderr=""),
+            SimpleNamespace(returncode=1, stdout="", stderr="read failed"),
+        ]
+    )
+    monkeypatch.setattr(
+        "scripts.check_structure_baseline.subprocess.run",
+        lambda *args, **kwargs: next(results),
+    )
+
+    with pytest.raises(BaselineError, match="cannot read structure baseline"):
+        _baseline_at_reference(tmp_path, "base")

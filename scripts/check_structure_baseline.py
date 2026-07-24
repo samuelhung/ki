@@ -41,11 +41,15 @@ def _normalized_ruff_ignores(root: Path) -> dict[str, list[str]]:
     )
     if not isinstance(raw, dict):
         raise BaselineError("Ruff per-file-ignores must be a table")
-    return {
-        str(path): sorted(set(rules))
-        for path, rules in sorted(raw.items())
-        if rules
-    }
+    normalized: dict[str, list[str]] = {}
+    for path, rules in sorted(raw.items()):
+        if not isinstance(rules, list) or any(
+            not isinstance(rule, str) or not rule for rule in rules
+        ):
+            raise BaselineError(f"Ruff ignore {path} must be a list of rules")
+        if rules:
+            normalized[str(path)] = sorted(set(rules))
+    return normalized
 
 
 def scan_structure(root: Path) -> dict[str, Any]:
@@ -137,6 +141,17 @@ def _baseline_at_reference(
     )
     if verified.returncode != 0:
         raise BaselineError(f"invalid structure baseline reference: {reference}")
+    listed = subprocess.run(
+        ["git", "ls-tree", "--name-only", reference, "--", BASELINE_NAME],
+        cwd=root,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    if listed.returncode != 0:
+        raise BaselineError(f"cannot inspect structure baseline at {reference}")
+    if BASELINE_NAME not in listed.stdout.splitlines():
+        return None
     shown = subprocess.run(
         ["git", "show", f"{reference}:{BASELINE_NAME}"],
         cwd=root,
@@ -145,7 +160,7 @@ def _baseline_at_reference(
         text=True,
     )
     if shown.returncode != 0:
-        return None
+        raise BaselineError(f"cannot read structure baseline at {reference}")
     try:
         value = json.loads(shown.stdout)
     except json.JSONDecodeError as exc:
