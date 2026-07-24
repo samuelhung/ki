@@ -191,7 +191,9 @@ def test_report_preserves_empty_and_failed_ai_responses(tmp_path: Path) -> None:
                (id, chain, name, node_type, sort_order)
                VALUES ('node-1', '新能源', '锂矿', '原材料', 0)"""
         )
-    connect_fn = lambda: _connect(database)
+    def connect_fn():
+        return _connect(database)
+
     request = ChainReportRequest(chain_name="新能源", force=True)
 
     assert chain_report_service.generate_chain_report(
