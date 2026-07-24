@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 import logging
-import re
 import uuid
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 from pydantic import BaseModel, field_validator
 
 from .. import (
     brainstorm_answer_service,
+    brainstorm_concept_service,
     brainstorm_contemplation_service,
     brainstorm_conversation_service,
     brainstorm_question_service,
@@ -343,107 +343,40 @@ class PrecipitateConceptRequest(BaseModel):
     description: str = ""
 
 
+def _create_concept(
+    title: str,
+    topic: str,
+    description: str = "",
+    force_ai: bool = False,
+    context_docs: list[dict[str, str]] | None = None,
+) -> dict:
+    from ..routes.ingest_routes import _create_concept as create_concept
+
+    return create_concept(
+        title,
+        topic,
+        description,
+        force_ai=force_ai,
+        context_docs=context_docs,
+    )
+
+
 @router.get("/api/brainstorm/{question_id}/concepts")
 def list_summary_concepts(question_id: SafeIdentifier) -> dict[str, object]:
     """Parse concepts from the summary — both primary concepts (概念定义) and related concepts (相关概念).
     Returns each concept with its description and whether it already exists in the system."""
-    with connect() as conn:
-        q = conn.execute("SELECT id, question, answer FROM brainstorm_questions WHERE id = ?", (question_id,)).fetchone()
-    if not q:
-        raise HTTPException(status_code=404, detail="Question not found")
-    answer = q["answer"] or ""
-    if not answer:
-        return {"question_id": question_id, "concepts": [], "message": "请先生成总结"}
-
-    concepts: list[dict[str, object]] = []
-    seen: set[str] = set()
-
-    # ── 1. Parse "## 概念定义" section — primary concepts from the question ──
-    def_section = re.search(r"## 概念定义\n+(.*?)(?=\n## |\Z)", answer, re.DOTALL)
-    if def_section:
-        section = def_section.group(1).strip()
-        # Match: ### Concept Name (heading), followed by definition
-        for m in re.finditer(r"### (.+?)\n", section):
-            name = m.group(1).strip()
-            if name in seen:
-                continue
-            # Try to extract the definition line: - **定义**：...
-            rest_start = m.end()
-            rest = section[rest_start:]
-            def_match = re.match(r".*?定义\*\*[：:]\s*(.+?)(?=\n- |\n###|\n\n|\Z)", rest, re.DOTALL)
-            desc = def_match.group(1).strip() if def_match else name
-            concepts.append({"name": name, "description": desc})
-            seen.add(name)
-
-    # ── 2. Parse "## 相关概念" section — related/supplementary concepts ──
-    rel_section = re.search(r"## 相关概念\n+(.*?)(?=\n## |\Z)", answer, re.DOTALL)
-    if rel_section:
-        section = rel_section.group(1).strip()
-        for m in re.finditer(r"- \*\*(.+?)\*\*[：:]\s*(.+?)(?=\n- \*\*|\n$|\Z)", section, re.DOTALL):
-            name = m.group(1).strip()
-            if name in seen:
-                continue
-            desc = m.group(2).strip()
-            concepts.append({"name": name, "description": desc})
-            seen.add(name)
-
-    # Check which concepts already exist in the system
-    existing_titles: set[str] = set()
-    if concepts:
-        with connect() as conn:
-            rows = conn.execute(
-                "SELECT title FROM events WHERE content_type = 'concept' AND title IN ({})".format(
-                    ",".join("?" for _ in concepts)
-                ), [c["name"] for c in concepts]
-            ).fetchall()
-            existing_titles = {r["title"] for r in rows}
-
-    result = []
-    for c in concepts:
-        exists = c["name"] in existing_titles
-        result.append({
-            "name": c["name"],
-            "description": c["description"],
-            "precipitated": exists,
-        })
-
-    return {"question_id": question_id, "concepts": result}
+    return brainstorm_concept_service.list_summary_concepts(
+        question_id, connect_fn=connect
+    )
 
 
 @router.post("/api/brainstorm/concepts/precipitate")
 def precipitate_concept(req: PrecipitateConceptRequest) -> dict[str, object]:
     """Save a concept from the brainstom summary into the event store as a concept entry."""
-    from ..routes.ingest_routes import _create_concept
-
-    # Dup check
-    with connect() as conn:
-        existing = conn.execute(
-            "SELECT id FROM events WHERE content_type = 'concept' AND title = ?", (req.name,)
-        ).fetchone()
-    if existing:
-        return {"status": "exists", "event_id": existing["id"], "message": f"概念「{req.name}」已存在"}
-
-    # Fetch linked documents for context
-    context_docs: list[dict[str, str]] = []
-    with connect() as conn:
-        link_rows = conn.execute(
-            "SELECT event_id FROM brainstorm_event_links WHERE question_id = ?", (req.question_id,)
-        ).fetchall()
-    linked_ids = [r["event_id"] for r in link_rows]
-    if linked_ids:
-        articles, _ = _build_reference_docs(linked_ids)
-        context_docs = [{"title": a["title"], "content": a["text"]} for a in articles]
-
-    try:
-        result = _create_concept(req.name, "uncategorized", req.description,
-                                 force_ai=True, context_docs=context_docs if context_docs else None)
-        # Link concept back to the question
-        with connect() as conn:
-            conn.execute(
-                "INSERT OR IGNORE INTO brainstorm_event_links (question_id, event_id) VALUES (?, ?)",
-                (req.question_id, result["event_id"]),
-            )
-        return {"status": "created", "event_id": result["event_id"], "ai_summary": result.get("ai_summary", "")}
-    except Exception as e:
-        logger.warning("Concept precipitation failed for %s: %s", req.name, e)
-        raise HTTPException(status_code=500, detail=f"沉淀失败: {e}")
+    return brainstorm_concept_service.precipitate_concept(
+        req,
+        connect_fn=connect,
+        build_reference_docs_fn=_build_reference_docs,
+        create_concept_fn=_create_concept,
+        logger=logger,
+    )
