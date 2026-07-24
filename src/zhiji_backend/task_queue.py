@@ -693,8 +693,10 @@ def _process_one(task_id: str) -> None:
 
     # Auto-suggest: AI checks if this event belongs to any existing series
     try:
-        from .routes.series_routes import auto_suggest_series
-        auto_suggest_series(event_id)
+        from .ai_client import chat
+        from .series_auto_suggest_service import auto_suggest_series
+
+        auto_suggest_series(event_id, connect_fn=connect, chat_fn=chat)
     except Exception:
         logger.warning("auto_suggest_series failed for %s", event_id, exc_info=True)
 

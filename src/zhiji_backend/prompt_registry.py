@@ -30,7 +30,10 @@ MODULE_MAP: dict[str, dict[str, tuple[str, list[str]]]] = {
         "intro": ("series_generation_service.py", ["generate_series_intro"]),
         "summary": ("series_generation_service.py", ["generate_series_summary"]),
         "paper": ("series_generation_service.py", ["generate_series_paper"]),
-        "auto_suggest": ("routes/series_routes.py", ["auto_suggest_series"]),
+        "auto_suggest": (
+            "series_auto_suggest_service.py",
+            ["auto_suggest_series"],
+        ),
     },
     "brainstorm": {
         "answer": ("routes/brainstorm_routes.py", ["get_answer_for_question"]),

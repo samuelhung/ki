@@ -1,8 +1,5 @@
 """Series endpoints — CRUD, discovery, AI intro/summary/paper, member management."""
 
-import json
-import logging
-
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -20,8 +17,6 @@ from ..security.constraints import (
     SafeIdentifierList,
     SafeIdentifierListMinTwo,
 )
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ingest", tags=["series"])
 
@@ -309,89 +304,3 @@ def add_series_members(series_id: SafeIdentifier, data: SeriesMembersRequest):
     return series_service.add_series_members(
         series_id, data, connect_fn=connect, init_db_fn=init_db
     )
-
-
-# ══════════════════════════════════════════════════
-# 即时 AI 匹配
-# ══════════════════════════════════════════════════
-
-
-def auto_suggest_series(event_id: str) -> None:
-    """After ingest completes, AI checks if this event belongs to any existing published series.
-
-    Stores suggestions in events.suggested_series_json as a JSON array of series IDs.
-    Non-blocking — failures are logged but not raised.
-    """
-    from ..ai_client import chat
-
-    try:
-        with connect() as conn:
-            ev = conn.execute(
-                "SELECT id, title, overview, topic FROM events WHERE id = ?",
-                (event_id,),
-            ).fetchone()
-            if not ev or not ev["overview"]:
-                return
-
-            # Get all published series
-            series_rows = conn.execute(
-                "SELECT id, name, description FROM series WHERE status = 'published'"
-            ).fetchall()
-
-        if not series_rows:
-            return
-
-        series_text = ""
-        id_map = {}
-        for s in series_rows:
-            series_text += f"\n- **{s['name']}** (id: {s['id']}): {s['description']}"
-            id_map[s["id"]] = s["name"]
-
-        prompt = f"""判断以下新内容是否属于现有的知识专题。
-
-新内容：
-标题：{ev['title']}
-概述：{ev['overview']}
-主题：{ev['topic'] or '未分类'}
-
-现有专题列表：
-{series_text}
-
-请判断这条内容是否应该归入以上某个专题。一条内容可以同时属于多个专题。
-返回 JSON 数组，每项包含 series_id 和 reason（≤15字，为何匹配）。
-格式：[{{"series_id": "xxx", "reason": "理由"}}] 或 []
-直接输出 JSON，不要说明。"""  # fmt: skip
-
-        messages = [
-            {
-                "role": "system",
-                "content": "你是知识分类助手。判断内容是否属于现有专题，输出纯 JSON 数组，可为空。",
-            },
-            {"role": "user", "content": prompt},
-        ]
-
-        raw = chat(
-            messages,
-            temperature=0.1,
-            max_tokens=512,
-            timeout=30,
-            module="series",
-            task="auto_suggest",
-        )
-        if not raw:
-            return
-
-        raw = raw.strip().strip("`").strip()
-        if raw.startswith("json"):
-            raw = raw[4:]
-        suggested = json.loads(raw)
-
-        if isinstance(suggested, list) and suggested:
-            with connect() as conn:
-                conn.execute(
-                    "UPDATE events SET suggested_series_json = ? WHERE id = ?",
-                    (json.dumps(suggested), event_id),
-                )
-
-    except Exception:
-        logger.warning("auto_suggest_series failed for %s", event_id, exc_info=True)
