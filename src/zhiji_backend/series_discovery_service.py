@@ -17,7 +17,7 @@ type ConnectFn = Callable[[], AbstractContextManager[sqlite3.Connection]]
 type InitDbFn = Callable[[], None]
 type ChatFn = Callable[..., str | None]
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("zhiji_backend.routes.series_routes")
 
 
 class SeriesDiscoveryData(Protocol):

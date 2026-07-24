@@ -90,6 +90,13 @@ def _seed_events() -> None:
     _insert_event("event-c", "Gamma", created_at="2026-07-22 12:00:00")
 
 
+def test_discovery_loggers_preserve_series_routes_namespace() -> None:
+    expected_name = "zhiji_backend.routes.series_routes"
+
+    assert _module("series_discovery_service").logger.name == expected_name
+    assert _module("series_topic_discovery_service").logger.name == expected_name
+
+
 def test_candidate_duplicate_thresholds_and_malformed_members(series_db) -> None:
     service = _module("series_candidate_service")
     _insert_series("published", "Climate Policy", ["event-a"], status="published")
