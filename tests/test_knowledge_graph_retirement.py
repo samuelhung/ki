@@ -6,6 +6,7 @@ from pathlib import Path
 
 from zhiji_backend import summarizer
 from zhiji_backend.main import app
+from zhiji_backend.routes import brainstorm_routes
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND_ROOT = ROOT / "src" / "zhiji_backend"
@@ -65,10 +66,12 @@ def test_graph_persistence_tables_are_not_referenced_by_active_code():
 
 
 def test_brainstorm_keeps_generic_entity_id_contract():
-    brainstorm_source = (BACKEND_ROOT / "routes" / "brainstorm_routes.py").read_text(encoding="utf-8")
+    request = brainstorm_routes.ContemplateRequest(
+        direction="unsupported", entity_id="generic-entity"
+    )
 
-    assert "entity_id: str" in brainstorm_source
-    assert '"entity_id": request.entity_id' in brainstorm_source
+    assert brainstorm_routes.ContemplateRequest.model_fields["entity_id"].annotation is str
+    assert brainstorm_routes.contemplate(request)["entity_id"] == "generic-entity"
 
 
 def test_summarizer_signature_has_no_entity_extraction_switch():
