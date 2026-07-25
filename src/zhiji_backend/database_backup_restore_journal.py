@@ -53,6 +53,7 @@ class TrustedJournalDisposition:
     published_identity: JournalIdentity | None = None
     published_sha256: str | None = None
     published_size: int | None = None
+    require_canonical_absence_for_cleanup: bool = False
 
     @classmethod
     def capture(
@@ -275,12 +276,23 @@ class TrustedJournalDisposition:
         self._assert_path(self.recovery_path)
         if not self._canonical_path_is_absent():
             raise self._collision()
-        self._remove_quarantine()
         fsync_parent(self.journal_path)
+        if not self._canonical_path_is_absent():
+            raise self._collision()
+        self.require_canonical_absence_for_cleanup = True
+        try:
+            self._remove_quarantine()
+        finally:
+            self.require_canonical_absence_for_cleanup = False
 
     def _remove_quarantine(self) -> None:
         if self.recovery_path is None or self.recovery_dir is None:
             return
+        if (
+            self.require_canonical_absence_for_cleanup
+            and not self._canonical_path_is_absent()
+        ):
+            raise self._collision()
         self._assert_path(self.recovery_path)
         os.unlink(self.recovery_path)
         self.recovery_path = None

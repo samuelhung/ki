@@ -999,6 +999,63 @@ def test_recovery_preserves_trusted_journal_when_disposition_path_collides(
     assert json.loads(recovery_journal.read_bytes()) == journal
 
 
+def test_recovery_preserves_trusted_journal_on_completion_boundary_collision(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _database_path, _config_path, journal_path, journal = _staged_restore_journal(
+        tmp_path, monkeypatch
+    )
+    journal_bytes = journal_path.read_bytes()
+    journal_identity = (journal_path.stat().st_dev, journal_path.stat().st_ino)
+    foreign_bytes = b'{"foreign":true}\n'
+    foreign_identity: tuple[int, int] | None = None
+    disposition_type = (
+        database_backup_restore.database_backup_restore_journal.TrustedJournalDisposition
+    )
+    real_remove_quarantine = disposition_type._remove_quarantine
+
+    def collide_at_cleanup(disposition) -> None:
+        nonlocal foreign_identity
+        if disposition.recovery_path is not None and not journal_path.exists():
+            journal_path.write_bytes(foreign_bytes)
+            foreign_identity = (
+                journal_path.stat().st_dev,
+                journal_path.stat().st_ino,
+            )
+        real_remove_quarantine(disposition)
+
+    monkeypatch.setattr(
+        disposition_type,
+        "_remove_quarantine",
+        collide_at_cleanup,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="rollback restore is incomplete; journal path collision",
+    ) as exc_info:
+        _direct_recover(journal_path)
+
+    recovery_dirs = list(
+        journal_path.parent.glob(f".{journal_path.name}.recovery-*")
+    )
+    assert foreign_identity is not None
+    assert journal_path.read_bytes() == foreign_bytes
+    assert (journal_path.stat().st_dev, journal_path.stat().st_ino) == foreign_identity
+    assert len(recovery_dirs) == 1
+    recovery_files = list(recovery_dirs[0].iterdir())
+    assert len(recovery_files) == 1
+    recovery_journal = recovery_files[0]
+    assert str(recovery_journal) in str(exc_info.value)
+    assert recovery_journal.read_bytes() == journal_bytes
+    assert (
+        recovery_journal.stat().st_dev,
+        recovery_journal.stat().st_ino,
+    ) == journal_identity
+    assert json.loads(recovery_journal.read_bytes()) == journal
+
+
 def test_restore_rebuilds_cleaned_stage_when_config_swaps_during_cleanup(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

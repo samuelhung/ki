@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from . import _database_backup_publication
+
 BACKUP_TEMP_PREFIX = ".intelligence-backup-"
 EXPECTED_SHA256_UNSET = object()
 
@@ -306,7 +308,7 @@ def write_json_exclusive(
     publish_backup: Callable[..., None],
     fsync_parent: Callable[[Path], None],
     unlink_if_identity: Callable[[Path, Identity], None],
-) -> None:
+) -> Identity:
     temp_dir = Path(tempfile.mkdtemp(prefix=BACKUP_TEMP_PREFIX, dir=path.parent))
     staged = temp_dir / "payload.json"
     staged_identity: Identity | None = None
@@ -318,7 +320,11 @@ def write_json_exclusive(
             os.fsync(handle.fileno())
         staged_identity = regular_file_identity(staged)
         publish_backup(staged, path, staged_identity)
+        published_identity = regular_file_identity(path)
+        if published_identity != staged_identity:
+            raise RuntimeError("published JSON identity mismatch")
         fsync_parent(path)
+        return published_identity
     except Exception:
         if staged_identity is not None:
             unlink_if_identity(path, staged_identity)
@@ -333,30 +339,16 @@ def write_json_atomic(
     *,
     fsync_parent: Callable[[Path], None],
     replace: Callable[[Path, Path], None] | None = None,
+    on_published: Callable[[], None] | None = None,
 ) -> None:
     replace = os.replace if replace is None else replace
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
-            temp_path = Path(handle.name)
-            json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        replace(temp_path, path)
-        temp_path = None
-        fsync_parent(path)
-    finally:
-        if temp_path is not None:
-            temp_path.unlink(missing_ok=True)
+    _database_backup_publication.write_json_atomic(
+        path,
+        payload,
+        fsync_parent=fsync_parent,
+        replace=replace,
+        on_published=on_published,
+    )
 
 
 def copy_regular_file(
@@ -370,7 +362,7 @@ def copy_regular_file(
     publish_backup: Callable[..., None],
     fsync_parent: Callable[[Path], None],
     unlink_if_identity: Callable[[Path, Identity], None],
-) -> None:
+) -> Identity:
     source, source_identity = canonical_regular_source(
         source,
         "config source",
@@ -391,7 +383,11 @@ def copy_regular_file(
         )
         staged_identity = regular_file_identity(staged)
         publish_backup(staged, target, staged_identity)
+        published_identity = regular_file_identity(target)
+        if published_identity != staged_identity:
+            raise RuntimeError("published config backup identity mismatch")
         fsync_parent(target)
+        return published_identity
     except Exception:
         if staged_identity is not None:
             unlink_if_identity(target, staged_identity)

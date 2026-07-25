@@ -4,6 +4,7 @@ import os
 import shutil
 import sqlite3
 import tempfile
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -115,28 +116,27 @@ def _artifact_metadata(path: Path, *, integrity_check: str | None = None) -> dic
 def _fsync_parent(path: Path) -> None:
     database_backup_artifacts.fsync_parent(path)
 
-def _write_json_exclusive(path: Path, payload: dict[str, Any]) -> None:
-    database_backup_artifacts.write_json_exclusive(
-        path,
-        payload,
-        regular_file_identity=_regular_file_identity,
-        publish_backup=_publish_backup,
-        fsync_parent=_fsync_parent,
+def _write_json_exclusive(path: Path, payload: dict[str, Any]) -> tuple[int, int]:
+    return database_backup_artifacts.write_json_exclusive(
+        path, payload, regular_file_identity=_regular_file_identity,
+        publish_backup=_publish_backup, fsync_parent=_fsync_parent,
         unlink_if_identity=_unlink_if_identity,
     )
 
-def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
-    database_backup_artifacts.write_json_atomic(path, payload, fsync_parent=_fsync_parent)
+def _write_json_atomic(
+    path: Path, payload: dict[str, Any], *, on_published: Callable[[], None] | None = None
+) -> None:
+    database_backup_artifacts.write_json_atomic(
+        path, payload, fsync_parent=_fsync_parent, on_published=on_published
+    )
 
-def _copy_regular_file(source: Path, target: Path) -> None:
-    database_backup_artifacts.copy_regular_file(
-        source,
-        target,
+def _copy_regular_file(source: Path, target: Path) -> tuple[int, int]:
+    return database_backup_artifacts.copy_regular_file(
+        source, target,
         canonical_regular_source=lambda path, label, **_kwargs: _canonical_regular_source(path, label),
         require_source_identity=lambda path, identity, **_kwargs: _require_source_identity(path, identity),
         regular_non_symlink_identity=_regular_non_symlink_identity,
-        regular_file_identity=_regular_file_identity,
-        publish_backup=_publish_backup,
+        regular_file_identity=_regular_file_identity, publish_backup=_publish_backup,
         fsync_parent=_fsync_parent,
         unlink_if_identity=_unlink_if_identity,
     )
@@ -159,19 +159,14 @@ def create_rollback_backup(
         migration_name=migration_name,
         schema_version=BACKUP_MANIFEST_SCHEMA_VERSION,
         canonical_regular_source=_canonical_regular_source,
-        source_metadata=_source_metadata,
-        marker_path_for=backup_marker_path,
+        source_metadata=_source_metadata, marker_path_for=backup_marker_path,
         sqlite_snapshot_sha256=_sqlite_snapshot_sha256,
-        backup_database=backup_database,
-        copy_regular_file=_copy_regular_file,
-        artifact_metadata=_artifact_metadata,
+        backup_database=_backup_database_owned,
+        copy_regular_file=_copy_regular_file, artifact_metadata=_artifact_metadata,
         write_json_exclusive=_write_json_exclusive,
-        pin_json_file=_pin_json_file,
-        write_json_atomic=_write_json_atomic,
-        migration_is_pending=_migration_is_pending,
-        read_only_uri=_read_only_uri,
-        connect=sqlite3.connect,
-        now=lambda: datetime.now(),
+        pin_json_file=_pin_json_file, write_json_atomic=_write_json_atomic,
+        unlink_if_identity=_unlink_if_identity, migration_is_pending=_migration_is_pending,
+        read_only_uri=_read_only_uri, connect=sqlite3.connect, now=lambda: datetime.now(),
         now_utc=lambda: datetime.now(UTC),
     )
 def _load_json_regular(path: Path, label: str) -> dict[str, Any]:
@@ -382,19 +377,18 @@ def restore_rollback_backup(manifest_path: Path) -> dict[str, Path]:
 
 def backup_database(source: Path, output_dir: Path) -> Path:
     """Create and verify a timestamped SQLite backup without overwriting files."""
+    return _backup_database_owned(source, output_dir)
+
+def _backup_database_owned(source: Path, output_dir: Path, *,
+    on_published: Callable[[Path, tuple[int, int]], None] | None = None) -> Path:
     return database_backup_creation.backup_database(
-        source,
-        output_dir,
+        source, output_dir,
         canonical_regular_source=_canonical_regular_source,
-        read_only_uri=_read_only_uri,
-        require_source_identity=_require_source_identity,
-        verify_backup=_verify_backup,
-        regular_file_identity=_regular_file_identity,
-        publish_backup=_publish_backup,
-        unlink_if_identity=_unlink_if_identity,
-        connect=sqlite3.connect,
-        now=lambda: datetime.now(),
-        mkdtemp=tempfile.mkdtemp,
+        read_only_uri=_read_only_uri, require_source_identity=_require_source_identity,
+        verify_backup=_verify_backup, regular_file_identity=_regular_file_identity,
+        publish_backup=_publish_backup, unlink_if_identity=_unlink_if_identity,
+        connect=sqlite3.connect, now=lambda: datetime.now(), mkdtemp=tempfile.mkdtemp,
         remove_tree=shutil.rmtree,
         temp_prefix=BACKUP_TEMP_PREFIX,
+        on_published=on_published,
     )

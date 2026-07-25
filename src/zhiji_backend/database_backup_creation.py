@@ -50,6 +50,7 @@ def backup_database(
     mkdtemp: Callable[..., str],
     remove_tree: Callable[[Path], None],
     temp_prefix: str,
+    on_published: Callable[[Path, FileIdentity], None] | None = None,
 ) -> Path:
     """Create and verify a timestamped SQLite backup without overwriting files."""
     source, source_identity = canonical_regular_source(source, "database source")
@@ -72,6 +73,11 @@ def backup_database(
         require_source_identity(source, source_identity)
         staged_identity = regular_file_identity(staged_backup)
         publish_backup(staged_backup, target, staged_identity)
+        published_identity = regular_file_identity(target)
+        if published_identity != staged_identity:
+            raise RuntimeError("published backup identity mismatch")
+        if on_published is not None:
+            on_published(target, published_identity)
     except Exception:
         if staged_identity is not None:
             unlink_if_identity(target, staged_identity)
@@ -96,12 +102,13 @@ def create_rollback_backup(
     source_metadata: Callable[[Path], dict[str, int]],
     marker_path_for: Callable[[Path, str], Path],
     sqlite_snapshot_sha256: Callable[[Path], str],
-    backup_database: Callable[[Path, Path], Path],
-    copy_regular_file: Callable[[Path, Path], None],
+    backup_database: Callable[..., Path],
+    copy_regular_file: Callable[[Path, Path], FileIdentity],
     artifact_metadata: Callable[..., dict[str, Any]],
-    write_json_exclusive: Callable[[Path, dict[str, Any]], None],
+    write_json_exclusive: Callable[[Path, dict[str, Any]], FileIdentity],
     pin_json_file: Callable[[Path, str], tuple[PinnedManifest, dict[str, Any]]],
-    write_json_atomic: Callable[[Path, dict[str, Any]], None],
+    write_json_atomic: Callable[..., None],
+    unlink_if_identity: Callable[[Path, FileIdentity], None],
     migration_is_pending: Callable[[Path, str], bool],
     read_only_uri: Callable[[Path], str],
     connect: Callable[..., sqlite3.Connection],
@@ -119,6 +126,8 @@ def create_rollback_backup(
     database_backup_path: Path | None = None
     config_backup: Path | None = None
     manifest_path: Path | None = None
+    owned_publications: list[tuple[Path, FileIdentity]] = []
+    marker_published = False
     lock_conn = connect(str(source))
 
     try:
@@ -132,8 +141,15 @@ def create_rollback_backup(
         config_backup = output_dir / f"system_config-pre-cleanup-{timestamp}.json"
         manifest_path = output_dir / f"rollback-manifest-{timestamp}.json"
         snapshot_sha256 = sqlite_snapshot_sha256(source)
-        database_backup_path = backup_database(source, output_dir)
-        copy_regular_file(config_path, config_backup)
+
+        def own_publication(path: Path, identity: FileIdentity) -> None:
+            owned_publications.append((path, identity))
+
+        database_backup_path = backup_database(
+            source, output_dir, on_published=own_publication
+        )
+        config_identity = copy_regular_file(config_path, config_backup)
+        owned_publications.append((config_backup, config_identity))
         if (
             source_metadata(source) != initial_source_metadata
             or source_metadata(config_path) != initial_config_metadata
@@ -161,7 +177,8 @@ def create_rollback_backup(
                 "digest_archive": None,
             },
         }
-        write_json_exclusive(manifest_path, manifest)
+        manifest_identity = write_json_exclusive(manifest_path, manifest)
+        owned_publications.append((manifest_path, manifest_identity))
         manifest_path = manifest_path.resolve(strict=True)
         manifest_pin, published_manifest = pin_json_file(manifest_path, "manifest")
         try:
@@ -179,14 +196,15 @@ def create_rollback_backup(
             "manifest_sha256": manifest_sha256,
             "source": manifest["source"],
         }
-        write_json_atomic(marker_path, marker)
+        def mark_published() -> None:
+            nonlocal marker_published
+            marker_published = True
+
+        write_json_atomic(marker_path, marker, on_published=mark_published)
     except Exception:
-        if manifest_path is not None:
-            manifest_path.unlink(missing_ok=True)
-        if config_backup is not None:
-            config_backup.unlink(missing_ok=True)
-        if database_backup_path is not None:
-            database_backup_path.unlink(missing_ok=True)
+        if not marker_published:
+            for path, identity in reversed(owned_publications):
+                unlink_if_identity(path, identity)
         raise
     finally:
         lock_conn.rollback()
