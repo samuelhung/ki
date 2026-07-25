@@ -143,10 +143,12 @@ def _copy_regular_file(source: Path, target: Path) -> None:
 
 def backup_marker_path(source: Path, migration_name: str) -> Path:
     return database_backup_prerequisite.backup_marker_path(source, migration_name)
-
 def consumed_backup_marker_path(source: Path, migration_name: str) -> Path:
     return database_backup_prerequisite.consumed_backup_marker_path(source, migration_name)
-
+def _migration_is_pending(source: Path, migration_name: str) -> bool:
+    return database_backup_creation._migration_is_pending(
+        source, migration_name, connect=sqlite3.connect, read_only_uri=_read_only_uri
+    )
 def create_rollback_backup(
     source: Path, config_path: Path, output_dir: Path, *,
     migration_name: str = DEFAULT_DESTRUCTIVE_MIGRATION,
@@ -166,15 +168,14 @@ def create_rollback_backup(
         write_json_exclusive=_write_json_exclusive,
         pin_json_file=_pin_json_file,
         write_json_atomic=_write_json_atomic,
+        migration_is_pending=_migration_is_pending,
         read_only_uri=_read_only_uri,
         connect=sqlite3.connect,
         now=lambda: datetime.now(),
         now_utc=lambda: datetime.now(UTC),
     )
-
 def _load_json_regular(path: Path, label: str) -> dict[str, Any]:
     return database_backup_manifest.load_json_regular(path, label, pin_json_file=_pin_json_file)
-
 def _canonical_manifest_path(value: object, label: str) -> Path:
     return database_backup_manifest.canonical_manifest_path(value, label)
 

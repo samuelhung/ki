@@ -7,7 +7,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from . import database_backup_restore_finalization, database_backup_restore_stages
+from . import (
+    database_backup_restore_finalization,
+    database_backup_restore_journal,
+    database_backup_restore_stages,
+)
 
 if TYPE_CHECKING:
     from .database_backup_artifacts import PinnedArtifact
@@ -183,7 +187,9 @@ def recover_rollback_restore(
     validated: dict[str, tuple[Path, Path, dict[str, Any], PinnedArtifact | None]] = {}
     staged_artifacts: list[PinnedArtifact] = []
     final_set: database_backup_restore_finalization.FinalRestoreSet | None = None
-    journal_disposed = False
+    trusted_journal = database_backup_restore_journal.TrustedJournalDisposition.capture(
+        journal_path, journal_identity, journal
+    )
     try:
         if set(entries) != set(expected_entries):
             raise RuntimeError("rollback restore journal entry mismatch")
@@ -259,14 +265,7 @@ def recover_rollback_restore(
         final_set = database_backup_restore_finalization.pin_final_restore_set(
             expected_entries, pin_artifact=pin_artifact
         )
-        unlink_if_identity(journal_path, journal_identity)
-        try:
-            _stage_identity(journal_path)
-        except FileNotFoundError:
-            journal_disposed = True
-        else:
-            raise RuntimeError("rollback restore journal changed during disposition")
-        fsync_parent(journal_path)
+        trusted_journal.quarantine(fsync_parent=fsync_parent)
         final_set.assert_valid()
         for key in ("config", "database"):
             stage, _destination, _metadata, staged = validated[key]
@@ -274,9 +273,10 @@ def recover_rollback_restore(
                 key, stage, staged, _owned_stages, unlink_if_identity
             )
         final_set.assert_valid()
+        trusted_journal.complete(fsync_parent=fsync_parent)
     except Exception as exc:
         failure = exc
-        if journal_disposed:
+        if trusted_journal.disposed:
             try:
                 recovery_journal = journal
                 if _owned_stages is not None and final_set is not None:
@@ -289,12 +289,18 @@ def recover_rollback_restore(
                             stage_pinned_restore=stage_pinned_restore,
                         )
                     )
-                database_backup_restore_finalization.republish_journal(
-                    journal_path,
-                    recovery_journal,
-                    write_json_exclusive=write_json_exclusive,
-                    fsync_parent=fsync_parent,
-                )
+                if recovery_journal == journal:
+                    trusted_journal.republish(fsync_parent=fsync_parent)
+                else:
+                    trusted_journal.republish_payload(
+                        recovery_journal, fsync_parent=fsync_parent
+                    )
+            except database_backup_restore_journal.JournalPathCollision as collision:
+                recovery_path = trusted_journal.recovery_path
+                raise RuntimeError(
+                    "rollback restore is incomplete; journal path collision at "
+                    f"{journal_path}; recover from trusted journal {recovery_path}"
+                ) from collision
             except Exception as republish_exc:
                 failure = RuntimeError("rollback restore journal republish failed")
                 failure.__cause__ = republish_exc
@@ -302,6 +308,7 @@ def recover_rollback_restore(
             f"rollback restore is incomplete; recover from {journal_path}"
         ) from failure
     finally:
+        trusted_journal.close()
         if final_set is not None:
             final_set.close()
         for staged in staged_artifacts:

@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import sqlite3
+import stat
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -918,13 +919,12 @@ def test_recovery_republishes_journal_when_config_swaps_during_disposition(
     expected_config = Path(journal["entries"]["config"]["stage_path"]).read_bytes()
     attacker = config_path.with_name("attacker-config.json")
     attacker.write_bytes(b'{"attacker": true}')
-    real_unlink = database_backup._unlink_if_identity
     swapped = False
 
-    def unlink_journal_then_swap(path: Path, identity: tuple[int, int]) -> None:
+    def swap_after_journal_quarantine(path: Path) -> None:
         nonlocal swapped
-        real_unlink(path, identity)
-        if path == journal_path:
+        database_backup._fsync_parent(path)
+        if path == journal_path and not path.exists() and not swapped:
             os.replace(attacker, config_path)
             swapped = True
 
@@ -932,7 +932,7 @@ def test_recovery_republishes_journal_when_config_swaps_during_disposition(
         RuntimeError,
         match=f"rollback restore is incomplete; recover from {journal_path}",
     ) as exc_info:
-        _direct_recover(journal_path, unlink_if_identity=unlink_journal_then_swap)
+        _direct_recover(journal_path, fsync_parent=swap_after_journal_quarantine)
 
     assert str(exc_info.value) == (
         f"rollback restore is incomplete; recover from {journal_path}"
@@ -946,6 +946,57 @@ def test_recovery_republishes_journal_when_config_swaps_during_disposition(
 
     assert config_path.read_bytes() == expected_config
     assert not journal_path.exists()
+
+
+@pytest.mark.parametrize("foreign_kind", ["invalid-json", "same-content"])
+def test_recovery_preserves_trusted_journal_when_disposition_path_collides(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    foreign_kind: str,
+) -> None:
+    _database_path, _config_path, journal_path, journal = _staged_restore_journal(
+        tmp_path, monkeypatch
+    )
+    journal_bytes = journal_path.read_bytes()
+    journal_identity = (journal_path.stat().st_dev, journal_path.stat().st_ino)
+    foreign_bytes = b"{not-json" if foreign_kind == "invalid-json" else journal_bytes
+    foreign_identity: tuple[int, int] | None = None
+    collided = False
+
+    def collide_after_disposition(path: Path) -> None:
+        nonlocal collided, foreign_identity
+        database_backup._fsync_parent(path)
+        if path == journal_path and not path.exists() and not collided:
+            path.write_bytes(foreign_bytes)
+            foreign_identity = (path.stat().st_dev, path.stat().st_ino)
+            collided = True
+
+    with pytest.raises(
+        RuntimeError,
+        match="rollback restore is incomplete; journal path collision",
+    ) as exc_info:
+        _direct_recover(journal_path, fsync_parent=collide_after_disposition)
+
+    recovery_dirs = list(
+        journal_path.parent.glob(f".{journal_path.name}.recovery-*")
+    )
+    assert collided
+    assert foreign_identity is not None
+    assert journal_path.read_bytes() == foreign_bytes
+    assert (journal_path.stat().st_dev, journal_path.stat().st_ino) == foreign_identity
+    assert len(recovery_dirs) == 1
+    recovery_dir = recovery_dirs[0]
+    assert stat.S_IMODE(recovery_dir.stat().st_mode) == 0o700
+    recovery_files = list(recovery_dir.iterdir())
+    assert len(recovery_files) == 1
+    recovery_journal = recovery_files[0]
+    assert str(recovery_journal) in str(exc_info.value)
+    assert recovery_journal.read_bytes() == journal_bytes
+    assert (
+        recovery_journal.stat().st_dev,
+        recovery_journal.stat().st_ino,
+    ) == journal_identity
+    assert json.loads(recovery_journal.read_bytes()) == journal
 
 
 def test_restore_rebuilds_cleaned_stage_when_config_swaps_during_cleanup(

@@ -274,6 +274,71 @@ def test_backup_command_refuses_migration_that_is_not_pending(tmp_path):
         )
 
 
+def test_backup_facade_uses_migration_pending_hook_before_creation_side_effects(
+    tmp_path, monkeypatch
+):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    db_path = data_dir / "intelligence.sqlite"
+    config_path = data_dir / "system_config.json"
+    output_dir = tmp_path / "backups"
+    _create_legacy_database(db_path)
+    _write_legacy_config(config_path)
+    expected = RuntimeError("injected migration status failure")
+    calls = []
+
+    def fail_pending(source, migration_name):
+        calls.append((source, migration_name))
+        raise expected
+
+    monkeypatch.setattr(database_backup, "_migration_is_pending", fail_pending)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        database_backup.create_rollback_backup(
+            db_path,
+            config_path,
+            output_dir,
+            migration_name=MIGRATION_NAME,
+        )
+
+    assert exc_info.value is expected
+    assert calls == [(db_path.resolve(), MIGRATION_NAME)]
+    assert not output_dir.exists()
+    assert not database_backup.backup_marker_path(db_path, MIGRATION_NAME).exists()
+
+
+def test_backup_facade_uses_patched_migration_not_pending_result(
+    tmp_path, monkeypatch
+):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    db_path = data_dir / "intelligence.sqlite"
+    config_path = data_dir / "system_config.json"
+    output_dir = tmp_path / "backups"
+    _create_legacy_database(db_path)
+    _write_legacy_config(config_path)
+    calls = []
+
+    def migration_not_pending(source, migration_name):
+        calls.append((source, migration_name))
+        return False
+
+    monkeypatch.setattr(
+        database_backup, "_migration_is_pending", migration_not_pending
+    )
+
+    with pytest.raises(RuntimeError, match=f"migration {MIGRATION_NAME} is not pending"):
+        database_backup.create_rollback_backup(
+            db_path,
+            config_path,
+            output_dir,
+            migration_name=MIGRATION_NAME,
+        )
+
+    assert calls == [(db_path.resolve(), MIGRATION_NAME)]
+    assert not output_dir.exists()
+
+
 def test_rollback_backup_blocks_live_database_change_during_bundle_creation(
     tmp_path, monkeypatch
 ):

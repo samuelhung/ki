@@ -88,6 +88,7 @@ def test_create_rollback_backup_directly_publishes_exact_manifest_then_marker(
         write_json_exclusive=database_backup._write_json_exclusive,
         pin_json_file=database_backup._pin_json_file,
         write_json_atomic=database_backup._write_json_atomic,
+        migration_is_pending=database_backup._migration_is_pending,
         read_only_uri=database_backup._read_only_uri,
         connect=sqlite3.connect,
         now=lambda: datetime(2026, 7, 25, 12, 34, 56),

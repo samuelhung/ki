@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import copy
 import hashlib
-import json
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -89,33 +88,6 @@ def pin_final_restore_set(
         for artifact in artifacts.values():
             artifact.close()
         raise
-
-
-def republish_journal(
-    journal_path: Path,
-    journal: dict[str, Any],
-    *,
-    write_json_exclusive: Callable[[Path, dict[str, Any]], None] | None,
-    fsync_parent: Callable[[Path], None],
-) -> None:
-    if journal_path.exists():
-        return
-    if write_json_exclusive is not None:
-        write_json_exclusive(journal_path, journal)
-        return
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0)
-    fd = os.open(journal_path, flags, 0o600)
-    try:
-        payload = (
-            json.dumps(journal, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-        ).encode("utf-8")
-        view = memoryview(payload)
-        while view:
-            view = view[os.write(fd, view) :]
-        os.fsync(fd)
-    finally:
-        os.close(fd)
-    fsync_parent(journal_path)
 
 
 def ensure_owned_recovery_stages(

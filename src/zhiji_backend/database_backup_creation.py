@@ -102,6 +102,7 @@ def create_rollback_backup(
     write_json_exclusive: Callable[[Path, dict[str, Any]], None],
     pin_json_file: Callable[[Path, str], tuple[PinnedManifest, dict[str, Any]]],
     write_json_atomic: Callable[[Path, dict[str, Any]], None],
+    migration_is_pending: Callable[[Path, str], bool],
     read_only_uri: Callable[[Path], str],
     connect: Callable[..., sqlite3.Connection],
     now: Callable[[], datetime],
@@ -114,25 +115,22 @@ def create_rollback_backup(
     initial_config_metadata = source_metadata(config_path)
 
     output_dir = Path(output_dir).expanduser()
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_dir = output_dir.resolve(strict=True)
-    timestamp = now().strftime("%Y%m%d-%H%M%S")
-    config_backup = output_dir / f"system_config-pre-cleanup-{timestamp}.json"
-    manifest_path = output_dir / f"rollback-manifest-{timestamp}.json"
     marker_path = marker_path_for(source, migration_name)
     database_backup_path: Path | None = None
+    config_backup: Path | None = None
+    manifest_path: Path | None = None
     lock_conn = connect(str(source))
 
     try:
         lock_conn.execute("PRAGMA busy_timeout=5000")
         lock_conn.execute("BEGIN IMMEDIATE")
-        if not _migration_is_pending(
-            source,
-            migration_name,
-            connect=connect,
-            read_only_uri=read_only_uri,
-        ):
+        if not migration_is_pending(source, migration_name):
             raise RuntimeError(f"migration {migration_name} is not pending")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_dir = output_dir.resolve(strict=True)
+        timestamp = now().strftime("%Y%m%d-%H%M%S")
+        config_backup = output_dir / f"system_config-pre-cleanup-{timestamp}.json"
+        manifest_path = output_dir / f"rollback-manifest-{timestamp}.json"
         snapshot_sha256 = sqlite_snapshot_sha256(source)
         database_backup_path = backup_database(source, output_dir)
         copy_regular_file(config_path, config_backup)
@@ -183,8 +181,10 @@ def create_rollback_backup(
         }
         write_json_atomic(marker_path, marker)
     except Exception:
-        manifest_path.unlink(missing_ok=True)
-        config_backup.unlink(missing_ok=True)
+        if manifest_path is not None:
+            manifest_path.unlink(missing_ok=True)
+        if config_backup is not None:
+            config_backup.unlink(missing_ok=True)
         if database_backup_path is not None:
             database_backup_path.unlink(missing_ok=True)
         raise
@@ -192,4 +192,6 @@ def create_rollback_backup(
         lock_conn.rollback()
         lock_conn.close()
 
+    if manifest_path is None:
+        raise RuntimeError("rollback backup manifest was not created")
     return manifest_path
