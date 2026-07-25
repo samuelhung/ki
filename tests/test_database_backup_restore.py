@@ -7,7 +7,7 @@ import sqlite3
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 import pytest
 
@@ -17,6 +17,22 @@ from zhiji_backend.database_backup_artifacts import PinnedArtifact
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_restore_journal_state_is_a_single_literal_with_exact_json_bytes() -> None:
+    assert get_args(database_backup_restore.RestoreJournalState) == ("staged",)
+    assert database_backup_restore.RESTORE_JOURNAL_STAGED == "staged"
+    assert (
+        json.dumps(
+            {
+                "schema_version": 1,
+                "state": database_backup_restore.RESTORE_JOURNAL_STAGED,
+                "entries": {},
+            },
+            separators=(",", ":"),
+        ).encode()
+        == b'{"schema_version":1,"state":"staged","entries":{}}'
+    )
 
 
 def _create_database(path: Path) -> None:
@@ -243,6 +259,148 @@ def test_direct_recovery_skips_destination_already_restored(
     _direct_recover(journal_path)
     assert config_path not in calls
     assert calls == [database_path]
+
+
+def test_recovery_rerun_completes_after_partial_recovery_crash(
+    tmp_path: Path,
+) -> None:
+    database_destination = tmp_path / "database.sqlite"
+    config_destination = tmp_path / "config.json"
+    database_destination.write_bytes(b"live database")
+    config_destination.write_bytes(b"live config")
+    database_stage = tmp_path / ".database.restore-stage"
+    config_stage = tmp_path / ".config.restore-stage"
+    database_stage.write_bytes(b"rollback database")
+    config_stage.write_bytes(b"rollback config")
+    manifest_path = tmp_path / "rollback-manifest.json"
+    manifest_path.write_text('{"manifest": true}', encoding="utf-8")
+    manifest_sha256 = _sha256(manifest_path)
+
+    artifacts = {
+        "database": {
+            "path": str(tmp_path / "database-backup.sqlite"),
+            "sha256": _sha256(database_stage),
+            "size": database_stage.stat().st_size,
+        },
+        "config": {
+            "path": str(tmp_path / "config-backup.json"),
+            "sha256": _sha256(config_stage),
+            "size": config_stage.stat().st_size,
+        },
+    }
+    manifest = {"artifacts": artifacts}
+    destinations = {
+        "database": database_destination,
+        "config": config_destination,
+    }
+    journal_path = database_backup_restore.restore_journal_path(database_destination)
+    journal_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "state": "staged",
+                "manifest_path": str(manifest_path),
+                "manifest_sha256": manifest_sha256,
+                "entries": {
+                    "database": {
+                        "destination": str(database_destination),
+                        "stage_path": str(database_stage),
+                        "sha256": artifacts["database"]["sha256"],
+                        "size": artifacts["database"]["size"],
+                    },
+                    "config": {
+                        "destination": str(config_destination),
+                        "stage_path": str(config_stage),
+                        "sha256": artifacts["config"]["sha256"],
+                        "size": artifacts["config"]["size"],
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    class VerifiedFile:
+        def close(self) -> None:
+            return None
+
+    def canonical_path(value: object, _label: str) -> Path:
+        return Path(str(value)).resolve(strict=True)
+
+    def load_json_regular(path: Path, _label: str) -> dict[str, Any]:
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def validate_manifest(path: Path, **kwargs: object):
+        assert path == manifest_path
+        assert kwargs == {
+            "allow_stale": True,
+            "pin_artifacts": False,
+            "expected_sha256": manifest_sha256,
+        }
+        return manifest, [], destinations, manifest_sha256
+
+    def pin_artifact(metadata: object, _label: str, **_kwargs: object):
+        assert isinstance(metadata, dict)
+        path = Path(str(metadata["path"]))
+        if (
+            not path.is_file()
+            or path.stat().st_size != metadata["size"]
+            or _sha256(path) != metadata["sha256"]
+        ):
+            raise RuntimeError("artifact mismatch")
+        return VerifiedFile()
+
+    replacements: list[Path] = []
+
+    def crash_during_database_replacement(stage: Path, destination: Path) -> None:
+        replacements.append(destination)
+        if destination == database_destination:
+            raise OSError("injected recovery crash")
+        os.replace(stage, destination)
+
+    recover_kwargs = {
+        "canonical_path": canonical_path,
+        "load_json_regular": load_json_regular,
+        "validate_rollback_manifest": validate_manifest,
+        "pin_artifact": pin_artifact,
+        "fsync_parent": lambda _path: None,
+    }
+    with pytest.raises(RuntimeError) as exc_info:
+        database_backup_restore.recover_rollback_restore(
+            journal_path,
+            replace_staged_restore=crash_during_database_replacement,
+            **recover_kwargs,
+        )
+
+    assert str(exc_info.value) == (
+        f"rollback restore is incomplete; recover from {journal_path}"
+    )
+    assert isinstance(exc_info.value.__cause__, OSError)
+    assert str(exc_info.value.__cause__) == "injected recovery crash"
+    assert replacements == [config_destination, database_destination]
+    assert journal_path.exists()
+    assert not config_stage.exists()
+    assert database_stage.exists()
+    assert _sha256(config_destination) == artifacts["config"]["sha256"]
+    assert _sha256(database_destination) != artifacts["database"]["sha256"]
+
+    replacements.clear()
+
+    def complete_replacement(stage: Path, destination: Path) -> None:
+        replacements.append(destination)
+        os.replace(stage, destination)
+
+    restored = database_backup_restore.recover_rollback_restore(
+        journal_path,
+        replace_staged_restore=complete_replacement,
+        **recover_kwargs,
+    )
+
+    assert restored == destinations
+    assert replacements == [database_destination]
+    assert not journal_path.exists()
+    assert _sha256(database_destination) == artifacts["database"]["sha256"]
+    assert _sha256(config_destination) == artifacts["config"]["sha256"]
 
 
 def test_direct_restore_rejects_existing_journal_manifest_mismatch(

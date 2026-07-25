@@ -3,10 +3,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from .database_backup_artifacts import PinnedArtifact
+
+RestoreJournalState = Literal["staged"]
+RESTORE_JOURNAL_STAGED: RestoreJournalState = "staged"
 
 
 def restore_journal_path(database_path: Path) -> Path:
@@ -101,7 +104,7 @@ def recover_rollback_restore(
     journal = load_json_regular(journal_path, "restore journal")
     if (
         journal.get("schema_version") != journal_schema_version
-        or journal.get("state") != "staged"
+        or journal.get("state") != RESTORE_JOURNAL_STAGED
     ):
         raise RuntimeError("rollback restore journal is invalid")
     manifest_path = canonical_path(journal.get("manifest_path"), "rollback manifest")
@@ -216,7 +219,7 @@ def restore_rollback_backup(
         assert_pinned_artifact(pinned[2], "rollback manifest")
         journal = {
             "schema_version": journal_schema_version,
-            "state": "staged",
+            "state": RESTORE_JOURNAL_STAGED,
             "created_at": now().isoformat(),
             "manifest_path": str(manifest_path),
             "manifest_sha256": manifest_sha256,
