@@ -1056,6 +1056,187 @@ def test_recovery_preserves_trusted_journal_on_completion_boundary_collision(
     assert json.loads(recovery_journal.read_bytes()) == journal
 
 
+@pytest.mark.parametrize("destination_key", ["config", "database"])
+def test_recovery_revalidates_destinations_after_completion_fsync(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    destination_key: str,
+) -> None:
+    database_path, config_path, journal_path, journal = _staged_restore_journal(
+        tmp_path, monkeypatch
+    )
+    destinations = {"database": database_path, "config": config_path}
+    expected_hashes = {
+        key: str(journal["entries"][key]["sha256"])
+        for key in ("database", "config")
+    }
+    journal_hash = _sha256(journal_path)
+    target = destinations[destination_key]
+    foreign = target.with_name(f"foreign-{target.name}")
+    foreign.write_bytes(b"foreign database" if destination_key == "database" else b"{}")
+    foreign_hash = _sha256(foreign)
+    journal_fsyncs = 0
+
+    def replace_during_completion_fsync(path: Path) -> None:
+        nonlocal journal_fsyncs
+        database_backup._fsync_parent(path)
+        if path == journal_path and not path.exists():
+            journal_fsyncs += 1
+            if journal_fsyncs == 2:
+                os.replace(foreign, target)
+
+    with pytest.raises(RuntimeError, match="rollback restore is incomplete"):
+        _direct_recover(journal_path, fsync_parent=replace_during_completion_fsync)
+
+    assert journal_fsyncs == 2
+    assert journal_path.exists()
+    assert _sha256(journal_path) == journal_hash
+    assert _sha256(target) == foreign_hash
+    other_key = "database" if destination_key == "config" else "config"
+    assert _sha256(destinations[other_key]) == expected_hashes[other_key]
+    assert not (
+        not journal_path.exists()
+        and all(_sha256(destinations[key]) == expected_hashes[key] for key in destinations)
+    )
+
+
+@pytest.mark.parametrize("suffix", ["-wal", "-shm"])
+@pytest.mark.parametrize("operation", ["create", "replace"])
+def test_recovery_preserves_sidecar_collision_after_database_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    suffix: str,
+    operation: str,
+) -> None:
+    database_path, _config_path, journal_path, _journal = _staged_restore_journal(
+        tmp_path, monkeypatch
+    )
+    sidecar = Path(f"{database_path}{suffix}")
+    if operation == "replace":
+        sidecar.write_bytes(b"pre-restore sidecar")
+    foreign = sidecar.with_name(f"foreign-{sidecar.name}")
+    foreign.write_bytes(f"foreign {suffix}".encode())
+    foreign_hash = _sha256(foreign)
+    foreign_identity = (foreign.stat().st_dev, foreign.stat().st_ino)
+    real_match = database_backup._restore_path_matches
+    collided = False
+
+    def collide_after_database_publication(
+        path: Path, metadata: dict[str, Any]
+    ) -> bool:
+        nonlocal collided
+        matches = real_match(path, metadata)
+        if path == database_path and matches and not collided:
+            os.replace(foreign, sidecar)
+            collided = True
+        return matches
+
+    with pytest.raises(RuntimeError, match="rollback restore is incomplete"):
+        _direct_recover(
+            journal_path,
+            restore_path_matches=collide_after_database_publication,
+        )
+
+    assert collided
+    assert journal_path.exists()
+    assert sidecar.exists()
+    assert _sha256(sidecar) == foreign_hash
+    assert (sidecar.stat().st_dev, sidecar.stat().st_ino) == foreign_identity
+
+
+@pytest.mark.parametrize("publication", ["republish", "republish_payload"])
+def test_journal_republish_cleanup_collision_keeps_trusted_copy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    publication: str,
+) -> None:
+    journal_module = database_backup_restore.database_backup_restore_journal
+    journal_path = tmp_path / "restore.json"
+    payload = {"state": "staged"}
+    journal_path.write_text(json.dumps(payload), encoding="utf-8")
+    identity = (journal_path.stat().st_dev, journal_path.stat().st_ino)
+    disposition = journal_module.TrustedJournalDisposition.capture(
+        journal_path, identity, payload
+    )
+    disposition.quarantine(fsync_parent=lambda _path: None)
+    trusted_path = disposition.recovery_path
+    assert trusted_path is not None
+    trusted_bytes = trusted_path.read_bytes()
+    foreign_bytes = b'{"foreign":true}\n'
+    real_remove = type(disposition)._remove_quarantine
+
+    def collide_before_cleanup(candidate) -> None:
+        journal_path.unlink()
+        journal_path.write_bytes(foreign_bytes)
+        real_remove(candidate)
+
+    monkeypatch.setattr(type(disposition), "_remove_quarantine", collide_before_cleanup)
+    try:
+        with pytest.raises(journal_module.JournalPathCollision):
+            if publication == "republish":
+                disposition.republish(fsync_parent=lambda _path: None)
+            else:
+                disposition.republish_payload(
+                    {"state": "staged", "replacement": True},
+                    fsync_parent=lambda _path: None,
+                )
+
+        assert journal_path.read_bytes() == foreign_bytes
+        assert trusted_path.exists()
+        assert trusted_path.read_bytes() == trusted_bytes
+        assert stat.S_IMODE(trusted_path.parent.stat().st_mode) == 0o700
+    finally:
+        disposition.close()
+
+
+def test_journal_quarantine_race_preserves_foreign_and_trusted_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    journal_module = database_backup_restore.database_backup_restore_journal
+    journal_path = tmp_path / "restore.json"
+    payload = {"state": "staged"}
+    journal_path.write_text(json.dumps(payload), encoding="utf-8")
+    trusted_bytes = journal_path.read_bytes()
+    identity = (journal_path.stat().st_dev, journal_path.stat().st_ino)
+    disposition = journal_module.TrustedJournalDisposition.capture(
+        journal_path, identity, payload
+    )
+    foreign = tmp_path / "foreign.json"
+    foreign_bytes = b'{"foreign":true}\n'
+    foreign.write_bytes(foreign_bytes)
+    real_move = journal_module._move_to_private
+    real_replace = journal_module.os.replace
+    raced = False
+
+    def replace_after_path_check(source: Path, destination: Path) -> None:
+        nonlocal raced
+        if source == journal_path and not raced:
+            real_replace(foreign, journal_path)
+            raced = True
+        real_move(source, destination)
+
+    monkeypatch.setattr(journal_module, "_move_to_private", replace_after_path_check)
+    try:
+        with pytest.raises(journal_module.JournalPathCollision):
+            disposition.quarantine(fsync_parent=lambda _path: None)
+
+        assert raced
+        recovery_path = disposition.recovery_path
+        assert recovery_path is not None
+        assert recovery_path.exists()
+        assert recovery_path.read_bytes() == trusted_bytes
+        assert stat.S_IMODE(recovery_path.parent.stat().st_mode) == 0o700
+        preserved_foreign = [
+            path
+            for path in recovery_path.parent.iterdir()
+            if path != recovery_path and path.read_bytes() == foreign_bytes
+        ]
+        assert preserved_foreign or journal_path.read_bytes() == foreign_bytes
+    finally:
+        disposition.close()
+
+
 def test_restore_rebuilds_cleaned_stage_when_config_swaps_during_cleanup(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

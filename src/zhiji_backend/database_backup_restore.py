@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from . import (
     database_backup_restore_finalization,
     database_backup_restore_journal,
+    database_backup_restore_sidecars,
     database_backup_restore_stages,
 )
 
@@ -179,7 +180,6 @@ def recover_rollback_restore(
     entries = journal.get("entries")
     if not isinstance(entries, dict):
         raise RuntimeError("rollback restore journal entries are invalid")
-
     expected_entries = {
         "config": (destinations["config"], artifacts["config"]),
         "database": (destinations["database"], artifacts["database"]),
@@ -187,6 +187,7 @@ def recover_rollback_restore(
     validated: dict[str, tuple[Path, Path, dict[str, Any], PinnedArtifact | None]] = {}
     staged_artifacts: list[PinnedArtifact] = []
     final_set: database_backup_restore_finalization.FinalRestoreSet | None = None
+    sidecars: database_backup_restore_sidecars.SidecarDisposition | None = None
     trusted_journal = database_backup_restore_journal.TrustedJournalDisposition.capture(
         journal_path, journal_identity, journal
     )
@@ -229,7 +230,8 @@ def recover_rollback_restore(
                 source_identities.add(identity)
                 staged_artifacts.append(staged)
             validated[key] = (stage, destination, metadata, staged)
-
+        sidecars = database_backup_restore_sidecars.SidecarDisposition.capture(destinations["database"])
+        sidecars.quarantine()
         for key in ("config", "database"):
             stage, destination, metadata, staged = validated[key]
             if staged is None:
@@ -258,10 +260,7 @@ def recover_rollback_restore(
             finally:
                 clone.cleanup()
             if key == "database":
-                for suffix in ("-wal", "-shm"):
-                    Path(f"{destination}{suffix}").unlink(missing_ok=True)
-        for suffix in ("-wal", "-shm"):
-            Path(f"{destinations['database']}{suffix}").unlink(missing_ok=True)
+                sidecars.assert_clear()
         final_set = database_backup_restore_finalization.pin_final_restore_set(
             expected_entries, pin_artifact=pin_artifact
         )
@@ -273,9 +272,13 @@ def recover_rollback_restore(
                 key, stage, staged, _owned_stages, unlink_if_identity
             )
         final_set.assert_valid()
-        trusted_journal.complete(fsync_parent=fsync_parent)
+        sidecars.cleanup()
+        trusted_journal.complete(
+            fsync_parent=fsync_parent,
+            final_validator=lambda: (final_set.assert_valid(), sidecars.assert_clear())
+        )
     except Exception as exc:
-        failure = exc
+        failure = database_backup_restore_sidecars.restore_after_failure(sidecars, exc)
         if trusted_journal.disposed:
             try:
                 recovery_journal = journal
@@ -313,6 +316,8 @@ def recover_rollback_restore(
             final_set.close()
         for staged in staged_artifacts:
             staged.close()
+        if sidecars is not None:
+            sidecars.close()
     return {
         "database": destinations["database"],
         "config": destinations["config"],
