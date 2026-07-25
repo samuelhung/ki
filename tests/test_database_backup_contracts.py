@@ -7,6 +7,7 @@ import os
 import re
 import sqlite3
 import stat
+import tempfile
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -356,6 +357,46 @@ def test_prerequisite_validation_preserves_failure_messages(
 
     assert str(exc_info.value) == message
     assert manifest_path.exists()
+
+
+def test_restore_second_stage_failure_cleans_first_stage_before_journal(
+    rollback_bundle, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database_path = rollback_bundle["database"]
+    config_path = rollback_bundle["config"]
+    manifest_path = rollback_bundle["manifest"]
+    with sqlite3.connect(database_path) as conn:
+        conn.execute("INSERT INTO entities VALUES ('current')")
+    config_path.write_text('{"current": true}', encoding="utf-8")
+    database_before = database_path.read_bytes()
+    config_before = config_path.read_bytes()
+    real_named_temporary_file = tempfile.NamedTemporaryFile
+    first_stage_paths: list[Path] = []
+    staging_calls = 0
+
+    def interrupt_second_stage(*args, **kwargs):
+        nonlocal staging_calls
+        staging_calls += 1
+        if staging_calls == 2:
+            raise OSError("injected second restore staging failure")
+        handle = real_named_temporary_file(*args, **kwargs)
+        first_stage_paths.append(Path(handle.name))
+        return handle
+
+    monkeypatch.setattr(tempfile, "NamedTemporaryFile", interrupt_second_stage)
+
+    with pytest.raises(OSError) as exc_info:
+        database_backup.restore_rollback_backup(manifest_path)
+
+    assert type(exc_info.value) is OSError
+    assert str(exc_info.value) == "injected second restore staging failure"
+    assert staging_calls == 2
+    assert len(first_stage_paths) == 1
+    assert not first_stage_paths[0].exists()
+    assert database_path.read_bytes() == database_before
+    assert config_path.read_bytes() == config_before
+    assert not database_backup.restore_journal_path(database_path).exists()
+    assert list(database_path.parent.glob("*.restore-stage")) == []
 
 
 def test_restore_journal_schema_recovery_result_and_repeated_recovery(
