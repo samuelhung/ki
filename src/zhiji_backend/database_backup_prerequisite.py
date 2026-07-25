@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from . import _database_backup_fs, database_backup_artifacts
 
@@ -28,11 +28,8 @@ class BackupPrerequisiteLease:
     marker: dict[str, Any]
     manifest: dict[str, Any]
     pinned_files: list[tuple[PinnedArtifact, str]]
-    _assert_pinned_artifact: Callable[[PinnedArtifact, str], None] = field(
-        default=_default_assert_pinned_artifact,
-        init=False,
-        repr=False,
-        compare=False,
+    _assert_pinned_artifact: ClassVar[Callable[[PinnedArtifact, str], None]] = (
+        _default_assert_pinned_artifact
     )
 
     def assert_published(self) -> None:

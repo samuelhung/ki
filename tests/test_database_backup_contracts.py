@@ -4,6 +4,7 @@ import hashlib
 import inspect
 import json
 import os
+import pickle
 import re
 import sqlite3
 import stat
@@ -460,7 +461,8 @@ def test_lease_assert_published_resolves_facade_hook_at_call_time(
 
     monkeypatch.setattr(database_backup, "_assert_pinned_artifact", tracked_assert)
     try:
-        lease.assert_published()
+        restored = pickle.loads(pickle.dumps(lease))
+        restored.assert_published()
     finally:
         database_backup.release_backup_prerequisite(lease)
 

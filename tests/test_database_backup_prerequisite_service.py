@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import asdict, fields
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -40,6 +41,26 @@ def test_lease_is_reexported_and_release_is_idempotent() -> None:
 
     assert pinned.closed == 1
     assert lease.pinned_files == []
+
+
+def test_lease_dataclass_shape_matches_original_five_fields() -> None:
+    lease = prerequisite_service.BackupPrerequisiteLease(
+        marker_path=Path("/marker"),
+        manifest_path=Path("/manifest"),
+        marker={"state": "ready"},
+        manifest={"schema_version": 1},
+        pinned_files=[],
+    )
+    expected = {
+        "marker_path",
+        "manifest_path",
+        "marker",
+        "manifest",
+        "pinned_files",
+    }
+
+    assert {field.name for field in fields(lease)} == expected
+    assert set(asdict(lease)) == expected
 
 
 def test_assert_published_rejects_released_lease() -> None:

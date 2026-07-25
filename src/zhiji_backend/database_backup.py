@@ -131,6 +131,10 @@ def _assert_pinned_artifact(pinned: PinnedArtifact, label: str) -> None:
     )
 
 
+def _lease_assert_pinned_artifact(pinned: PinnedArtifact, label: str) -> None:
+    _assert_pinned_artifact(pinned, label)
+
+
 def _sqlite_snapshot_sha256(path: Path) -> str:
     return database_backup_artifacts.sqlite_snapshot_sha256(
         path, read_only_uri=_read_only_uri
@@ -365,9 +369,7 @@ def validate_backup_prerequisite(
         now=lambda: datetime.now(UTC),
         schema_version=BACKUP_MANIFEST_SCHEMA_VERSION,
         max_age_seconds=BACKUP_MAX_AGE_SECONDS,
-        assert_pinned_artifact=lambda pinned, label: _assert_pinned_artifact(
-            pinned, label
-        ),
+        assert_pinned_artifact=_lease_assert_pinned_artifact,
     )
 
 
