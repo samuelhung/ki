@@ -7,6 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+from . import database_backup_restore_stages
+
 if TYPE_CHECKING:
     from .database_backup_artifacts import PinnedArtifact
 
@@ -86,7 +88,11 @@ def restore_path_matches(
     candidate = dict(metadata)
     candidate["path"] = str(path)
     try:
-        pinned = pin_artifact(candidate, "restore destination")
+        pinned = pin_artifact(
+            candidate,
+            "restore destination",
+            sqlite_backup=metadata.get("integrity_check") == "ok",
+        )
     except RuntimeError:
         return False
     pinned.close()
@@ -213,11 +219,8 @@ def recover_rollback_restore(
         "config": (destinations["config"], artifacts["config"]),
         "database": (destinations["database"], artifacts["database"]),
     }
-    validated: dict[
-        str, tuple[Path, Path, dict[str, Any], bool, PinnedArtifact | None]
-    ] = {}
+    validated: dict[str, tuple[Path, Path, dict[str, Any], PinnedArtifact | None]] = {}
     staged_artifacts: list[PinnedArtifact] = []
-    trusted_stages: dict[str, tuple[Path, StageIdentity]] = {}
     try:
         if set(entries) != set(expected_entries):
             raise RuntimeError("rollback restore journal entry mismatch")
@@ -256,42 +259,53 @@ def recover_rollback_restore(
                     )
                 source_identities.add(identity)
                 staged_artifacts.append(staged)
-            validated[key] = (
-                stage,
+            validated[key] = (stage, destination, metadata, staged)
+
+        for key in ("config", "database"):
+            stage, destination, metadata, staged = validated[key]
+            if staged is None:
+                if not restore_path_matches(destination, metadata):
+                    raise RuntimeError("rollback restore journal stage path is invalid")
+                database_backup_restore_stages.cleanup_owned_stage(
+                    key, stage, staged, _owned_stages, unlink_if_identity
+                )
+                continue
+
+            clone = database_backup_restore_stages.create_private_restore_clone(
+                staged,
                 destination,
                 metadata,
-                destination_matches,
-                staged,
+                sqlite_backup=key == "database",
+                pin_artifact=pin_artifact,
             )
-
-        for key in ("config", "database"):
-            _stage, destination, _metadata, destination_matches, staged = validated[
-                key
-            ]
-            if not destination_matches:
-                if staged is None:
-                    raise RuntimeError("rollback restore journal stage path is invalid")
-                trusted = stage_pinned_restore(staged, destination)
-                trusted_stages[key] = (trusted, _stage_identity(trusted))
-
-        for key in ("config", "database"):
-            stage, destination, metadata, destination_matches, staged = validated[key]
-            if destination_matches:
-                _cleanup_owned_stage(key, stage, staged, _owned_stages, unlink_if_identity)
-                continue
-            trusted, _identity = trusted_stages[key]
-            if _stage_identity(trusted) != _identity:
-                raise RuntimeError("rollback restore trusted stage identity changed")
-            replace_staged_restore(trusted, destination)
-            trusted_stages.pop(key)
+            try:
+                if restore_path_matches(destination, metadata):
+                    database_backup_restore_stages.cleanup_owned_stage(
+                        key, stage, staged, _owned_stages, unlink_if_identity
+                    )
+                    continue
+                database_backup_restore_stages.replace_and_verify_private_restore(
+                    clone,
+                    destination,
+                    metadata,
+                    key=key,
+                    replace_staged_restore=replace_staged_restore,
+                    restore_path_matches=restore_path_matches,
+                )
+            finally:
+                clone.cleanup()
             if key == "database":
                 for suffix in ("-wal", "-shm"):
                     Path(f"{destination}{suffix}").unlink(missing_ok=True)
-            if not restore_path_matches(destination, metadata):
-                raise RuntimeError(f"rollback restore {key} verification failed")
-            _cleanup_owned_stage(key, stage, staged, _owned_stages, unlink_if_identity)
+            database_backup_restore_stages.cleanup_owned_stage(
+                key, stage, staged, _owned_stages, unlink_if_identity
+            )
         for suffix in ("-wal", "-shm"):
             Path(f"{destinations['database']}{suffix}").unlink(missing_ok=True)
+        for key in ("config", "database"):
+            _stage, destination, metadata, _staged = validated[key]
+            if not restore_path_matches(destination, metadata):
+                raise RuntimeError(f"rollback restore {key} final verification failed")
         unlink_if_identity(journal_path, journal_identity)
         fsync_parent(journal_path)
     except Exception as exc:
@@ -301,29 +315,10 @@ def recover_rollback_restore(
     finally:
         for staged in staged_artifacts:
             staged.close()
-        for trusted, identity in trusted_stages.values():
-            unlink_if_identity(trusted, identity)
     return {
         "database": destinations["database"].resolve(strict=True),
         "config": destinations["config"].resolve(strict=True),
     }
-
-
-def _cleanup_owned_stage(
-    key: str,
-    stage: Path,
-    pinned: PinnedArtifact | None,
-    owned_stages: OwnedStages | None,
-    unlink_if_identity: Callable[[Path, StageIdentity], None],
-) -> None:
-    owned = None if owned_stages is None else owned_stages.get(key)
-    if owned is None or owned[0] != stage or pinned is None:
-        return
-    pinned_identity = pinned.signature[0], pinned.signature[1]
-    if owned[1] == pinned_identity:
-        unlink_if_identity(stage, owned[1])
-
-
 def restore_rollback_backup(
     manifest_path: Path,
     *,

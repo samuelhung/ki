@@ -243,6 +243,25 @@ def test_replace_staged_restore_propagates_parent_fsync_failure(
     assert destination.read_bytes() == b"restored"
 
 
+def test_restore_path_matches_rejects_hash_matching_corrupt_sqlite(
+    tmp_path: Path,
+) -> None:
+    destination = tmp_path / "database.sqlite"
+    destination.write_bytes(b"not a sqlite database")
+    metadata = {
+        "path": str(tmp_path / "backup.sqlite"),
+        "sha256": _sha256(destination),
+        "size": destination.stat().st_size,
+        "integrity_check": "ok",
+    }
+
+    assert not database_backup_restore.restore_path_matches(
+        destination,
+        metadata,
+        pin_artifact=database_backup._pin_artifact,
+    )
+
+
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
@@ -429,21 +448,35 @@ def test_public_recovery_uses_pinned_source_after_stage_path_swap(
     config_stage = Path(journal["entries"]["config"]["stage_path"])
     moved_genuine = config_stage.with_name(f"{config_stage.name}.genuine")
     replacement_bytes = config_stage.read_bytes()
+    original_identity = (config_stage.stat().st_dev, config_stage.stat().st_ino)
     real_pin = database_backup._pin_artifact
     swapped = False
+    replacement_identity: tuple[int, int] | None = None
 
     def pin_then_swap(metadata: object, label: str, **kwargs: object):
-        nonlocal swapped
+        nonlocal replacement_identity, swapped
         pinned = real_pin(metadata, label, **kwargs)
         if label == "config restore stage" and not swapped:
             os.replace(config_stage, moved_genuine)
             config_stage.write_bytes(replacement_bytes)
+            replacement_identity = (
+                config_stage.stat().st_dev,
+                config_stage.stat().st_ino,
+            )
             swapped = True
         return pinned
 
     _direct_recover(journal_path, pin_artifact=pin_then_swap)
 
     assert swapped
+    assert replacement_identity is not None
+    assert replacement_identity != original_identity
+    assert (config_stage.stat().st_dev, config_stage.stat().st_ino) == (
+        replacement_identity
+    )
+    assert (moved_genuine.stat().st_dev, moved_genuine.stat().st_ino) == (
+        original_identity
+    )
     assert config_stage.read_bytes() == replacement_bytes
     assert moved_genuine.read_bytes() == replacement_bytes
     assert json.loads(config_path.read_text(encoding="utf-8")) == {"original": True}
@@ -778,9 +811,86 @@ def test_direct_restore_detects_destination_replacement(
         _direct_restore(manifest_path)
 
     assert str(exc_info.value.__cause__) == (
-        "rollback restore database verification failed"
+        "rollback restore database publication identity mismatch"
     )
     assert database_backup_restore.restore_journal_path(database_path).exists()
+
+
+def test_recovery_revalidates_matching_destination_before_skip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database_path, config_path, journal_path, journal = _staged_restore_journal(
+        tmp_path, monkeypatch
+    )
+    config_stage = Path(journal["entries"]["config"]["stage_path"])
+    config_path.write_bytes(config_stage.read_bytes())
+    attacker = config_path.with_name("attacker-config.json")
+    attacker.write_bytes(b'{"attacker": true}')
+    real_match = database_backup._restore_path_matches
+    swapped = False
+
+    def swap_after_config_snapshot(path: Path, metadata: dict[str, Any]) -> bool:
+        nonlocal swapped
+        if path == database_path and not swapped:
+            os.replace(attacker, config_path)
+            swapped = True
+        return real_match(path, metadata)
+
+    try:
+        restored = _direct_recover(
+            journal_path, restore_path_matches=swap_after_config_snapshot
+        )
+    except RuntimeError:
+        assert journal_path.exists()
+    else:
+        assert restored == {"database": database_path, "config": config_path}
+        assert config_path.read_bytes() == config_stage.read_bytes()
+
+    assert swapped
+    assert not (
+        not journal_path.exists()
+        and config_path.read_bytes() == b'{"attacker": true}'
+    )
+
+
+def test_recovery_detects_private_publication_source_swap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database_path, _config_path, journal_path, _journal = _staged_restore_journal(
+        tmp_path, monkeypatch
+    )
+    real_replace = database_backup._replace_staged_restore
+    moved_expected: Path | None = None
+    replacement_identity: tuple[int, int] | None = None
+
+    def swap_clone_before_replace(stage: Path, destination: Path) -> None:
+        nonlocal moved_expected, replacement_identity
+        if destination == database_path:
+            moved_expected = stage.with_name(f"{stage.name}.expected")
+            payload = stage.read_bytes()
+            os.replace(stage, moved_expected)
+            stage.write_bytes(payload)
+            replacement_identity = (stage.stat().st_dev, stage.stat().st_ino)
+        real_replace(stage, destination)
+
+    with pytest.raises(
+        RuntimeError, match="rollback restore is incomplete"
+    ) as exc_info:
+        _direct_recover(
+            journal_path, replace_staged_restore=swap_clone_before_replace
+        )
+
+    assert str(exc_info.value.__cause__) == (
+        "rollback restore database publication identity mismatch"
+    )
+    assert journal_path.exists()
+    assert moved_expected is not None
+    assert not moved_expected.exists()
+    assert not moved_expected.parent.exists()
+    assert replacement_identity is not None
+    assert (database_path.stat().st_dev, database_path.stat().st_ino) == (
+        replacement_identity
+    )
 
 
 def test_direct_restore_cleans_stages_when_journal_publication_fsync_fails(
