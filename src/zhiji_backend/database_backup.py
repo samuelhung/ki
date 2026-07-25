@@ -480,9 +480,17 @@ def _stage_pinned_restore(pinned: PinnedArtifact, destination: Path) -> Path:
     )
 
 
-def _replace_staged_restore(stage: Path, destination: Path) -> None:
+def _replace_staged_restore(
+    stage: Path,
+    destination: Path,
+    expected_identity: tuple[int, int] | None = None,
+) -> None:
     database_backup_restore.replace_staged_restore(
-        stage, destination, replace=os.replace, fsync_parent=_fsync_parent
+        stage,
+        destination,
+        replace=os.replace,
+        fsync_parent=_fsync_parent,
+        expected_identity=expected_identity,
     )
 
 
@@ -498,6 +506,10 @@ def recover_rollback_restore(
     expected_manifest_path: Path | None = None,
     expected_manifest_sha256: str | None = None,
 ) -> dict[str, Path]:
+    """Recover swaps during this function's execution.
+
+    Same-user mutation after this function returns is outside scope.
+    """
     return _recover_rollback_restore(
         journal_path,
         expected_manifest_path=expected_manifest_path,
@@ -527,6 +539,7 @@ def _recover_rollback_restore(
         fsync_parent=_fsync_parent,
         journal_schema_version=RESTORE_JOURNAL_SCHEMA_VERSION,
         _owned_stages=_owned_stages,
+        write_json_exclusive=_write_json_exclusive,
     )
 
 

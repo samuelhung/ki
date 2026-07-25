@@ -35,6 +35,13 @@ def test_restore_journal_state_is_a_single_literal_with_exact_json_bytes() -> No
     )
 
 
+def test_recovery_documents_execution_time_race_boundary() -> None:
+    documentation = database_backup.recover_rollback_restore.__doc__ or ""
+
+    assert "during this function's execution" in documentation
+    assert "after this function returns is outside scope" in documentation
+
+
 def _create_database(path: Path) -> None:
     with sqlite3.connect(path) as conn:
         conn.executescript(
@@ -402,9 +409,11 @@ def test_public_recovery_leaves_redundant_journal_stage_untouched(
     config_stage = Path(journal["entries"]["config"]["stage_path"])
     config_path.write_bytes(config_stage.read_bytes())
     calls: list[tuple[Path, tuple[int, int]]] = []
+    real_unlink = database_backup._unlink_if_identity
 
     def track_unlink(path: Path, identity: tuple[int, int]) -> None:
         calls.append((path, identity))
+        real_unlink(path, identity)
 
     monkeypatch.setattr(database_backup, "_unlink_if_identity", track_unlink)
     database_backup.recover_rollback_restore(journal_path)
@@ -860,6 +869,8 @@ def test_recovery_detects_private_publication_source_swap(
         tmp_path, monkeypatch
     )
     real_replace = database_backup._replace_staged_restore
+    database_before = database_path.read_bytes()
+    database_identity = (database_path.stat().st_dev, database_path.stat().st_ino)
     moved_expected: Path | None = None
     replacement_identity: tuple[int, int] | None = None
 
@@ -867,9 +878,8 @@ def test_recovery_detects_private_publication_source_swap(
         nonlocal moved_expected, replacement_identity
         if destination == database_path:
             moved_expected = stage.with_name(f"{stage.name}.expected")
-            payload = stage.read_bytes()
             os.replace(stage, moved_expected)
-            stage.write_bytes(payload)
+            stage.write_bytes(b"unrelated database inode")
             replacement_identity = (stage.stat().st_dev, stage.stat().st_ino)
         real_replace(stage, destination)
 
@@ -886,11 +896,94 @@ def test_recovery_detects_private_publication_source_swap(
     assert journal_path.exists()
     assert moved_expected is not None
     assert not moved_expected.exists()
-    assert not moved_expected.parent.exists()
+    assert moved_expected.parent.exists()
     assert replacement_identity is not None
+    assert database_path.read_bytes() == database_before
     assert (database_path.stat().st_dev, database_path.stat().st_ino) == (
+        database_identity
+    )
+    unrelated_source = moved_expected.with_name("restore-clone")
+    assert unrelated_source.read_bytes() == b"unrelated database inode"
+    assert (unrelated_source.stat().st_dev, unrelated_source.stat().st_ino) == (
         replacement_identity
     )
+
+
+def test_recovery_republishes_journal_when_config_swaps_during_disposition(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _database_path, config_path, journal_path, journal = _staged_restore_journal(
+        tmp_path, monkeypatch
+    )
+    expected_config = Path(journal["entries"]["config"]["stage_path"]).read_bytes()
+    attacker = config_path.with_name("attacker-config.json")
+    attacker.write_bytes(b'{"attacker": true}')
+    real_unlink = database_backup._unlink_if_identity
+    swapped = False
+
+    def unlink_journal_then_swap(path: Path, identity: tuple[int, int]) -> None:
+        nonlocal swapped
+        real_unlink(path, identity)
+        if path == journal_path:
+            os.replace(attacker, config_path)
+            swapped = True
+
+    with pytest.raises(
+        RuntimeError,
+        match=f"rollback restore is incomplete; recover from {journal_path}",
+    ) as exc_info:
+        _direct_recover(journal_path, unlink_if_identity=unlink_journal_then_swap)
+
+    assert str(exc_info.value) == (
+        f"rollback restore is incomplete; recover from {journal_path}"
+    )
+    assert swapped
+    assert journal_path.exists()
+    assert json.loads(journal_path.read_text(encoding="utf-8")) == journal
+    assert config_path.read_bytes() == b'{"attacker": true}'
+
+    database_backup.recover_rollback_restore(journal_path)
+
+    assert config_path.read_bytes() == expected_config
+    assert not journal_path.exists()
+
+
+def test_restore_rebuilds_cleaned_stage_when_config_swaps_during_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _database_path, config_path, manifest_path = _bundle(tmp_path)
+    config_path.write_bytes(b'{"current": true}')
+    attacker = config_path.with_name("attacker-config.json")
+    attacker.write_bytes(b'{"attacker": true}')
+    real_unlink = database_backup._unlink_if_identity
+    swapped = False
+
+    def unlink_stage_then_swap(path: Path, identity: tuple[int, int]) -> None:
+        nonlocal swapped
+        real_unlink(path, identity)
+        if path.name.endswith(".restore-stage") and not swapped:
+            os.replace(attacker, config_path)
+            swapped = True
+
+    monkeypatch.setattr(database_backup, "_unlink_if_identity", unlink_stage_then_swap)
+    with pytest.raises(RuntimeError, match="rollback restore is incomplete"):
+        _direct_restore(manifest_path)
+
+    journal_path = database_backup.restore_journal_path(
+        config_path.with_name("intelligence.sqlite")
+    )
+    journal = json.loads(journal_path.read_text(encoding="utf-8"))
+    assert swapped
+    assert all(
+        Path(entry["stage_path"]).exists()
+        for entry in journal["entries"].values()
+    )
+
+    monkeypatch.setattr(database_backup, "_unlink_if_identity", real_unlink)
+    database_backup.recover_rollback_restore(journal_path)
+
+    assert config_path.read_bytes() == b'{"original": true}'
+    assert not journal_path.exists()
 
 
 def test_direct_restore_cleans_stages_when_journal_publication_fsync_fails(

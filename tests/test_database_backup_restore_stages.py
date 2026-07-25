@@ -72,13 +72,14 @@ def test_private_restore_publication_rejects_swapped_clone_inode(
     moved_expected = clone.path.with_name("moved-expected")
     replacement_identity: tuple[int, int] | None = None
 
+    real_replace = database_backup._replace_staged_restore
+
     def swap_then_replace(stage: Path, target: Path) -> None:
         nonlocal replacement_identity
-        payload = stage.read_bytes()
         os.replace(stage, moved_expected)
-        stage.write_bytes(payload)
+        stage.write_bytes(b'{"unrelated": true}')
         replacement_identity = (stage.stat().st_dev, stage.stat().st_ino)
-        os.replace(stage, target)
+        real_replace(stage, target)
 
     try:
         with pytest.raises(
@@ -98,11 +99,13 @@ def test_private_restore_publication_rejects_swapped_clone_inode(
         clone.cleanup()
 
     assert replacement_identity is not None
-    assert (destination.stat().st_dev, destination.stat().st_ino) == (
+    assert destination.read_bytes() == b'{"current": true}'
+    assert clone.path.read_bytes() == b'{"unrelated": true}'
+    assert (clone.path.stat().st_dev, clone.path.stat().st_ino) == (
         replacement_identity
     )
     assert not moved_expected.exists()
-    assert not clone.directory.exists()
+    assert clone.directory.exists()
 
 
 def test_private_restore_clone_failure_cleans_only_owned_inode(
@@ -151,3 +154,53 @@ def test_private_restore_clone_failure_cleans_only_owned_inode(
     assert not moved_expected.exists()
     assert clone_path.exists()
     assert clone_path.read_bytes() == b'{"expected": true}'
+
+
+def test_private_restore_publication_rejects_swapped_private_directory(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.json"
+    source.write_bytes(b'{"expected": true}')
+    metadata = {
+        "path": str(source),
+        "sha256": _sha256(source),
+        "size": source.stat().st_size,
+    }
+    pinned = database_backup._pin_artifact(metadata, "source")
+    destination = tmp_path / "destination.json"
+    destination.write_bytes(b'{"current": true}')
+    clone = database_backup_restore_stages.create_private_restore_clone(
+        pinned,
+        destination,
+        metadata,
+        sqlite_backup=False,
+        pin_artifact=database_backup._pin_artifact,
+    )
+    moved_directory = clone.directory.with_name(f"{clone.directory.name}.expected")
+    real_replace = database_backup._replace_staged_restore
+
+    def swap_directory_then_replace(stage: Path, target: Path) -> None:
+        os.replace(clone.directory, moved_directory)
+        clone.directory.mkdir(mode=0o700)
+        stage.write_bytes(b'{"unrelated": true}')
+        real_replace(stage, target)
+
+    try:
+        with pytest.raises(
+            RuntimeError,
+            match="rollback restore config publication identity mismatch",
+        ):
+            database_backup_restore_stages.replace_and_verify_private_restore(
+                clone,
+                destination,
+                metadata,
+                key="config",
+                replace_staged_restore=swap_directory_then_replace,
+                restore_path_matches=database_backup._restore_path_matches,
+            )
+    finally:
+        pinned.close()
+        clone.cleanup()
+
+    assert destination.read_bytes() == b'{"current": true}'
+    assert clone.path.read_bytes() == b'{"unrelated": true}'

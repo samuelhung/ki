@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from . import database_backup_restore_stages
+from . import database_backup_restore_finalization, database_backup_restore_stages
 
 if TYPE_CHECKING:
     from .database_backup_artifacts import PinnedArtifact
@@ -72,9 +72,15 @@ def replace_staged_restore(
     *,
     replace: Callable[[Path, Path], None],
     fsync_parent: Callable[[Path], None],
+    expected_identity: StageIdentity | None = None,
 ) -> None:
-    replace(stage, destination)
-    fsync_parent(destination)
+    database_backup_restore_stages.replace_staged_restore(
+        stage,
+        destination,
+        replace=replace,
+        fsync_parent=fsync_parent,
+        expected_identity=expected_identity,
+    )
 
 
 def restore_path_matches(
@@ -114,52 +120,6 @@ def _unlink_stage_if_identity(path: Path, identity: StageIdentity) -> None:
         pass
 
 
-def _validate_restore_stage(
-    value: object,
-    destination: Path,
-    journal_path: Path,
-    metadata: dict[str, Any],
-    destination_matches: bool,
-    *,
-    pin_artifact: Callable[..., PinnedArtifact],
-    sqlite_backup: bool,
-) -> tuple[Path, PinnedArtifact | None]:
-    message = "rollback restore journal stage path is invalid"
-    if not isinstance(value, str) or not value:
-        raise RuntimeError(message)
-    try:
-        stage = Path(value)
-        if (
-            not stage.is_absolute()
-            or stage.resolve(strict=False) != stage
-            or stage.parent != destination.parent
-            or stage in (destination, journal_path)
-            or not stage.name.startswith(f".{destination.name}.")
-            or not stage.name.endswith(".restore-stage")
-        ):
-            raise RuntimeError(message)
-        stage_stat = stage.lstat()
-    except FileNotFoundError:
-        if destination_matches:
-            return stage, None
-        raise RuntimeError(message) from None
-    except (OSError, RuntimeError, ValueError) as exc:
-        if isinstance(exc, RuntimeError) and str(exc) == message:
-            raise
-        raise RuntimeError(message) from exc
-    if not stat.S_ISREG(stage_stat.st_mode):
-        raise RuntimeError(message)
-
-    stage_metadata = dict(metadata)
-    stage_metadata["path"] = str(stage)
-    staged = pin_artifact(
-        stage_metadata,
-        "database restore stage" if sqlite_backup else "config restore stage",
-        sqlite_backup=sqlite_backup,
-    )
-    return stage, staged
-
-
 def recover_rollback_restore(
     journal_path: Path,
     *,
@@ -178,6 +138,7 @@ def recover_rollback_restore(
     fsync_parent: Callable[[Path], None],
     journal_schema_version: int = 1,
     _owned_stages: OwnedStages | None = None,
+    write_json_exclusive: Callable[[Path, dict[str, Any]], None] | None = None,
 ) -> dict[str, Path]:
     journal_path = canonical_path(
         str(Path(journal_path).expanduser().absolute().resolve(strict=True)),
@@ -221,6 +182,8 @@ def recover_rollback_restore(
     }
     validated: dict[str, tuple[Path, Path, dict[str, Any], PinnedArtifact | None]] = {}
     staged_artifacts: list[PinnedArtifact] = []
+    final_set: database_backup_restore_finalization.FinalRestoreSet | None = None
+    journal_disposed = False
     try:
         if set(entries) != set(expected_entries):
             raise RuntimeError("rollback restore journal entry mismatch")
@@ -239,7 +202,7 @@ def recover_rollback_restore(
             ):
                 raise RuntimeError("rollback restore journal entry mismatch")
             destination_matches = restore_path_matches(destination, metadata)
-            stage, staged = _validate_restore_stage(
+            stage, staged = database_backup_restore_stages.validate_restore_stage(
                 entry.get("stage_path"),
                 destination,
                 journal_path,
@@ -266,9 +229,6 @@ def recover_rollback_restore(
             if staged is None:
                 if not restore_path_matches(destination, metadata):
                     raise RuntimeError("rollback restore journal stage path is invalid")
-                database_backup_restore_stages.cleanup_owned_stage(
-                    key, stage, staged, _owned_stages, unlink_if_identity
-                )
                 continue
 
             clone = database_backup_restore_stages.create_private_restore_clone(
@@ -280,9 +240,6 @@ def recover_rollback_restore(
             )
             try:
                 if restore_path_matches(destination, metadata):
-                    database_backup_restore_stages.cleanup_owned_stage(
-                        key, stage, staged, _owned_stages, unlink_if_identity
-                    )
                     continue
                 database_backup_restore_stages.replace_and_verify_private_restore(
                     clone,
@@ -297,28 +254,64 @@ def recover_rollback_restore(
             if key == "database":
                 for suffix in ("-wal", "-shm"):
                     Path(f"{destination}{suffix}").unlink(missing_ok=True)
+        for suffix in ("-wal", "-shm"):
+            Path(f"{destinations['database']}{suffix}").unlink(missing_ok=True)
+        final_set = database_backup_restore_finalization.pin_final_restore_set(
+            expected_entries, pin_artifact=pin_artifact
+        )
+        unlink_if_identity(journal_path, journal_identity)
+        try:
+            _stage_identity(journal_path)
+        except FileNotFoundError:
+            journal_disposed = True
+        else:
+            raise RuntimeError("rollback restore journal changed during disposition")
+        fsync_parent(journal_path)
+        final_set.assert_valid()
+        for key in ("config", "database"):
+            stage, _destination, _metadata, staged = validated[key]
             database_backup_restore_stages.cleanup_owned_stage(
                 key, stage, staged, _owned_stages, unlink_if_identity
             )
-        for suffix in ("-wal", "-shm"):
-            Path(f"{destinations['database']}{suffix}").unlink(missing_ok=True)
-        for key in ("config", "database"):
-            _stage, destination, metadata, _staged = validated[key]
-            if not restore_path_matches(destination, metadata):
-                raise RuntimeError(f"rollback restore {key} final verification failed")
-        unlink_if_identity(journal_path, journal_identity)
-        fsync_parent(journal_path)
+        final_set.assert_valid()
     except Exception as exc:
+        failure = exc
+        if journal_disposed:
+            try:
+                recovery_journal = journal
+                if _owned_stages is not None and final_set is not None:
+                    recovery_journal = (
+                        database_backup_restore_finalization.ensure_owned_recovery_stages(
+                            journal,
+                            _owned_stages,
+                            final_set,
+                            destinations,
+                            stage_pinned_restore=stage_pinned_restore,
+                        )
+                    )
+                database_backup_restore_finalization.republish_journal(
+                    journal_path,
+                    recovery_journal,
+                    write_json_exclusive=write_json_exclusive,
+                    fsync_parent=fsync_parent,
+                )
+            except Exception as republish_exc:
+                failure = RuntimeError("rollback restore journal republish failed")
+                failure.__cause__ = republish_exc
         raise RuntimeError(
             f"rollback restore is incomplete; recover from {journal_path}"
-        ) from exc
+        ) from failure
     finally:
+        if final_set is not None:
+            final_set.close()
         for staged in staged_artifacts:
             staged.close()
     return {
-        "database": destinations["database"].resolve(strict=True),
-        "config": destinations["config"].resolve(strict=True),
+        "database": destinations["database"],
+        "config": destinations["config"],
     }
+
+
 def restore_rollback_backup(
     manifest_path: Path,
     *,

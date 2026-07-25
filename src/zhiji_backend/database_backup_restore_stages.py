@@ -4,6 +4,8 @@ import os
 import stat
 import tempfile
 from collections.abc import Callable
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -59,6 +61,113 @@ class PrivateRestoreClone:
                 self.directory.rmdir()
         except (FileNotFoundError, OSError):
             pass
+
+
+_EXPECTED_PUBLICATION: ContextVar[PrivateRestoreClone | None] = ContextVar(
+    "expected_private_restore_publication", default=None
+)
+
+
+@contextmanager
+def expected_private_publication(clone: PrivateRestoreClone):
+    token = _EXPECTED_PUBLICATION.set(clone)
+    try:
+        yield
+    finally:
+        _EXPECTED_PUBLICATION.reset(token)
+
+
+def replace_staged_restore(
+    stage: Path,
+    destination: Path,
+    *,
+    replace: Callable[[Path, Path], None],
+    fsync_parent: Callable[[Path], None],
+    expected_identity: StageIdentity | None = None,
+) -> None:
+    expectation = _EXPECTED_PUBLICATION.get()
+    expected_identity = (
+        expectation.identity
+        if expected_identity is None and expectation
+        else expected_identity
+    )
+    if expectation is not None:
+        directory_stat = os.fstat(expectation.directory_fd)
+        published_directory = expectation.directory.lstat()
+        source_stat = os.stat(
+            expectation.path.name,
+            dir_fd=expectation.directory_fd,
+            follow_symlinks=False,
+        )
+        published_source = stage.lstat()
+        if (
+            stage != expectation.path
+            or _identity(directory_stat) != expectation.directory_identity
+            or _identity(published_directory) != expectation.directory_identity
+            or stat.S_IMODE(directory_stat.st_mode) != 0o700
+            or not stat.S_ISDIR(published_directory.st_mode)
+            or stat.S_IMODE(published_directory.st_mode) != 0o700
+            or not stat.S_ISREG(source_stat.st_mode)
+            or _identity(source_stat) != expected_identity
+            or not stat.S_ISREG(published_source.st_mode)
+            or _identity(published_source) != expected_identity
+        ):
+            raise RuntimeError("rollback restore publication source identity mismatch")
+    elif expected_identity is not None:
+        source_stat = stage.lstat()
+        if (
+            not stat.S_ISREG(source_stat.st_mode)
+            or _identity(source_stat) != expected_identity
+        ):
+            raise RuntimeError("rollback restore publication source identity mismatch")
+    replace(stage, destination)
+    fsync_parent(destination)
+
+
+def validate_restore_stage(
+    value: object,
+    destination: Path,
+    journal_path: Path,
+    metadata: dict[str, Any],
+    destination_matches: bool,
+    *,
+    pin_artifact: Callable[..., PinnedArtifact],
+    sqlite_backup: bool,
+) -> tuple[Path, PinnedArtifact | None]:
+    message = "rollback restore journal stage path is invalid"
+    if not isinstance(value, str) or not value:
+        raise RuntimeError(message)
+    try:
+        stage = Path(value)
+        if (
+            not stage.is_absolute()
+            or stage.resolve(strict=False) != stage
+            or stage.parent != destination.parent
+            or stage in (destination, journal_path)
+            or not stage.name.startswith(f".{destination.name}.")
+            or not stage.name.endswith(".restore-stage")
+        ):
+            raise RuntimeError(message)
+        stage_stat = stage.lstat()
+    except FileNotFoundError:
+        if destination_matches:
+            return stage, None
+        raise RuntimeError(message) from None
+    except (OSError, RuntimeError, ValueError) as exc:
+        if isinstance(exc, RuntimeError) and str(exc) == message:
+            raise
+        raise RuntimeError(message) from exc
+    if not stat.S_ISREG(stage_stat.st_mode):
+        raise RuntimeError(message)
+
+    stage_metadata = dict(metadata)
+    stage_metadata["path"] = str(stage)
+    staged = pin_artifact(
+        stage_metadata,
+        "database restore stage" if sqlite_backup else "config restore stage",
+        sqlite_backup=sqlite_backup,
+    )
+    return stage, staged
 
 
 def create_private_restore_clone(
@@ -166,7 +275,15 @@ def replace_and_verify_private_restore(
     replace_staged_restore: Callable[[Path, Path], None],
     restore_path_matches: Callable[[Path, dict[str, Any]], bool],
 ) -> None:
-    replace_staged_restore(clone.path, destination)
+    try:
+        with expected_private_publication(clone):
+            replace_staged_restore(clone.path, destination)
+    except RuntimeError as exc:
+        if str(exc) == "rollback restore publication source identity mismatch":
+            raise RuntimeError(
+                f"rollback restore {key} publication identity mismatch"
+            ) from exc
+        raise
     try:
         destination_stat = destination.lstat()
     except FileNotFoundError as exc:
