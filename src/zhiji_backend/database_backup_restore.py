@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import stat
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -82,6 +83,52 @@ def restore_path_matches(
     return True
 
 
+def _validate_restore_stage(
+    value: object,
+    destination: Path,
+    journal_path: Path,
+    metadata: dict[str, Any],
+    destination_matches: bool,
+    *,
+    pin_artifact: Callable[..., PinnedArtifact],
+    sqlite_backup: bool,
+) -> tuple[Path, PinnedArtifact | None]:
+    message = "rollback restore journal stage path is invalid"
+    if not isinstance(value, str) or not value:
+        raise RuntimeError(message)
+    try:
+        stage = Path(value)
+        if (
+            not stage.is_absolute()
+            or stage.resolve(strict=False) != stage
+            or stage.parent != destination.parent
+            or stage in (destination, journal_path)
+            or not stage.name.startswith(f".{destination.name}.")
+            or not stage.name.endswith(".restore-stage")
+        ):
+            raise RuntimeError(message)
+        stage_stat = stage.lstat()
+    except FileNotFoundError:
+        if destination_matches:
+            return stage, None
+        raise RuntimeError(message) from None
+    except (OSError, RuntimeError, ValueError) as exc:
+        if isinstance(exc, RuntimeError) and str(exc) == message:
+            raise
+        raise RuntimeError(message) from exc
+    if not stat.S_ISREG(stage_stat.st_mode):
+        raise RuntimeError(message)
+
+    stage_metadata = dict(metadata)
+    stage_metadata["path"] = str(stage)
+    staged = pin_artifact(
+        stage_metadata,
+        "database restore stage" if sqlite_backup else "config restore stage",
+        sqlite_backup=sqlite_backup,
+    )
+    return stage, staged
+
+
 def recover_rollback_restore(
     journal_path: Path,
     *,
@@ -93,7 +140,9 @@ def recover_rollback_restore(
         ..., tuple[dict[str, Any], list[PinnedArtifact], dict[str, Path], str]
     ],
     pin_artifact: Callable[..., PinnedArtifact],
+    restore_path_matches: Callable[[Path, dict[str, Any]], bool],
     replace_staged_restore: Callable[[Path, Path], None],
+    unlink_if_identity: Callable[[Path, tuple[int, int]], None],
     fsync_parent: Callable[[Path], None],
     journal_schema_version: int = 1,
 ) -> dict[str, Path]:
@@ -134,36 +183,60 @@ def recover_rollback_restore(
         "config": (destinations["config"], artifacts["config"]),
         "database": (destinations["database"], artifacts["database"]),
     }
+    validated: dict[
+        str, tuple[Path, Path, dict[str, Any], bool, PinnedArtifact | None]
+    ] = {}
+    staged_artifacts: list[PinnedArtifact] = []
     try:
+        if set(entries) != set(expected_entries):
+            raise RuntimeError("rollback restore journal entry mismatch")
+
+        # Phase A validates and pins every journal-controlled path before mutation.
         for key in ("config", "database"):
             destination, metadata = expected_entries[key]
             entry = entries.get(key)
             if (
                 not isinstance(entry, dict)
+                or set(entry) != {"destination", "stage_path", "sha256", "size"}
                 or entry.get("destination") != str(destination)
                 or entry.get("sha256") != metadata.get("sha256")
                 or entry.get("size") != metadata.get("size")
             ):
                 raise RuntimeError("rollback restore journal entry mismatch")
-            stage = Path(str(entry.get("stage_path")))
-            if restore_path_matches(destination, metadata, pin_artifact=pin_artifact):
-                stage.unlink(missing_ok=True)
-                continue
-            stage_metadata = dict(metadata)
-            stage_metadata["path"] = str(stage)
-            staged = pin_artifact(
-                stage_metadata,
-                f"{key} restore stage",
+            destination_matches = restore_path_matches(destination, metadata)
+            stage, staged = _validate_restore_stage(
+                entry.get("stage_path"),
+                destination,
+                journal_path,
+                metadata,
+                destination_matches,
+                pin_artifact=pin_artifact,
                 sqlite_backup=key == "database",
             )
-            staged.close()
+            if staged is not None:
+                staged_artifacts.append(staged)
+            validated[key] = (
+                stage,
+                destination,
+                metadata,
+                destination_matches,
+                staged,
+            )
+
+        # Phase B only consumes paths and identities established by Phase A.
+        for key in ("config", "database"):
+            stage, destination, metadata, destination_matches, staged = validated[key]
+            if destination_matches:
+                if staged is not None:
+                    unlink_if_identity(
+                        stage, (staged.signature[0], staged.signature[1])
+                    )
+                continue
             replace_staged_restore(stage, destination)
             if key == "database":
                 for suffix in ("-wal", "-shm"):
                     Path(f"{destination}{suffix}").unlink(missing_ok=True)
-            if not restore_path_matches(
-                destination, metadata, pin_artifact=pin_artifact
-            ):
+            if not restore_path_matches(destination, metadata):
                 raise RuntimeError(f"rollback restore {key} verification failed")
         for suffix in ("-wal", "-shm"):
             Path(f"{destinations['database']}{suffix}").unlink(missing_ok=True)
@@ -173,6 +246,9 @@ def recover_rollback_restore(
         raise RuntimeError(
             f"rollback restore is incomplete; recover from {journal_path}"
         ) from exc
+    finally:
+        for staged in staged_artifacts:
+            staged.close()
     return {
         "database": destinations["database"].resolve(strict=True),
         "config": destinations["config"].resolve(strict=True),

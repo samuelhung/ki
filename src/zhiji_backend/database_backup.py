@@ -506,7 +506,9 @@ def recover_rollback_restore(
         load_json_regular=_load_json_regular,
         validate_rollback_manifest=_validate_rollback_manifest,
         pin_artifact=_pin_artifact,
+        restore_path_matches=_restore_path_matches,
         replace_staged_restore=_replace_staged_restore,
+        unlink_if_identity=_unlink_if_identity,
         fsync_parent=_fsync_parent,
         journal_schema_version=RESTORE_JOURNAL_SCHEMA_VERSION,
     )

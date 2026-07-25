@@ -65,7 +65,9 @@ def _direct_recover(journal_path: Path, **kwargs: Any) -> dict[str, Path]:
         load_json_regular=database_backup._load_json_regular,
         validate_rollback_manifest=database_backup._validate_rollback_manifest,
         pin_artifact=database_backup._pin_artifact,
+        restore_path_matches=database_backup._restore_path_matches,
         replace_staged_restore=database_backup._replace_staged_restore,
+        unlink_if_identity=database_backup._unlink_if_identity,
         fsync_parent=database_backup._fsync_parent,
         **kwargs,
     )
@@ -85,6 +87,30 @@ def _direct_restore(manifest_path: Path) -> dict[str, Path]:
         now=lambda: datetime.now(UTC),
         journal_schema_version=database_backup.RESTORE_JOURNAL_SCHEMA_VERSION,
     )
+
+
+def _staged_restore_journal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[Path, Path, Path, dict[str, Any]]:
+    database_path, config_path, manifest_path = _bundle(tmp_path)
+    with sqlite3.connect(database_path) as conn:
+        conn.execute("UPDATE entities SET id = 'current'")
+    config_path.write_text('{"current": true}', encoding="utf-8")
+    real_replace = database_backup._replace_staged_restore
+
+    def stop_before_replacement(_stage: Path, _destination: Path) -> None:
+        raise OSError("stop after staging")
+
+    monkeypatch.setattr(
+        database_backup, "_replace_staged_restore", stop_before_replacement
+    )
+    with pytest.raises(RuntimeError, match="rollback restore is incomplete"):
+        database_backup.restore_rollback_backup(manifest_path)
+    monkeypatch.setattr(database_backup, "_replace_staged_restore", real_replace)
+
+    journal_path = database_backup.restore_journal_path(database_path)
+    journal = json.loads(journal_path.read_text(encoding="utf-8"))
+    return database_path, config_path, journal_path, journal
 
 
 def test_stage_pinned_restore_copies_from_start_and_preserves_fd_offset(
@@ -201,6 +227,133 @@ def test_recover_validates_journal_before_replacement(
         _direct_recover(journal_path)
 
 
+@pytest.mark.parametrize(
+    "invalid_stage",
+    [
+        "empty",
+        "non-string",
+        "relative",
+        "outside-parent",
+        "bad-prefix",
+        "bad-suffix",
+        "destination",
+        "journal",
+        "symlink",
+        "unrelated-file",
+    ],
+)
+def test_recovery_rejects_untrusted_stage_paths_without_side_effects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, invalid_stage: str
+) -> None:
+    database_path, config_path, journal_path, journal = _staged_restore_journal(
+        tmp_path, monkeypatch
+    )
+    config_stage = Path(journal["entries"]["config"]["stage_path"])
+    config_path.write_bytes(config_stage.read_bytes())
+    database_before = database_path.read_bytes()
+    config_before = config_path.read_bytes()
+    protected: Path | None = None
+
+    if invalid_stage == "empty":
+        value: object = ""
+    elif invalid_stage == "non-string":
+        value = [str(config_stage)]
+    elif invalid_stage == "relative":
+        value = config_stage.name
+    elif invalid_stage == "outside-parent":
+        protected = tmp_path / ".system_config.json.outside.restore-stage"
+        protected.write_bytes(config_stage.read_bytes())
+        value = str(protected)
+    elif invalid_stage == "bad-prefix":
+        protected = config_path.parent / ".other.valid.restore-stage"
+        protected.write_bytes(config_stage.read_bytes())
+        value = str(protected)
+    elif invalid_stage == "bad-suffix":
+        protected = config_path.parent / f".{config_path.name}.invalid-stage"
+        protected.write_bytes(config_stage.read_bytes())
+        value = str(protected)
+    elif invalid_stage == "destination":
+        protected = config_path
+        value = str(protected)
+    elif invalid_stage == "journal":
+        protected = journal_path
+        value = str(protected)
+    elif invalid_stage == "symlink":
+        target = tmp_path / "symlink-target"
+        target.write_bytes(config_stage.read_bytes())
+        protected = config_path.parent / f".{config_path.name}.linked.restore-stage"
+        protected.symlink_to(target)
+        value = str(protected)
+    else:
+        protected = config_path.parent / "unrelated.txt"
+        protected.write_bytes(config_stage.read_bytes())
+        value = str(protected)
+
+    journal["entries"]["config"]["stage_path"] = value
+    journal_path.write_text(json.dumps(journal), encoding="utf-8")
+    protected_bytes = (
+        protected.read_bytes()
+        if protected is not None and protected != journal_path
+        else None
+    )
+
+    with pytest.raises(RuntimeError, match="rollback restore is incomplete"):
+        database_backup.recover_rollback_restore(journal_path)
+
+    assert database_path.read_bytes() == database_before
+    assert config_path.read_bytes() == config_before
+    assert journal_path.exists()
+    assert config_stage.exists()
+    if protected is not None and protected != journal_path:
+        assert protected.exists() or protected.is_symlink()
+        assert protected.read_bytes() == protected_bytes
+
+
+def test_recovery_validates_all_entries_before_replacing_any_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database_path, config_path, journal_path, journal = _staged_restore_journal(
+        tmp_path, monkeypatch
+    )
+    database_before = database_path.read_bytes()
+    config_before = config_path.read_bytes()
+    journal["entries"]["database"]["unexpected"] = True
+    journal_path.write_text(json.dumps(journal), encoding="utf-8")
+
+    with pytest.raises(
+        RuntimeError, match="rollback restore is incomplete"
+    ) as exc_info:
+        database_backup.recover_rollback_restore(journal_path)
+
+    assert str(exc_info.value.__cause__) == "rollback restore journal entry mismatch"
+    assert database_path.read_bytes() == database_before
+    assert config_path.read_bytes() == config_before
+    assert journal_path.exists()
+
+
+def test_recovery_identity_checks_redundant_stage_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _database_path, config_path, journal_path, journal = _staged_restore_journal(
+        tmp_path, monkeypatch
+    )
+    config_stage = Path(journal["entries"]["config"]["stage_path"])
+    config_path.write_bytes(config_stage.read_bytes())
+    expected_identity = (config_stage.stat().st_dev, config_stage.stat().st_ino)
+    real_unlink = database_backup._unlink_if_identity
+    calls: list[tuple[Path, tuple[int, int]]] = []
+
+    def track_unlink(path: Path, identity: tuple[int, int]) -> None:
+        calls.append((path, identity))
+        real_unlink(path, identity)
+
+    monkeypatch.setattr(database_backup, "_unlink_if_identity", track_unlink)
+    database_backup.recover_rollback_restore(journal_path)
+
+    assert (config_stage, expected_identity) in calls
+    assert not config_stage.exists()
+
+
 def test_direct_recovery_handles_partial_replacement_and_then_is_not_repeatable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -268,8 +421,8 @@ def test_recovery_rerun_completes_after_partial_recovery_crash(
     config_destination = tmp_path / "config.json"
     database_destination.write_bytes(b"live database")
     config_destination.write_bytes(b"live config")
-    database_stage = tmp_path / ".database.restore-stage"
-    config_stage = tmp_path / ".config.restore-stage"
+    database_stage = tmp_path / ".database.sqlite.manual.restore-stage"
+    config_stage = tmp_path / ".config.json.manual.restore-stage"
     database_stage.write_bytes(b"rollback database")
     config_stage.write_bytes(b"rollback config")
     manifest_path = tmp_path / "rollback-manifest.json"
@@ -363,6 +516,12 @@ def test_recovery_rerun_completes_after_partial_recovery_crash(
         "load_json_regular": load_json_regular,
         "validate_rollback_manifest": validate_manifest,
         "pin_artifact": pin_artifact,
+        "restore_path_matches": lambda path, metadata: (
+            database_backup_restore.restore_path_matches(
+                path, metadata, pin_artifact=pin_artifact
+            )
+        ),
+        "unlink_if_identity": database_backup._unlink_if_identity,
         "fsync_parent": lambda _path: None,
     }
     with pytest.raises(RuntimeError) as exc_info:
@@ -500,6 +659,28 @@ def test_facade_restore_forwards_replace_hook_at_call_time(
     assert calls
     assert isinstance(exc_info.value.__cause__, OSError)
     assert str(exc_info.value.__cause__) == "facade hook"
+    assert database_backup.restore_journal_path(database_path).exists()
+
+
+def test_facade_restore_forwards_path_match_hook_at_call_time(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database_path, _config_path, manifest_path = _bundle(tmp_path)
+    calls: list[Path] = []
+
+    def fail_match(path: Path, _metadata: dict[str, Any]) -> bool:
+        calls.append(path)
+        raise OSError("facade match hook")
+
+    monkeypatch.setattr(database_backup, "_restore_path_matches", fail_match)
+    with pytest.raises(
+        RuntimeError, match="rollback restore is incomplete"
+    ) as exc_info:
+        database_backup.restore_rollback_backup(manifest_path)
+
+    assert calls
+    assert isinstance(exc_info.value.__cause__, OSError)
+    assert str(exc_info.value.__cause__) == "facade match hook"
     assert database_backup.restore_journal_path(database_path).exists()
 
 
