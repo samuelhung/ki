@@ -9,7 +9,7 @@ import sqlite3
 import stat
 import tempfile
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import get_type_hints
 
@@ -70,6 +70,16 @@ PUBLIC_RETURN_TYPES = {
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _set_manifest_created_at(manifest_path: Path, created_at: datetime) -> None:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["created_at"] = created_at.isoformat()
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    marker_path = Path(manifest["marker_path"])
+    marker = json.loads(marker_path.read_text(encoding="utf-8"))
+    marker["manifest_sha256"] = _sha256(manifest_path)
+    marker_path.write_text(json.dumps(marker), encoding="utf-8")
 
 
 def _create_database(path: Path) -> None:
@@ -133,6 +143,11 @@ def _utc_timestamp(value: str) -> datetime:
 
 def test_public_backup_facade_signatures_and_return_types_are_stable() -> None:
     assert set(PUBLIC_BACKUP_FACADE) == set(PUBLIC_RETURN_TYPES)
+    assert str(inspect.signature(database_backup.BackupPrerequisiteLease)) == (
+        "(marker_path: 'Path', manifest_path: 'Path', marker: 'dict[str, Any]', "
+        "manifest: 'dict[str, Any]', pinned_files: "
+        "'list[tuple[PinnedArtifact, str]]') -> None"
+    )
 
     for name, expected_signature in PUBLIC_BACKUP_FACADE.items():
         public_callable = getattr(database_backup, name)
@@ -357,6 +372,104 @@ def test_prerequisite_validation_preserves_failure_messages(
 
     assert str(exc_info.value) == message
     assert manifest_path.exists()
+
+
+def test_prerequisite_freshness_is_evaluated_after_manifest_pinning(
+    rollback_bundle, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created_at = datetime(2026, 7, 24, 12, tzinfo=UTC)
+    manifest_path = rollback_bundle["manifest"]
+    _set_manifest_created_at(manifest_path, created_at)
+
+    class AdvancingDateTime:
+        current = created_at + timedelta(
+            seconds=database_backup.BACKUP_MAX_AGE_SECONDS - 1
+        )
+
+        @classmethod
+        def now(cls, _tz=None):
+            return cls.current
+
+    real_pin = database_backup._pin_json_file
+
+    def pin_then_advance(path, label, **kwargs):
+        result = real_pin(path, label, **kwargs)
+        if label == "manifest":
+            AdvancingDateTime.current = created_at + timedelta(
+                seconds=database_backup.BACKUP_MAX_AGE_SECONDS + 1
+            )
+        return result
+
+    monkeypatch.setattr(database_backup, "datetime", AdvancingDateTime)
+    monkeypatch.setattr(database_backup, "_pin_json_file", pin_then_advance)
+
+    with pytest.raises(RuntimeError, match="^backup prerequisite is stale$"):
+        database_backup.validate_backup_prerequisite(
+            rollback_bundle["database"],
+            rollback_bundle["config"],
+            MIGRATION_NAME,
+        )
+
+
+def test_rollback_freshness_is_evaluated_after_manifest_pinning(
+    rollback_bundle, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created_at = datetime(2026, 7, 24, 12, tzinfo=UTC)
+    manifest_path = rollback_bundle["manifest"]
+    _set_manifest_created_at(manifest_path, created_at)
+
+    class AdvancingDateTime:
+        current = created_at + timedelta(
+            seconds=database_backup.BACKUP_MAX_AGE_SECONDS - 1
+        )
+
+        @classmethod
+        def now(cls, _tz=None):
+            return cls.current
+
+    real_pin = database_backup._pin_json_file
+
+    def pin_then_advance(path, label, **kwargs):
+        result = real_pin(path, label, **kwargs)
+        if label == "rollback manifest":
+            AdvancingDateTime.current = created_at + timedelta(
+                seconds=database_backup.BACKUP_MAX_AGE_SECONDS + 1
+            )
+        return result
+
+    monkeypatch.setattr(database_backup, "datetime", AdvancingDateTime)
+    monkeypatch.setattr(database_backup, "_pin_json_file", pin_then_advance)
+
+    with pytest.raises(RuntimeError, match="^rollback manifest is stale$"):
+        database_backup._validate_rollback_manifest(manifest_path, pin_artifacts=False)
+
+
+def test_lease_assert_published_resolves_facade_hook_at_call_time(
+    rollback_bundle, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lease = database_backup.validate_backup_prerequisite(
+        rollback_bundle["database"],
+        rollback_bundle["config"],
+        MIGRATION_NAME,
+        pin_artifacts=True,
+    )
+    calls: list[tuple[object, str]] = []
+
+    def tracked_assert(pinned, label):
+        calls.append((pinned, label))
+
+    monkeypatch.setattr(database_backup, "_assert_pinned_artifact", tracked_assert)
+    try:
+        lease.assert_published()
+    finally:
+        database_backup.release_backup_prerequisite(lease)
+
+    assert [label for _pinned, label in calls] == [
+        "marker",
+        "manifest",
+        "database backup",
+        "config backup",
+    ]
 
 
 def test_restore_second_stage_failure_cleans_first_stage_before_journal(

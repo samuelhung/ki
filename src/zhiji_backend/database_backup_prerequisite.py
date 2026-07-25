@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -12,6 +12,15 @@ from . import _database_backup_fs, database_backup_artifacts
 PinnedArtifact = database_backup_artifacts.PinnedArtifact
 
 
+def _default_assert_pinned_artifact(pinned: PinnedArtifact, label: str) -> None:
+    database_backup_artifacts.assert_pinned_artifact(
+        pinned,
+        label,
+        stat_signature=_database_backup_fs.stat_signature,
+        hash_fd=_database_backup_fs.hash_fd,
+    )
+
+
 @dataclass
 class BackupPrerequisiteLease:
     marker_path: Path
@@ -19,15 +28,16 @@ class BackupPrerequisiteLease:
     marker: dict[str, Any]
     manifest: dict[str, Any]
     pinned_files: list[tuple[PinnedArtifact, str]]
+    _assert_pinned_artifact: Callable[[PinnedArtifact, str], None] = field(
+        default=_default_assert_pinned_artifact,
+        init=False,
+        repr=False,
+        compare=False,
+    )
 
     def assert_published(self) -> None:
         for pinned, label in self.pinned_files:
-            database_backup_artifacts.assert_pinned_artifact(
-                pinned,
-                label,
-                stat_signature=_database_backup_fs.stat_signature,
-                hash_fd=_database_backup_fs.hash_fd,
-            )
+            self._assert_pinned_artifact(pinned, label)
 
     def close(self) -> None:
         for pinned, _label in self.pinned_files:
@@ -60,9 +70,10 @@ def validate_backup_prerequisite(
     require_current_source: Callable[[Path, object, object, str], None],
     sqlite_snapshot_sha256: Callable[[Path], str],
     pin_artifact: Callable[..., PinnedArtifact],
-    now: datetime,
+    now: Callable[[], datetime],
     schema_version: int,
     max_age_seconds: int,
+    assert_pinned_artifact: Callable[[PinnedArtifact, str], None] | None = None,
 ) -> BackupPrerequisiteLease:
     marker_path = marker_path_for(source, migration_name)
     if not marker_path.exists():
@@ -99,7 +110,7 @@ def validate_backup_prerequisite(
         require_fresh(
             created_at,
             allow_stale=allow_stale,
-            now=now,
+            now=now(),
             max_age_seconds=max_age_seconds,
         )
         source_metadata = manifest.get("source")
@@ -152,6 +163,8 @@ def validate_backup_prerequisite(
             manifest=manifest,
             pinned_files=pinned,
         )
+        if assert_pinned_artifact is not None:
+            lease._assert_pinned_artifact = assert_pinned_artifact
     except Exception:
         for pinned_file, _label in pinned:
             pinned_file.close()

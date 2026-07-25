@@ -362,9 +362,12 @@ def validate_backup_prerequisite(
         require_current_source=_require_current_source,
         sqlite_snapshot_sha256=_sqlite_snapshot_sha256,
         pin_artifact=_pin_artifact,
-        now=datetime.now(UTC),
+        now=lambda: datetime.now(UTC),
         schema_version=BACKUP_MANIFEST_SCHEMA_VERSION,
         max_age_seconds=BACKUP_MAX_AGE_SECONDS,
+        assert_pinned_artifact=lambda pinned, label: _assert_pinned_artifact(
+            pinned, label
+        ),
     )
 
 
@@ -455,7 +458,7 @@ def _validate_rollback_manifest(
         schema_version=BACKUP_MANIFEST_SCHEMA_VERSION,
         migration_name=DEFAULT_DESTRUCTIVE_MIGRATION,
         max_age_seconds=BACKUP_MAX_AGE_SECONDS,
-        now=datetime.now(UTC),
+        now=lambda: datetime.now(UTC),
         pin_json_file=_pin_json_file,
         pin_artifact=_pin_artifact,
         canonical_path=_canonical_manifest_path,

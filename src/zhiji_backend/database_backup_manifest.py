@@ -171,7 +171,7 @@ def validate_rollback_manifest(
     schema_version: int,
     migration_name: str,
     max_age_seconds: int,
-    now: datetime,
+    now: Callable[[], datetime],
     pin_json_file: PinJsonFile,
     pin_artifact: PinArtifact,
     canonical_path: Callable[[object, str], Path],
@@ -199,7 +199,7 @@ def validate_rollback_manifest(
         require_fresh(
             created_at,
             allow_stale=allow_stale,
-            now=now,
+            now=now(),
             max_age_seconds=max_age_seconds,
             stale_message="rollback manifest is stale",
         )

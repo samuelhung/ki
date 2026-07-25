@@ -198,7 +198,7 @@ def test_validate_failure_closes_every_acquired_pin(tmp_path: Path) -> None:
             pin_artifact=lambda *_args, **_kwargs: artifacts.PinnedArtifact(
                 Path("/unused"), -1, (0, 0, 0, 0, 0, 0), "", 0
             ),
-            now=datetime(2026, 7, 25, 13, tzinfo=UTC),
+            now=lambda: datetime(2026, 7, 25, 13, tzinfo=UTC),
             schema_version=1,
             max_age_seconds=86400,
         )
