@@ -13,6 +13,7 @@ from . import (
     database_backup_artifacts,
     database_backup_manifest,
     database_backup_prerequisite,
+    database_backup_restore,
 )
 
 BACKUP_TEMP_PREFIX = database_backup_artifacts.BACKUP_TEMP_PREFIX
@@ -441,8 +442,7 @@ def _validate_loaded_marker_for_consumption(
 
 
 def restore_journal_path(database_path: Path) -> Path:
-    database_path = Path(database_path).expanduser().absolute().resolve(strict=False)
-    return database_path.parent / f".{database_path.name}.rollback-restore.json"
+    return database_backup_restore.restore_journal_path(database_path)
 
 
 def _validate_rollback_manifest(
@@ -469,48 +469,27 @@ def _validate_rollback_manifest(
 
 
 def _stage_pinned_restore(pinned: PinnedArtifact, destination: Path) -> Path:
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    stage: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="wb",
-            dir=destination.parent,
-            prefix=f".{destination.name}.",
-            suffix=".restore-stage",
-            delete=False,
-        ) as handle:
-            stage = Path(handle.name)
-            os.lseek(pinned.fd, 0, os.SEEK_SET)
-            while chunk := os.read(pinned.fd, 1024 * 1024):
-                handle.write(chunk)
-            os.lseek(pinned.fd, 0, os.SEEK_SET)
-            handle.flush()
-            os.fsync(handle.fileno())
-        if stage.stat().st_size != pinned.size or _sha256(stage) != pinned.sha256:
-            raise RuntimeError("rollback restore staging verification failed")
-        return stage.resolve(strict=True)
-    except Exception:
-        if stage is not None:
-            stage.unlink(missing_ok=True)
-        raise
+    return database_backup_restore.stage_pinned_restore(
+        pinned,
+        destination,
+        named_temporary_file=tempfile.NamedTemporaryFile,
+        seek=os.lseek,
+        read=os.read,
+        fsync=os.fsync,
+        sha256=_sha256,
+    )
 
 
 def _replace_staged_restore(stage: Path, destination: Path) -> None:
-    os.replace(stage, destination)
-    _fsync_parent(destination)
+    database_backup_restore.replace_staged_restore(
+        stage, destination, replace=os.replace, fsync_parent=_fsync_parent
+    )
 
 
 def _restore_path_matches(path: Path, metadata: dict[str, Any]) -> bool:
-    if not path.exists():
-        return False
-    candidate = dict(metadata)
-    candidate["path"] = str(path)
-    try:
-        pinned = _pin_artifact(candidate, "restore destination")
-    except RuntimeError:
-        return False
-    pinned.close()
-    return True
+    return database_backup_restore.restore_path_matches(
+        path, metadata, pin_artifact=_pin_artifact
+    )
 
 
 def recover_rollback_restore(
@@ -519,144 +498,33 @@ def recover_rollback_restore(
     expected_manifest_path: Path | None = None,
     expected_manifest_sha256: str | None = None,
 ) -> dict[str, Path]:
-    journal_path = _canonical_manifest_path(
-        str(Path(journal_path).expanduser().absolute().resolve(strict=True)),
-        "restore journal",
+    return database_backup_restore.recover_rollback_restore(
+        journal_path,
+        expected_manifest_path=expected_manifest_path,
+        expected_manifest_sha256=expected_manifest_sha256,
+        canonical_path=_canonical_manifest_path,
+        load_json_regular=_load_json_regular,
+        validate_rollback_manifest=_validate_rollback_manifest,
+        pin_artifact=_pin_artifact,
+        replace_staged_restore=_replace_staged_restore,
+        fsync_parent=_fsync_parent,
+        journal_schema_version=RESTORE_JOURNAL_SCHEMA_VERSION,
     )
-    journal = _load_json_regular(journal_path, "restore journal")
-    if (
-        journal.get("schema_version") != RESTORE_JOURNAL_SCHEMA_VERSION
-        or journal.get("state") != "staged"
-    ):
-        raise RuntimeError("rollback restore journal is invalid")
-    manifest_path = _canonical_manifest_path(
-        journal.get("manifest_path"), "rollback manifest"
-    )
-    if expected_manifest_path is not None:
-        expected_manifest_path = Path(expected_manifest_path).resolve(strict=True)
-        if (
-            manifest_path != expected_manifest_path
-            or journal.get("manifest_sha256") != expected_manifest_sha256
-        ):
-            raise RuntimeError(
-                "rollback restore journal belongs to a different rollback manifest"
-            )
-    manifest, pinned, destinations, _manifest_sha256 = _validate_rollback_manifest(
-        manifest_path,
-        allow_stale=True,
-        pin_artifacts=False,
-        expected_sha256=journal.get("manifest_sha256"),
-    )
-    for artifact in pinned:
-        artifact.close()
-    artifacts = manifest["artifacts"]
-    entries = journal.get("entries")
-    if not isinstance(entries, dict):
-        raise RuntimeError("rollback restore journal entries are invalid")
-
-    expected_entries = {
-        "config": (destinations["config"], artifacts["config"]),
-        "database": (destinations["database"], artifacts["database"]),
-    }
-    try:
-        for key in ("config", "database"):
-            destination, metadata = expected_entries[key]
-            entry = entries.get(key)
-            if (
-                not isinstance(entry, dict)
-                or entry.get("destination") != str(destination)
-                or entry.get("sha256") != metadata.get("sha256")
-                or entry.get("size") != metadata.get("size")
-            ):
-                raise RuntimeError("rollback restore journal entry mismatch")
-            stage = Path(str(entry.get("stage_path")))
-            if _restore_path_matches(destination, metadata):
-                stage.unlink(missing_ok=True)
-                continue
-            stage_metadata = dict(metadata)
-            stage_metadata["path"] = str(stage)
-            staged = _pin_artifact(
-                stage_metadata,
-                f"{key} restore stage",
-                sqlite_backup=key == "database",
-            )
-            staged.close()
-            _replace_staged_restore(stage, destination)
-            if key == "database":
-                for suffix in ("-wal", "-shm"):
-                    Path(f"{destination}{suffix}").unlink(missing_ok=True)
-            if not _restore_path_matches(destination, metadata):
-                raise RuntimeError(f"rollback restore {key} verification failed")
-        for suffix in ("-wal", "-shm"):
-            Path(f"{destinations['database']}{suffix}").unlink(missing_ok=True)
-        journal_path.unlink()
-        _fsync_parent(journal_path)
-    except Exception as exc:
-        raise RuntimeError(
-            f"rollback restore is incomplete; recover from {journal_path}"
-        ) from exc
-    return {
-        "database": destinations["database"].resolve(strict=True),
-        "config": destinations["config"].resolve(strict=True),
-    }
 
 
 def restore_rollback_backup(manifest_path: Path) -> dict[str, Path]:
     """Stage and journal both rollback artifacts before replacing either target."""
-    manifest_path = Path(manifest_path).expanduser().absolute().resolve(strict=True)
-    (
-        _,
-        _,
-        candidate_destinations,
-        candidate_manifest_sha256,
-    ) = _validate_rollback_manifest(
-        manifest_path, allow_stale=True, pin_artifacts=False
+    return database_backup_restore.restore_rollback_backup(
+        manifest_path,
+        validate_rollback_manifest=_validate_rollback_manifest,
+        restore_journal_path_for=restore_journal_path,
+        recover_rollback_restore=recover_rollback_restore,
+        stage_pinned_restore=_stage_pinned_restore,
+        assert_pinned_artifact=_assert_pinned_artifact,
+        write_json_exclusive=_write_json_exclusive,
+        now=lambda: datetime.now(UTC),
+        journal_schema_version=RESTORE_JOURNAL_SCHEMA_VERSION,
     )
-    journal_path = restore_journal_path(candidate_destinations["database"])
-    if journal_path.exists():
-        return recover_rollback_restore(
-            journal_path,
-            expected_manifest_path=manifest_path,
-            expected_manifest_sha256=candidate_manifest_sha256,
-        )
-
-    manifest, pinned, destinations, manifest_sha256 = _validate_rollback_manifest(
-        manifest_path
-    )
-    stages: dict[str, Path] = {}
-    journal_written = False
-    try:
-        stages["database"] = _stage_pinned_restore(
-            pinned[0], destinations["database"]
-        )
-        stages["config"] = _stage_pinned_restore(pinned[1], destinations["config"])
-        _assert_pinned_artifact(pinned[2], "rollback manifest")
-        journal = {
-            "schema_version": RESTORE_JOURNAL_SCHEMA_VERSION,
-            "state": "staged",
-            "created_at": datetime.now(UTC).isoformat(),
-            "manifest_path": str(manifest_path),
-            "manifest_sha256": manifest_sha256,
-            "entries": {
-                key: {
-                    "destination": str(destinations[key]),
-                    "stage_path": str(stages[key]),
-                    "sha256": manifest["artifacts"][key]["sha256"],
-                    "size": manifest["artifacts"][key]["size"],
-                }
-                for key in ("database", "config")
-            },
-        }
-        _write_json_exclusive(journal_path, journal)
-        journal_written = True
-    finally:
-        for artifact in pinned:
-            artifact.close()
-        if not journal_written:
-            for stage in stages.values():
-                stage.unlink(missing_ok=True)
-
-    return recover_rollback_restore(journal_path)
 
 
 def backup_database(source: Path, output_dir: Path) -> Path:
