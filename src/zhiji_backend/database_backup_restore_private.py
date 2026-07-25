@@ -75,7 +75,7 @@ def path_absent(path: Path) -> bool:
 
 def restore_displaced(source: Path, canonical: Path) -> bool:
     source_stat = source.lstat()
-    if not stat.S_ISREG(source_stat.st_mode):
+    if stat.S_ISDIR(source_stat.st_mode):
         return False
     source_identity = identity(source_stat)
     try:
@@ -86,7 +86,4 @@ def restore_displaced(source: Path, canonical: Path) -> bool:
         canonical_stat = canonical.lstat()
     except FileNotFoundError:
         return False
-    return (
-        stat.S_ISREG(canonical_stat.st_mode)
-        and identity(canonical_stat) == source_identity
-    )
+    return identity(canonical_stat) == source_identity

@@ -1265,7 +1265,8 @@ def test_journal_quarantine_reports_displaced_foreign_when_canonical_refills(
         assert recovery_path is not None
         assert recovery_path.read_bytes() == trusted_bytes
         assert journal_path.read_bytes() == occupant_bytes
-        displaced = recovery_path.parent / "canonical-journal"
+        displaced = disposition.displaced_path
+        assert displaced is not None
         assert displaced.read_bytes() == foreign_bytes
         assert str(recovery_path) in str(exc_info.value)
         assert str(displaced) in str(exc_info.value)
@@ -1358,6 +1359,140 @@ def test_sidecar_quarantine_never_relocates_foreign_inode(
         for path in directory.iterdir()
         if path.is_file()
     )
+
+
+@pytest.mark.parametrize("suffix", ["-wal", "-shm"])
+@pytest.mark.parametrize("timing", ["before-link", "after-link"])
+def test_sidecar_restore_revalidates_database_around_each_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    suffix: str,
+    timing: str,
+) -> None:
+    sidecar_module = database_backup_restore.database_backup_restore_sidecars
+    database_path = tmp_path / "database.sqlite"
+    database_path.write_bytes(b"original database")
+    sidecar = Path(f"{database_path}{suffix}")
+    sidecar.write_bytes(f"original {suffix}".encode())
+    disposition = sidecar_module.SidecarDisposition.capture(database_path)
+    disposition.quarantine()
+    pinned = next(item for item in disposition.pinned if item is not None)
+    recovery_path = pinned.recovery_path
+    assert recovery_path is not None
+    foreign_database = tmp_path / "foreign.sqlite"
+    foreign_database.write_bytes(b"foreign database")
+    foreign_identity = (
+        foreign_database.stat().st_dev,
+        foreign_database.stat().st_ino,
+    )
+    real_link = sidecar_module.os.link
+    raced = False
+
+    def replace_database_around_link(
+        source: Path, destination: Path, **kwargs: object
+    ) -> None:
+        nonlocal raced
+        if destination == sidecar and timing == "before-link":
+            os.replace(foreign_database, database_path)
+            raced = True
+        real_link(source, destination, **kwargs)
+        if destination == sidecar and timing == "after-link":
+            os.replace(foreign_database, database_path)
+            raced = True
+
+    monkeypatch.setattr(sidecar_module.os, "link", replace_database_around_link)
+
+    with pytest.raises(sidecar_module.SidecarPathCollision):
+        disposition.restore_if_database_unchanged()
+
+    assert raced
+    assert database_path.read_bytes() == b"foreign database"
+    assert (database_path.stat().st_dev, database_path.stat().st_ino) == foreign_identity
+    assert not sidecar.exists()
+    assert recovery_path.read_bytes() == f"original {suffix}".encode()
+
+
+def test_journal_moved_cleanup_preserves_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    journal_module = database_backup_restore.database_backup_restore_journal
+    journal_path = tmp_path / "restore.json"
+    payload = {"state": "staged"}
+    journal_path.write_text(json.dumps(payload), encoding="utf-8")
+    trusted_bytes = journal_path.read_bytes()
+    identity = (journal_path.stat().st_dev, journal_path.stat().st_ino)
+    disposition = journal_module.TrustedJournalDisposition.capture(
+        journal_path, identity, payload
+    )
+    foreign = tmp_path / "foreign.json"
+    foreign.write_bytes(b'{"foreign":true}\n')
+    foreign_identity = (foreign.stat().st_dev, foreign.stat().st_ino)
+    real_rename = journal_module.os.rename
+    raced = False
+
+    def replace_moved_before_isolation(source: Path, destination: Path) -> None:
+        nonlocal raced
+        if source.name == "canonical-journal" and not raced:
+            os.replace(foreign, source)
+            raced = True
+        real_rename(source, destination)
+
+    monkeypatch.setattr(journal_module.os, "rename", replace_moved_before_isolation)
+    try:
+        with pytest.raises(journal_module.JournalPathCollision) as exc_info:
+            disposition.quarantine(fsync_parent=lambda _path: None)
+
+        assert raced
+        assert journal_path.read_bytes() == b'{"foreign":true}\n'
+        assert (journal_path.stat().st_dev, journal_path.stat().st_ino) == foreign_identity
+        recovery_path = disposition.recovery_path
+        assert recovery_path is not None
+        assert recovery_path.read_bytes() == trusted_bytes
+        assert disposition.displaced_path is not None
+        assert disposition.displaced_path.exists()
+        assert str(recovery_path) in str(exc_info.value)
+        assert str(disposition.displaced_path) in str(exc_info.value)
+    finally:
+        disposition.close()
+
+
+def test_sidecar_moved_cleanup_preserves_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sidecar_module = database_backup_restore.database_backup_restore_sidecars
+    database_path = tmp_path / "database.sqlite"
+    database_path.write_bytes(b"database")
+    sidecar = Path(f"{database_path}-wal")
+    sidecar.write_bytes(b"original wal")
+    disposition = sidecar_module.SidecarDisposition.capture(database_path)
+    pinned = next(item for item in disposition.pinned if item is not None)
+    foreign = tmp_path / "foreign-wal"
+    foreign.write_bytes(b"foreign wal")
+    foreign_identity = (foreign.stat().st_dev, foreign.stat().st_ino)
+    real_rename = sidecar_module.os.rename
+    raced = False
+
+    def replace_moved_before_isolation(source: Path, destination: Path) -> None:
+        nonlocal raced
+        if source.name.endswith(".moved") and not raced:
+            os.replace(foreign, source)
+            raced = True
+        real_rename(source, destination)
+
+    monkeypatch.setattr(sidecar_module.os, "rename", replace_moved_before_isolation)
+
+    with pytest.raises(sidecar_module.SidecarPathCollision):
+        disposition.quarantine()
+
+    assert raced
+    assert sidecar.read_bytes() == b"foreign wal"
+    assert (sidecar.stat().st_dev, sidecar.stat().st_ino) == foreign_identity
+    assert pinned.recovery_path is not None
+    assert pinned.recovery_path.read_bytes() == b"original wal"
+    assert pinned.displaced_path is not None
+    assert pinned.displaced_path.exists()
 
 
 def test_restore_rebuilds_cleaned_stage_when_config_swaps_during_cleanup(

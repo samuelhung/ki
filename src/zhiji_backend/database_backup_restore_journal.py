@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ._database_backup_identity_cleanup import isolate_and_unlink
 from .database_backup_restore_private import (
     FileIdentity,
     copy_fd,
@@ -19,7 +20,6 @@ from .database_backup_restore_private import (
     move_to_private,
     path_absent,
     read_fd,
-    restore_displaced,
 )
 
 JournalIdentity = FileIdentity
@@ -185,23 +185,21 @@ class TrustedJournalDisposition:
         recovery_path = recovery_dir / self.journal_path.name
         self.recovery_dir = recovery_dir
         self.recovery_path = recovery_path
-        try:
-            self._publish_recovery(recovery_path)
-            fsync_parent(recovery_path)
-            moved_path = recovery_dir / "canonical-journal"
-            _move_to_private(self.journal_path, moved_path)
-            try:
-                self._assert_path(moved_path)
-            except Exception as exc:
-                self.displaced_path = moved_path
-                restore_displaced(moved_path, self.journal_path)
-                raise self._collision() from exc
-            moved_path.unlink()
-            if not path_absent(self.journal_path):
-                raise self._collision()
-            fsync_parent(self.journal_path)
-        except Exception:
-            raise
+        self._publish_recovery(recovery_path)
+        fsync_parent(recovery_path)
+        moved_path = recovery_dir / "canonical-journal"
+        _move_to_private(self.journal_path, moved_path)
+        self.displaced_path = isolate_and_unlink(
+            moved_path,
+            self.identity,
+            collision_destination=self.journal_path,
+            validator=self._assert_path,
+        )
+        if self.displaced_path is not None:
+            raise self._collision()
+        if not path_absent(self.journal_path):
+            raise self._collision()
+        fsync_parent(self.journal_path)
 
     def _collision(self) -> JournalPathCollision:
         message = f"journal path collision at {self.journal_path}"

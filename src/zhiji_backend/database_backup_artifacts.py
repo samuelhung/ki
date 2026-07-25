@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from . import _database_backup_publication
+from ._database_backup_identity_cleanup import isolate_and_unlink
 
 BACKUP_TEMP_PREFIX = ".intelligence-backup-"
 EXPECTED_SHA256_UNSET = object()
@@ -106,15 +107,7 @@ def publish_backup(
 
 
 def unlink_if_identity(path: Path, identity: Identity) -> None:
-    try:
-        file_stat = os.lstat(path)
-    except FileNotFoundError:
-        return
-    if stat.S_ISREG(file_stat.st_mode) and (
-        file_stat.st_dev,
-        file_stat.st_ino,
-    ) == identity:
-        os.unlink(path)
+    isolate_and_unlink(path, identity)
 
 
 def pin_json_file(

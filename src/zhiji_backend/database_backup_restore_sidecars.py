@@ -6,7 +6,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from .database_backup_restore_private import restore_displaced
+from ._database_backup_identity_cleanup import isolate_and_unlink
 
 SidecarIdentity = tuple[int, int]
 
@@ -81,14 +81,16 @@ class _PinnedSidecar:
             raise SidecarPathCollision(
                 f"rollback restore sidecar path collision at {self.path}"
             ) from exc
-        if not self._matches_path(moved_path):
-            self.displaced_path = moved_path
+        self.displaced_path = isolate_and_unlink(
+            moved_path, self.identity, collision_destination=self.path
+        )
+        if self.displaced_path is not None:
             self.canonical_collision = True
-            restore_displaced(moved_path, self.path)
             raise SidecarPathCollision(
-                f"rollback restore sidecar path collision at {self.path}"
+                "rollback restore sidecar path collision at "
+                f"{self.path}; trusted sidecar {self.recovery_path}; "
+                f"displaced sidecar {self.displaced_path}"
             )
-        moved_path.unlink()
 
     def close(self) -> None:
         if self.fd >= 0:
@@ -153,12 +155,9 @@ class SidecarDisposition:
         self._cleanup_recovery()
 
     def restore_if_database_unchanged(self) -> None:
-        try:
-            current_identity = _identity(self.database_path.lstat())
-        except FileNotFoundError:
+        if not self._database_is_unchanged():
             return
-        if current_identity != self.database_identity:
-            return
+        published: list[_PinnedSidecar] = []
         for sidecar in self.pinned:
             if sidecar is None or sidecar.recovery_path is None:
                 continue
@@ -166,6 +165,9 @@ class SidecarDisposition:
                 raise SidecarPathCollision(
                     f"rollback restore sidecar path collision at {sidecar.path}"
                 )
+            if not self._database_is_unchanged():
+                self._remove_publications(published)
+                raise SidecarPathCollision("rollback restore database identity changed")
             try:
                 os.link(sidecar.recovery_path, sidecar.path, follow_symlinks=False)
             except (FileExistsError, OSError) as exc:
@@ -176,7 +178,31 @@ class SidecarDisposition:
                 raise SidecarPathCollision(
                     f"rollback restore sidecar path collision at {sidecar.path}"
                 )
+            published.append(sidecar)
+            if not self._database_is_unchanged():
+                self._remove_publications(published)
+                raise SidecarPathCollision(
+                    "rollback restore database identity changed; trusted sidecar "
+                    f"{sidecar.recovery_path}"
+                )
         self._cleanup_recovery()
+
+    def _database_is_unchanged(self) -> bool:
+        try:
+            return _identity(self.database_path.lstat()) == self.database_identity
+        except FileNotFoundError:
+            return False
+
+    @staticmethod
+    def _remove_publications(published: list[_PinnedSidecar]) -> None:
+        for sidecar in published:
+            sidecar.displaced_path = isolate_and_unlink(
+                sidecar.path,
+                sidecar.identity,
+                collision_destination=sidecar.path,
+            )
+            if sidecar.displaced_path is not None:
+                sidecar.canonical_collision = True
 
     def _cleanup_recovery(self) -> None:
         if self.recovery_dir is None:

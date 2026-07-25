@@ -202,6 +202,38 @@ def test_publish_backup_detects_published_identity_mismatch(tmp_path: Path) -> N
         )
 
 
+def test_unlink_if_identity_preserves_replacement_racing_isolation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "target"
+    target.write_bytes(b"owned")
+    expected_identity = (target.stat().st_dev, target.stat().st_ino)
+    foreign = tmp_path / "foreign"
+    foreign.write_bytes(b"foreign")
+    foreign_identity = (foreign.stat().st_dev, foreign.stat().st_ino)
+    real_rename = artifacts.os.rename
+    raced = False
+
+    def replace_before_isolation(source: Path, destination: Path) -> None:
+        nonlocal raced
+        if source == target and not raced:
+            os.replace(foreign, target)
+            raced = True
+        real_rename(source, destination)
+
+    monkeypatch.setattr(artifacts.os, "rename", replace_before_isolation)
+
+    artifacts.unlink_if_identity(target, expected_identity)
+
+    assert raced
+    assert target.read_bytes() == b"foreign"
+    assert (target.stat().st_dev, target.stat().st_ino) == foreign_identity
+    evidence_dirs = list(tmp_path.glob(".target.unlink-*"))
+    assert len(evidence_dirs) == 1
+    assert stat.S_IMODE(evidence_dirs[0].stat().st_mode) == 0o700
+    assert any(path.read_bytes() == b"foreign" for path in evidence_dirs[0].iterdir())
+
+
 def test_copy_regular_file_is_exclusive_and_cleans_staging(tmp_path: Path) -> None:
     source = tmp_path / "source.json"
     target = tmp_path / "target.json"
