@@ -6,6 +6,8 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from .database_backup_restore_private import restore_displaced
+
 SidecarIdentity = tuple[int, int]
 
 
@@ -23,6 +25,8 @@ class _PinnedSidecar:
     fd: int
     identity: SidecarIdentity
     recovery_path: Path | None = None
+    displaced_path: Path | None = None
+    canonical_collision: bool = False
 
     @classmethod
     def capture(cls, path: Path) -> _PinnedSidecar | None:
@@ -78,6 +82,9 @@ class _PinnedSidecar:
                 f"rollback restore sidecar path collision at {self.path}"
             ) from exc
         if not self._matches_path(moved_path):
+            self.displaced_path = moved_path
+            self.canonical_collision = True
+            restore_displaced(moved_path, self.path)
             raise SidecarPathCollision(
                 f"rollback restore sidecar path collision at {self.path}"
             )
@@ -155,6 +162,10 @@ class SidecarDisposition:
         for sidecar in self.pinned:
             if sidecar is None or sidecar.recovery_path is None:
                 continue
+            if sidecar.canonical_collision:
+                raise SidecarPathCollision(
+                    f"rollback restore sidecar path collision at {sidecar.path}"
+                )
             try:
                 os.link(sidecar.recovery_path, sidecar.path, follow_symlinks=False)
             except (FileExistsError, OSError) as exc:

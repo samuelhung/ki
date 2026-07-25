@@ -13,10 +13,13 @@ from typing import Any
 from .database_backup_restore_private import (
     FileIdentity,
     copy_fd,
+    create_recovery_copy,
     hash_fd,
     identity,
     move_to_private,
+    path_absent,
     read_fd,
+    restore_displaced,
 )
 
 JournalIdentity = FileIdentity
@@ -40,6 +43,9 @@ class TrustedJournalDisposition:
     recovery_dir: Path | None = None
     recovery_path: Path | None = None
     recovery_identity: JournalIdentity | None = None
+    recovery_sha256: str | None = None
+    recovery_size: int | None = None
+    displaced_path: Path | None = None
     published_fd: int = -1
     published_identity: JournalIdentity | None = None
     published_sha256: str | None = None
@@ -145,8 +151,8 @@ class TrustedJournalDisposition:
                 not stat.S_ISREG(file_stat.st_mode)
                 or identity(file_stat) != self.recovery_identity
                 or identity(published) != self.recovery_identity
-                or file_stat.st_size != self.size
-                or hash_fd(recovery_fd) != self.sha256
+                or file_stat.st_size != self.recovery_size
+                or hash_fd(recovery_fd) != self.recovery_sha256
             ):
                 raise RuntimeError("rollback restore trusted journal changed")
         finally:
@@ -163,6 +169,8 @@ class TrustedJournalDisposition:
         except (OSError, RuntimeError):
             recovery_path.unlink(missing_ok=True)
             self.recovery_identity = self._copy_fd_to_recovery(self.fd, recovery_path)
+        self.recovery_sha256 = self.sha256
+        self.recovery_size = self.size
         self._assert_recovery()
 
     def quarantine(self, *, fsync_parent: Callable[[Path], None]) -> None:
@@ -185,32 +193,30 @@ class TrustedJournalDisposition:
             try:
                 self._assert_path(moved_path)
             except Exception as exc:
+                self.displaced_path = moved_path
+                restore_displaced(moved_path, self.journal_path)
                 raise self._collision() from exc
             moved_path.unlink()
-            if not self._canonical_path_is_absent():
+            if not path_absent(self.journal_path):
                 raise self._collision()
             fsync_parent(self.journal_path)
         except Exception:
             raise
 
     def _collision(self) -> JournalPathCollision:
-        return JournalPathCollision(
-            f"rollback restore journal path collision at {self.journal_path}"
-        )
-
-    def _canonical_path_is_absent(self) -> bool:
-        try:
-            self.journal_path.lstat()
-        except FileNotFoundError:
-            return True
-        return False
+        message = f"journal path collision at {self.journal_path}"
+        if self.recovery_path is not None:
+            message += f"; trusted journal {self.recovery_path}"
+        if self.displaced_path is not None:
+            message += f"; displaced journal {self.displaced_path}"
+        return JournalPathCollision(message)
 
     def republish(self, *, fsync_parent: Callable[[Path], None]) -> None:
         if self.recovery_path is None:
             raise RuntimeError("rollback restore journal was not quarantined")
         self._assert_fd()
         self._assert_recovery()
-        if not self._canonical_path_is_absent():
+        if not path_absent(self.journal_path):
             raise self._collision()
         try:
             os.link(
@@ -249,7 +255,7 @@ class TrustedJournalDisposition:
             raise RuntimeError("rollback restore journal was not quarantined")
         self._assert_fd()
         self._assert_recovery()
-        if not self._canonical_path_is_absent():
+        if not path_absent(self.journal_path):
             raise self._collision()
         raw = (
             json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
@@ -318,15 +324,18 @@ class TrustedJournalDisposition:
             raise RuntimeError("rollback restore journal was not quarantined")
         self._assert_fd()
         self._assert_recovery()
-        if not self._canonical_path_is_absent():
+        if not path_absent(self.journal_path):
             raise self._collision()
         fsync_parent(self.journal_path)
-        if not self._canonical_path_is_absent():
+        if not path_absent(self.journal_path):
             raise self._collision()
-        final_validator()
         self.require_canonical_absence_for_cleanup = True
         try:
             self._remove_quarantine()
+            final_validator()
+        except Exception:
+            self._preserve_trusted_copy()
+            raise
         finally:
             self.require_canonical_absence_for_cleanup = False
 
@@ -341,19 +350,25 @@ class TrustedJournalDisposition:
             return
         if self.published_fd < 0:
             return
-        recovery_dir = self.recovery_dir
-        if recovery_dir is None or not recovery_dir.exists():
-            recovery_dir = Path(
-                tempfile.mkdtemp(
-                    prefix=f".{self.journal_path.name}.recovery-",
-                    dir=self.journal_path.parent,
-                )
-            )
-            os.chmod(recovery_dir, 0o700)
-        recovery_path = recovery_dir / "trusted-republished-journal.json"
-        self.recovery_identity = self._copy_fd_to_recovery(
-            self.published_fd, recovery_path
+        recovery_dir, recovery_path, self.recovery_identity = create_recovery_copy(
+            self.journal_path,
+            self.published_fd,
+            "trusted-republished-journal.json",
+            self.recovery_dir,
         )
+        self.recovery_sha256 = self.published_sha256
+        self.recovery_size = self.published_size
+        self.recovery_dir = recovery_dir
+        self.recovery_path = recovery_path
+
+    def _preserve_trusted_copy(self) -> None:
+        if self.recovery_path is not None and self.recovery_path.exists():
+            return
+        recovery_dir, recovery_path, self.recovery_identity = create_recovery_copy(
+            self.journal_path, self.fd, self.journal_path.name
+        )
+        self.recovery_sha256 = self.sha256
+        self.recovery_size = self.size
         self.recovery_dir = recovery_dir
         self.recovery_path = recovery_path
 
@@ -362,7 +377,7 @@ class TrustedJournalDisposition:
             return
         if (
             self.require_canonical_absence_for_cleanup
-            and not self._canonical_path_is_absent()
+            and not path_absent(self.journal_path)
         ):
             raise self._collision()
         if self.published_fd >= 0:

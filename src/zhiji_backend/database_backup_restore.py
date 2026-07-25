@@ -299,11 +299,7 @@ def recover_rollback_restore(
                         recovery_journal, fsync_parent=fsync_parent
                     )
             except database_backup_restore_journal.JournalPathCollision as collision:
-                recovery_path = trusted_journal.recovery_path
-                raise RuntimeError(
-                    "rollback restore is incomplete; journal path collision at "
-                    f"{journal_path}; recover from trusted journal {recovery_path}"
-                ) from collision
+                raise RuntimeError(f"rollback restore is incomplete; {collision}") from collision
             except Exception as republish_exc:
                 failure = RuntimeError("rollback restore journal republish failed")
                 failure.__cause__ = republish_exc

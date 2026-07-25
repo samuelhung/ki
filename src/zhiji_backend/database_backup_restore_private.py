@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import os
+import stat
+import tempfile
 from pathlib import Path
 
 FileIdentity = tuple[int, int]
@@ -42,5 +44,49 @@ def copy_fd(fd: int, path: Path) -> FileIdentity:
         os.close(recovery_fd)
 
 
+def create_recovery_copy(
+    canonical: Path,
+    fd: int,
+    filename: str,
+    directory: Path | None = None,
+) -> tuple[Path, Path, FileIdentity]:
+    if directory is None or not directory.exists():
+        directory = Path(
+            tempfile.mkdtemp(
+                prefix=f".{canonical.name}.recovery-", dir=canonical.parent
+            )
+        )
+        os.chmod(directory, 0o700)
+    recovery_path = directory / filename
+    return directory, recovery_path, copy_fd(fd, recovery_path)
+
+
 def move_to_private(source: Path, destination: Path) -> None:
     os.rename(source, destination)
+
+
+def path_absent(path: Path) -> bool:
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return True
+    return False
+
+
+def restore_displaced(source: Path, canonical: Path) -> bool:
+    source_stat = source.lstat()
+    if not stat.S_ISREG(source_stat.st_mode):
+        return False
+    source_identity = identity(source_stat)
+    try:
+        os.link(source, canonical, follow_symlinks=False)
+    except OSError:
+        return False
+    try:
+        canonical_stat = canonical.lstat()
+    except FileNotFoundError:
+        return False
+    return (
+        stat.S_ISREG(canonical_stat.st_mode)
+        and identity(canonical_stat) == source_identity
+    )

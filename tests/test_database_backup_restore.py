@@ -1227,14 +1227,137 @@ def test_journal_quarantine_race_preserves_foreign_and_trusted_files(
         assert recovery_path.exists()
         assert recovery_path.read_bytes() == trusted_bytes
         assert stat.S_IMODE(recovery_path.parent.stat().st_mode) == 0o700
-        preserved_foreign = [
-            path
-            for path in recovery_path.parent.iterdir()
-            if path != recovery_path and path.read_bytes() == foreign_bytes
-        ]
-        assert preserved_foreign or journal_path.read_bytes() == foreign_bytes
+        assert journal_path.read_bytes() == foreign_bytes
     finally:
         disposition.close()
+
+
+def test_journal_quarantine_reports_displaced_foreign_when_canonical_refills(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    journal_module = database_backup_restore.database_backup_restore_journal
+    journal_path = tmp_path / "restore.json"
+    payload = {"state": "staged"}
+    journal_path.write_text(json.dumps(payload), encoding="utf-8")
+    trusted_bytes = journal_path.read_bytes()
+    identity = (journal_path.stat().st_dev, journal_path.stat().st_ino)
+    disposition = journal_module.TrustedJournalDisposition.capture(
+        journal_path, identity, payload
+    )
+    foreign_bytes = b'{"foreign":true}\n'
+    occupant_bytes = b'{"later":true}\n'
+    foreign = tmp_path / "foreign.json"
+    foreign.write_bytes(foreign_bytes)
+    real_move = journal_module._move_to_private
+
+    def displace_then_refill(source: Path, destination: Path) -> None:
+        os.replace(foreign, journal_path)
+        real_move(source, destination)
+        journal_path.write_bytes(occupant_bytes)
+
+    monkeypatch.setattr(journal_module, "_move_to_private", displace_then_refill)
+    try:
+        with pytest.raises(journal_module.JournalPathCollision) as exc_info:
+            disposition.quarantine(fsync_parent=lambda _path: None)
+
+        recovery_path = disposition.recovery_path
+        assert recovery_path is not None
+        assert recovery_path.read_bytes() == trusted_bytes
+        assert journal_path.read_bytes() == occupant_bytes
+        displaced = recovery_path.parent / "canonical-journal"
+        assert displaced.read_bytes() == foreign_bytes
+        assert str(recovery_path) in str(exc_info.value)
+        assert str(displaced) in str(exc_info.value)
+    finally:
+        disposition.close()
+
+
+@pytest.mark.parametrize("destination_key", ["config", "database"])
+def test_recovery_revalidates_destination_after_journal_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    destination_key: str,
+) -> None:
+    database_path, config_path, journal_path, journal = _staged_restore_journal(
+        tmp_path, monkeypatch
+    )
+    target = {"database": database_path, "config": config_path}[destination_key]
+    foreign = target.with_name(f"cleanup-foreign-{target.name}")
+    foreign.write_bytes(b"cleanup foreign database" if destination_key == "database" else b"{}")
+    foreign_hash = _sha256(foreign)
+    journal_hash = _sha256(journal_path)
+    disposition_type = (
+        database_backup_restore.database_backup_restore_journal.TrustedJournalDisposition
+    )
+    real_remove = disposition_type._remove_quarantine
+
+    def replace_during_cleanup(disposition) -> None:
+        if disposition.require_canonical_absence_for_cleanup:
+            os.replace(foreign, target)
+        real_remove(disposition)
+
+    monkeypatch.setattr(disposition_type, "_remove_quarantine", replace_during_cleanup)
+
+    with pytest.raises(RuntimeError, match="rollback restore is incomplete"):
+        _direct_recover(journal_path)
+
+    assert _sha256(target) == foreign_hash
+    assert journal_path.exists()
+    assert _sha256(journal_path) == journal_hash
+    assert json.loads(journal_path.read_text(encoding="utf-8")) == journal
+
+
+@pytest.mark.parametrize("suffix", ["-wal", "-shm"])
+@pytest.mark.parametrize("race", ["replace-before", "create-after"])
+def test_sidecar_quarantine_never_relocates_foreign_inode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    suffix: str,
+    race: str,
+) -> None:
+    database_path, _config_path, journal_path, _journal = _staged_restore_journal(
+        tmp_path, monkeypatch
+    )
+    sidecar_module = database_backup_restore.database_backup_restore_sidecars
+    sidecar = Path(f"{database_path}{suffix}")
+    original_bytes = f"original {suffix}".encode()
+    foreign_bytes = f"foreign {suffix}".encode()
+    sidecar.write_bytes(original_bytes)
+    foreign = sidecar.with_name(f"foreign-{sidecar.name}")
+    foreign.write_bytes(foreign_bytes)
+    foreign_identity = (foreign.stat().st_dev, foreign.stat().st_ino)
+    real_rename = sidecar_module.os.rename
+    raced = False
+
+    def race_at_rename(source: Path, destination: Path) -> None:
+        nonlocal raced
+        if source == sidecar and not raced and race == "replace-before":
+            os.replace(foreign, sidecar)
+            raced = True
+        real_rename(source, destination)
+        if source == sidecar and not raced:
+            os.replace(foreign, sidecar)
+            raced = True
+
+    monkeypatch.setattr(sidecar_module.os, "rename", race_at_rename)
+
+    with pytest.raises(RuntimeError, match="rollback restore is incomplete"):
+        _direct_recover(journal_path)
+
+    assert raced
+    assert journal_path.exists()
+    assert sidecar.read_bytes() == foreign_bytes
+    assert (sidecar.stat().st_dev, sidecar.stat().st_ino) == foreign_identity
+    recovery_dirs = list(
+        sidecar.parent.glob(f".{database_path.name}-wal.sidecars-*")
+    )
+    assert any(
+        path.read_bytes() == original_bytes
+        for directory in recovery_dirs
+        for path in directory.iterdir()
+        if path.is_file()
+    )
 
 
 def test_restore_rebuilds_cleaned_stage_when_config_swaps_during_cleanup(
