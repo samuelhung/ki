@@ -166,12 +166,19 @@ def _fsync_parent(path: Path) -> None:
 
 def _write_json_exclusive(path: Path, payload: dict[str, Any]) -> None:
     database_backup_artifacts.write_json_exclusive(
-        path, payload, regular_file_identity=_regular_file_identity
+        path,
+        payload,
+        regular_file_identity=_regular_file_identity,
+        publish_backup=_publish_backup,
+        fsync_parent=_fsync_parent,
+        unlink_if_identity=_unlink_if_identity,
     )
 
 
 def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
-    database_backup_artifacts.write_json_atomic(path, payload)
+    database_backup_artifacts.write_json_atomic(
+        path, payload, fsync_parent=_fsync_parent
+    )
 
 
 def _copy_regular_file(source: Path, target: Path) -> None:
@@ -186,6 +193,9 @@ def _copy_regular_file(source: Path, target: Path) -> None:
         ),
         regular_non_symlink_identity=_regular_non_symlink_identity,
         regular_file_identity=_regular_file_identity,
+        publish_backup=_publish_backup,
+        fsync_parent=_fsync_parent,
+        unlink_if_identity=_unlink_if_identity,
     )
 
 

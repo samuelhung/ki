@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from zhiji_backend import _database_backup_fs as backup_fs
+from zhiji_backend import database_backup
 from zhiji_backend import database_backup_artifacts as artifacts
 
 
@@ -21,12 +22,30 @@ def _metadata(path: Path) -> dict[str, object]:
     }
 
 
+def _publication_hooks() -> dict[str, object]:
+    def publish(staged: Path, target: Path, identity: tuple[int, int]) -> None:
+        artifacts.publish_backup(
+            staged,
+            target,
+            identity,
+            regular_file_identity=backup_fs.regular_file_identity,
+        )
+
+    return {
+        "publish_backup": publish,
+        "fsync_parent": artifacts.fsync_parent,
+        "unlink_if_identity": artifacts.unlink_if_identity,
+    }
+
+
 def test_pinned_artifact_is_immutable_and_close_is_idempotent(tmp_path: Path) -> None:
     path = tmp_path / "artifact"
     path.write_bytes(b"payload")
     fd = os.open(path, os.O_RDONLY)
     pinned = artifacts.PinnedArtifact(path, fd, (1, 2, 3, 4, 5, 6), "digest", 7)
 
+    with pytest.raises(TypeError):
+        hash(pinned)
     with pytest.raises(FrozenInstanceError):
         pinned.path = tmp_path / "replacement"
 
@@ -34,6 +53,8 @@ def test_pinned_artifact_is_immutable_and_close_is_idempotent(tmp_path: Path) ->
     pinned.close()
 
     assert pinned.fd == -1
+    with pytest.raises(TypeError):
+        hash(pinned)
     with pytest.raises(OSError):
         os.fstat(fd)
 
@@ -195,6 +216,7 @@ def test_copy_regular_file_is_exclusive_and_cleans_staging(tmp_path: Path) -> No
             require_source_identity=artifacts.require_source_identity,
             regular_non_symlink_identity=backup_fs.regular_non_symlink_identity,
             regular_file_identity=backup_fs.regular_file_identity,
+            **_publication_hooks(),
         )
 
     assert target.read_text(encoding="utf-8") == '{"existing": true}'
@@ -218,6 +240,7 @@ def test_copy_regular_file_rejects_symlink_source(tmp_path: Path) -> None:
             require_source_identity=artifacts.require_source_identity,
             regular_non_symlink_identity=backup_fs.regular_non_symlink_identity,
             regular_file_identity=backup_fs.regular_file_identity,
+            **_publication_hooks(),
         )
 
     assert not target.exists()
@@ -236,8 +259,11 @@ def test_json_writes_are_durable_exclusive_or_atomic_and_preserve_modes(
             exclusive,
             payload,
             regular_file_identity=backup_fs.regular_file_identity,
+            **_publication_hooks(),
         )
-        artifacts.write_json_atomic(atomic, payload)
+        artifacts.write_json_atomic(
+            atomic, payload, fsync_parent=artifacts.fsync_parent
+        )
     finally:
         os.umask(previous)
 
@@ -268,7 +294,9 @@ def test_write_json_atomic_fsyncs_file_before_replace_and_parent_after(
     monkeypatch.setattr(artifacts.os, "fsync", tracked_fsync)
     monkeypatch.setattr(artifacts.os, "replace", tracked_replace)
 
-    artifacts.write_json_atomic(target, {"state": "ready"})
+    artifacts.write_json_atomic(
+        target, {"state": "ready"}, fsync_parent=artifacts.fsync_parent
+    )
 
     assert events == ["fsync-file", "replace", "fsync-directory"]
 
@@ -282,7 +310,101 @@ def test_write_json_atomic_cleans_temp_file_when_replace_fails(
         raise OSError("injected replace failure")
 
     with pytest.raises(OSError, match="injected replace failure"):
-        artifacts.write_json_atomic(target, {"state": "ready"}, replace=fail_replace)
+        artifacts.write_json_atomic(
+            target,
+            {"state": "ready"},
+            fsync_parent=artifacts.fsync_parent,
+            replace=fail_replace,
+        )
 
     assert not target.exists()
     assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize("operation", ["exclusive", "atomic", "copy"])
+def test_database_backup_composites_resolve_fsync_parent_through_facade(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    source = tmp_path / "source.json"
+    target = tmp_path / "target.json"
+    source.write_text("{}", encoding="utf-8")
+
+    class InjectedFailure(Exception):
+        pass
+
+    def fail_fsync(path: Path) -> None:
+        assert path == target
+        raise InjectedFailure("injected parent fsync failure")
+
+    monkeypatch.setattr(database_backup, "_fsync_parent", fail_fsync)
+
+    with pytest.raises(InjectedFailure, match="injected parent fsync failure"):
+        if operation == "exclusive":
+            database_backup._write_json_exclusive(target, {"state": "ready"})
+        elif operation == "atomic":
+            database_backup._write_json_atomic(target, {"state": "ready"})
+        else:
+            database_backup._copy_regular_file(source, target)
+
+    assert target.exists() is (operation == "atomic")
+    assert not list(tmp_path.glob(".intelligence-backup-*"))
+    assert not list(tmp_path.glob(".*.tmp"))
+
+
+@pytest.mark.parametrize("operation", ["exclusive", "copy"])
+def test_database_backup_publication_resolves_through_facade(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    source = tmp_path / "source.json"
+    target = tmp_path / "target.json"
+    source.write_text("{}", encoding="utf-8")
+
+    class InjectedFailure(Exception):
+        pass
+
+    def fail_publish(_staged: Path, _target: Path, _identity: tuple[int, int]) -> None:
+        raise InjectedFailure("injected publication failure")
+
+    monkeypatch.setattr(database_backup, "_publish_backup", fail_publish)
+
+    with pytest.raises(InjectedFailure, match="injected publication failure"):
+        if operation == "exclusive":
+            database_backup._write_json_exclusive(target, {"state": "ready"})
+        else:
+            database_backup._copy_regular_file(source, target)
+
+    assert not target.exists()
+    assert not list(tmp_path.glob(".intelligence-backup-*"))
+
+
+@pytest.mark.parametrize("operation", ["exclusive", "copy"])
+def test_database_backup_failure_cleanup_resolves_through_facade(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    source = tmp_path / "source.json"
+    target = tmp_path / "target.json"
+    source.write_text("{}", encoding="utf-8")
+    real_publish = database_backup._publish_backup
+    real_unlink = database_backup._unlink_if_identity
+    cleanup_calls: list[tuple[Path, tuple[int, int]]] = []
+
+    def publish_then_fail(staged: Path, target: Path, identity: tuple[int, int]) -> None:
+        real_publish(staged, target, identity)
+        raise OSError("injected post-publication failure")
+
+    def tracked_unlink(path: Path, identity: tuple[int, int]) -> None:
+        cleanup_calls.append((path, identity))
+        real_unlink(path, identity)
+
+    monkeypatch.setattr(database_backup, "_publish_backup", publish_then_fail)
+    monkeypatch.setattr(database_backup, "_unlink_if_identity", tracked_unlink)
+
+    with pytest.raises(OSError, match="injected post-publication failure"):
+        if operation == "exclusive":
+            database_backup._write_json_exclusive(target, {"state": "ready"})
+        else:
+            database_backup._copy_regular_file(source, target)
+
+    assert [path for path, _identity in cleanup_calls] == [target]
+    assert not target.exists()
+    assert not list(tmp_path.glob(".intelligence-backup-*"))

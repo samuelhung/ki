@@ -23,6 +23,8 @@ SignatureFn = Callable[[os.stat_result], Signature]
 
 @dataclass(frozen=True)
 class PinnedArtifact:
+    __hash__ = None
+
     path: Path
     fd: int
     signature: Signature
@@ -297,7 +299,13 @@ def fsync_parent(path: Path) -> None:
 
 
 def write_json_exclusive(
-    path: Path, payload: dict[str, Any], *, regular_file_identity: IdentityFn
+    path: Path,
+    payload: dict[str, Any],
+    *,
+    regular_file_identity: IdentityFn,
+    publish_backup: Callable[..., None],
+    fsync_parent: Callable[[Path], None],
+    unlink_if_identity: Callable[[Path, Identity], None],
 ) -> None:
     temp_dir = Path(tempfile.mkdtemp(prefix=BACKUP_TEMP_PREFIX, dir=path.parent))
     staged = temp_dir / "payload.json"
@@ -309,9 +317,7 @@ def write_json_exclusive(
             handle.flush()
             os.fsync(handle.fileno())
         staged_identity = regular_file_identity(staged)
-        publish_backup(
-            staged, path, staged_identity, regular_file_identity=regular_file_identity
-        )
+        publish_backup(staged, path, staged_identity)
         fsync_parent(path)
     except Exception:
         if staged_identity is not None:
@@ -325,6 +331,7 @@ def write_json_atomic(
     path: Path,
     payload: dict[str, Any],
     *,
+    fsync_parent: Callable[[Path], None],
     replace: Callable[[Path, Path], None] | None = None,
 ) -> None:
     replace = os.replace if replace is None else replace
@@ -360,6 +367,9 @@ def copy_regular_file(
     require_source_identity: Callable[..., None],
     regular_non_symlink_identity: IdentityFn,
     regular_file_identity: IdentityFn,
+    publish_backup: Callable[..., None],
+    fsync_parent: Callable[[Path], None],
+    unlink_if_identity: Callable[[Path, Identity], None],
 ) -> None:
     source, source_identity = canonical_regular_source(
         source,
@@ -380,9 +390,7 @@ def copy_regular_file(
             regular_non_symlink_identity=regular_non_symlink_identity,
         )
         staged_identity = regular_file_identity(staged)
-        publish_backup(
-            staged, target, staged_identity, regular_file_identity=regular_file_identity
-        )
+        publish_backup(staged, target, staged_identity)
         fsync_parent(target)
     except Exception:
         if staged_identity is not None:
