@@ -59,17 +59,21 @@ def _bundle(tmp_path: Path) -> tuple[Path, Path, Path]:
 
 
 def _direct_recover(journal_path: Path, **kwargs: Any) -> dict[str, Path]:
+    dependencies = {
+        "canonical_path": database_backup._canonical_manifest_path,
+        "load_json_regular": database_backup._load_json_regular,
+        "validate_rollback_manifest": database_backup._validate_rollback_manifest,
+        "pin_artifact": database_backup._pin_artifact,
+        "restore_path_matches": database_backup._restore_path_matches,
+        "stage_pinned_restore": database_backup._stage_pinned_restore,
+        "replace_staged_restore": database_backup._replace_staged_restore,
+        "unlink_if_identity": database_backup._unlink_if_identity,
+        "fsync_parent": database_backup._fsync_parent,
+    }
+    dependencies.update(kwargs)
     return database_backup_restore.recover_rollback_restore(
         journal_path,
-        canonical_path=database_backup._canonical_manifest_path,
-        load_json_regular=database_backup._load_json_regular,
-        validate_rollback_manifest=database_backup._validate_rollback_manifest,
-        pin_artifact=database_backup._pin_artifact,
-        restore_path_matches=database_backup._restore_path_matches,
-        replace_staged_restore=database_backup._replace_staged_restore,
-        unlink_if_identity=database_backup._unlink_if_identity,
-        fsync_parent=database_backup._fsync_parent,
-        **kwargs,
+        **dependencies,
     )
 
 
@@ -82,6 +86,7 @@ def _direct_restore(manifest_path: Path) -> dict[str, Path]:
             journal, **kwargs
         ),
         stage_pinned_restore=database_backup._stage_pinned_restore,
+        unlink_if_identity=database_backup._unlink_if_identity,
         assert_pinned_artifact=database_backup._assert_pinned_artifact,
         write_json_exclusive=database_backup._write_json_exclusive,
         now=lambda: datetime.now(UTC),
@@ -173,6 +178,44 @@ def test_stage_pinned_restore_cleans_stage_on_failure(
         assert list(tmp_path.glob("*.restore-stage")) == []
     finally:
         pinned.close()
+
+
+def test_stage_pinned_restore_rejects_path_swap_without_unlinking_replacement(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    source.write_bytes(b"rollback payload")
+    fd = os.open(source, os.O_RDONLY)
+    pinned = PinnedArtifact(source, fd, (0, 0, 0, 0, 0, 0), _sha256(source), 16)
+    moved_stage = tmp_path / "created-stage"
+    replacement_path: Path | None = None
+
+    def swap_before_hash(stage: Path) -> str:
+        nonlocal replacement_path
+        replacement_path = stage
+        os.replace(stage, moved_stage)
+        stage.write_bytes(source.read_bytes())
+        return _sha256(stage)
+
+    try:
+        with pytest.raises(
+            RuntimeError, match="rollback restore staging identity changed"
+        ):
+            database_backup_restore.stage_pinned_restore(
+                pinned,
+                tmp_path / "destination",
+                named_temporary_file=tempfile.NamedTemporaryFile,
+                seek=os.lseek,
+                read=os.read,
+                fsync=os.fsync,
+                sha256=swap_before_hash,
+            )
+    finally:
+        pinned.close()
+
+    assert replacement_path is not None
+    assert replacement_path.read_bytes() == b"rollback payload"
+    assert moved_stage.read_bytes() == b"rollback payload"
 
 
 def test_replace_staged_restore_propagates_parent_fsync_failure(
@@ -331,7 +374,7 @@ def test_recovery_validates_all_entries_before_replacing_any_destination(
     assert journal_path.exists()
 
 
-def test_recovery_identity_checks_redundant_stage_cleanup(
+def test_public_recovery_leaves_redundant_journal_stage_untouched(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _database_path, config_path, journal_path, journal = _staged_restore_journal(
@@ -339,19 +382,129 @@ def test_recovery_identity_checks_redundant_stage_cleanup(
     )
     config_stage = Path(journal["entries"]["config"]["stage_path"])
     config_path.write_bytes(config_stage.read_bytes())
-    expected_identity = (config_stage.stat().st_dev, config_stage.stat().st_ino)
-    real_unlink = database_backup._unlink_if_identity
     calls: list[tuple[Path, tuple[int, int]]] = []
 
     def track_unlink(path: Path, identity: tuple[int, int]) -> None:
         calls.append((path, identity))
-        real_unlink(path, identity)
 
     monkeypatch.setattr(database_backup, "_unlink_if_identity", track_unlink)
     database_backup.recover_rollback_restore(journal_path)
 
-    assert (config_stage, expected_identity) in calls
-    assert not config_stage.exists()
+    assert all(path != config_stage for path, _identity in calls)
+    assert config_stage.exists()
+
+
+def test_public_recovery_copies_valid_looking_unrelated_stage_without_consuming_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database_path, config_path, journal_path, journal = _staged_restore_journal(
+        tmp_path, monkeypatch
+    )
+    genuine_stage = Path(journal["entries"]["config"]["stage_path"])
+    unrelated_stage = config_path.parent / (
+        f".{config_path.name}.unrelated.restore-stage"
+    )
+    unrelated_stage.write_bytes(genuine_stage.read_bytes())
+    genuine_bytes = genuine_stage.read_bytes()
+    unrelated_bytes = unrelated_stage.read_bytes()
+    journal["entries"]["config"]["stage_path"] = str(unrelated_stage)
+    journal_path.write_text(json.dumps(journal), encoding="utf-8")
+    manifest = json.loads(Path(journal["manifest_path"]).read_text(encoding="utf-8"))
+
+    restored = database_backup.recover_rollback_restore(journal_path)
+
+    assert restored == {"database": database_path, "config": config_path}
+    assert genuine_stage.read_bytes() == genuine_bytes
+    assert unrelated_stage.read_bytes() == unrelated_bytes
+    assert _sha256(database_path) == manifest["artifacts"]["database"]["sha256"]
+    assert _sha256(config_path) == manifest["artifacts"]["config"]["sha256"]
+
+
+def test_public_recovery_uses_pinned_source_after_stage_path_swap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database_path, config_path, journal_path, journal = _staged_restore_journal(
+        tmp_path, monkeypatch
+    )
+    config_stage = Path(journal["entries"]["config"]["stage_path"])
+    moved_genuine = config_stage.with_name(f"{config_stage.name}.genuine")
+    replacement_bytes = config_stage.read_bytes()
+    real_pin = database_backup._pin_artifact
+    swapped = False
+
+    def pin_then_swap(metadata: object, label: str, **kwargs: object):
+        nonlocal swapped
+        pinned = real_pin(metadata, label, **kwargs)
+        if label == "config restore stage" and not swapped:
+            os.replace(config_stage, moved_genuine)
+            config_stage.write_bytes(replacement_bytes)
+            swapped = True
+        return pinned
+
+    _direct_recover(journal_path, pin_artifact=pin_then_swap)
+
+    assert swapped
+    assert config_stage.read_bytes() == replacement_bytes
+    assert moved_genuine.read_bytes() == replacement_bytes
+    assert json.loads(config_path.read_text(encoding="utf-8")) == {"original": True}
+    with sqlite3.connect(database_path) as conn:
+        assert conn.execute("SELECT id FROM entities").fetchall() == [("original",)]
+
+
+def test_recovery_rejects_duplicate_stage_inodes_before_destination_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database_path, config_path, journal_path, journal = _staged_restore_journal(
+        tmp_path, monkeypatch
+    )
+    database_before = database_path.read_bytes()
+    config_before = config_path.read_bytes()
+    database_stage = Path(journal["entries"]["database"]["stage_path"])
+    config_stage = Path(journal["entries"]["config"]["stage_path"])
+    config_stage.unlink()
+    os.link(database_stage, config_stage)
+
+    manifest_path = Path(journal["manifest_path"])
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    database_metadata = manifest["artifacts"]["database"]
+    manifest["artifacts"]["config"]["sha256"] = database_metadata["sha256"]
+    manifest["artifacts"]["config"]["size"] = database_metadata["size"]
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    journal["manifest_sha256"] = _sha256(manifest_path)
+    journal["entries"]["config"]["sha256"] = database_metadata["sha256"]
+    journal["entries"]["config"]["size"] = database_metadata["size"]
+    journal_path.write_text(json.dumps(journal), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="rollback restore is incomplete") as exc_info:
+        database_backup.recover_rollback_restore(journal_path)
+
+    assert str(exc_info.value.__cause__) == (
+        "rollback restore journal stage identities are duplicated"
+    )
+    assert database_path.read_bytes() == database_before
+    assert config_path.read_bytes() == config_before
+    assert database_stage.exists()
+    assert config_stage.exists()
+
+
+def test_new_restore_cleans_only_its_identity_bound_journal_stages(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _database_path, _config_path, manifest_path = _bundle(tmp_path)
+    real_stage = database_backup._stage_pinned_restore
+    created: list[tuple[Path, tuple[int, int]]] = []
+
+    def track_stage(pinned: PinnedArtifact, destination: Path) -> Path:
+        stage = real_stage(pinned, destination)
+        created.append((stage, (stage.stat().st_dev, stage.stat().st_ino)))
+        return stage
+
+    monkeypatch.setattr(database_backup, "_stage_pinned_restore", track_stage)
+
+    _direct_restore(manifest_path)
+
+    assert len(created) >= 2
+    assert all(not stage.exists() for stage, _identity in created)
 
 
 def test_direct_recovery_handles_partial_replacement_and_then_is_not_repeatable(
@@ -474,8 +627,25 @@ def test_recovery_rerun_completes_after_partial_recovery_crash(
     )
 
     class VerifiedFile:
+        def __init__(self, path: Path, metadata: dict[str, Any]) -> None:
+            self.path = path
+            self.fd = os.open(path, os.O_RDONLY)
+            file_stat = os.fstat(self.fd)
+            self.signature = (
+                file_stat.st_dev,
+                file_stat.st_ino,
+                file_stat.st_mode,
+                file_stat.st_size,
+                file_stat.st_mtime_ns,
+                file_stat.st_ctime_ns,
+            )
+            self.sha256 = str(metadata["sha256"])
+            self.size = int(metadata["size"])
+
         def close(self) -> None:
-            return None
+            if self.fd >= 0:
+                os.close(self.fd)
+                self.fd = -1
 
     def canonical_path(value: object, _label: str) -> Path:
         return Path(str(value)).resolve(strict=True)
@@ -501,7 +671,7 @@ def test_recovery_rerun_completes_after_partial_recovery_crash(
             or _sha256(path) != metadata["sha256"]
         ):
             raise RuntimeError("artifact mismatch")
-        return VerifiedFile()
+        return VerifiedFile(path, metadata)
 
     replacements: list[Path] = []
 
@@ -521,6 +691,7 @@ def test_recovery_rerun_completes_after_partial_recovery_crash(
                 path, metadata, pin_artifact=pin_artifact
             )
         ),
+        "stage_pinned_restore": database_backup._stage_pinned_restore,
         "unlink_if_identity": database_backup._unlink_if_identity,
         "fsync_parent": lambda _path: None,
     }
@@ -538,7 +709,7 @@ def test_recovery_rerun_completes_after_partial_recovery_crash(
     assert str(exc_info.value.__cause__) == "injected recovery crash"
     assert replacements == [config_destination, database_destination]
     assert journal_path.exists()
-    assert not config_stage.exists()
+    assert config_stage.exists()
     assert database_stage.exists()
     assert _sha256(config_destination) == artifacts["config"]["sha256"]
     assert _sha256(database_destination) != artifacts["database"]["sha256"]
@@ -558,6 +729,8 @@ def test_recovery_rerun_completes_after_partial_recovery_crash(
     assert restored == destinations
     assert replacements == [database_destination]
     assert not journal_path.exists()
+    assert database_stage.exists()
+    assert config_stage.exists()
     assert _sha256(database_destination) == artifacts["database"]["sha256"]
     assert _sha256(config_destination) == artifacts["config"]["sha256"]
 
@@ -629,6 +802,7 @@ def test_direct_restore_cleans_stages_when_journal_publication_fsync_fails(
                 "replacement began before journal publication"
             ),
             stage_pinned_restore=database_backup._stage_pinned_restore,
+            unlink_if_identity=database_backup._unlink_if_identity,
             assert_pinned_artifact=database_backup._assert_pinned_artifact,
             write_json_exclusive=fail_write,
             now=lambda: datetime.now(UTC),

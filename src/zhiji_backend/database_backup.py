@@ -498,6 +498,20 @@ def recover_rollback_restore(
     expected_manifest_path: Path | None = None,
     expected_manifest_sha256: str | None = None,
 ) -> dict[str, Path]:
+    return _recover_rollback_restore(
+        journal_path,
+        expected_manifest_path=expected_manifest_path,
+        expected_manifest_sha256=expected_manifest_sha256,
+    )
+
+
+def _recover_rollback_restore(
+    journal_path: Path,
+    *,
+    expected_manifest_path: Path | None = None,
+    expected_manifest_sha256: str | None = None,
+    _owned_stages: database_backup_restore.OwnedStages | None = None,
+) -> dict[str, Path]:
     return database_backup_restore.recover_rollback_restore(
         journal_path,
         expected_manifest_path=expected_manifest_path,
@@ -507,10 +521,12 @@ def recover_rollback_restore(
         validate_rollback_manifest=_validate_rollback_manifest,
         pin_artifact=_pin_artifact,
         restore_path_matches=_restore_path_matches,
+        stage_pinned_restore=_stage_pinned_restore,
         replace_staged_restore=_replace_staged_restore,
         unlink_if_identity=_unlink_if_identity,
         fsync_parent=_fsync_parent,
         journal_schema_version=RESTORE_JOURNAL_SCHEMA_VERSION,
+        _owned_stages=_owned_stages,
     )
 
 
@@ -520,8 +536,9 @@ def restore_rollback_backup(manifest_path: Path) -> dict[str, Path]:
         manifest_path,
         validate_rollback_manifest=_validate_rollback_manifest,
         restore_journal_path_for=restore_journal_path,
-        recover_rollback_restore=recover_rollback_restore,
+        recover_rollback_restore=_recover_rollback_restore,
         stage_pinned_restore=_stage_pinned_restore,
+        unlink_if_identity=_unlink_if_identity,
         assert_pinned_artifact=_assert_pinned_artifact,
         write_json_exclusive=_write_json_exclusive,
         now=lambda: datetime.now(UTC),
