@@ -1,39 +1,23 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import os
 import shutil
 import sqlite3
-import stat
 import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from . import _database_backup_fs
+from . import _database_backup_fs, database_backup_artifacts
 
-BACKUP_TEMP_PREFIX = ".intelligence-backup-"
+BACKUP_TEMP_PREFIX = database_backup_artifacts.BACKUP_TEMP_PREFIX
 DEFAULT_DESTRUCTIVE_MIGRATION = "20260719_remove_retired_features"
 BACKUP_MANIFEST_SCHEMA_VERSION = 1
 BACKUP_MAX_AGE_SECONDS = 24 * 60 * 60
 RESTORE_JOURNAL_SCHEMA_VERSION = 1
-_EXPECTED_SHA256_UNSET = object()
-
-
-@dataclass
-class PinnedArtifact:
-    path: Path
-    fd: int
-    signature: tuple[int, int, int, int, int, int]
-    sha256: str
-    size: int
-
-    def close(self) -> None:
-        if self.fd >= 0:
-            os.close(self.fd)
-            self.fd = -1
+_EXPECTED_SHA256_UNSET = database_backup_artifacts.EXPECTED_SHA256_UNSET
+PinnedArtifact = database_backup_artifacts.PinnedArtifact
 
 
 @dataclass
@@ -67,64 +51,42 @@ def _regular_non_symlink_identity(path: Path) -> tuple[int, int]:
 
 
 def _canonical_regular_source(path: Path, label: str) -> tuple[Path, tuple[int, int]]:
-    requested = Path(path).expanduser().absolute()
-    try:
-        requested_identity = _regular_non_symlink_identity(requested)
-        canonical = requested.resolve(strict=True)
-    except FileNotFoundError as exc:
-        raise FileNotFoundError(f"{label} does not exist: {requested}") from exc
-    canonical_identity = _regular_non_symlink_identity(canonical)
-    if canonical_identity != requested_identity:
-        raise RuntimeError(f"{label} identity changed during path resolution")
-    return canonical, canonical_identity
+    return database_backup_artifacts.canonical_regular_source(
+        path,
+        label,
+        regular_non_symlink_identity=_regular_non_symlink_identity,
+    )
 
 
 def _require_source_identity(path: Path, expected: tuple[int, int]) -> None:
-    try:
-        current = _regular_non_symlink_identity(path)
-    except (FileNotFoundError, RuntimeError) as exc:
-        raise RuntimeError("database source identity changed") from exc
-    if current != expected:
-        raise RuntimeError("database source identity changed")
+    database_backup_artifacts.require_source_identity(
+        path,
+        expected,
+        regular_non_symlink_identity=_regular_non_symlink_identity,
+    )
 
 
 def _verify_backup(target: Path) -> None:
-    identity = _regular_file_identity(target)
-    try:
-        with sqlite3.connect(_read_only_uri(target), uri=True) as conn:
-            result = [row[0] for row in conn.execute("PRAGMA integrity_check")]
-    except sqlite3.DatabaseError as exc:
-        raise RuntimeError("backup integrity check failed") from exc
-
-    if result != ["ok"]:
-        raise RuntimeError("backup integrity check failed")
-    if _regular_file_identity(target) != identity:
-        raise RuntimeError("backup changed during integrity verification")
+    database_backup_artifacts.verify_backup(
+        target,
+        regular_file_identity=_regular_file_identity,
+        read_only_uri=_read_only_uri,
+    )
 
 
 def _publish_backup(
     staged_backup: Path, target: Path, identity: tuple[int, int]
 ) -> None:
-    if _regular_file_identity(staged_backup) != identity:
-        raise RuntimeError("staged backup changed before publication")
-    os.link(staged_backup, target, follow_symlinks=False)
-
-    if _regular_file_identity(staged_backup) != identity:
-        raise RuntimeError("staged backup changed during publication")
-    if _regular_file_identity(target) != identity:
-        raise RuntimeError("published backup identity mismatch")
+    database_backup_artifacts.publish_backup(
+        staged_backup,
+        target,
+        identity,
+        regular_file_identity=_regular_file_identity,
+    )
 
 
 def _unlink_if_identity(path: Path, identity: tuple[int, int]) -> None:
-    try:
-        file_stat = os.lstat(path)
-    except FileNotFoundError:
-        return
-    if stat.S_ISREG(file_stat.st_mode) and (
-        file_stat.st_dev,
-        file_stat.st_ino,
-    ) == identity:
-        os.unlink(path)
+    database_backup_artifacts.unlink_if_identity(path, identity)
 
 
 def _sha256(path: Path) -> str:
@@ -149,141 +111,43 @@ def _pin_json_file(
     *,
     expected_sha256: object = _EXPECTED_SHA256_UNSET,
 ) -> tuple[PinnedArtifact, dict[str, Any]]:
-    path = _canonical_manifest_path(str(path), label)
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
-    try:
-        fd = os.open(path, flags)
-    except OSError as exc:
-        raise RuntimeError(f"backup prerequisite {label} is invalid") from exc
-    try:
-        before = os.fstat(fd)
-        if not stat.S_ISREG(before.st_mode):
-            raise RuntimeError(f"backup prerequisite {label} is not a regular file")
-        signature = _stat_signature(before)
-        raw = _read_fd_bytes(fd)
-        digest = hashlib.sha256(raw).hexdigest()
-        after = os.fstat(fd)
-        published = os.lstat(path)
-        if (
-            _stat_signature(after) != signature
-            or (published.st_dev, published.st_ino) != (after.st_dev, after.st_ino)
-        ):
-            raise RuntimeError(
-                f"backup prerequisite {label} changed during verification"
-            )
-        if expected_sha256 is not _EXPECTED_SHA256_UNSET and (
-            not isinstance(expected_sha256, str) or digest != expected_sha256
-        ):
-            raise RuntimeError(f"backup prerequisite {label} checksum mismatch")
-        try:
-            payload = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise RuntimeError(f"backup prerequisite {label} is invalid") from exc
-        if not isinstance(payload, dict):
-            raise RuntimeError(f"backup prerequisite {label} is invalid")
-        return PinnedArtifact(path, fd, signature, digest, after.st_size), payload
-    except Exception:
-        os.close(fd)
-        raise
+    return database_backup_artifacts.pin_json_file(
+        path,
+        label,
+        canonical_path=_canonical_manifest_path,
+        stat_signature=_stat_signature,
+        read_fd_bytes=_read_fd_bytes,
+        expected_sha256=expected_sha256,
+    )
 
 
 def _pin_artifact(
     metadata: object, label: str, *, sqlite_backup: bool = False
 ) -> PinnedArtifact:
-    if not isinstance(metadata, dict):
-        raise RuntimeError(f"backup prerequisite {label} metadata is invalid")
-    path = _canonical_manifest_path(metadata.get("path"), label)
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
-    try:
-        fd = os.open(path, flags)
-    except OSError as exc:
-        raise RuntimeError(f"backup prerequisite {label} is invalid") from exc
-    try:
-        before = os.fstat(fd)
-        if not stat.S_ISREG(before.st_mode):
-            raise RuntimeError(f"backup prerequisite {label} is not a regular file")
-        signature = _stat_signature(before)
-        digest = _hash_fd(fd)
-        after = os.fstat(fd)
-        published = os.lstat(path)
-        if (
-            _stat_signature(after) != signature
-            or (published.st_dev, published.st_ino) != (after.st_dev, after.st_ino)
-        ):
-            raise RuntimeError(
-                f"backup prerequisite {label} changed during verification"
-            )
-        if metadata.get("size") != after.st_size:
-            raise RuntimeError(f"backup prerequisite {label} size mismatch")
-        expected_checksum = metadata.get("sha256")
-        if not isinstance(expected_checksum, str) or digest != expected_checksum:
-            raise RuntimeError(f"backup prerequisite {label} checksum mismatch")
-        if sqlite_backup:
-            try:
-                with tempfile.TemporaryDirectory(
-                    prefix=BACKUP_TEMP_PREFIX
-                ) as temp_dir:
-                    verification_copy = Path(temp_dir) / "verification.sqlite"
-                    with verification_copy.open("xb") as handle:
-                        os.lseek(fd, 0, os.SEEK_SET)
-                        while chunk := os.read(fd, 1024 * 1024):
-                            handle.write(chunk)
-                        os.lseek(fd, 0, os.SEEK_SET)
-                        handle.flush()
-                        os.fsync(handle.fileno())
-                    with sqlite3.connect(
-                        _read_only_uri(verification_copy), uri=True
-                    ) as conn:
-                        result = [
-                            row[0] for row in conn.execute("PRAGMA integrity_check")
-                        ]
-            except sqlite3.DatabaseError as exc:
-                raise RuntimeError(
-                    "backup prerequisite database backup failed integrity check"
-                ) from exc
-            if result != ["ok"] or metadata.get("integrity_check") != "ok":
-                raise RuntimeError(
-                    "backup prerequisite database backup failed integrity check"
-                )
-        return PinnedArtifact(path, fd, signature, digest, after.st_size)
-    except Exception:
-        os.close(fd)
-        raise
+    return database_backup_artifacts.pin_artifact(
+        metadata,
+        label,
+        canonical_path=_canonical_manifest_path,
+        stat_signature=_stat_signature,
+        hash_fd=_hash_fd,
+        read_only_uri=_read_only_uri,
+        sqlite_backup=sqlite_backup,
+    )
 
 
 def _assert_pinned_artifact(pinned: PinnedArtifact, label: str) -> None:
-    if pinned.fd < 0:
-        raise RuntimeError(f"backup prerequisite {label} is no longer pinned")
-    before = os.fstat(pinned.fd)
-    try:
-        published_before = os.lstat(pinned.path)
-    except FileNotFoundError as exc:
-        raise RuntimeError(
-            f"backup prerequisite {label} changed during migration"
-        ) from exc
-    digest = _hash_fd(pinned.fd)
-    after = os.fstat(pinned.fd)
-    try:
-        published_after = os.lstat(pinned.path)
-    except FileNotFoundError as exc:
-        raise RuntimeError(
-            f"backup prerequisite {label} changed during migration"
-        ) from exc
-    if (
-        _stat_signature(before) != pinned.signature
-        or _stat_signature(after) != pinned.signature
-        or (published_before.st_dev, published_before.st_ino)
-        != (before.st_dev, before.st_ino)
-        or (published_after.st_dev, published_after.st_ino)
-        != (after.st_dev, after.st_ino)
-        or digest != pinned.sha256
-    ):
-        raise RuntimeError(f"backup prerequisite {label} changed during migration")
+    database_backup_artifacts.assert_pinned_artifact(
+        pinned,
+        label,
+        stat_signature=_stat_signature,
+        hash_fd=_hash_fd,
+    )
 
 
 def _sqlite_snapshot_sha256(path: Path) -> str:
-    with sqlite3.connect(_read_only_uri(path), uri=True) as conn:
-        return hashlib.sha256(conn.serialize()).hexdigest()
+    return database_backup_artifacts.sqlite_snapshot_sha256(
+        path, read_only_uri=_read_only_uri
+    )
 
 
 def _source_metadata(path: Path) -> dict[str, int]:
@@ -291,92 +155,38 @@ def _source_metadata(path: Path) -> dict[str, int]:
 
 
 def _artifact_metadata(path: Path, *, integrity_check: str | None = None) -> dict[str, Any]:
-    canonical = path.resolve(strict=True)
-    metadata: dict[str, Any] = {
-        "path": str(canonical),
-        "sha256": _sha256(canonical),
-        "size": canonical.stat().st_size,
-    }
-    if integrity_check is not None:
-        metadata["integrity_check"] = integrity_check
-    return metadata
+    return database_backup_artifacts.artifact_metadata(
+        path, sha256=_sha256, integrity_check=integrity_check
+    )
 
 
 def _fsync_parent(path: Path) -> None:
-    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-    directory_fd = os.open(path.parent, flags)
-    try:
-        os.fsync(directory_fd)
-    finally:
-        os.close(directory_fd)
+    database_backup_artifacts.fsync_parent(path)
 
 
 def _write_json_exclusive(path: Path, payload: dict[str, Any]) -> None:
-    temp_dir = Path(tempfile.mkdtemp(prefix=BACKUP_TEMP_PREFIX, dir=path.parent))
-    staged = temp_dir / "payload.json"
-    staged_identity: tuple[int, int] | None = None
-    try:
-        with staged.open("x", encoding="utf-8") as handle:
-            json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        staged_identity = _regular_file_identity(staged)
-        _publish_backup(staged, path, staged_identity)
-        _fsync_parent(path)
-    except Exception:
-        if staged_identity is not None:
-            _unlink_if_identity(path, staged_identity)
-        raise
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
+    database_backup_artifacts.write_json_exclusive(
+        path, payload, regular_file_identity=_regular_file_identity
+    )
 
 
 def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
-            temp_path = Path(handle.name)
-            json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temp_path, path)
-        temp_path = None
-        _fsync_parent(path)
-    finally:
-        if temp_path is not None:
-            temp_path.unlink(missing_ok=True)
+    database_backup_artifacts.write_json_atomic(path, payload)
 
 
 def _copy_regular_file(source: Path, target: Path) -> None:
-    source, source_identity = _canonical_regular_source(source, "config source")
-    temp_dir = Path(tempfile.mkdtemp(prefix=BACKUP_TEMP_PREFIX, dir=target.parent))
-    staged = temp_dir / "config.backup"
-    staged_identity: tuple[int, int] | None = None
-    try:
-        with source.open("rb") as source_handle, staged.open("xb") as target_handle:
-            shutil.copyfileobj(source_handle, target_handle)
-            target_handle.flush()
-            os.fsync(target_handle.fileno())
-        _require_source_identity(source, source_identity)
-        staged_identity = _regular_file_identity(staged)
-        _publish_backup(staged, target, staged_identity)
-        _fsync_parent(target)
-    except Exception:
-        if staged_identity is not None:
-            _unlink_if_identity(target, staged_identity)
-        raise
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
+    database_backup_artifacts.copy_regular_file(
+        source,
+        target,
+        canonical_regular_source=lambda path, label, **_kwargs: (
+            _canonical_regular_source(path, label)
+        ),
+        require_source_identity=lambda path, identity, **_kwargs: (
+            _require_source_identity(path, identity)
+        ),
+        regular_non_symlink_identity=_regular_non_symlink_identity,
+        regular_file_identity=_regular_file_identity,
+    )
 
 
 def backup_marker_path(source: Path, migration_name: str) -> Path:
