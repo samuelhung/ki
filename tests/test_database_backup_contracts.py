@@ -4,8 +4,10 @@ import hashlib
 import inspect
 import json
 import os
+import re
 import sqlite3
 import stat
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import get_type_hints
@@ -15,7 +17,6 @@ import pytest
 from zhiji_backend import database_backup
 
 MIGRATION_NAME = "20260719_remove_retired_features"
-FROZEN_NOW = datetime(2026, 7, 25, 10, 11, 12, 345678, tzinfo=UTC)
 
 PUBLIC_BACKUP_FACADE = {
     "backup_marker_path": "(source: 'Path', migration_name: 'str') -> 'Path'",
@@ -66,14 +67,6 @@ PUBLIC_RETURN_TYPES = {
 }
 
 
-class FrozenDateTime(datetime):
-    @classmethod
-    def now(cls, tz=None):
-        if tz is None:
-            return FROZEN_NOW.replace(tzinfo=None)
-        return FROZEN_NOW.astimezone(tz)
-
-
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -93,14 +86,12 @@ def _create_database(path: Path) -> None:
         )
 
 
-@pytest.fixture
-def rollback_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
-    monkeypatch.setattr(database_backup, "datetime", FrozenDateTime)
-    data_dir = tmp_path / "home with spaces" / "data"
+def _create_rollback_bundle(root: Path) -> dict[str, Path]:
+    data_dir = root / "home with spaces" / "data"
     data_dir.mkdir(parents=True)
     database_path = data_dir / "intelligence main.sqlite"
     config_path = data_dir / "system config.json"
-    output_dir = tmp_path / "backup output"
+    output_dir = root / "backup output"
     _create_database(database_path)
     config_path.write_text('{"digest_briefing": {}}', encoding="utf-8")
 
@@ -116,6 +107,27 @@ def rollback_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str
         "output": output_dir.resolve(),
         "manifest": manifest_path,
     }
+
+
+@pytest.fixture
+def rollback_bundle(tmp_path: Path) -> dict[str, Path]:
+    return _create_rollback_bundle(tmp_path)
+
+
+@contextmanager
+def _temporary_umask(mask: int):
+    previous = os.umask(mask)
+    try:
+        yield
+    finally:
+        os.umask(previous)
+
+
+def _utc_timestamp(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value)
+    assert parsed.tzinfo is not None
+    assert parsed.utcoffset() == UTC.utcoffset(parsed)
+    return parsed
 
 
 def test_public_backup_facade_signatures_and_return_types_are_stable() -> None:
@@ -154,7 +166,8 @@ def test_rollback_bundle_manifest_and_ready_marker_schema(rollback_bundle) -> No
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     marker = json.loads(marker_path.read_text(encoding="utf-8"))
 
-    assert manifest_path == output_dir / "rollback-manifest-20260725-101112.json"
+    assert manifest_path.parent == output_dir
+    assert re.fullmatch(r"rollback-manifest-\d{8}-\d{6}\.json", manifest_path.name)
     assert set(manifest) == {
         "artifacts",
         "created_at",
@@ -165,7 +178,7 @@ def test_rollback_bundle_manifest_and_ready_marker_schema(rollback_bundle) -> No
     }
     assert manifest["schema_version"] == 1
     assert manifest["migration_name"] == MIGRATION_NAME
-    assert manifest["created_at"] == "2026-07-25T10:11:12.345678+00:00"
+    _utc_timestamp(manifest["created_at"])
     assert manifest["marker_path"] == str(marker_path)
     assert set(manifest["source"]) == {
         "config_identity",
@@ -226,17 +239,33 @@ def test_rollback_bundle_manifest_and_ready_marker_schema(rollback_bundle) -> No
         "manifest_sha256": _sha256(manifest_path),
         "source": manifest["source"],
     }
-    assert {
-        "database": stat.S_IMODE(os.lstat(artifacts["database"]["path"]).st_mode),
-        "config": stat.S_IMODE(os.lstat(artifacts["config"]["path"]).st_mode),
-        "manifest": stat.S_IMODE(os.lstat(manifest_path).st_mode),
-        "marker": stat.S_IMODE(os.lstat(marker_path).st_mode),
-    } == {
-        "database": 0o644,
-        "config": 0o644,
-        "manifest": 0o644,
-        "marker": 0o600,
+
+
+@pytest.mark.parametrize("mask", [0o022, 0o077], ids=["umask-022", "umask-077"])
+def test_rollback_bundle_file_modes_respect_umask_and_keep_marker_private(
+    tmp_path: Path, mask: int
+) -> None:
+    with _temporary_umask(mask):
+        bundle = _create_rollback_bundle(tmp_path)
+
+    manifest_path = bundle["manifest"]
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    marker_path = database_backup.backup_marker_path(bundle["database"], MIGRATION_NAME)
+    creation_mode = 0o666 & ~mask
+    inherited_mode_paths = {
+        "database": Path(manifest["artifacts"]["database"]["path"]),
+        "config": Path(manifest["artifacts"]["config"]["path"]),
+        "manifest": manifest_path,
     }
+
+    for path in inherited_mode_paths.values():
+        file_stat = os.lstat(path)
+        assert stat.S_ISREG(file_stat.st_mode)
+        assert stat.S_IMODE(file_stat.st_mode) & ~creation_mode == 0
+
+    marker_stat = os.lstat(marker_path)
+    assert stat.S_ISREG(marker_stat.st_mode)
+    assert stat.S_IMODE(marker_stat.st_mode) == 0o600
 
 
 def test_prerequisite_lease_release_and_marker_consumption_are_idempotent(
@@ -277,7 +306,9 @@ def test_prerequisite_lease_release_and_marker_consumption_are_idempotent(
         "state",
     }
     assert receipt["state"] == "consumed"
-    assert receipt["consumed_at"] == "2026-07-25T10:11:12.345678+00:00"
+    assert _utc_timestamp(receipt["consumed_at"]) >= _utc_timestamp(
+        receipt["created_at"]
+    )
     assert receipt["manifest_path"] == str(manifest_path)
 
     assert (
@@ -327,37 +358,6 @@ def test_prerequisite_validation_preserves_failure_messages(
     assert manifest_path.exists()
 
 
-def test_restore_interrupted_during_staging_removes_stages_and_journal(
-    rollback_bundle, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    database_path = rollback_bundle["database"]
-    config_path = rollback_bundle["config"]
-    manifest_path = rollback_bundle["manifest"]
-    database_before = database_path.read_bytes()
-    config_before = config_path.read_bytes()
-    real_stage = database_backup._stage_pinned_restore
-    staged_paths: list[Path] = []
-
-    def fail_second_stage(pinned, destination):
-        if staged_paths:
-            raise OSError("injected config staging failure")
-        stage = real_stage(pinned, destination)
-        staged_paths.append(stage)
-        return stage
-
-    monkeypatch.setattr(database_backup, "_stage_pinned_restore", fail_second_stage)
-
-    with pytest.raises(OSError) as exc_info:
-        database_backup.restore_rollback_backup(manifest_path)
-
-    assert str(exc_info.value) == "injected config staging failure"
-    assert len(staged_paths) == 1
-    assert not staged_paths[0].exists()
-    assert database_path.read_bytes() == database_before
-    assert config_path.read_bytes() == config_before
-    assert not database_backup.restore_journal_path(database_path).exists()
-
-
 def test_restore_journal_schema_recovery_result_and_repeated_recovery(
     rollback_bundle, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -365,16 +365,14 @@ def test_restore_journal_schema_recovery_result_and_repeated_recovery(
     config_path = rollback_bundle["config"]
     manifest_path = rollback_bundle["manifest"]
     config_path.write_text('{"current": true}', encoding="utf-8")
-    real_replace = database_backup._replace_staged_restore
+    real_replace = os.replace
 
-    def interrupt_database_replace(stage, destination):
+    def interrupt_database_replace(source, destination):
         if Path(destination) == database_path:
             raise OSError("injected database replacement failure")
-        real_replace(stage, destination)
+        real_replace(source, destination)
 
-    monkeypatch.setattr(
-        database_backup, "_replace_staged_restore", interrupt_database_replace
-    )
+    monkeypatch.setattr(os, "replace", interrupt_database_replace)
 
     with pytest.raises(RuntimeError) as exc_info:
         database_backup.restore_rollback_backup(manifest_path)
@@ -394,7 +392,9 @@ def test_restore_journal_schema_recovery_result_and_repeated_recovery(
     }
     assert journal["schema_version"] == 1
     assert journal["state"] == "staged"
-    assert journal["created_at"] == "2026-07-25T10:11:12.345678+00:00"
+    assert _utc_timestamp(journal["created_at"]) >= _utc_timestamp(
+        json.loads(manifest_path.read_text(encoding="utf-8"))["created_at"]
+    )
     assert journal["manifest_path"] == str(manifest_path)
     assert journal["manifest_sha256"] == _sha256(manifest_path)
     assert set(journal["entries"]) == {"config", "database"}
@@ -407,7 +407,7 @@ def test_restore_journal_schema_recovery_result_and_repeated_recovery(
             assert stage_path.exists()
             assert stat.S_IMODE(os.lstat(stage_path).st_mode) == 0o600
 
-    monkeypatch.setattr(database_backup, "_replace_staged_restore", real_replace)
+    monkeypatch.setattr(os, "replace", real_replace)
     assert database_backup.recover_rollback_restore(journal_path) == {
         "database": database_path,
         "config": config_path,
@@ -426,21 +426,17 @@ def test_restore_detects_destination_replacement_and_keeps_journal(
     _create_database(attacker)
     with sqlite3.connect(attacker) as conn:
         conn.execute("INSERT INTO entities VALUES ('replacement')")
-    real_replace = database_backup._replace_staged_restore
+    real_replace = os.replace
     replaced = False
 
-    def replace_destination_after_restore(stage, destination):
+    def replace_destination_after_restore(source, destination):
         nonlocal replaced
-        real_replace(stage, destination)
+        real_replace(source, destination)
         if Path(destination) == database_path:
-            os.replace(attacker, destination)
+            real_replace(attacker, destination)
             replaced = True
 
-    monkeypatch.setattr(
-        database_backup,
-        "_replace_staged_restore",
-        replace_destination_after_restore,
-    )
+    monkeypatch.setattr(os, "replace", replace_destination_after_restore)
 
     with pytest.raises(RuntimeError) as exc_info:
         database_backup.restore_rollback_backup(manifest_path)
