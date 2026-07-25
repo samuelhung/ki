@@ -11,6 +11,7 @@ from typing import Any
 from . import (
     _database_backup_fs,
     database_backup_artifacts,
+    database_backup_creation,
     database_backup_manifest,
     database_backup_prerequisite,
     database_backup_restore,
@@ -25,96 +26,66 @@ _EXPECTED_SHA256_UNSET = database_backup_artifacts.EXPECTED_SHA256_UNSET
 PinnedArtifact = database_backup_artifacts.PinnedArtifact
 BackupPrerequisiteLease = database_backup_prerequisite.BackupPrerequisiteLease
 
-
 def _read_only_uri(path: Path) -> str:
     return _database_backup_fs.read_only_uri(path)
-
 
 def _regular_file_identity(path: Path) -> tuple[int, int]:
     return _database_backup_fs.regular_file_identity(path)
 
-
 def _regular_non_symlink_identity(path: Path) -> tuple[int, int]:
     return _database_backup_fs.regular_non_symlink_identity(path)
 
-
 def _canonical_regular_source(path: Path, label: str) -> tuple[Path, tuple[int, int]]:
     return database_backup_artifacts.canonical_regular_source(
-        path,
-        label,
-        regular_non_symlink_identity=_regular_non_symlink_identity,
+        path, label, regular_non_symlink_identity=_regular_non_symlink_identity
     )
-
 
 def _require_source_identity(path: Path, expected: tuple[int, int]) -> None:
     database_backup_artifacts.require_source_identity(
-        path,
-        expected,
-        regular_non_symlink_identity=_regular_non_symlink_identity,
+        path, expected, regular_non_symlink_identity=_regular_non_symlink_identity
     )
-
 
 def _verify_backup(target: Path) -> None:
     database_backup_artifacts.verify_backup(
-        target,
-        regular_file_identity=_regular_file_identity,
-        read_only_uri=_read_only_uri,
+        target, regular_file_identity=_regular_file_identity, read_only_uri=_read_only_uri
     )
 
-
-def _publish_backup(
-    staged_backup: Path, target: Path, identity: tuple[int, int]
-) -> None:
+def _publish_backup(staged_backup: Path, target: Path, identity: tuple[int, int]) -> None:
     database_backup_artifacts.publish_backup(
-        staged_backup,
-        target,
-        identity,
-        regular_file_identity=_regular_file_identity,
+        staged_backup, target, identity, regular_file_identity=_regular_file_identity
     )
-
 
 def _unlink_if_identity(path: Path, identity: tuple[int, int]) -> None:
     database_backup_artifacts.unlink_if_identity(path, identity)
 
-
 def _sha256(path: Path) -> str:
     return _database_backup_fs.sha256(path)
-
 
 def _stat_signature(file_stat: os.stat_result) -> tuple[int, int, int, int, int, int]:
     return _database_backup_fs.stat_signature(file_stat)
 
-
 def _hash_fd(fd: int) -> str:
     return _database_backup_fs.hash_fd(fd)
-
 
 def _read_fd_bytes(fd: int) -> bytes:
     return _database_backup_fs.read_fd_bytes(fd)
 
-
 def _pin_json_file(
-    path: Path,
-    label: str,
-    *,
-    expected_sha256: object = _EXPECTED_SHA256_UNSET,
+    path: Path, label: str, *, expected_sha256: object = _EXPECTED_SHA256_UNSET
 ) -> tuple[PinnedArtifact, dict[str, Any]]:
     return database_backup_artifacts.pin_json_file(
-        path,
-        label,
+        path, label,
         canonical_path=_canonical_manifest_path,
         stat_signature=_stat_signature,
         read_fd_bytes=_read_fd_bytes,
         expected_sha256=expected_sha256,
     )
 
-
 def _pin_artifact(
     metadata: object, label: str, *, sqlite_backup: bool = False
 ) -> PinnedArtifact:
     return database_backup_artifacts.pin_artifact(
-        metadata,
-        label,
+        metadata, label,
         canonical_path=_canonical_manifest_path,
         stat_signature=_stat_signature,
         hash_fd=_hash_fd,
@@ -122,39 +93,27 @@ def _pin_artifact(
         sqlite_backup=sqlite_backup,
     )
 
-
 def _assert_pinned_artifact(pinned: PinnedArtifact, label: str) -> None:
     database_backup_artifacts.assert_pinned_artifact(
-        pinned,
-        label,
-        stat_signature=_stat_signature,
-        hash_fd=_hash_fd,
+        pinned, label, stat_signature=_stat_signature, hash_fd=_hash_fd
     )
-
 
 def _lease_assert_pinned_artifact(pinned: PinnedArtifact, label: str) -> None:
     _assert_pinned_artifact(pinned, label)
 
-
 def _sqlite_snapshot_sha256(path: Path) -> str:
-    return database_backup_artifacts.sqlite_snapshot_sha256(
-        path, read_only_uri=_read_only_uri
-    )
-
+    return database_backup_artifacts.sqlite_snapshot_sha256(path, read_only_uri=_read_only_uri)
 
 def _source_metadata(path: Path) -> dict[str, int]:
     return _database_backup_fs.source_metadata(path)
-
 
 def _artifact_metadata(path: Path, *, integrity_check: str | None = None) -> dict[str, Any]:
     return database_backup_artifacts.artifact_metadata(
         path, sha256=_sha256, integrity_check=integrity_check
     )
 
-
 def _fsync_parent(path: Path) -> None:
     database_backup_artifacts.fsync_parent(path)
-
 
 def _write_json_exclusive(path: Path, payload: dict[str, Any]) -> None:
     database_backup_artifacts.write_json_exclusive(
@@ -166,23 +125,15 @@ def _write_json_exclusive(path: Path, payload: dict[str, Any]) -> None:
         unlink_if_identity=_unlink_if_identity,
     )
 
-
 def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
-    database_backup_artifacts.write_json_atomic(
-        path, payload, fsync_parent=_fsync_parent
-    )
-
+    database_backup_artifacts.write_json_atomic(path, payload, fsync_parent=_fsync_parent)
 
 def _copy_regular_file(source: Path, target: Path) -> None:
     database_backup_artifacts.copy_regular_file(
         source,
         target,
-        canonical_regular_source=lambda path, label, **_kwargs: (
-            _canonical_regular_source(path, label)
-        ),
-        require_source_identity=lambda path, identity, **_kwargs: (
-            _require_source_identity(path, identity)
-        ),
+        canonical_regular_source=lambda path, label, **_kwargs: _canonical_regular_source(path, label),
+        require_source_identity=lambda path, identity, **_kwargs: _require_source_identity(path, identity),
         regular_non_symlink_identity=_regular_non_symlink_identity,
         regular_file_identity=_regular_file_identity,
         publish_backup=_publish_backup,
@@ -190,173 +141,69 @@ def _copy_regular_file(source: Path, target: Path) -> None:
         unlink_if_identity=_unlink_if_identity,
     )
 
-
 def backup_marker_path(source: Path, migration_name: str) -> Path:
     return database_backup_prerequisite.backup_marker_path(source, migration_name)
 
-
 def consumed_backup_marker_path(source: Path, migration_name: str) -> Path:
-    return database_backup_prerequisite.consumed_backup_marker_path(
-        source, migration_name
-    )
-
-
-def _migration_is_pending(source: Path, migration_name: str) -> bool:
-    with sqlite3.connect(_read_only_uri(source), uri=True) as conn:
-        migrations_table = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_migrations'"
-        ).fetchone()
-        if migrations_table is None:
-            return True
-        return conn.execute(
-            "SELECT 1 FROM _migrations WHERE name = ?", (migration_name,)
-        ).fetchone() is None
-
+    return database_backup_prerequisite.consumed_backup_marker_path(source, migration_name)
 
 def create_rollback_backup(
-    source: Path,
-    config_path: Path,
-    output_dir: Path,
-    *,
+    source: Path, config_path: Path, output_dir: Path, *,
     migration_name: str = DEFAULT_DESTRUCTIVE_MIGRATION,
 ) -> Path:
     """Archive the live database and config, then publish the migration marker."""
-    source, _ = _canonical_regular_source(source, "database source")
-    config_path, _ = _canonical_regular_source(
-        config_path, "config source"
+    return database_backup_creation.create_rollback_backup(
+        source, config_path, output_dir,
+        migration_name=migration_name,
+        schema_version=BACKUP_MANIFEST_SCHEMA_VERSION,
+        canonical_regular_source=_canonical_regular_source,
+        source_metadata=_source_metadata,
+        marker_path_for=backup_marker_path,
+        sqlite_snapshot_sha256=_sqlite_snapshot_sha256,
+        backup_database=backup_database,
+        copy_regular_file=_copy_regular_file,
+        artifact_metadata=_artifact_metadata,
+        write_json_exclusive=_write_json_exclusive,
+        pin_json_file=_pin_json_file,
+        write_json_atomic=_write_json_atomic,
+        read_only_uri=_read_only_uri,
+        connect=sqlite3.connect,
+        now=lambda: datetime.now(),
+        now_utc=lambda: datetime.now(UTC),
     )
-    initial_source_metadata = _source_metadata(source)
-    initial_config_metadata = _source_metadata(config_path)
-
-    output_dir = Path(output_dir).expanduser()
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_dir = output_dir.resolve(strict=True)
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    config_backup = output_dir / f"system_config-pre-cleanup-{timestamp}.json"
-    manifest_path = output_dir / f"rollback-manifest-{timestamp}.json"
-    marker_path = backup_marker_path(source, migration_name)
-    database_backup: Path | None = None
-    lock_conn = sqlite3.connect(str(source))
-
-    try:
-        lock_conn.execute("PRAGMA busy_timeout=5000")
-        lock_conn.execute("BEGIN IMMEDIATE")
-        if not _migration_is_pending(source, migration_name):
-            raise RuntimeError(f"migration {migration_name} is not pending")
-        sqlite_snapshot_sha256 = _sqlite_snapshot_sha256(source)
-        database_backup = backup_database(source, output_dir)
-        _copy_regular_file(config_path, config_backup)
-        if (
-            _source_metadata(source) != initial_source_metadata
-            or _source_metadata(config_path) != initial_config_metadata
-            or _sqlite_snapshot_sha256(source) != sqlite_snapshot_sha256
-        ):
-            raise RuntimeError("database or config source changed during rollback backup")
-        created_at = datetime.now(UTC).isoformat()
-        manifest = {
-            "schema_version": BACKUP_MANIFEST_SCHEMA_VERSION,
-            "migration_name": migration_name,
-            "created_at": created_at,
-            "marker_path": str(marker_path),
-            "source": {
-                "database_path": str(source),
-                "config_path": str(config_path),
-                "database_identity": initial_source_metadata,
-                "config_identity": initial_config_metadata,
-                "sqlite_snapshot_sha256": sqlite_snapshot_sha256,
-            },
-            "artifacts": {
-                "database": _artifact_metadata(
-                    database_backup, integrity_check="ok"
-                ),
-                "config": _artifact_metadata(config_backup),
-                "digest_archive": None,
-            },
-        }
-        _write_json_exclusive(manifest_path, manifest)
-        manifest_path = manifest_path.resolve(strict=True)
-        manifest_pin, published_manifest = _pin_json_file(
-            manifest_path, "manifest"
-        )
-        try:
-            if published_manifest != manifest:
-                raise RuntimeError("backup prerequisite manifest publication mismatch")
-            manifest_sha256 = manifest_pin.sha256
-        finally:
-            manifest_pin.close()
-        marker = {
-            "schema_version": BACKUP_MANIFEST_SCHEMA_VERSION,
-            "state": "ready",
-            "migration_name": migration_name,
-            "created_at": created_at,
-            "manifest_path": str(manifest_path),
-            "manifest_sha256": manifest_sha256,
-            "source": manifest["source"],
-        }
-        _write_json_atomic(marker_path, marker)
-    except Exception:
-        manifest_path.unlink(missing_ok=True)
-        config_backup.unlink(missing_ok=True)
-        if database_backup is not None:
-            database_backup.unlink(missing_ok=True)
-        raise
-    finally:
-        lock_conn.rollback()
-        lock_conn.close()
-
-    return manifest_path
-
 
 def _load_json_regular(path: Path, label: str) -> dict[str, Any]:
-    return database_backup_manifest.load_json_regular(
-        path, label, pin_json_file=_pin_json_file
-    )
-
+    return database_backup_manifest.load_json_regular(path, label, pin_json_file=_pin_json_file)
 
 def _canonical_manifest_path(value: object, label: str) -> Path:
     return database_backup_manifest.canonical_manifest_path(value, label)
 
-
 def _parse_created_at(value: object) -> datetime:
     return database_backup_manifest.parse_created_at(value)
-
 
 def _require_current_source(
     path: Path, expected_path: object, expected_identity: object, label: str
 ) -> None:
     database_backup_manifest.require_current_source(
-        path,
-        expected_path,
-        expected_identity,
-        label,
+        path, expected_path, expected_identity, label,
         canonical_regular_source=_canonical_regular_source,
         source_metadata=_source_metadata,
     )
-
 
 def _verify_artifact(
     metadata: object, label: str, *, sqlite_backup: bool = False
 ) -> Path:
     return database_backup_manifest.verify_artifact(
-        metadata,
-        label,
-        pin_artifact=_pin_artifact,
-        sqlite_backup=sqlite_backup,
+        metadata, label, pin_artifact=_pin_artifact, sqlite_backup=sqlite_backup
     )
 
-
 def validate_backup_prerequisite(
-    source: Path,
-    config_path: Path,
-    migration_name: str,
-    *,
+    source: Path, config_path: Path, migration_name: str, *,
     allow_stale: bool = False,
     pin_artifacts: bool = False,
 ) -> BackupPrerequisiteLease:
     return database_backup_prerequisite.validate_backup_prerequisite(
-        source,
-        config_path,
-        migration_name,
+        source, config_path, migration_name,
         allow_stale=allow_stale,
         pin_artifacts=pin_artifacts,
         marker_path_for=backup_marker_path,
@@ -373,7 +220,6 @@ def validate_backup_prerequisite(
         assert_pinned_artifact=_lease_assert_pinned_artifact,
     )
 
-
 def assert_backup_prerequisite_published(
     prerequisite: BackupPrerequisiteLease,
 ) -> None:
@@ -381,12 +227,8 @@ def assert_backup_prerequisite_published(
         prerequisite, assert_pinned_artifact=_assert_pinned_artifact
     )
 
-
-def release_backup_prerequisite(
-    prerequisite: BackupPrerequisiteLease | None,
-) -> None:
+def release_backup_prerequisite(prerequisite: BackupPrerequisiteLease | None) -> None:
     database_backup_prerequisite.release_backup_prerequisite(prerequisite)
-
 
 def consume_backup_prerequisite(
     source: Path,
@@ -394,36 +236,28 @@ def consume_backup_prerequisite(
     prerequisite: BackupPrerequisiteLease | None = None,
 ) -> Path | None:
     return database_backup_prerequisite.consume_backup_prerequisite(
-        source,
-        migration_name,
-        prerequisite,
+        source, migration_name, prerequisite,
         ready_marker_path=backup_marker_path,
         consumed_marker_path=consumed_backup_marker_path,
         load_json_regular=_load_json_regular,
         validate_marker_for_consumption=_validate_marker_for_consumption,
-        validate_loaded_marker_for_consumption=(
-            _validate_loaded_marker_for_consumption
-        ),
+        validate_loaded_marker_for_consumption=_validate_loaded_marker_for_consumption,
         write_json_atomic=_write_json_atomic,
         now=lambda: datetime.now(UTC),
         schema_version=BACKUP_MANIFEST_SCHEMA_VERSION,
         replace=os.replace,
     )
 
-
 def _validate_marker_for_consumption(
     source: Path, migration_name: str, marker: dict[str, Any]
 ) -> None:
     database_backup_manifest.validate_marker_for_consumption(
-        source,
-        migration_name,
-        marker,
+        source, migration_name, marker,
         canonical_path=_canonical_manifest_path,
         pin_json_file=_pin_json_file,
         validate_loaded_marker=_validate_loaded_marker_for_consumption,
         verify_artifact_metadata=_verify_artifact,
     )
-
 
 def _validate_loaded_marker_for_consumption(
     source: Path,
@@ -432,18 +266,13 @@ def _validate_loaded_marker_for_consumption(
     manifest: dict[str, Any],
 ) -> None:
     database_backup_manifest.validate_loaded_marker_for_consumption(
-        source,
-        migration_name,
-        marker,
-        manifest,
+        source, migration_name, marker, manifest,
         marker_path_for=backup_marker_path,
         schema_version=BACKUP_MANIFEST_SCHEMA_VERSION,
     )
 
-
 def restore_journal_path(database_path: Path) -> Path:
     return database_backup_restore.restore_journal_path(database_path)
-
 
 def _validate_rollback_manifest(
     manifest_path: Path,
@@ -467,7 +296,6 @@ def _validate_rollback_manifest(
         parse_timestamp=_parse_created_at,
     )
 
-
 def _stage_pinned_restore(pinned: PinnedArtifact, destination: Path) -> Path:
     return database_backup_restore.stage_pinned_restore(
         pinned,
@@ -478,7 +306,6 @@ def _stage_pinned_restore(pinned: PinnedArtifact, destination: Path) -> Path:
         fsync=os.fsync,
         sha256=_sha256,
     )
-
 
 def _replace_staged_restore(
     stage: Path,
@@ -493,12 +320,8 @@ def _replace_staged_restore(
         expected_identity=expected_identity,
     )
 
-
 def _restore_path_matches(path: Path, metadata: dict[str, Any]) -> bool:
-    return database_backup_restore.restore_path_matches(
-        path, metadata, pin_artifact=_pin_artifact
-    )
-
+    return database_backup_restore.restore_path_matches(path, metadata, pin_artifact=_pin_artifact)
 
 def recover_rollback_restore(
     journal_path: Path,
@@ -515,7 +338,6 @@ def recover_rollback_restore(
         expected_manifest_path=expected_manifest_path,
         expected_manifest_sha256=expected_manifest_sha256,
     )
-
 
 def _recover_rollback_restore(
     journal_path: Path,
@@ -542,7 +364,6 @@ def _recover_rollback_restore(
         write_json_exclusive=_write_json_exclusive,
     )
 
-
 def restore_rollback_backup(manifest_path: Path) -> dict[str, Path]:
     """Stage and journal both rollback artifacts before replacing either target."""
     return database_backup_restore.restore_rollback_backup(
@@ -558,38 +379,21 @@ def restore_rollback_backup(manifest_path: Path) -> dict[str, Path]:
         journal_schema_version=RESTORE_JOURNAL_SCHEMA_VERSION,
     )
 
-
 def backup_database(source: Path, output_dir: Path) -> Path:
     """Create and verify a timestamped SQLite backup without overwriting files."""
-    source, source_identity = _canonical_regular_source(source, "database source")
-
-    output_dir = Path(output_dir).expanduser()
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_dir = output_dir.resolve(strict=True)
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    target = output_dir / f"intelligence-pre-cleanup-{timestamp}.sqlite"
-    temp_dir = Path(tempfile.mkdtemp(prefix=BACKUP_TEMP_PREFIX, dir=output_dir))
-    staged_backup = temp_dir / "backup.sqlite"
-    staged_identity: tuple[int, int] | None = None
-
-    try:
-        with sqlite3.connect(_read_only_uri(source), uri=True) as src:
-            _require_source_identity(source, source_identity)
-            with sqlite3.connect(staged_backup) as dst:
-                src.backup(dst)
-            _require_source_identity(source, source_identity)
-        _verify_backup(staged_backup)
-        _require_source_identity(source, source_identity)
-        staged_identity = _regular_file_identity(staged_backup)
-        _publish_backup(staged_backup, target, staged_identity)
-    except Exception:
-        if staged_identity is not None:
-            _unlink_if_identity(target, staged_identity)
-        raise
-    finally:
-        try:
-            shutil.rmtree(temp_dir)
-        except FileNotFoundError:
-            pass
-
-    return target
+    return database_backup_creation.backup_database(
+        source,
+        output_dir,
+        canonical_regular_source=_canonical_regular_source,
+        read_only_uri=_read_only_uri,
+        require_source_identity=_require_source_identity,
+        verify_backup=_verify_backup,
+        regular_file_identity=_regular_file_identity,
+        publish_backup=_publish_backup,
+        unlink_if_identity=_unlink_if_identity,
+        connect=sqlite3.connect,
+        now=lambda: datetime.now(),
+        mkdtemp=tempfile.mkdtemp,
+        remove_tree=shutil.rmtree,
+        temp_prefix=BACKUP_TEMP_PREFIX,
+    )
