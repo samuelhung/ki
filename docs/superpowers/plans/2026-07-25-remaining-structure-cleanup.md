@@ -108,11 +108,11 @@
 - Modify: `tests/test_system_config_security.py`
 - Modify: `tests/test_log_redaction.py`
 
-- [ ] Snapshot public exports and signatures from `db`, `config_manager`, `main`, and `security.redaction`; snapshot FastAPI route order, middleware order, protected/public path behavior, and OpenAPI operation IDs.
-- [ ] Lock database pragmas, migration order, seed count, transaction close/rollback behavior, configuration normalization, credential transaction rollback, log redaction output, task-error classification, and secure handler permissions.
-- [ ] Add forwarding assertions for the planned schema, migration, config persistence, middleware, lifecycle, static delivery, and log-handler modules.
-- [ ] Run focused tests; expect only the new forwarding assertions to fail.
-- [ ] Commit with `git commit -m "test: lock backend platform extraction contracts"`.
+- [x] Snapshot public exports and signatures from `db`, `config_manager`, `main`, and `security.redaction`; snapshot FastAPI route order, middleware order, protected/public path behavior, and OpenAPI operation IDs.
+- [x] Lock database pragmas, migration order, seed count, transaction close/rollback behavior, configuration normalization, credential transaction rollback, log redaction output, task-error classification, and secure handler permissions.
+- [x] Add forwarding assertions for the planned schema, migration, config persistence, middleware, lifecycle, static delivery, and log-handler modules.
+- [x] Run focused tests; expect only the new forwarding assertions to fail.
+- [x] Commit with `git commit -m "test: lock backend platform extraction contracts"`.
 
 ### Task 2.2: Split database schema and migrations
 
@@ -122,11 +122,11 @@
 - Modify: `src/zhiji_backend/db.py`
 - Create: `tests/test_db_migrations.py`
 
-- [ ] Move DDL statements and schema creation order into `db_schema.py` as immutable module constants plus `create_schema(conn)`.
-- [ ] Move every `_migrate_*` function and FTS backfill into `db_migrations.py`; expose `run_migrations(conn)` with the current deterministic order.
-- [ ] Keep `get_db_path`, connection setup/context management, `init_db`, and `seed_default_sources` in `db.py`; preserve `sqlite3.Row`, WAL, busy timeout, foreign keys, commit and rollback semantics.
-- [ ] Test fresh databases, every supported legacy fixture, repeated initialization, partial migration rollback, FTS backfill, and seed idempotence.
-- [ ] Commit with `git commit -m "refactor: separate database schema and migrations"`.
+- [x] Move DDL statements and schema creation order into `db_schema.py` as immutable module constants plus `create_schema(conn)`.
+- [x] Move every `_migrate_*` function and FTS backfill into `db_migrations.py`; expose `run_migrations(conn)` with the current deterministic order.
+- [x] Keep `get_db_path`, connection setup/context management, `init_db`, and `seed_default_sources` in `db.py`; preserve `sqlite3.Row`, WAL, busy timeout, foreign keys, commit and rollback semantics.
+- [x] Test fresh databases, every supported legacy fixture, repeated initialization, partial migration rollback, FTS backfill, and seed idempotence.
+- [x] Commit with `git commit -m "refactor: separate database schema and migrations"`.
 
 ### Task 2.3: Split configuration persistence
 
