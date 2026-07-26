@@ -365,6 +365,7 @@ def valid_live_digest_tombstone(payload: object) -> bool:
         and payload.get("routes") == expected_routes
         and payload.get("same_endpoint") is True
         and payload.get("live_404") is True
+        and payload.get("frontend_fallback_valid") is True
         and payload.get("overlap_routes") == []
         and payload.get("schema_paths") == []
     )
@@ -376,28 +377,37 @@ import json
 import re
 
 from fastapi.testclient import TestClient
+from starlette.routing import Mount
+from starlette.staticfiles import StaticFiles
 from zhiji_backend.main import app
 
 
-def digest_candidate(path):
-    segments = [segment for segment in path.strip("/").split("/") if segment]
-    target = ("api", "digest")
-    built = []
-    for index, segment in enumerate(segments):
-        dynamic = re.fullmatch(r"\{[^{}:]+(?::([^{}]+))?\}", segment)
-        if dynamic:
-            if dynamic.group(1) == "path":
-                built.extend(target[index:] if index < len(target) else ("probe",))
-                built.append("probe")
-                break
-            built.append(target[index] if index < len(target) else "probe")
-            continue
-        if index < len(target) and segment != target[index]:
-            return None
-        built.append(segment)
-    if len(built) < len(target) or tuple(built[:2]) != target:
-        return None
-    return "/" + "/".join(built)
+def rendered_segment(segment):
+    samples = {
+        "float": "1.0",
+        "int": "1",
+        "path": "probe",
+        "uuid": "00000000-0000-0000-0000-000000000000",
+    }
+
+    def replace(match):
+        return samples.get(match.group(1) or "str", "probe")
+
+    return re.sub(r"\{[^{}:]+(?::([^{}]+))?\}", replace, segment)
+
+
+def overlaps_digest_prefix(route):
+    path_regex = getattr(route, "path_regex", None)
+    if path_regex is None:
+        return False
+    segments = [segment for segment in getattr(route, "path", "").strip("/").split("/") if segment]
+    rendered = [rendered_segment(segment) for segment in segments]
+    candidates = {"/api/digest", "/api/digest/__retired_probe__"}
+    for index in range(len(rendered) + 1):
+        suffix = rendered[index:]
+        if suffix:
+            candidates.add("/api/digest/" + "/".join(suffix))
+    return any(path_regex.fullmatch(candidate) for candidate in candidates)
 
 
 routes = [
@@ -413,20 +423,41 @@ for route in routes:
 
 expected_paths = {"/api/digest/generate", "/api/digest/latest"}
 overlap_routes = []
-for route in app.routes:
-    candidate = digest_candidate(getattr(route, "path", ""))
-    if candidate is not None and getattr(route, "path", "") not in expected_paths:
-        overlap_routes.append(getattr(route, "path", ""))
+tombstone_indices = {
+    index
+    for index, route in enumerate(app.routes)
+    if getattr(route, "path", "") in expected_paths
+}
+frontend_fallbacks = []
+for index, route in enumerate(app.routes):
+    if not overlaps_digest_prefix(route) or getattr(route, "path", "") in expected_paths:
+        continue
+    is_frontend_fallback = (
+        isinstance(route, Mount)
+        and getattr(route, "path", None) == ""
+        and getattr(route, "name", None) == "frontend"
+        and isinstance(getattr(route, "app", None), StaticFiles)
+        and tombstone_indices
+        and index > max(tombstone_indices)
+    )
+    if is_frontend_fallback:
+        frontend_fallbacks.append(route)
+        continue
+    overlap_routes.append(getattr(route, "path", ""))
 
-client = TestClient(app, client=("127.0.0.1", 50000))
-tombstone_statuses = [
-    client.post("/api/digest/generate").status_code,
-    client.get("/api/digest/latest").status_code,
-]
-unknown_statuses = [
-    client.get("/api/digest/__retired_probe__").status_code,
-    client.post("/api/digest/__retired_probe__").status_code,
-]
+with TestClient(
+    app,
+    client=("127.0.0.1", 50000),
+    follow_redirects=False,
+) as client:
+    tombstone_responses = [
+        client.post("/api/digest/generate"),
+        client.get("/api/digest/latest"),
+    ]
+    unknown_responses = [
+        client.get("/api/digest/__retired_probe__"),
+        client.post("/api/digest/__retired_probe__"),
+    ]
 
 payload = {
     "routes": sorted(
@@ -442,8 +473,11 @@ payload = {
         key=lambda item: item["path"],
     ),
     "same_endpoint": len(endpoints) == 1,
-    "live_404": tombstone_statuses == [404, 404]
-    and all(status in {404, 405} for status in unknown_statuses),
+    "frontend_fallback_valid": len(frontend_fallbacks) <= 1,
+    "live_404": [response.status_code for response in tombstone_responses] == [404, 404]
+    and all(not response.history for response in tombstone_responses)
+    and all(response.status_code in {404, 405} for response in unknown_responses)
+    and all(not response.history for response in unknown_responses),
     "overlap_routes": sorted(overlap_routes),
     "schema_paths": sorted(
         path
@@ -1156,6 +1190,7 @@ async def retired_digest_endpoint() -> JSONResponse:
         ],
         "same_endpoint": True,
         "live_404": True,
+        "frontend_fallback_valid": True,
         "overlap_routes": [],
         "schema_paths": [],
     }
@@ -1165,6 +1200,7 @@ async def retired_digest_endpoint() -> JSONResponse:
         ("routes", live_payload["routes"] + [{"path": "/api/digest/admin"}]),
         ("same_endpoint", False),
         ("live_404", False),
+        ("frontend_fallback_valid", False),
         ("overlap_routes", ["/api/{feature}/admin"]),
         ("schema_paths", ["/api/digest/latest"]),
     ):

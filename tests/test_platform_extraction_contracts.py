@@ -494,7 +494,10 @@ def test_fastapi_route_order_and_openapi_operation_ids_are_stable() -> None:
                     getattr(route, "name", None),
                 )
             )
-    assert route_snapshot == EXPECTED_ROUTE_ORDER
+    expected_route_order = list(EXPECTED_ROUTE_ORDER)
+    if main.FRONTEND_DIST.exists():
+        expected_route_order.append(("Mount", "", (), "frontend"))
+    assert route_snapshot == expected_route_order
 
     snapshot_script = """
 import json
