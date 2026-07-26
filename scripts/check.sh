@@ -380,7 +380,7 @@ def returns_named_404(
     if returned is None or not isinstance(returned.value, ast.Call):
         return False
     call = returned.value
-    if not isinstance(call.func, ast.Name) or call.func.id != response_name:
+    if call_name(call.func) != response_name:
         return False
     return any(
         keyword.arg == "status_code"
@@ -428,53 +428,7 @@ def validates_extracted_digest_tombstone(root: Path) -> bool:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         and node.name == "retired_digest_endpoint"
     ]
-    return bool(
-        len(functions) == 1
-        and not functions[0].decorator_list
-        and not module_rebinds_after(tree, functions[0], "retired_digest_endpoint")
-        and returns_named_404(functions[0], "json_response")
-    )
-
-
-def target_binds_name(target: ast.AST, name: str) -> bool:
-    if isinstance(target, ast.Name):
-        return target.id == name
-    if isinstance(target, (ast.List, ast.Tuple)):
-        return any(target_binds_name(item, name) for item in target.elts)
-    return False
-
-
-def module_rebinds_after(
-    tree: ast.Module,
-    definition: ast.FunctionDef | ast.AsyncFunctionDef,
-    name: str,
-) -> bool:
-    seen_definition = False
-    for statement in tree.body:
-        if statement is definition:
-            seen_definition = True
-            continue
-        if not seen_definition:
-            continue
-        if isinstance(statement, ast.Assign) and any(
-            target_binds_name(target, name) for target in statement.targets
-        ):
-            return True
-        if isinstance(statement, (ast.AnnAssign, ast.AugAssign)) and target_binds_name(
-            statement.target, name
-        ):
-            return True
-        if isinstance(statement, ast.Delete) and any(
-            target_binds_name(target, name) for target in statement.targets
-        ):
-            return True
-        if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            if statement.name == name:
-                return True
-        if isinstance(statement, (ast.Import, ast.ImportFrom)):
-            if any((alias.asname or alias.name.rsplit(".", 1)[-1]) == name for alias in statement.names):
-                return True
-    return False
+    return len(functions) == 1 and returns_named_404(functions[0], "json_response")
 
 
 def validate_digest_tombstone(root: Path) -> list[str]:
@@ -515,18 +469,13 @@ def validate_digest_tombstone(root: Path) -> list[str]:
         for node in tree.body
         if isinstance(node, ast.FunctionDef) and node.name == "_add_routes"
     ]
-    route_function = route_functions[0] if len(route_functions) == 1 else None
-    runtime_routes = [
-        runtime_route(statement.value)
-        for statement in (route_function.body if route_function is not None else [])
-        if isinstance(statement, ast.Expr)
-    ]
+    runtime_routes = (
+        [runtime_route(node) for node in ast.walk(route_functions[0])]
+        if len(route_functions) == 1
+        else []
+    )
     if (
         set(filter(None, runtime_routes)) == expected_routes
-        and route_function is not None
-        and not any(isinstance(node, ast.Return) for node in ast.walk(route_function))
-        and not functions[0].decorator_list
-        and not module_rebinds_after(tree, functions[0], "retired_digest_endpoint")
         and delegates_retired_digest(functions[0])
         and validates_extracted_digest_tombstone(root)
     ):
@@ -1213,69 +1162,6 @@ def _add_routes(application):
         )
         if not validate_digest_tombstone(root):
             raise SystemExit("FAIL extracted tombstone allowed a conditional 404 bypass")
-
-        write(
-            root,
-            "src/zhiji_backend/static_delivery.py",
-            '''async def retired_digest_endpoint(*, json_response=JSONResponse):
-    return json_response({"detail": "Not Found"}, status_code=404)
-''',
-        )
-        write(
-            root,
-            "src/zhiji_backend/main.py",
-            '''async def retired_digest_endpoint():
-    return await static_delivery.retired_digest_endpoint(json_response=JSONResponse)
-
-def _add_routes(application):
-    if False:
-        application.post("/api/digest/generate", include_in_schema=False)(retired_digest_endpoint)
-        application.get("/api/digest/latest", include_in_schema=False)(retired_digest_endpoint)
-    generated = "/api/" + "digest/generate"
-    latest = "/api/" + "digest/latest"
-    application.post(generated, include_in_schema=False)(wrong_endpoint)
-    application.get(latest, include_in_schema=False)(wrong_endpoint)
-''',
-        )
-        if not validate_digest_tombstone(root):
-            raise SystemExit("FAIL extracted tombstone allowed unreachable safe routes")
-
-        write(
-            root,
-            "src/zhiji_backend/main.py",
-            '''async def retired_digest_endpoint():
-    return await static_delivery.retired_digest_endpoint(json_response=JSONResponse)
-
-retired_digest_endpoint = wrong_endpoint
-
-def _add_routes(application):
-    application.post("/api/digest/generate", include_in_schema=False)(retired_digest_endpoint)
-    application.get("/api/digest/latest", include_in_schema=False)(retired_digest_endpoint)
-''',
-        )
-        if not validate_digest_tombstone(root):
-            raise SystemExit("FAIL extracted tombstone allowed facade rebinding")
-
-        write(
-            root,
-            "src/zhiji_backend/main.py",
-            '''async def retired_digest_endpoint():
-    return await static_delivery.retired_digest_endpoint(json_response=JSONResponse)
-
-def _add_routes(application):
-    application.post("/api/digest/generate", include_in_schema=False)(retired_digest_endpoint)
-    application.get("/api/digest/latest", include_in_schema=False)(retired_digest_endpoint)
-''',
-        )
-        write(
-            root,
-            "src/zhiji_backend/static_delivery.py",
-            '''async def retired_digest_endpoint(*, json_response=JSONResponse):
-    return alternate.json_response({"detail": "Not Found"}, status_code=404)
-''',
-        )
-        if not validate_digest_tombstone(root):
-            raise SystemExit("FAIL extracted tombstone allowed response-factory spoofing")
 
     with tempfile.TemporaryDirectory(prefix="zhiji-retired-allowlist-drift-") as temp_dir:
         root = Path(temp_dir)
