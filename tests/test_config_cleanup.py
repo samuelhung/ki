@@ -1,5 +1,4 @@
 import json
-import os
 import threading
 from pathlib import Path
 
@@ -261,66 +260,6 @@ def test_save_config_preserves_unrelated_modules_omitted_by_stale_client(tmp_pat
     assert saved["general"]["default_temperature"] == 0.25
     assert saved["ingest_pipeline"]["summarize"]["max_tokens"] == 3900
     assert saved["custom_module"] == {"custom_task": {"temperature": 0.77}}
-
-
-def test_write_config_uses_same_directory_temp_fsync_and_atomic_replace(tmp_path, monkeypatch):
-    config_path = tmp_path / "system_config.json"
-    monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
-    fsync_calls: list[int] = []
-    replace_calls: list[tuple[Path, Path]] = []
-    original_replace = os.replace
-
-    monkeypatch.setattr(config_manager.os, "fsync", fsync_calls.append, raising=False)
-
-    def replace(source, destination):
-        replace_calls.append((Path(source), Path(destination)))
-        original_replace(source, destination)
-
-    monkeypatch.setattr(config_manager.os, "replace", replace, raising=False)
-
-    config_manager._write_config({"briefing": {"briefing_quick": {"max_tokens": 4444}}})
-
-    assert len(fsync_calls) == 2
-    assert len(replace_calls) == 1
-    source, destination = replace_calls[0]
-    assert source.parent == config_path.parent
-    assert destination == config_path
-    assert not source.exists()
-    assert json.loads(config_path.read_text(encoding="utf-8"))["briefing"]["briefing_quick"]["max_tokens"] == 4444
-
-
-def test_parent_directory_fsync_closes_fd_when_sync_is_unsupported(tmp_path, monkeypatch):
-    monkeypatch.setattr(config_manager, "CONFIG_PATH", tmp_path / "system_config.json")
-    closed: list[int] = []
-    monkeypatch.setattr(config_manager.os, "open", lambda *_: 73)
-    monkeypatch.setattr(
-        config_manager.os,
-        "fsync",
-        lambda *_: (_ for _ in ()).throw(OSError("directory fsync unsupported")),
-    )
-    monkeypatch.setattr(config_manager.os, "close", closed.append)
-
-    config_manager._fsync_parent_directory()
-
-    assert closed == [73]
-
-
-def test_atomic_write_failure_preserves_existing_file_and_cleans_temp(tmp_path, monkeypatch):
-    config_path = tmp_path / "system_config.json"
-    config_path.write_text('{"existing": true}', encoding="utf-8")
-    monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
-    monkeypatch.setattr(
-        config_manager.os,
-        "replace",
-        lambda *_: (_ for _ in ()).throw(OSError("replace failed")),
-        raising=False,
-    )
-
-    with pytest.raises(OSError, match="replace failed"):
-        config_manager._write_config({"replacement": True})
-
-    assert config_path.read_text(encoding="utf-8") == '{"existing": true}'
-    assert list(tmp_path.iterdir()) == [config_path]
 
 
 def test_save_failure_does_not_replace_active_in_memory_config(tmp_path, monkeypatch):

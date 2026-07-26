@@ -95,7 +95,7 @@
 - [x] Remove only `src/zhiji_backend/database_backup.py` from `oversized_files`.
 - [x] Run focused tests, full `uv run --frozen pytest -q`, `scripts/check.sh`, and `git diff --check`.
 - [x] Request independent review focused on TOCTOU, crash consistency, file permissions, fd cleanup, and compatibility.
-- [ ] Commit baseline retirement, push, create a Draft PR, wait for CI, merge only after review, then fast-forward local `main`.
+- [x] Commit baseline retirement, push, create a Draft PR, wait for CI, merge only after review, then fast-forward local `main`.
 
 ## PR 2: Backend Platform Foundations
 
@@ -108,11 +108,11 @@
 - Modify: `tests/test_system_config_security.py`
 - Modify: `tests/test_log_redaction.py`
 
-- [ ] Snapshot public exports and signatures from `db`, `config_manager`, `main`, and `security.redaction`; snapshot FastAPI route order, middleware order, protected/public path behavior, and OpenAPI operation IDs.
-- [ ] Lock database pragmas, migration order, seed count, transaction close/rollback behavior, configuration normalization, credential transaction rollback, log redaction output, task-error classification, and secure handler permissions.
-- [ ] Add forwarding assertions for the planned schema, migration, config persistence, middleware, lifecycle, static delivery, and log-handler modules.
-- [ ] Run focused tests; expect only the new forwarding assertions to fail.
-- [ ] Commit with `git commit -m "test: lock backend platform extraction contracts"`.
+- [x] Snapshot public exports and signatures from `db`, `config_manager`, `main`, and `security.redaction`; snapshot FastAPI route order, middleware order, protected/public path behavior, and OpenAPI operation IDs.
+- [x] Lock database pragmas, migration order, seed count, transaction close/rollback behavior, configuration normalization, credential transaction rollback, log redaction output, task-error classification, and secure handler permissions.
+- [x] Add forwarding assertions for the planned schema, migration, config persistence, middleware, lifecycle, static delivery, and log-handler modules.
+- [x] Run focused tests; expect only the new forwarding assertions to fail.
+- [x] Commit with `git commit -m "test: lock backend platform extraction contracts"`.
 
 ### Task 2.2: Split database schema and migrations
 
@@ -122,11 +122,11 @@
 - Modify: `src/zhiji_backend/db.py`
 - Create: `tests/test_db_migrations.py`
 
-- [ ] Move DDL statements and schema creation order into `db_schema.py` as immutable module constants plus `create_schema(conn)`.
-- [ ] Move every `_migrate_*` function and FTS backfill into `db_migrations.py`; expose `run_migrations(conn)` with the current deterministic order.
-- [ ] Keep `get_db_path`, connection setup/context management, `init_db`, and `seed_default_sources` in `db.py`; preserve `sqlite3.Row`, WAL, busy timeout, foreign keys, commit and rollback semantics.
-- [ ] Test fresh databases, every supported legacy fixture, repeated initialization, partial migration rollback, FTS backfill, and seed idempotence.
-- [ ] Commit with `git commit -m "refactor: separate database schema and migrations"`.
+- [x] Move DDL statements and schema creation order into `db_schema.py` as immutable module constants plus `create_schema(conn)`.
+- [x] Move every `_migrate_*` function and FTS backfill into `db_migrations.py`; expose `run_migrations(conn)` with the current deterministic order.
+- [x] Keep `get_db_path`, connection setup/context management, `init_db`, and `seed_default_sources` in `db.py`; preserve `sqlite3.Row`, WAL, busy timeout, foreign keys, commit and rollback semantics.
+- [x] Test fresh databases, every supported legacy fixture, repeated initialization, partial migration rollback, FTS backfill, and seed idempotence.
+- [x] Commit with `git commit -m "refactor: separate database schema and migrations"`.
 
 ### Task 2.3: Split configuration persistence
 
@@ -135,11 +135,11 @@
 - Modify: `src/zhiji_backend/config_manager.py`
 - Create: `tests/test_config_persistence.py`
 
-- [ ] Move config-file snapshots, identity comparison, atomic write, rollback restore, symlink rejection, parent fsync, and JSON serialization into `config_persistence.py`.
-- [ ] Keep defaults, normalization, provider validation, deep merge, API-key scrubbing, and public get/update functions in `config_manager.py`.
-- [ ] Preserve the configuration/credential transaction boundary and exact `0600` behavior; inject persistence operations so failure at each write point can be tested.
-- [ ] Remove the `config_manager.py` E402 ignore after imports become conventional.
-- [ ] Commit with `git commit -m "refactor: extract secure config persistence"`.
+- [x] Move config-file snapshots, identity comparison, atomic write, rollback restore, symlink rejection, parent fsync, and JSON serialization into `config_persistence.py`.
+- [x] Keep defaults, normalization, provider validation, deep merge, API-key scrubbing, and public get/update functions in `config_manager.py`.
+- [x] Preserve the configuration/credential transaction boundary and exact `0600` behavior; inject persistence operations so failure at each write point can be tested.
+- [x] Remove the `config_manager.py` E402 ignore after imports become conventional.
+- [x] Commit with `git commit -m "refactor: extract secure config persistence"`.
 
 ### Task 2.4: Split redaction from secure log handling
 
@@ -148,11 +148,11 @@
 - Modify: `src/zhiji_backend/security/redaction.py`
 - Modify: `tests/test_log_redaction.py`
 
-- [ ] Move log-path symlink rejection, permission hardening, `SecureTimedRotatingFileHandler`, rollover safety, and handler setup into `security/log_handlers.py`.
-- [ ] Keep value detection, URL/assignment/structure redaction, `RedactingFormatter`, bounding, and task-error classification in `security/redaction.py`.
-- [ ] Preserve import compatibility by re-exporting moved handler names from `security.redaction` until repository consumers migrate.
-- [ ] Test rotation, symlink races, file modes, multiline secrets, nested payloads, bounded output, and stable task-error summaries.
-- [ ] Commit with `git commit -m "refactor: separate secure logging from redaction"`.
+- [x] Move log-path symlink rejection, permission hardening, `SecureTimedRotatingFileHandler`, rollover safety, and handler setup into `security/log_handlers.py`.
+- [x] Keep value detection, URL/assignment/structure redaction, `RedactingFormatter`, bounding, and task-error classification in `security/redaction.py`.
+- [x] Preserve import compatibility by re-exporting moved handler names from `security.redaction` until repository consumers migrate.
+- [x] Test rotation, symlink races, file modes, multiline secrets, nested payloads, bounded output, and stable task-error summaries.
+- [x] Commit with `git commit -m "refactor: separate secure logging from redaction"`.
 
 ### Task 2.5: Split application lifecycle, middleware, and static delivery
 
@@ -164,12 +164,12 @@
 - Modify: `tests/test_access_security.py`
 - Modify: `tests/test_backend_smoke.py`
 
-- [ ] Move startup/shutdown ordering for database, usage writer, task worker, and cleanup into `app_lifecycle.py`.
-- [ ] Move trusted-host normalization, protected-path rules, token extraction/comparison, auth middleware, and SPA fallback middleware into `api_middleware.py`.
-- [ ] Move retired endpoint adapters, ingest artifact serving, release serving, frontend mount, and path-safe file responses into `static_delivery.py`.
-- [ ] Keep `app`, router inclusion, middleware registration, and compatibility imports in `main.py`; assert middleware and route order remain byte-for-byte equivalent in OpenAPI/route snapshots.
-- [ ] Remove E402 ignores from `main.py`, `routes/log_routes.py`, and `routes/system_routes.py` by moving environment-sensitive setup behind explicit functions rather than delayed imports.
-- [ ] Commit with `git commit -m "refactor: separate FastAPI platform assembly"`.
+- [x] Move startup/shutdown ordering for database, usage writer, task worker, and cleanup into `app_lifecycle.py`.
+- [x] Move trusted-host normalization, protected-path rules, token extraction/comparison, auth middleware, and SPA fallback middleware into `api_middleware.py`.
+- [x] Move retired endpoint adapters, ingest artifact serving, release serving, frontend mount, and path-safe file responses into `static_delivery.py`.
+- [x] Keep `app`, router inclusion, middleware registration, and compatibility imports in `main.py`; assert middleware and route order remain byte-for-byte equivalent in OpenAPI/route snapshots.
+- [x] Remove E402 ignores from `main.py`, `routes/log_routes.py`, and `routes/system_routes.py` by moving environment-sensitive setup behind explicit functions rather than delayed imports.
+- [x] Commit with `git commit -m "refactor: separate FastAPI platform assembly"`.
 
 ### Task 2.6: Retire platform baselines and integrate PR 2
 
@@ -177,10 +177,10 @@
 - Modify: `structure-baseline.json`
 - Modify: `pyproject.toml`
 
-- [ ] Require `db.py`, `config_manager.py`, `main.py`, `security/redaction.py`, and every new module to be at most 400 lines.
-- [ ] Remove exactly those four baseline entries and the four resolved E402 entries.
-- [ ] Run platform-focused tests, complete pytest, `scripts/check.sh`, backend smoke, protected endpoint `401`, public `/api/health`, detailed `/api/system/health`, and `git diff --check`.
-- [ ] Request independent review focused on migration ordering, auth bypass, middleware order, credential rollback, and secret leakage.
+- [x] Require `db.py`, `config_manager.py`, `main.py`, `security/redaction.py`, and every new module to be at most 400 lines.
+- [x] Remove exactly those four baseline entries and the four resolved E402 entries.
+- [x] Run platform-focused tests, complete pytest, `scripts/check.sh`, backend smoke, protected endpoint `401`, public `/api/health`, detailed `/api/system/health`, and `git diff --check`.
+- [x] Request independent review focused on migration ordering, auth bypass, middleware order, credential rollback, and secret leakage.
 - [ ] Commit, push Draft PR, merge after CI, and fast-forward `main`.
 
 ## PR 3: Ingestion Pipeline

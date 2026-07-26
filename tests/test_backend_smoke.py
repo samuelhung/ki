@@ -1,6 +1,13 @@
+import asyncio
+import json
+import os
+import subprocess
 import sys
+import threading
+from contextlib import contextmanager
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -83,6 +90,29 @@ def test_remote_requests_require_token_when_no_token_configured():
     assert _requires_token_for_request("/releases/zhiji_1.3.7.dmg", "10.8.0.2") is True
 
 
+def test_public_and_protected_path_classification_is_exact():
+    from zhiji_backend import main
+
+    assert {
+        path: main._is_protected_path(path)
+        for path in (
+            "/api",
+            "/api/health",
+            "/ingest/videos/a.mp4",
+            "/releases/appcast.xml",
+            "/",
+            "/assets/index.js",
+        )
+    } == {
+        "/api": True,
+        "/api/health": True,
+        "/ingest/videos/a.mp4": True,
+        "/releases/appcast.xml": True,
+        "/": False,
+        "/assets/index.js": False,
+    }
+
+
 def test_local_requests_do_not_require_token_by_default():
     assert _requires_token_for_request("/api/sources", "127.0.0.1") is False
     assert _requires_token_for_request("/api/sources", "::1") is False
@@ -133,3 +163,940 @@ def test_releases_only_serves_top_level_dmg_or_appcast(tmp_path, monkeypatch):
     assert client.get("/releases/appcast.xml").status_code == 404
     assert client.get("/releases/secret.txt").status_code == 404
     assert client.get("/releases/nested/zhiji_1.3.7.dmg").status_code == 404
+
+
+def test_extracted_lifespan_preserves_cancellation_and_cleanup_order():
+    from zhiji_backend import app_lifecycle
+
+    calls = []
+
+    class LoggerSpy:
+        def info(self, message):
+            calls.append(("info", message))
+
+        def error(self, message):
+            calls.append(("error", message))
+
+    def record(name, result=None):
+        def operation(*_args):
+            calls.append(name)
+            return result
+
+        return operation
+
+    async def exercise():
+        with pytest.raises(asyncio.CancelledError):
+            async with app_lifecycle.lifespan(
+                object(),
+                logger=LoggerSpy(),
+                ensure_migrations=record("migrate"),
+                get_db_path=lambda: calls.append("db-path") or Path("db.sqlite"),
+                load_config=record("config"),
+                init_db=record("db"),
+                seed_default_sources=record("seed"),
+                start_usage_writer=record("usage-start"),
+                stop_usage_writer=record("usage-stop"),
+                start_worker=record("worker-start"),
+                stop_worker=record("worker-stop", True),
+            ):
+                calls.append("running")
+                raise asyncio.CancelledError
+
+    asyncio.run(exercise())
+
+    assert calls == [
+        ("info", "KI server starting — init DB + worker"),
+        "db-path",
+        "migrate",
+        "config",
+        "db",
+        "seed",
+        "usage-start",
+        "worker-start",
+        ("info", "KI server ready"),
+        "running",
+        ("info", "KI server shutting down"),
+        "worker-stop",
+        "usage-stop",
+    ]
+
+
+def test_application_bootstrap_prepares_environment_before_importing_dependencies():
+    from zhiji_backend import main
+
+    calls = []
+    dependencies = object()
+
+    result = main._bootstrap_application(
+        prepare_runtime=lambda: calls.append("prepare-runtime"),
+        load_dependencies=lambda: calls.append("load-dependencies") or dependencies,
+    )
+
+    assert result is dependencies
+    assert calls == ["prepare-runtime", "load-dependencies"]
+
+
+def test_prepare_runtime_installs_tagged_handlers_only_once(tmp_path, monkeypatch):
+    from zhiji_backend import main
+
+    class HandlerSpy:
+        def setLevel(self, _level):
+            pass
+
+        def setFormatter(self, _formatter):
+            pass
+
+        def close(self):
+            pass
+
+    class RootSpy:
+        def __init__(self):
+            self.handlers = []
+            self.level = 0
+
+        def setLevel(self, level):
+            self.level = level
+
+        def addHandler(self, handler):
+            self.handlers.append(handler)
+
+        def removeHandler(self, handler):
+            self.handlers.remove(handler)
+
+    root = RootSpy()
+    monkeypatch.setattr(main, "ensure_data_dirs", lambda: None)
+    monkeypatch.setattr(main, "load_hardened_env", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(main, "LOG_DIR", tmp_path)
+    monkeypatch.setattr(main, "_root_logger", lambda: root)
+    monkeypatch.setattr(main, "_create_console_handler", HandlerSpy)
+    monkeypatch.setattr(main, "_create_file_handler", lambda: HandlerSpy())
+
+    first = main._prepare_runtime()
+    second = main._prepare_runtime()
+
+    assert first.handlers == tuple(root.handlers)
+    assert second.handlers == ()
+    assert [handler._zhiji_handler_role for handler in root.handlers] == [
+        "console",
+        "file",
+    ]
+
+
+def test_environment_preparation_rolls_back_partial_loader_failure():
+    from zhiji_backend import runtime_bootstrap
+
+    environment = {"EXISTING": "old", "UNCHANGED": "kept"}
+
+    def fail_loader():
+        environment["EXISTING"] = "candidate"
+        environment["ADDED"] = "candidate"
+        raise RuntimeError("loader failed")
+
+    with pytest.raises(RuntimeError, match="loader failed"):
+        runtime_bootstrap.prepare_environment(environment, fail_loader)
+
+    assert environment == {"EXISTING": "old", "UNCHANGED": "kept"}
+
+
+def test_environment_rollback_does_not_clobber_later_same_key_change():
+    from zhiji_backend import runtime_bootstrap
+
+    environment = {"EXISTING": "old"}
+
+    def load_candidate():
+        environment["EXISTING"] = "candidate"
+        environment["ADDED"] = "candidate"
+
+    mutations = runtime_bootstrap.prepare_environment(environment, load_candidate)
+    environment["EXISTING"] = "concurrent"
+    resources = runtime_bootstrap.RuntimeResources(
+        environment=environment,
+        environment_mutations=mutations,
+    )
+
+    runtime_bootstrap.rollback_runtime(resources, root_logger=None)
+
+    assert environment == {"EXISTING": "concurrent"}
+
+
+def test_bootstrap_cleans_only_handlers_installed_by_each_failed_attempt(
+    monkeypatch,
+):
+    from zhiji_backend import main
+
+    class HandlerSpy:
+        def __init__(self, name):
+            self.name = name
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    class RootSpy:
+        def __init__(self):
+            self.handlers = [HandlerSpy("user")]
+
+        def removeHandler(self, handler):
+            self.handlers.remove(handler)
+
+    root = RootSpy()
+    attempts = []
+    monkeypatch.setattr(main, "_root_logger", lambda: root)
+
+    def prepare():
+        handlers = (
+            HandlerSpy(f"ki-{len(attempts)}-console"),
+            HandlerSpy(f"ki-{len(attempts)}-file"),
+        )
+        root.handlers.extend(handlers)
+        attempts.append(handlers)
+        return handlers
+
+    def fail_load():
+        raise ImportError("dependency load failed")
+
+    for _attempt in range(2):
+        with pytest.raises(ImportError, match="dependency load failed"):
+            main._bootstrap_application(
+                prepare_runtime=prepare,
+                load_dependencies=fail_load,
+            )
+        assert [handler.name for handler in root.handlers] == ["user"]
+
+    assert all(handler.closed for attempt in attempts for handler in attempt)
+
+
+def test_bootstrap_cleanup_failure_preserves_dependency_import_error(monkeypatch):
+    from zhiji_backend import main
+
+    class HandlerSpy:
+        def close(self):
+            raise RuntimeError("close failed")
+
+    class RootSpy:
+        handlers = []
+
+        def removeHandler(self, _handler):
+            raise RuntimeError("remove failed")
+
+    monkeypatch.setattr(main, "_root_logger", lambda: RootSpy())
+
+    with pytest.raises(ImportError, match="original import failure"):
+        main._bootstrap_application(
+            prepare_runtime=lambda: (HandlerSpy(),),
+            load_dependencies=lambda: (_ for _ in ()).throw(
+                ImportError("original import failure")
+            ),
+        )
+
+
+def test_main_reload_reuses_ki_handlers_and_does_not_duplicate_file_records(tmp_path):
+    script = """
+import importlib
+import json
+import logging
+from zhiji_backend import main
+
+root = logging.getLogger()
+user_handler = logging.NullHandler()
+root.addHandler(user_handler)
+tagged_before = [h for h in root.handlers if getattr(h, '_zhiji_handler_owner', None) == 'zhiji']
+identities_before = [id(h) for h in tagged_before]
+importlib.reload(main)
+importlib.reload(main)
+tagged_after = [h for h in root.handlers if getattr(h, '_zhiji_handler_owner', None) == 'zhiji']
+logging.getLogger('reload-test').warning('reload-record-marker')
+for handler in tagged_after:
+    handler.flush()
+log_text = (main.LOG_DIR / 'ki.log').read_text(encoding='utf-8')
+print(json.dumps({
+    'before': identities_before,
+    'after': [id(h) for h in tagged_after],
+    'marker_count': log_text.count('reload-record-marker'),
+    'user_handler_preserved': user_handler in root.handlers,
+}))
+"""
+    environment = dict(
+        os.environ,
+        PYTHONPATH=str(ROOT / "src"),
+        ZHIJI_HOME=str(tmp_path / "home"),
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+    result = json.loads(completed.stdout)
+
+    assert result["after"] == result["before"]
+    assert len(result["after"]) == 2
+    assert result["marker_count"] == 1
+    assert result["user_handler_preserved"] is True
+
+
+def test_failed_static_mount_rolls_back_complete_import_bootstrap(tmp_path):
+    script = """
+import importlib
+import json
+import logging
+import sys
+from zhiji_backend import api_middleware, static_delivery
+
+root = logging.getLogger()
+root.setLevel(logging.ERROR)
+for name, level in (
+    ('httpx', logging.INFO),
+    ('httpcore', logging.ERROR),
+    ('urllib3', logging.CRITICAL),
+):
+    logging.getLogger(name).setLevel(level)
+levels_before = {
+    name: logging.getLogger(name).level
+    for name in ('', 'httpx', 'httpcore', 'urllib3')
+}
+tagged_before = [
+    id(handler)
+    for handler in root.handlers
+    if getattr(handler, '_zhiji_handler_owner', None) == 'zhiji'
+]
+registration_before = api_middleware._DEFAULT_FACTORY_REGISTRATION
+
+def fail_mount(*_args, **_kwargs):
+    raise RuntimeError('mount failed')
+
+static_delivery.mount_frontend = fail_mount
+try:
+    importlib.import_module('zhiji_backend.main')
+except RuntimeError as error:
+    failure = str(error)
+else:
+    failure = ''
+
+tagged_after = [
+    id(handler)
+    for handler in root.handlers
+    if getattr(handler, '_zhiji_handler_owner', None) == 'zhiji'
+]
+levels_after = {
+    name: logging.getLogger(name).level
+    for name in ('', 'httpx', 'httpcore', 'urllib3')
+}
+print(json.dumps({
+    'failure': failure,
+    'module_present': 'zhiji_backend.main' in sys.modules,
+    'tagged_before': tagged_before,
+    'tagged_after': tagged_after,
+    'registration_restored': (
+        api_middleware._DEFAULT_FACTORY_REGISTRATION is registration_before
+    ),
+    'levels_restored': levels_after == levels_before,
+}))
+"""
+    environment = dict(
+        os.environ,
+        PYTHONPATH=f"{ROOT / 'src'}:{ROOT}",
+        ZHIJI_HOME=str(tmp_path / "home"),
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+    result = json.loads(completed.stdout)
+
+    assert result == {
+        "failure": "mount failed",
+        "module_present": False,
+        "tagged_before": [],
+        "tagged_after": [],
+        "registration_restored": True,
+        "levels_restored": True,
+    }
+
+
+def test_failed_static_mount_reload_preserves_prior_runtime_and_factory(tmp_path):
+    script = """
+import importlib
+import json
+import logging
+from zhiji_backend import api_middleware, main
+
+root = logging.getLogger()
+root.setLevel(logging.ERROR)
+for name, level in (
+    ('httpx', logging.INFO),
+    ('httpcore', logging.ERROR),
+    ('urllib3', logging.CRITICAL),
+):
+    logging.getLogger(name).setLevel(level)
+levels_before = {
+    name: logging.getLogger(name).level
+    for name in ('', 'httpx', 'httpcore', 'urllib3')
+}
+tagged_before = [
+    id(handler)
+    for handler in root.handlers
+    if getattr(handler, '_zhiji_handler_owner', None) == 'zhiji'
+]
+registration_before = api_middleware._DEFAULT_FACTORY_REGISTRATION
+main._HAS_FRONTEND = True
+frontend_before = main._HAS_FRONTEND
+
+def fail_mount(*_args, **_kwargs):
+    raise RuntimeError('reload mount failed')
+
+main.static_delivery.mount_frontend = fail_mount
+try:
+    importlib.reload(main)
+except RuntimeError as error:
+    failure = str(error)
+else:
+    failure = ''
+
+tagged_after = [
+    id(handler)
+    for handler in root.handlers
+    if getattr(handler, '_zhiji_handler_owner', None) == 'zhiji'
+]
+levels_after = {
+    name: logging.getLogger(name).level
+    for name in ('', 'httpx', 'httpcore', 'urllib3')
+}
+registration_after = api_middleware._DEFAULT_FACTORY_REGISTRATION
+print(json.dumps({
+    'failure': failure,
+    'tagged_preserved': tagged_after == tagged_before,
+    'registration_restored': registration_after is registration_before,
+    'frontend_restored': main._HAS_FRONTEND is frontend_before,
+    'factory_frontend_restored': (
+        registration_after.factory().has_frontend is frontend_before
+    ),
+    'levels_restored': levels_after == levels_before,
+}))
+"""
+    environment = dict(
+        os.environ,
+        PYTHONPATH=f"{ROOT / 'src'}:{ROOT}",
+        ZHIJI_HOME=str(tmp_path / "home"),
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert json.loads(completed.stdout) == {
+        "failure": "reload mount failed",
+        "tagged_preserved": True,
+        "registration_restored": True,
+        "frontend_restored": True,
+        "factory_frontend_restored": True,
+        "levels_restored": True,
+    }
+
+
+def test_failed_reload_restores_env_token_at_auth_boundary(tmp_path):
+    script = """
+import importlib
+import json
+import os
+from fastapi.testclient import TestClient
+
+home = os.environ['ZHIJI_HOME']
+env_path = __import__('pathlib').Path(home) / '.env'
+env_path.parent.mkdir(parents=True, exist_ok=True)
+env_path.write_text('KI_API_TOKEN=old-token\\n', encoding='utf-8')
+from zhiji_backend import main
+
+env_path.write_text('KI_API_TOKEN=candidate-token\\n', encoding='utf-8')
+
+def fail_mount(*_args, **_kwargs):
+    raise RuntimeError('mount failed')
+
+main.static_delivery.mount_frontend = fail_mount
+try:
+    importlib.reload(main)
+except RuntimeError as error:
+    failure = str(error)
+else:
+    failure = ''
+
+client = TestClient(main.app, client=('10.8.0.2', 50000))
+old_response = client.get(
+    '/api/reload-auth-missing',
+    headers={'Authorization': 'Bearer old-token'},
+)
+candidate_response = client.get(
+    '/api/reload-auth-missing',
+    headers={'Authorization': 'Bearer candidate-token'},
+)
+print(json.dumps({
+    'failure': failure,
+    'effective_token': os.environ.get('KI_API_TOKEN'),
+    'old_status': old_response.status_code,
+    'candidate_status': candidate_response.status_code,
+}))
+"""
+    environment = dict(
+        os.environ,
+        PYTHONPATH=f"{ROOT / 'src'}:{ROOT}",
+        ZHIJI_HOME=str(tmp_path / "home"),
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert json.loads(completed.stdout) == {
+        "failure": "mount failed",
+        "effective_token": "old-token",
+        "old_status": 404,
+        "candidate_status": 401,
+    }
+
+
+def test_old_factory_stays_committed_while_reload_prepares_runtime(tmp_path):
+    script = """
+import importlib
+import json
+import threading
+from pathlib import Path
+from zhiji_backend import api_middleware, main, paths
+
+old_dist = Path('old-frontend')
+candidate_dist = Path('candidate-frontend')
+main.FRONTEND_DIST = old_dist
+paths.FRONTEND_DIST = candidate_dist
+main._HAS_FRONTEND = True
+main._is_protected_path = lambda path: path.startswith('/old-protected')
+main._is_loopback_host = lambda host: host == 'old-loopback'
+registration_before = api_middleware._DEFAULT_FACTORY_REGISTRATION
+prepare_entered = threading.Event()
+release_prepare = threading.Event()
+failures = []
+
+def block_prepare():
+    prepare_entered.set()
+    if not release_prepare.wait(2):
+        raise RuntimeError('prepare timeout')
+
+def fail_mount(*_args, **_kwargs):
+    raise RuntimeError('mount failed')
+
+paths.ensure_data_dirs = block_prepare
+main.static_delivery.mount_frontend = fail_mount
+
+def reload_main():
+    try:
+        importlib.reload(main)
+    except RuntimeError as error:
+        failures.append(str(error))
+
+reload_thread = threading.Thread(target=reload_main)
+reload_thread.start()
+if not prepare_entered.wait(2):
+    raise RuntimeError('reload did not enter prepare')
+snapshot = registration_before.factory()
+observed = {
+    'frontend': str(snapshot.frontend_dist),
+    'has_frontend': snapshot.has_frontend,
+    'old_remote_requires_token': snapshot.requires_token_for_request(
+        '/old-protected/item', 'remote'
+    ),
+    'old_loopback_requires_token': snapshot.requires_token_for_request(
+        '/old-protected/item', 'old-loopback'
+    ),
+    'new_path_requires_token': snapshot.requires_token_for_request('/new-path', 'remote'),
+}
+release_prepare.set()
+reload_thread.join(2)
+print(json.dumps({
+    'observed': observed,
+    'failure': failures,
+    'registration_restored': (
+        api_middleware._DEFAULT_FACTORY_REGISTRATION is registration_before
+    ),
+}))
+"""
+    environment = dict(
+        os.environ,
+        PYTHONPATH=f"{ROOT / 'src'}:{ROOT}",
+        ZHIJI_HOME=str(tmp_path / "home"),
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert json.loads(completed.stdout) == {
+        "observed": {
+            "frontend": "old-frontend",
+            "has_frontend": True,
+            "old_remote_requires_token": True,
+            "old_loopback_requires_token": False,
+            "new_path_requires_token": False,
+        },
+        "failure": ["mount failed"],
+        "registration_restored": True,
+    }
+
+
+def test_failed_concurrent_bootstraps_serialize_runtime_mutations(
+    tmp_path, monkeypatch
+):
+    from zhiji_backend import main
+
+    monkeypatch.setenv("KI_API_TOKEN", "committed-token")
+    monkeypatch.setattr(main, "ensure_data_dirs", lambda: None)
+    monkeypatch.setattr(main, "LOG_DIR", tmp_path / "logs")
+    thread_context = threading.local()
+    monkeypatch.setattr(
+        main,
+        "load_hardened_env",
+        lambda *_args, **_kwargs: os.environ.__setitem__(
+            "KI_API_TOKEN", thread_context.candidate
+        ),
+    )
+    first_entered = threading.Event()
+    second_entered = threading.Event()
+    release_first = threading.Event()
+    release_second = threading.Event()
+    before_values = []
+    failures = []
+
+    def prepare(entered, release):
+        before_values.append(os.environ["KI_API_TOKEN"])
+        resources = main._prepare_runtime()
+        entered.set()
+        assert release.wait(2)
+        return resources
+
+    def attempt(candidate, entered, release):
+        thread_context.candidate = candidate
+        try:
+            main._bootstrap_application(
+                prepare_runtime=lambda: prepare(entered, release),
+                load_dependencies=lambda: object(),
+                assemble_application=lambda _dependencies: (_ for _ in ()).throw(
+                    RuntimeError(f"{candidate} failed")
+                ),
+            )
+        except RuntimeError as error:
+            failures.append(str(error))
+
+    first = threading.Thread(
+        target=attempt,
+        args=("candidate-one", first_entered, release_first),
+    )
+    second = threading.Thread(
+        target=attempt,
+        args=("candidate-two", second_entered, release_second),
+    )
+    first.start()
+    assert first_entered.wait(2)
+    second.start()
+    assert not second_entered.wait(0.1)
+    release_first.set()
+    assert second_entered.wait(2)
+    release_second.set()
+    first.join(2)
+    second.join(2)
+    assert not first.is_alive()
+    assert not second.is_alive()
+
+    tagged_roles = [
+        getattr(handler, "_zhiji_handler_role", None)
+        for handler in main._root_logger().handlers
+        if getattr(handler, "_zhiji_handler_owner", None) == "zhiji"
+    ]
+    assert before_values == ["committed-token", "committed-token"]
+    assert sorted(failures) == ["candidate-one failed", "candidate-two failed"]
+    assert os.environ["KI_API_TOKEN"] == "committed-token"
+    assert sorted(tagged_roles) == ["console", "file"]
+
+
+def test_request_waits_for_failed_reload_runtime_rollback(tmp_path):
+    script = """
+import importlib
+import json
+import os
+import threading
+from fastapi.testclient import TestClient
+from pathlib import Path
+
+env_path = Path(os.environ['ZHIJI_HOME']) / '.env'
+env_path.parent.mkdir(parents=True, exist_ok=True)
+env_path.write_text('KI_API_TOKEN=committed-token\\n', encoding='utf-8')
+from zhiji_backend import main, runtime_bootstrap
+
+env_path.write_text('KI_API_TOKEN=candidate-token\\n', encoding='utf-8')
+prepare_blocked = threading.Event()
+release_prepare = threading.Event()
+request_started = threading.Event()
+request_finished = threading.Event()
+reload_failures = []
+responses = []
+real_prepare_logging = runtime_bootstrap.prepare_logging
+
+def block_logging(**kwargs):
+    prepare_blocked.set()
+    if not release_prepare.wait(2):
+        raise RuntimeError('logging timeout')
+    return real_prepare_logging(**kwargs)
+
+def fail_mount(*_args, **_kwargs):
+    raise RuntimeError('mount failed')
+
+runtime_bootstrap.prepare_logging = block_logging
+main.static_delivery.mount_frontend = fail_mount
+
+def reload_main():
+    try:
+        importlib.reload(main)
+    except RuntimeError as error:
+        reload_failures.append(str(error))
+
+def request_candidate():
+    request_started.set()
+    response = TestClient(main.app, client=('10.8.0.2', 50000)).get(
+        '/api/bootstrap-lock-missing',
+        headers={'Authorization': 'Bearer candidate-token'},
+    )
+    responses.append(response.status_code)
+    request_finished.set()
+
+reload_thread = threading.Thread(target=reload_main)
+reload_thread.start()
+if not prepare_blocked.wait(2):
+    raise RuntimeError('reload did not block in logging')
+candidate_visible_during_prepare = os.environ.get('KI_API_TOKEN')
+request_thread = threading.Thread(target=request_candidate)
+request_thread.start()
+if not request_started.wait(2):
+    raise RuntimeError('request did not start')
+request_completed_before_rollback = request_finished.wait(0.1)
+release_prepare.set()
+reload_thread.join(2)
+request_thread.join(2)
+old_response = TestClient(main.app, client=('10.8.0.2', 50000)).get(
+    '/api/bootstrap-lock-missing',
+    headers={'Authorization': 'Bearer committed-token'},
+)
+print(json.dumps({
+    'candidate_visible_during_prepare': candidate_visible_during_prepare,
+    'request_completed_before_rollback': request_completed_before_rollback,
+    'candidate_status': responses,
+    'old_status': old_response.status_code,
+    'effective_token': os.environ.get('KI_API_TOKEN'),
+    'reload_failures': reload_failures,
+}))
+"""
+    environment = dict(
+        os.environ,
+        PYTHONPATH=f"{ROOT / 'src'}:{ROOT}",
+        ZHIJI_HOME=str(tmp_path / "home"),
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert json.loads(completed.stdout) == {
+        "candidate_visible_during_prepare": "candidate-token",
+        "request_completed_before_rollback": False,
+        "candidate_status": [401],
+        "old_status": 404,
+        "effective_token": "committed-token",
+        "reload_failures": ["mount failed"],
+    }
+
+
+@pytest.mark.parametrize("failure_stage", ["prepare", "load"])
+def test_failed_early_reload_preserves_completed_application_state(
+    tmp_path, failure_stage
+):
+    script = f"""
+import importlib
+import json
+from zhiji_backend import api_middleware, main, paths
+
+app_before = main.app
+lifespan_before = main.lifespan
+registration_before = api_middleware._DEFAULT_FACTORY_REGISTRATION
+main._HAS_FRONTEND = True
+
+def fail(*_args, **_kwargs):
+    raise RuntimeError('{failure_stage} failed')
+
+if '{failure_stage}' == 'prepare':
+    paths.ensure_data_dirs = fail
+else:
+    real_import_module = importlib.import_module
+    def fail_dependency(name, package=None):
+        if name == '.config_manager':
+            return fail()
+        return real_import_module(name, package)
+    importlib.import_module = fail_dependency
+
+try:
+    importlib.reload(main)
+except RuntimeError as error:
+    failure = str(error)
+else:
+    failure = ''
+
+registration_after = api_middleware._DEFAULT_FACTORY_REGISTRATION
+print(json.dumps({{
+    'failure': failure,
+    'app_restored': main.app is app_before,
+    'lifespan_restored': main.lifespan is lifespan_before,
+    'registration_restored': registration_after is registration_before,
+    'frontend_restored': main._HAS_FRONTEND is True,
+    'factory_frontend_restored': registration_after.factory().has_frontend is True,
+}}))
+"""
+    environment = dict(
+        os.environ,
+        PYTHONPATH=f"{ROOT / 'src'}:{ROOT}",
+        ZHIJI_HOME=str(tmp_path / "home"),
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert json.loads(completed.stdout) == {
+        "failure": f"{failure_stage} failed",
+        "app_restored": True,
+        "lifespan_restored": True,
+        "registration_restored": True,
+        "frontend_restored": True,
+        "factory_frontend_restored": True,
+    }
+
+
+@pytest.mark.parametrize(
+    "failure_stage",
+    ["registration", "fastapi", "middleware", "routes", "mkdir", "mount", "publish"],
+)
+def test_failed_application_assembly_restores_facade_and_registration(
+    monkeypatch, failure_stage
+):
+    from zhiji_backend import api_middleware, main
+
+    state_names = ("app", "_assembly", "_dependencies", "_HAS_FRONTEND", "api_auth")
+    state_before = {name: getattr(main, name) for name in state_names}
+    registration_before = api_middleware._DEFAULT_FACTORY_REGISTRATION
+
+    def fail(*_args, **_kwargs):
+        raise RuntimeError(f"{failure_stage} failed")
+
+    if failure_stage == "registration":
+
+        @contextmanager
+        def fail_registration(*_args, **_kwargs):
+            fail()
+            yield
+
+        monkeypatch.setattr(
+            api_middleware,
+            "default_dependency_factory_transaction",
+            fail_registration,
+        )
+    elif failure_stage == "fastapi":
+        monkeypatch.setattr(main, "FastAPI", fail)
+    elif failure_stage == "middleware":
+        monkeypatch.setattr(main, "_add_middleware", fail)
+    elif failure_stage == "routes":
+        monkeypatch.setattr(main, "_add_routes", fail)
+    elif failure_stage == "mkdir":
+
+        class ReleasesDirFailure:
+            def mkdir(self, **_kwargs):
+                fail()
+
+        monkeypatch.setattr(main, "RELEASES_DIR", ReleasesDirFailure())
+    elif failure_stage == "mount":
+        monkeypatch.setattr(main.static_delivery, "mount_frontend", fail)
+    else:
+
+        def fail_publish(_dependencies):
+            main.api_auth = object()
+            fail()
+
+        monkeypatch.setattr(main, "_publish_dependencies", fail_publish)
+
+    with pytest.raises(RuntimeError, match=rf"{failure_stage} failed"):
+        main._assemble_application(main._dependencies)
+
+    assert {name: getattr(main, name) for name in state_names} == state_before
+    assert api_middleware._DEFAULT_FACTORY_REGISTRATION is registration_before
+
+
+def test_router_manifest_drives_dependency_loading_and_inclusion_order():
+    from zhiji_backend import main
+
+    assert tuple(main._dependencies.routes) == main.ROUTE_NAMES
+    included = [
+        route.original_router
+        for route in main.app.routes
+        if type(route).__name__ == "_IncludedRouter"
+    ]
+    assert included == [getattr(main, f"{name}_router") for name in main.ROUTE_NAMES]
+
+
+def test_missing_frontend_is_not_mounted(tmp_path):
+    from zhiji_backend import static_delivery
+
+    calls = []
+
+    class AppSpy:
+        def mount(self, *args, **kwargs):
+            calls.append((args, kwargs))
+
+    mounted = static_delivery.mount_frontend(
+        AppSpy(),
+        frontend_dist=tmp_path / "missing",
+        static_files=lambda **_kwargs: pytest.fail("StaticFiles must not be created"),
+    )
+
+    assert mounted is False
+    assert calls == []
+
+
+def test_main_frontend_state_matches_the_single_frontend_mount():
+    from zhiji_backend import main
+
+    frontend_mounts = [
+        route
+        for route in main.app.routes
+        if type(route).__name__ == "Mount" and route.name == "frontend"
+    ]
+
+    assert main._HAS_FRONTEND is bool(frontend_mounts)
+    assert len(frontend_mounts) <= 1

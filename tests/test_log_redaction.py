@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import ast
 import asyncio
+import errno
+import importlib
 import io
 import json
 import logging
@@ -21,6 +24,15 @@ from zhiji_backend.security.redaction import (
     redact_text,
     sanitize_task_error,
 )
+
+
+def _log_handlers_module():
+    try:
+        return importlib.import_module("zhiji_backend.security.log_handlers")
+    except ModuleNotFoundError as error:
+        if error.name != "zhiji_backend.security.log_handlers":
+            raise
+        pytest.fail("zhiji_backend.security.log_handlers has not been extracted")
 
 
 @pytest.mark.parametrize(
@@ -69,6 +81,18 @@ def test_redact_text_is_deterministic_and_preserves_non_sensitive_query_values()
 
     assert redact_text(text) == redact_text(text)
     assert "limit=20" in redact_text(text)
+
+
+def test_redact_text_exact_compound_output_is_stable():
+    text = (
+        "POST https://user:pw@example.test/v1?token=query-secret&limit=20 "
+        'Authorization: Bearer bearer-secret prompt={"role":"user","content":"private"}'
+    )
+
+    assert redact_text(text) == (
+        "POST https://[REDACTED]@example.test/v1?token=[REDACTED]&limit=20 "
+        "Authorization: [REDACTED] prompt=[REDACTED]"
+    )
 
 
 def test_redact_text_scrubs_json_dumped_message_content_and_preserves_roles():
@@ -299,6 +323,385 @@ def test_secure_log_handler_uses_0600_for_initial_and_rotated_files(tmp_path):
     assert all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in files)
 
 
+def test_secure_log_handler_delay_overdue_first_emit_creates_active_log(tmp_path):
+    module = _log_handlers_module()
+    log_path = tmp_path / "ki.log"
+    handler = module.SecureTimedRotatingFileHandler(
+        log_path, when="S", interval=1, backupCount=30, delay=True, encoding="utf-8"
+    )
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    handler.rolloverAt = 0
+
+    try:
+        handler.emit(
+            logging.LogRecord(
+                "stable.logger", logging.INFO, __file__, 1, "first", (), None
+            )
+        )
+    finally:
+        handler.close()
+
+    assert log_path.read_text(encoding="utf-8") == "first\n"
+    assert stat.S_IMODE(log_path.stat().st_mode) == 0o600
+
+
+def test_secure_log_handler_initial_open_preserves_flags_mode_and_text_options(
+    tmp_path, monkeypatch
+):
+    module = _log_handlers_module()
+    log_path = tmp_path / "ki.log"
+    observed = []
+    original_open = os.open
+
+    def observe_open(path, flags, mode=0o777, *args, **kwargs):
+        observed.append((Path(path), flags, mode))
+        return original_open(path, flags, mode, *args, **kwargs)
+
+    monkeypatch.setattr(module.os, "open", observe_open)
+
+    handler = module.SecureTimedRotatingFileHandler(
+        log_path,
+        when="midnight",
+        encoding="utf-8",
+        errors="backslashreplace",
+    )
+    try:
+        assert handler.mode == "a"
+        assert handler.encoding == "utf-8"
+        assert handler.errors == "backslashreplace"
+        assert handler.stream is not None
+    finally:
+        handler.close()
+
+    assert observed == [
+        (
+            log_path,
+            os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW,
+            0o600,
+        )
+    ]
+    assert stat.S_IMODE(log_path.stat().st_mode) == 0o600
+
+
+def test_secure_log_handler_closes_fd_when_text_open_fails(tmp_path, monkeypatch):
+    module = _log_handlers_module()
+    log_path = tmp_path / "ki.log"
+    opened_fds = []
+    original_os_open = os.open
+
+    def observe_os_open(*args, **kwargs):
+        fd = original_os_open(*args, **kwargs)
+        opened_fds.append(fd)
+        return fd
+
+    def fail_raw_open(*args, **kwargs):
+        raise RuntimeError("raw open failed")
+
+    monkeypatch.setattr(module.os, "open", observe_os_open)
+    monkeypatch.setattr(io, "FileIO", fail_raw_open)
+
+    with pytest.raises(RuntimeError, match="raw open failed"):
+        module.SecureTimedRotatingFileHandler(log_path, when="midnight")
+
+    assert len(opened_fds) == 1
+    with pytest.raises(OSError) as closed:
+        os.fstat(opened_fds[0])
+    assert closed.value.errno == errno.EBADF
+
+
+def test_secure_log_handler_invalid_encoding_closes_fd_and_preserves_error(
+    tmp_path, monkeypatch
+):
+    module = _log_handlers_module()
+    log_path = tmp_path / "ki.log"
+    opened_fds = []
+    original_os_open = os.open
+
+    def observe_os_open(*args, **kwargs):
+        fd = original_os_open(*args, **kwargs)
+        opened_fds.append(fd)
+        return fd
+
+    monkeypatch.setattr(module.os, "open", observe_os_open)
+    handler = module.SecureTimedRotatingFileHandler(
+        log_path, when="midnight", delay=True, encoding="invalid-encoding-name"
+    )
+
+    with pytest.raises(LookupError, match="unknown encoding"):
+        handler._open()
+
+    assert len(opened_fds) == 1
+    with pytest.raises(OSError) as closed:
+        os.fstat(opened_fds[0])
+    assert closed.value.errno == errno.EBADF
+
+
+def test_secure_log_handler_wrapper_failure_closes_owned_fd_once(
+    tmp_path, monkeypatch
+):
+    module = _log_handlers_module()
+    log_path = tmp_path / "ki.log"
+    wrapper_error = RuntimeError("wrapper construction failed")
+    raw_streams = []
+    original_file_io = io.FileIO
+
+    class TrackingFileIO:
+        def __init__(self, fd, *args, **kwargs):
+            self.delegate = original_file_io(fd, *args, **kwargs)
+            self.close_calls = 0
+            raw_streams.append(self)
+
+        @property
+        def closed(self):
+            return self.delegate.closed
+
+        def close(self):
+            self.close_calls += 1
+            self.delegate.close()
+
+    def fail_wrapper(*args, **kwargs):
+        raise wrapper_error
+
+    monkeypatch.setattr(io, "FileIO", TrackingFileIO)
+    monkeypatch.setattr(io, "TextIOWrapper", fail_wrapper)
+    handler = module.SecureTimedRotatingFileHandler(log_path, when="midnight", delay=True)
+
+    with pytest.raises(RuntimeError) as raised:
+        handler._open()
+
+    assert raised.value is wrapper_error
+    assert len(raw_streams) == 1
+    assert raw_streams[0].close_calls == 1
+    assert raw_streams[0].closed
+
+
+def test_secure_log_handler_wrapper_failure_preserves_error_when_close_fails(
+    tmp_path, monkeypatch
+):
+    module = _log_handlers_module()
+    log_path = tmp_path / "ki.log"
+    wrapper_error = RuntimeError("wrapper construction failed")
+    original_file_io = io.FileIO
+
+    class CloseFailingFileIO:
+        def __init__(self, fd, *args, **kwargs):
+            self.delegate = original_file_io(fd, *args, **kwargs)
+
+        def close(self):
+            self.delegate.close()
+            raise OSError("secondary close failed")
+
+    def fail_wrapper(*args, **kwargs):
+        raise wrapper_error
+
+    monkeypatch.setattr(io, "FileIO", CloseFailingFileIO)
+    monkeypatch.setattr(io, "TextIOWrapper", fail_wrapper)
+    handler = module.SecureTimedRotatingFileHandler(log_path, when="midnight", delay=True)
+
+    with pytest.raises(RuntimeError) as raised:
+        handler._open()
+
+    assert raised.value is wrapper_error
+
+
+def test_secure_log_handler_wrapper_failure_does_not_close_reused_fd(
+    tmp_path, monkeypatch
+):
+    module = _log_handlers_module()
+    log_path = tmp_path / "ki.log"
+    unrelated_path = tmp_path / "unrelated.log"
+    opened_log_fds = []
+    unrelated_fds = []
+    original_os_open = os.open
+
+    def observe_os_open(*args, **kwargs):
+        fd = original_os_open(*args, **kwargs)
+        opened_log_fds.append(fd)
+        return fd
+
+    def close_reuse_and_fail(raw, *args, **kwargs):
+        raw.close()
+        unrelated_fds.append(
+            original_os_open(unrelated_path, os.O_WRONLY | os.O_CREAT, 0o600)
+        )
+        raise RuntimeError("wrapper failed after ownership transfer")
+
+    monkeypatch.setattr(module.os, "open", observe_os_open)
+    monkeypatch.setattr(io, "TextIOWrapper", close_reuse_and_fail)
+    handler = module.SecureTimedRotatingFileHandler(log_path, when="midnight", delay=True)
+
+    try:
+        with pytest.raises(RuntimeError, match="after ownership transfer"):
+            handler._open()
+
+        assert unrelated_fds == opened_log_fds
+        assert os.fstat(unrelated_fds[0]).st_mode
+    finally:
+        if unrelated_fds:
+            os.close(unrelated_fds[0])
+
+
+@pytest.mark.parametrize(
+    ("target_kind", "message"),
+    [
+        ("symlink", "refusing symlink log target: ki.log"),
+        ("directory", "refusing non-regular log target: ki.log"),
+    ],
+)
+def test_secure_log_handler_rejects_unsafe_target_with_exact_message(
+    tmp_path, target_kind, message
+):
+    module = _log_handlers_module()
+    log_path = tmp_path / "ki.log"
+    if target_kind == "symlink":
+        target = tmp_path / "outside.log"
+        target.write_text("do not touch", encoding="utf-8")
+        log_path.symlink_to(target)
+    else:
+        log_path.mkdir()
+
+    with pytest.raises(OSError, match=f"^{message}$"):
+        module.SecureTimedRotatingFileHandler(log_path, when="midnight")
+
+
+def test_secure_log_handler_rotation_replaces_racing_symlink_without_following_target(
+    tmp_path, monkeypatch
+):
+    module = _log_handlers_module()
+    source = tmp_path / "ki.log"
+    destination = tmp_path / "ki.log.rotated"
+    outside = tmp_path / "outside.log"
+    source.write_text("source", encoding="utf-8")
+    outside.write_text("outside", encoding="utf-8")
+
+    def race_before_rename(handler, source_name, destination_name):
+        destination.symlink_to(outside)
+        logging.handlers.BaseRotatingHandler.rotate(
+            handler, source_name, destination_name
+        )
+
+    monkeypatch.setattr(
+        logging.handlers.TimedRotatingFileHandler,
+        "rotate",
+        race_before_rename,
+    )
+    handler = module.SecureTimedRotatingFileHandler(source, when="midnight", delay=True)
+    try:
+        handler.rotate(str(source), str(destination))
+    finally:
+        handler.close()
+
+    assert destination.read_text(encoding="utf-8") == "source"
+    assert stat.S_IMODE(destination.stat().st_mode) == 0o600
+    assert outside.read_text(encoding="utf-8") == "outside"
+
+
+def test_secure_log_handler_default_rotation_tolerates_source_disappearing(
+    tmp_path, monkeypatch
+):
+    module = _log_handlers_module()
+    source = tmp_path / "ki.log"
+    destination = tmp_path / "ki.log.rotated"
+    source.write_text("source", encoding="utf-8")
+
+    def remove_before_rename(handler, source_name, destination_name):
+        source.unlink()
+        logging.handlers.BaseRotatingHandler.rotate(
+            handler, source_name, destination_name
+        )
+
+    monkeypatch.setattr(
+        logging.handlers.TimedRotatingFileHandler,
+        "rotate",
+        remove_before_rename,
+    )
+    handler = module.SecureTimedRotatingFileHandler(source, when="midnight", delay=True)
+    try:
+        handler.rotate(str(source), str(destination))
+    finally:
+        handler.close()
+
+    assert not source.exists()
+    assert not destination.exists()
+
+
+def test_secure_log_handler_default_rotation_hardens_destination(tmp_path):
+    module = _log_handlers_module()
+    source = tmp_path / "ki.log"
+    destination = tmp_path / "ki.log.rotated"
+    source.write_text("source", encoding="utf-8")
+    source.chmod(0o644)
+    handler = module.SecureTimedRotatingFileHandler(source, when="midnight", delay=True)
+    try:
+        handler.rotate(str(source), str(destination))
+    finally:
+        handler.close()
+
+    assert destination.read_text(encoding="utf-8") == "source"
+    assert stat.S_IMODE(destination.stat().st_mode) == 0o600
+
+
+def test_secure_log_handler_rejects_custom_rotator_without_touching_paths(
+    tmp_path, monkeypatch
+):
+    module = _log_handlers_module()
+    source = tmp_path / "ki.log"
+    destination = tmp_path / "ki.log.rotated"
+    outside = tmp_path / "outside.log"
+    source.write_text("source", encoding="utf-8")
+    outside.write_text("outside", encoding="utf-8")
+    outside.chmod(0o644)
+    calls = []
+    handler = module.SecureTimedRotatingFileHandler(source, when="midnight", delay=True)
+    handler.rotator = lambda *args: calls.append(args)
+    monkeypatch.setattr(
+        module,
+        "_reject_symlink",
+        lambda path: pytest.fail(f"inspected path before rejection: {path}"),
+    )
+
+    try:
+        with pytest.raises(
+            RuntimeError,
+            match="^custom log rotators are not supported by secure handler$",
+        ):
+            handler.rotate(str(source), str(destination))
+    finally:
+        handler.close()
+
+    assert calls == []
+    assert source.read_text(encoding="utf-8") == "source"
+    assert not destination.exists()
+    assert outside.read_text(encoding="utf-8") == "outside"
+    assert stat.S_IMODE(outside.stat().st_mode) == 0o644
+    assert {path.name for path in tmp_path.iterdir()} == {
+        "ki.log",
+        "outside.log",
+    }
+
+
+def test_production_does_not_assign_custom_log_rotators():
+    source_root = Path(__file__).parents[1] / "src"
+    assignments = []
+    for source_path in source_root.rglob("*.py"):
+        tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=source_path)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                targets = node.targets
+            elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
+                targets = [node.target]
+            else:
+                continue
+            if any(
+                isinstance(target, ast.Attribute) and target.attr == "rotator"
+                for root_target in targets
+                for target in ast.walk(root_target)
+            ):
+                assignments.append(source_path.relative_to(source_root).as_posix())
+
+    assert assignments == []
+
+
 def test_secure_log_handler_hardens_existing_regular_log_files(tmp_path):
     current = tmp_path / "ki.log"
     rotated = tmp_path / "ki.log.2026-07-20"
@@ -312,6 +715,49 @@ def test_secure_log_handler_hardens_existing_regular_log_files(tmp_path):
 
     assert stat.S_IMODE(current.stat().st_mode) == 0o600
     assert stat.S_IMODE(rotated.stat().st_mode) == 0o600
+
+
+def test_secure_log_handler_does_not_harden_unrelated_prefix_matches(tmp_path):
+    current = tmp_path / "ki.log"
+    rotated = tmp_path / "ki.log.2026-07-20"
+    unrelated = [tmp_path / "ki.logger-config", tmp_path / "ki.log-export"]
+    for path in (current, rotated, *unrelated):
+        path.write_text(path.name, encoding="utf-8")
+        path.chmod(0o666)
+
+    handler = SecureTimedRotatingFileHandler(current, when="midnight", backupCount=30)
+    handler.close()
+
+    assert stat.S_IMODE(current.stat().st_mode) == 0o600
+    assert stat.S_IMODE(rotated.stat().st_mode) == 0o600
+    assert [stat.S_IMODE(path.stat().st_mode) for path in unrelated] == [0o666, 0o666]
+
+
+def test_secure_log_handler_hardens_supported_custom_namer_candidates(tmp_path):
+    module = _log_handlers_module()
+    current = tmp_path / "ki.log"
+    current.write_text("current", encoding="utf-8")
+    handler = module.SecureTimedRotatingFileHandler(
+        current, when="midnight", backupCount=30
+    )
+    handler.namer = lambda default_name: f"{default_name}.gz"
+    rotated = tmp_path / "ki.log.2026-07-20.gz"
+    unrelated = tmp_path / "ki.log.archive-2026-07-20.gz"
+    for path in (rotated, unrelated):
+        path.write_text(path.name, encoding="utf-8")
+        path.chmod(0o666)
+
+    try:
+        module._harden_existing_logs(
+            current,
+            ext_match=handler.extMatch,
+            namer=handler.namer,
+        )
+    finally:
+        handler.close()
+
+    assert stat.S_IMODE(rotated.stat().st_mode) == 0o600
+    assert stat.S_IMODE(unrelated.stat().st_mode) == 0o666
 
 
 def test_secure_log_handler_tolerates_old_rotated_chmod_failure(
@@ -337,6 +783,9 @@ def test_secure_log_handler_tolerates_old_rotated_chmod_failure(
     assert stat.S_IMODE(current.stat().st_mode) == 0o600
     assert "rotated log" in caplog.text
     assert "PermissionError" in caplog.text
+    assert {
+        record.name for record in caplog.records if "rotated log" in record.message
+    } == {"zhiji_backend.security.redaction"}
 
 
 def test_secure_log_handler_keeps_active_log_chmod_failure_fatal(tmp_path, monkeypatch):
@@ -365,6 +814,68 @@ def test_secure_log_handler_rejects_symlink_target(tmp_path):
         SecureTimedRotatingFileHandler(log_path, when="midnight", backupCount=30)
 
     assert target.read_text(encoding="utf-8") == "do not touch"
+
+
+def test_secure_log_handler_rollover_orders_rotate_open_then_hardening(
+    tmp_path, monkeypatch
+):
+    module = _log_handlers_module()
+    log_path = tmp_path / "ki.log"
+    handler = module.SecureTimedRotatingFileHandler(
+        log_path, when="midnight", backupCount=30
+    )
+    events = []
+    original_rotate = handler.rotate
+    original_open = handler._open
+    original_harden = module._harden_existing_logs
+
+    def observe_rotate(source, destination):
+        events.append("rotate")
+        return original_rotate(source, destination)
+
+    def observe_open():
+        events.append("open")
+        return original_open()
+
+    def observe_harden(path, *args, **kwargs):
+        events.append("harden")
+        return original_harden(path, *args, **kwargs)
+
+    monkeypatch.setattr(handler, "rotate", observe_rotate)
+    monkeypatch.setattr(handler, "_open", observe_open)
+    monkeypatch.setattr(module, "_harden_existing_logs", observe_harden)
+
+    try:
+        handler.doRollover()
+    finally:
+        handler.close()
+
+    assert events == ["rotate", "open", "harden"]
+
+
+def test_secure_log_handler_supports_repeated_rollover(tmp_path):
+    module = _log_handlers_module()
+    log_path = tmp_path / "ki.log"
+    handler = module.SecureTimedRotatingFileHandler(
+        log_path, when="S", interval=1, backupCount=30, encoding="utf-8"
+    )
+    handler.setFormatter(logging.Formatter("%(message)s"))
+
+    try:
+        for message in ("first", "second", "third"):
+            handler.emit(
+                logging.LogRecord(
+                    "stable.logger", logging.INFO, __file__, 1, message, (), None
+                )
+            )
+            handler.doRollover()
+    finally:
+        handler.close()
+
+    files = list(tmp_path.glob("ki.log*"))
+    assert files
+    assert all(stat.S_ISREG(path.lstat().st_mode) for path in files)
+    assert all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in files)
 
 
 def test_log_api_reredacts_historical_messages(tmp_path, monkeypatch):

@@ -22,7 +22,10 @@ run_retired_feature_scan() {
 from __future__ import annotations
 
 import ast
+import json
+import os
 import re
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -342,10 +345,190 @@ def returns_json_404(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     )
 
 
+def valid_live_digest_tombstone(payload: object) -> bool:
+    expected_routes = [
+        {
+            "path": "/api/digest/generate",
+            "methods": ["POST"],
+            "hidden": True,
+            "endpoint": "retired_digest_endpoint",
+        },
+        {
+            "path": "/api/digest/latest",
+            "methods": ["GET"],
+            "hidden": True,
+            "endpoint": "retired_digest_endpoint",
+        },
+    ]
+    return bool(
+        isinstance(payload, dict)
+        and payload.get("routes") == expected_routes
+        and payload.get("same_endpoint") is True
+        and payload.get("live_404") is True
+        and payload.get("frontend_fallback_valid") is True
+        and payload.get("overlap_routes") == []
+        and payload.get("schema_paths") == []
+    )
+
+
+def validate_live_digest_tombstone(root: Path) -> list[str]:
+    probe = r'''
+import json
+import os
+import re
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+from starlette.routing import Mount
+from starlette.staticfiles import StaticFiles
+from zhiji_backend.main import app
+
+
+def rendered_segment(segment):
+    samples = {
+        "float": "1.0",
+        "int": "1",
+        "path": "probe",
+        "uuid": "00000000-0000-0000-0000-000000000000",
+    }
+
+    def replace(match):
+        return samples.get(match.group(1) or "str", "probe")
+
+    return re.sub(r"\{[^{}:]+(?::([^{}]+))?\}", replace, segment)
+
+
+def overlaps_digest_prefix(route):
+    path_regex = getattr(route, "path_regex", None)
+    if path_regex is None:
+        return False
+    segments = [segment for segment in getattr(route, "path", "").strip("/").split("/") if segment]
+    rendered = [rendered_segment(segment) for segment in segments]
+    candidates = {"/api/digest", "/api/digest/__retired_probe__"}
+    for index in range(len(rendered) + 1):
+        suffix = rendered[index:]
+        if suffix:
+            candidates.add("/api/digest/" + "/".join(suffix))
+    return any(path_regex.fullmatch(candidate) for candidate in candidates)
+
+
+routes = [
+    route
+    for route in app.routes
+    if getattr(route, "path", "") == "/api/digest"
+    or getattr(route, "path", "").startswith("/api/digest/")
+]
+endpoints = []
+for route in routes:
+    if not any(route.endpoint is endpoint for endpoint in endpoints):
+        endpoints.append(route.endpoint)
+
+expected_paths = {"/api/digest/generate", "/api/digest/latest"}
+overlap_routes = []
+tombstone_indices = {
+    index
+    for index, route in enumerate(app.routes)
+    if getattr(route, "path", "") in expected_paths
+}
+frontend_fallbacks = []
+for index, route in enumerate(app.routes):
+    if not overlaps_digest_prefix(route) or getattr(route, "path", "") in expected_paths:
+        continue
+    is_frontend_fallback = (
+        isinstance(route, Mount)
+        and getattr(route, "path", None) == ""
+        and getattr(route, "name", None) == "frontend"
+        and isinstance(getattr(route, "app", None), StaticFiles)
+        and not os.path.lexists(Path(route.app.directory) / "api" / "digest")
+        and tombstone_indices
+        and index > max(tombstone_indices)
+    )
+    if is_frontend_fallback:
+        frontend_fallbacks.append(route)
+        continue
+    overlap_routes.append(getattr(route, "path", ""))
+
+with TestClient(
+    app,
+    client=("127.0.0.1", 50000),
+    follow_redirects=False,
+) as client:
+    tombstone_responses = [
+        client.post("/api/digest/generate"),
+        client.get("/api/digest/latest"),
+    ]
+    unknown_responses = [
+        client.get("/api/digest/__retired_probe__"),
+        client.post("/api/digest/__retired_probe__"),
+    ]
+
+payload = {
+    "routes": sorted(
+        (
+            {
+                "path": route.path,
+                "methods": sorted(route.methods or ()),
+                "hidden": route.include_in_schema is False,
+                "endpoint": getattr(route.endpoint, "__name__", ""),
+            }
+            for route in routes
+        ),
+        key=lambda item: item["path"],
+    ),
+    "same_endpoint": len(endpoints) == 1,
+    "frontend_fallback_valid": len(frontend_fallbacks) <= 1,
+    "live_404": [response.status_code for response in tombstone_responses] == [404, 404]
+    and all(not response.history for response in tombstone_responses)
+    and all(response.status_code in {404, 405} for response in unknown_responses)
+    and all(not response.history for response in unknown_responses),
+    "overlap_routes": sorted(overlap_routes),
+    "schema_paths": sorted(
+        path
+        for path in app.openapi().get("paths", {})
+        if path == "/api/digest" or path.startswith("/api/digest/")
+    ),
+}
+print(json.dumps(payload, sort_keys=True))
+'''
+    with tempfile.TemporaryDirectory(prefix="zhiji-retired-runtime-") as temp_dir:
+        home = Path(temp_dir)
+        (home / ".env").write_text("", encoding="utf-8")
+        environment = {
+            "HOME": str(home),
+            "PATH": os.environ.get("PATH", ""),
+            "PYTHONHASHSEED": "0",
+            "PYTHONPATH": os.pathsep.join((str(root / "src"), str(root))),
+            "TMPDIR": str(home),
+            "ZHIJI_HOME": str(home),
+        }
+        for name in ("LANG", "LC_ALL"):
+            if name in os.environ:
+                environment[name] = os.environ[name]
+        completed = subprocess.run(
+            [sys.executable, "-c", probe],
+            cwd=root,
+            capture_output=True,
+            check=False,
+            env=environment,
+            text=True,
+        )
+    if completed.returncode != 0:
+        return ["src/zhiji_backend/main.py: retired digest runtime probe failed"]
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return ["src/zhiji_backend/main.py: retired digest runtime probe was invalid"]
+    if not valid_live_digest_tombstone(payload):
+        return ["src/zhiji_backend/main.py: retired digest paths must remain hidden and return 404"]
+    return []
+
+
 def validate_digest_tombstone(root: Path) -> list[str]:
     main_path = root / "src/zhiji_backend/main.py"
     if not main_path.exists():
         return []
+    if root.resolve() == ROOT.resolve():
+        return validate_live_digest_tombstone(root)
     source = main_path.read_text(encoding="utf-8")
     tree, violations = parse_python(main_path, "digest tombstone")
     if violations:
@@ -644,6 +827,11 @@ def validate_named_compatibility(
 def scan(root: Path) -> list[str]:
     compatibility_violations, allowed_ranges = validate_named_compatibility(root)
     violations = validate_digest_tombstone(root) + compatibility_violations
+    public_digest_path = root / "app/frontend/public/api/digest"
+    if os.path.lexists(public_digest_path):
+        violations.append(
+            "app/frontend/public/api/digest: retired frontend static path must not exist"
+        )
     retired_files = {
         "app/frontend/src/pages/BrandDepthDemo.tsx",
         "app/frontend/src/pages/BrandLockupDemo.tsx",
@@ -751,6 +939,12 @@ def self_test() -> None:
             write(root, relative, source)
             if not any("retired frontend route" in item for item in scan(root)):
                 raise SystemExit(f"FAIL retired feature scan missed route fixture: {relative}")
+
+    with tempfile.TemporaryDirectory(prefix="zhiji-retired-public-digest-") as temp_dir:
+        root = Path(temp_dir)
+        write(root, "app/frontend/public/api/digest/legacy.json", "{}\n")
+        if not any("retired frontend static path" in item for item in scan(root)):
+            raise SystemExit("FAIL retired feature scan allowed a static digest path")
 
     retired_table_cases = (
         'CREATE TEMP TABLE digests (id TEXT);',
@@ -992,6 +1186,42 @@ async def retired_digest_endpoint() -> JSONResponse:
         write(root, "app/frontend/src/App.test.mjs", 'assert.match(app, /\\/demo\\//);\n')
         if violations := scan(root):
             raise SystemExit("FAIL retired feature allowlist self-test:\n" + "\n".join(violations))
+
+    live_payload = {
+        "routes": [
+            {
+                "path": "/api/digest/generate",
+                "methods": ["POST"],
+                "hidden": True,
+                "endpoint": "retired_digest_endpoint",
+            },
+            {
+                "path": "/api/digest/latest",
+                "methods": ["GET"],
+                "hidden": True,
+                "endpoint": "retired_digest_endpoint",
+            },
+        ],
+        "same_endpoint": True,
+        "live_404": True,
+        "frontend_fallback_valid": True,
+        "overlap_routes": [],
+        "schema_paths": [],
+    }
+    if not valid_live_digest_tombstone(live_payload):
+        raise SystemExit("FAIL live digest tombstone validator rejected valid routes")
+    for key, unsafe in (
+        ("routes", live_payload["routes"] + [{"path": "/api/digest/admin"}]),
+        ("same_endpoint", False),
+        ("live_404", False),
+        ("frontend_fallback_valid", False),
+        ("overlap_routes", ["/api/{feature}/admin"]),
+        ("schema_paths", ["/api/digest/latest"]),
+    ):
+        candidate = dict(live_payload)
+        candidate[key] = unsafe
+        if valid_live_digest_tombstone(candidate):
+            raise SystemExit(f"FAIL live digest tombstone validator allowed unsafe {key}")
 
     with tempfile.TemporaryDirectory(prefix="zhiji-retired-allowlist-drift-") as temp_dir:
         root = Path(temp_dir)
@@ -1283,6 +1513,9 @@ if ! grep -q "index-${VERSION}-" app/frontend/dist/index.html; then
   echo "FAIL: dist/index.html does not reference versioned assets for $VERSION" >&2
   exit 1
 fi
+
+echo "== Post-build retired route scan =="
+run_retired_feature_scan
 
 echo "== Cinematic QA baseline =="
 if [[ "${ZHIJI_RUN_CINEMATIC_QA:-}" == "1" ]]; then
