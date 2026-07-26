@@ -327,12 +327,46 @@ def decorator_route(node: ast.AST) -> tuple[str, str, bool] | None:
     return node.func.attr, path.value, hidden
 
 
-def returns_json_404(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+def runtime_route(node: ast.AST) -> tuple[str, str, bool] | None:
+    if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Call):
+        return None
+    registration = node.func
+    if not isinstance(registration.func, ast.Attribute):
+        return None
+    if (
+        not isinstance(registration.func.value, ast.Name)
+        or registration.func.value.id != "application"
+        or registration.func.attr not in {"get", "post"}
+        or len(registration.args) != 1
+    ):
+        return None
+    path = registration.args[0]
+    if not isinstance(path, ast.Constant) or not isinstance(path.value, str):
+        return None
+    if (
+        len(node.args) != 1
+        or not isinstance(node.args[0], ast.Name)
+        or node.args[0].id != "retired_digest_endpoint"
+        or node.keywords
+    ):
+        return None
+    hidden = any(
+        keyword.arg == "include_in_schema"
+        and isinstance(keyword.value, ast.Constant)
+        and keyword.value.value is False
+        for keyword in registration.keywords
+    )
+    return registration.func.attr, path.value, hidden
+
+
+def returns_named_404(
+    function: ast.FunctionDef | ast.AsyncFunctionDef, response_name: str
+) -> bool:
     returns = [node for node in function.body if isinstance(node, ast.Return)]
     if len(returns) != 1 or not isinstance(returns[0].value, ast.Call):
         return False
     call = returns[0].value
-    if call_name(call.func) != "JSONResponse":
+    if call_name(call.func) != response_name:
         return False
     return any(
         keyword.arg == "status_code"
@@ -340,6 +374,47 @@ def returns_json_404(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
         and keyword.value.value == 404
         for keyword in call.keywords
     )
+
+
+def returns_json_404(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    return returns_named_404(function, "JSONResponse")
+
+
+def delegates_retired_digest(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    returns = [node for node in function.body if isinstance(node, ast.Return)]
+    if len(returns) != 1 or not isinstance(returns[0].value, ast.Await):
+        return False
+    call = returns[0].value.value
+    if not isinstance(call, ast.Call) or call.args:
+        return False
+    if not (
+        isinstance(call.func, ast.Attribute)
+        and isinstance(call.func.value, ast.Name)
+        and call.func.value.id == "static_delivery"
+        and call.func.attr == "retired_digest_endpoint"
+    ):
+        return False
+    return len(call.keywords) == 1 and bool(
+        call.keywords[0].arg == "json_response"
+        and isinstance(call.keywords[0].value, ast.Name)
+        and call.keywords[0].value.id == "JSONResponse"
+    )
+
+
+def validates_extracted_digest_tombstone(root: Path) -> bool:
+    static_path = root / "src/zhiji_backend/static_delivery.py"
+    if not static_path.exists():
+        return False
+    tree, violations = parse_python(static_path, "extracted digest tombstone")
+    if violations or tree is None:
+        return False
+    functions = [
+        node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "retired_digest_endpoint"
+    ]
+    return len(functions) == 1 and returns_named_404(functions[0], "json_response")
 
 
 def validate_digest_tombstone(root: Path) -> list[str]:
@@ -372,9 +447,26 @@ def validate_digest_tombstone(root: Path) -> list[str]:
         ("get", "/api/digest/latest", True),
         ("post", "/api/digest/generate", True),
     }
-    if set(filter(None, routes)) != expected_routes or not returns_json_404(functions[0]):
-        return ["src/zhiji_backend/main.py: retired digest paths must remain hidden and return 404"]
-    return []
+    if set(filter(None, routes)) == expected_routes and returns_json_404(functions[0]):
+        return []
+
+    route_functions = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_add_routes"
+    ]
+    runtime_routes = (
+        [runtime_route(node) for node in ast.walk(route_functions[0])]
+        if len(route_functions) == 1
+        else []
+    )
+    if (
+        set(filter(None, runtime_routes)) == expected_routes
+        and delegates_retired_digest(functions[0])
+        and validates_extracted_digest_tombstone(root)
+    ):
+        return []
+    return ["src/zhiji_backend/main.py: retired digest paths must remain hidden and return 404"]
 
 
 def is_exact_normalized_init(statement: ast.stmt) -> bool:
@@ -992,6 +1084,31 @@ async def retired_digest_endpoint() -> JSONResponse:
         write(root, "app/frontend/src/App.test.mjs", 'assert.match(app, /\\/demo\\//);\n')
         if violations := scan(root):
             raise SystemExit("FAIL retired feature allowlist self-test:\n" + "\n".join(violations))
+
+    with tempfile.TemporaryDirectory(prefix="zhiji-retired-extracted-tombstone-") as temp_dir:
+        root = Path(temp_dir)
+        write(
+            root,
+            "src/zhiji_backend/main.py",
+            '''async def retired_digest_endpoint():
+    return await static_delivery.retired_digest_endpoint(json_response=JSONResponse)
+
+def _add_routes(application):
+    application.post("/api/digest/generate", include_in_schema=False)(retired_digest_endpoint)
+    application.get("/api/digest/latest", include_in_schema=False)(retired_digest_endpoint)
+''',
+        )
+        write(
+            root,
+            "src/zhiji_backend/static_delivery.py",
+            '''async def retired_digest_endpoint(*, json_response=JSONResponse):
+    return json_response({"detail": "Not Found"}, status_code=404)
+''',
+        )
+        if violations := validate_digest_tombstone(root):
+            raise SystemExit(
+                "FAIL extracted retired tombstone self-test:\n" + "\n".join(violations)
+            )
 
     with tempfile.TemporaryDirectory(prefix="zhiji-retired-allowlist-drift-") as temp_dir:
         root = Path(temp_dir)
