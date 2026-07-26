@@ -18,7 +18,11 @@ from ._database_backup_path_publication import (
     transition_marker_exclusive,
 )
 from .database_backup_manifest import parse_created_at
-from .database_backup_restore_private import identity, restore_displaced
+from .database_backup_restore_private import (
+    create_recovery_copy,
+    identity,
+    restore_displaced,
+)
 
 _READY_KEYS = {
     "schema_version",
@@ -111,9 +115,7 @@ def canonical_ready_marker(
         raise _invalid_consumed_marker() from exc
     if consumed_at < created_at:
         raise _invalid_consumed_marker()
-    ready_marker = {
-        key: value for key, value in receipt.items() if key != "consumed_at"
-    }
+    ready_marker = {key: value for key, value in receipt.items() if key != "consumed_at"}
     ready_marker["state"] = "ready"
     validate_marker_for_consumption(source, migration_name, ready_marker)
     return ready_marker
@@ -243,9 +245,7 @@ def matching_consumed_receipt(
     migration_name: str,
     schema_version: int,
 ) -> PathSignature:
-    pinned = pin_consumed_receipt(
-        consumed, ready_marker, migration_name, schema_version
-    )
+    pinned = pin_consumed_receipt(consumed, ready_marker, migration_name, schema_version)
     try:
         return pinned.signature[:3]
     finally:
@@ -288,8 +288,26 @@ def finalize_ready_marker(
         raise RuntimeError(
             f"marker path collision; preserved recovery evidence at {directory}"
         ) from exc
-    isolated.unlink()
-    directory.rmdir()
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    ready_fd = os.open(isolated, flags)
+    try:
+        isolated.unlink()
+        directory.rmdir()
+        consumed.assert_after_ready_removal(ready_identity)
+    except Exception as exc:
+        recovery_dir, recovery_path, _recovery_identity = create_recovery_copy(
+            ready, ready_fd, "ready-marker"
+        )
+        if restore_displaced(recovery_path, ready):
+            recovery_path.unlink()
+            recovery_dir.rmdir()
+            fsync_marker_parent(ready)
+            raise RuntimeError("marker path collision") from exc
+        raise RuntimeError(
+            f"marker path collision; preserved recovery evidence at {recovery_dir}"
+        ) from exc
+    finally:
+        os.close(ready_fd)
 
 
 def consume_existing_marker(

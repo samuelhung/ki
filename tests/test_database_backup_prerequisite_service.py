@@ -317,6 +317,68 @@ def test_consume_preserves_ready_when_consumed_signature_changes_during_finaliza
     assert json.loads(consumed.read_bytes())["state"] == "consumed"
 
 
+def test_consume_restores_ready_when_consumed_changes_during_isolated_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "database.sqlite"
+    ready = tmp_path / "ready.json"
+    consumed = tmp_path / "consumed.json"
+    marker = {
+        "schema_version": 1,
+        "state": "ready",
+        "migration_name": "migration",
+        "created_at": "2026-07-25T12:00:00+00:00",
+        "manifest_path": "/manifest.json",
+        "manifest_sha256": "a" * 64,
+        "source": {},
+    }
+    ready.write_text(json.dumps(marker), encoding="utf-8")
+    ready_bytes = ready.read_bytes()
+    foreign = tmp_path / "foreign.json"
+    foreign_bytes = b'{"foreign":true}\n'
+    foreign.write_bytes(foreign_bytes)
+    foreign_identity = (foreign.stat().st_dev, foreign.stat().st_ino)
+    real_unlink = marker_consumption.os.unlink
+
+    def replace_consumed_after_isolated_cleanup(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        real_unlink(path, *args, **kwargs)
+        cleanup_path = Path(path)
+        if cleanup_path.name == "ready-marker" and cleanup_path.parent.name.startswith(
+            ".ready.json.finalize-"
+        ):
+            os.replace(foreign, consumed)
+
+    monkeypatch.setattr(
+        marker_consumption.os, "unlink", replace_consumed_after_isolated_cleanup
+    )
+
+    with pytest.raises(RuntimeError, match="marker path collision"):
+        prerequisite_service.consume_backup_prerequisite(
+            source,
+            "migration",
+            ready_marker_path=lambda *_args: ready,
+            consumed_marker_path=lambda *_args: consumed,
+            load_json_regular=lambda path, _label: json.loads(path.read_bytes()),
+            validate_marker_for_consumption=lambda *_args: None,
+            validate_loaded_marker_for_consumption=lambda *_args: None,
+            write_json_atomic=lambda path, payload: artifacts.write_json_atomic(
+                path, payload, fsync_parent=lambda _path: None
+            ),
+            now=lambda: datetime(2026, 7, 25, 13, tzinfo=UTC),
+            schema_version=1,
+            replace=os.replace,
+        )
+
+    assert consumed.read_bytes() == foreign_bytes
+    assert (consumed.stat().st_dev, consumed.stat().st_ino) == foreign_identity
+    assert ready.read_bytes() == ready_bytes
+
+
 def test_consume_ready_marker_serializes_exact_receipt_and_is_idempotent(
     tmp_path: Path,
 ) -> None:
