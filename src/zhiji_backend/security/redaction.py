@@ -2,21 +2,19 @@ from __future__ import annotations
 
 import copy
 import logging
-import logging.handlers
-import os
 import re
-import stat
-from pathlib import Path
 from typing import Any
 from urllib.parse import unquote_plus, urlsplit, urlunsplit
+
+from .log_handlers import (
+    SecureTimedRotatingFileHandler as SecureTimedRotatingFileHandler,
+)
 
 REDACTED = "[REDACTED]"
 MAX_REDACTION_INPUT_LENGTH = 65_536
 MAX_REDACTED_TEXT_LENGTH = 16_384
 MAX_TASK_ERROR_LENGTH = 200
 _TRUNCATED = "...[TRUNCATED]"
-
-logger = logging.getLogger(__name__)
 
 _SENSITIVE_KEYS = {
     "authorization",
@@ -287,79 +285,6 @@ class RedactingFormatter(logging.Formatter):
 
     def formatException(self, exc_info) -> str:  # noqa: N802 - logging API name
         return redact_text(super().formatException(exc_info))
-
-
-def _reject_symlink(path: Path) -> None:
-    try:
-        mode = path.lstat().st_mode
-    except FileNotFoundError:
-        return
-    if stat.S_ISLNK(mode):
-        raise OSError(f"refusing symlink log target: {path.name}")
-    if not stat.S_ISREG(mode):
-        raise OSError(f"refusing non-regular log target: {path.name}")
-
-
-def _harden_existing_logs(log_path: Path) -> None:
-    for path in log_path.parent.glob(f"{log_path.name}*"):
-        try:
-            mode = path.lstat().st_mode
-        except OSError:
-            continue
-        if stat.S_ISREG(mode):
-            try:
-                path.chmod(0o600, follow_symlinks=False)
-            except OSError as exc:
-                if path == log_path:
-                    raise
-                logger.warning(
-                    "Unable to harden rotated log file=%s error_class=%s",
-                    path.name,
-                    type(exc).__name__,
-                )
-
-
-class SecureTimedRotatingFileHandler(logging.handlers.TimedRotatingFileHandler):
-    """Timed rotation with no-follow creation and mode 0600 for every log."""
-
-    def __init__(self, filename: str | os.PathLike[str], *args, **kwargs):
-        log_path = Path(filename)
-        _reject_symlink(log_path)
-        _harden_existing_logs(log_path)
-        super().__init__(str(log_path), *args, **kwargs)
-        _harden_existing_logs(log_path)
-
-    def _open(self):
-        path = Path(self.baseFilename)
-        _reject_symlink(path)
-        flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT
-        if hasattr(os, "O_NOFOLLOW"):
-            flags |= os.O_NOFOLLOW
-        fd = os.open(path, flags, 0o600)
-        try:
-            os.fchmod(fd, 0o600)
-            return open(
-                fd,
-                self.mode,
-                encoding=self.encoding,
-                errors=self.errors,
-                closefd=True,
-            )
-        except Exception:
-            os.close(fd)
-            raise
-
-    def rotate(self, source: str, dest: str) -> None:
-        source_path = Path(source)
-        dest_path = Path(dest)
-        _reject_symlink(source_path)
-        _reject_symlink(dest_path)
-        super().rotate(source, dest)
-        dest_path.chmod(0o600, follow_symlinks=False)
-
-    def doRollover(self) -> None:  # noqa: N802 - logging API name
-        super().doRollover()
-        _harden_existing_logs(Path(self.baseFilename))
 
 
 def classify_task_error(error: BaseException | str | None) -> str:
