@@ -103,6 +103,14 @@ def test_stat_signature_preserves_security_relevant_fields(tmp_path: Path) -> No
     )
 
 
+def test_identity_returns_device_and_inode(tmp_path: Path) -> None:
+    path = tmp_path / "artifact"
+    path.write_bytes(b"payload")
+    file_stat = path.stat()
+
+    assert backup_fs.identity(file_stat) == (file_stat.st_dev, file_stat.st_ino)
+
+
 def test_hash_fd_hashes_entire_file_and_resets_offset(tmp_path: Path) -> None:
     payload = b"0123456789"
     path = tmp_path / "artifact"
@@ -115,6 +123,42 @@ def test_hash_fd_hashes_entire_file_and_resets_offset(tmp_path: Path) -> None:
         assert os.lseek(fd, 0, os.SEEK_CUR) == 0
     finally:
         os.close(fd)
+
+
+def test_copy_fd_copies_from_start_and_returns_destination_identity(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    destination = tmp_path / "destination"
+    source.write_bytes(b"0123456789")
+    fd = os.open(source, os.O_RDONLY)
+    try:
+        os.lseek(fd, 4, os.SEEK_SET)
+
+        copied_identity = backup_fs.copy_fd(fd, destination)
+
+        assert destination.read_bytes() == b"0123456789"
+        assert copied_identity == backup_fs.identity(destination.stat())
+        assert os.lseek(fd, 0, os.SEEK_CUR) == 0
+    finally:
+        os.close(fd)
+
+
+def test_restore_displaced_links_source_without_replacing_foreign_path(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "isolated"
+    canonical = tmp_path / "canonical"
+    source.write_bytes(b"owned")
+
+    assert backup_fs.restore_displaced(source, canonical)
+    assert backup_fs.identity(canonical.stat()) == backup_fs.identity(source.stat())
+
+    canonical.unlink()
+    canonical.write_bytes(b"foreign")
+
+    assert not backup_fs.restore_displaced(source, canonical)
+    assert canonical.read_bytes() == b"foreign"
 
 
 def test_read_fd_bytes_reads_entire_file_and_resets_offset(tmp_path: Path) -> None:

@@ -12,7 +12,6 @@
     "src/zhiji_backend/briefing.py": 490,
     "src/zhiji_backend/collector.py": 475,
     "src/zhiji_backend/config_manager.py": 447,
-    "src/zhiji_backend/database_backup.py": 1082,
     "src/zhiji_backend/db.py": 599,
     "src/zhiji_backend/ingest/douyin.py": 541,
     "src/zhiji_backend/main.py": 401,
