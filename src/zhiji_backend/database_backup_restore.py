@@ -13,6 +13,7 @@ from . import (
     database_backup_restore_sidecars,
     database_backup_restore_stages,
 )
+from ._database_backup_cleanup import run_best_effort_cleanup
 from ._database_backup_identity_cleanup import isolate_and_unlink
 
 if TYPE_CHECKING:
@@ -305,13 +306,16 @@ def recover_rollback_restore(
             f"rollback restore is incomplete; recover from {journal_path}"
         ) from failure
     finally:
-        trusted_journal.close()
+        cleanup_actions = [("trusted journal", trusted_journal.close)]
         if final_set is not None:
-            final_set.close()
-        for staged in staged_artifacts:
-            staged.close()
+            cleanup_actions.append(("final restore set", final_set.close))
+        cleanup_actions.extend(
+            (f"staged artifact {index}", staged.close)
+            for index, staged in enumerate(staged_artifacts)
+        )
         if sidecars is not None:
-            sidecars.close()
+            cleanup_actions.append(("sidecars", sidecars.close))
+        run_best_effort_cleanup(cleanup_actions)
     return {
         "database": destinations["database"],
         "config": destinations["config"],

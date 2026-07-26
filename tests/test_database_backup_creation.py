@@ -49,6 +49,7 @@ def _create_rollback_backup(
     *,
     write_json_atomic=database_backup._write_json_atomic,
     connect=sqlite3.connect,
+    unlink_if_identity=database_backup._unlink_if_identity,
 ) -> Path:
     return creation.create_rollback_backup(
         source,
@@ -66,7 +67,7 @@ def _create_rollback_backup(
         write_json_exclusive=database_backup._write_json_exclusive,
         pin_json_file=database_backup._pin_json_file,
         write_json_atomic=write_json_atomic,
-        unlink_if_identity=database_backup._unlink_if_identity,
+        unlink_if_identity=unlink_if_identity,
         migration_is_pending=database_backup._migration_is_pending,
         read_only_uri=database_backup._read_only_uri,
         connect=connect,
@@ -183,6 +184,48 @@ def test_rollback_failure_remains_primary_when_close_also_fails(
     assert connection.events == ["rollback", "close"]
     assert exc_info.value.__notes__ == [
         "close cleanup failed: OSError: close failed"
+    ]
+
+
+def test_publication_cleanup_attempts_every_path_and_preserves_primary_error(
+    tmp_path: Path,
+) -> None:
+    source, config_path = _sources(tmp_path)
+    primary_error = ValueError("marker publication failed")
+    attempts: list[Path] = []
+    cleanup_failures = [
+        OSError("manifest cleanup failed"),
+        RuntimeError("config cleanup failed"),
+    ]
+
+    def fail_marker(*_args: object, **_kwargs: object) -> None:
+        raise primary_error
+
+    def cleanup(path: Path, _identity: tuple[int, int]) -> None:
+        attempts.append(path)
+        if cleanup_failures:
+            raise cleanup_failures.pop(0)
+
+    with pytest.raises(ValueError) as exc_info:
+        _create_rollback_backup(
+            source,
+            config_path,
+            tmp_path / "backups",
+            write_json_atomic=fail_marker,
+            unlink_if_identity=cleanup,
+        )
+
+    assert exc_info.value is primary_error
+    assert [path.name for path in attempts] == [
+        "rollback-manifest-20260725-123456.json",
+        "system_config-pre-cleanup-20260725-123456.json",
+        "intelligence-pre-cleanup-20260725-123456.sqlite",
+    ]
+    assert exc_info.value.__notes__ == [
+        "publication rollback-manifest-20260725-123456.json cleanup failed: "
+        "OSError: manifest cleanup failed",
+        "publication system_config-pre-cleanup-20260725-123456.json cleanup "
+        "failed: RuntimeError: config cleanup failed",
     ]
 
 

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import sqlite3
-import sys
 from collections.abc import Callable
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import Any, Protocol
+
+from ._database_backup_cleanup import run_best_effort_cleanup
 
 FileIdentity = tuple[int, int]
 CanonicalSource = Callable[[Path, str], tuple[Path, FileIdentity]]
@@ -18,37 +20,9 @@ class PinnedManifest(Protocol):
 
 
 def _close_lock_connection(lock_conn: sqlite3.Connection) -> None:
-    active_error = sys.exception()
-    rollback_error: Exception | None = None
-    close_error: Exception | None = None
-    try:
-        lock_conn.rollback()
-    except Exception as exc:
-        rollback_error = exc
-    try:
-        lock_conn.close()
-    except Exception as exc:
-        close_error = exc
-
-    if active_error is not None:
-        if rollback_error is not None:
-            active_error.add_note(
-                f"rollback cleanup failed: {type(rollback_error).__name__}: "
-                f"{rollback_error}"
-            )
-        if close_error is not None:
-            active_error.add_note(
-                f"close cleanup failed: {type(close_error).__name__}: {close_error}"
-            )
-        return
-    if rollback_error is not None:
-        if close_error is not None:
-            rollback_error.add_note(
-                f"close cleanup failed: {type(close_error).__name__}: {close_error}"
-            )
-        raise rollback_error
-    if close_error is not None:
-        raise close_error
+    run_best_effort_cleanup(
+        (("rollback", lock_conn.rollback), ("close", lock_conn.close))
+    )
 
 
 def _migration_is_pending(
@@ -238,8 +212,15 @@ def create_rollback_backup(
         write_json_atomic(marker_path, marker, on_published=mark_published)
     except Exception:
         if not marker_published:
-            for path, identity in reversed(owned_publications):
-                unlink_if_identity(path, identity)
+            run_best_effort_cleanup(
+                (
+                    (
+                        f"publication {path.name}",
+                        partial(unlink_if_identity, path, identity),
+                    )
+                    for path, identity in reversed(owned_publications)
+                )
+            )
         raise
     finally:
         _close_lock_connection(lock_conn)

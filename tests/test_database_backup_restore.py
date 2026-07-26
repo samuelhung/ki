@@ -118,6 +118,59 @@ def test_second_recovery_stage_failure_identity_cleans_first_recreated_stage(
         assert list(tmp_path.glob("*.restore-stage")) == []
 
 
+def test_recovery_stage_cleanup_failure_preserves_second_stage_error(
+    tmp_path: Path,
+) -> None:
+    journal = {
+        "entries": {
+            "config": {"stage_path": "original-config-stage"},
+            "database": {"stage_path": "original-database-stage"},
+        }
+    }
+    missing_stages = {
+        "config": (tmp_path / "missing-config", (1, 2)),
+        "database": (tmp_path / "missing-database", (3, 4)),
+    }
+    destinations = {
+        "config": tmp_path / "system_config.json",
+        "database": tmp_path / "intelligence.sqlite",
+    }
+    artifacts = {"config": object(), "database": object()}
+    stage_error = OSError("second recovery stage failed")
+    cleanup_error = RuntimeError("first stage cleanup failed")
+    cleanups: list[tuple[Path, tuple[int, int]]] = []
+    recreated = tmp_path / ".config.recreated.restore-stage"
+
+    def stage(_candidate: object, destination: Path) -> Path:
+        if destination == destinations["database"]:
+            raise stage_error
+        recreated.write_bytes(b"recreated config")
+        return recreated
+
+    def cleanup(path: Path, identity: tuple[int, int]) -> None:
+        cleanups.append((path, identity))
+        raise cleanup_error
+
+    with pytest.raises(OSError) as exc_info:
+        database_backup_restore_finalization.ensure_owned_recovery_stages(
+            journal,
+            missing_stages,
+            database_backup_restore_finalization.FinalRestoreSet(artifacts),
+            destinations,
+            stage_pinned_restore=stage,
+            unlink_if_identity=cleanup,
+        )
+
+    recreated_stat = recreated.stat()
+    assert exc_info.value is stage_error
+    assert str(exc_info.value) == "second recovery stage failed"
+    assert cleanups == [(recreated, (recreated_stat.st_dev, recreated_stat.st_ino))]
+    assert exc_info.value.__notes__ == [
+        "recovery stage .config.recreated.restore-stage cleanup failed: "
+        "RuntimeError: first stage cleanup failed"
+    ]
+
+
 def _create_database(path: Path) -> None:
     with sqlite3.connect(path) as conn:
         conn.executescript(
@@ -158,6 +211,172 @@ def _direct_recover(journal_path: Path, **kwargs: Any) -> dict[str, Path]:
         journal_path,
         **dependencies,
     )
+
+
+def test_recover_close_attempts_every_resource_and_preserves_body_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    journal_path = tmp_path / "restore-journal.json"
+    manifest_path = tmp_path / "manifest.json"
+    destinations = {
+        "config": tmp_path / "system_config.json",
+        "database": tmp_path / "intelligence.sqlite",
+    }
+    artifacts = {
+        "config": {"sha256": "config-sha", "size": 2},
+        "database": {"sha256": "database-sha", "size": 8},
+    }
+    stages = {
+        "config": tmp_path / "config.restore-stage",
+        "database": tmp_path / "database.restore-stage",
+    }
+    journal = {
+        "schema_version": 1,
+        "state": "staged",
+        "manifest_path": str(manifest_path),
+        "manifest_sha256": "manifest-sha",
+        "entries": {
+            key: {
+                "destination": str(destinations[key]),
+                "stage_path": str(stages[key]),
+                "sha256": artifacts[key]["sha256"],
+                "size": artifacts[key]["size"],
+            }
+            for key in ("config", "database")
+        },
+    }
+    journal_path.write_text(json.dumps(journal), encoding="utf-8")
+    manifest_path.write_text("{}", encoding="utf-8")
+    events: list[str] = []
+    body_error = OSError("journal quarantine failed")
+
+    class FailingResource:
+        def __init__(self, label: str) -> None:
+            self.label = label
+            self.closed = False
+
+        def close(self) -> None:
+            self.closed = True
+            events.append(self.label)
+            raise RuntimeError(f"{self.label} close failed")
+
+    class FakeTrustedJournal(FailingResource):
+        disposed = False
+
+        def quarantine(self, **_kwargs: object) -> None:
+            raise body_error
+
+    class FakeFinalSet(FailingResource):
+        def assert_valid(self) -> None:
+            pass
+
+    class FakeSidecars(FailingResource):
+        def quarantine(self) -> None:
+            pass
+
+        def assert_clear(self) -> None:
+            pass
+
+    class FakeClone:
+        def cleanup(self) -> None:
+            pass
+
+    trusted = FakeTrustedJournal("trusted journal")
+    final_set = FakeFinalSet("final restore set")
+    sidecars = FakeSidecars("sidecars")
+    staged = {
+        "config": FailingResource("staged config"),
+        "database": FailingResource("staged database"),
+    }
+    staged["config"].signature = (1, 2)
+    staged["database"].signature = (3, 4)
+
+    journal_module = database_backup_restore.database_backup_restore_journal
+    sidecar_module = database_backup_restore.database_backup_restore_sidecars
+    stage_module = database_backup_restore.database_backup_restore_stages
+    finalization_module = (
+        database_backup_restore.database_backup_restore_finalization
+    )
+    monkeypatch.setattr(
+        journal_module.TrustedJournalDisposition,
+        "capture",
+        classmethod(lambda _cls, *_args: trusted),
+    )
+    monkeypatch.setattr(
+        sidecar_module.SidecarDisposition,
+        "capture",
+        classmethod(lambda _cls, *_args: sidecars),
+    )
+    monkeypatch.setattr(
+        sidecar_module,
+        "restore_after_failure",
+        lambda _sidecars, error: error,
+    )
+    monkeypatch.setattr(
+        stage_module,
+        "validate_restore_stage",
+        lambda _value, destination, *_args, **_kwargs: (
+            stages["config" if destination == destinations["config"] else "database"],
+            staged["config" if destination == destinations["config"] else "database"],
+        ),
+    )
+    monkeypatch.setattr(
+        stage_module,
+        "create_private_restore_clone",
+        lambda *_args, **_kwargs: FakeClone(),
+    )
+    monkeypatch.setattr(
+        stage_module,
+        "replace_and_verify_private_restore",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        finalization_module,
+        "pin_final_restore_set",
+        lambda *_args, **_kwargs: final_set,
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        database_backup_restore.recover_rollback_restore(
+            journal_path,
+            canonical_path=lambda value, _label: Path(str(value)),
+            load_json_regular=lambda _path, _label: journal,
+            validate_rollback_manifest=lambda *_args, **_kwargs: (
+                {"artifacts": artifacts},
+                [],
+                destinations,
+                "manifest-sha",
+            ),
+            pin_artifact=lambda *_args, **_kwargs: pytest.fail("unexpected pin"),
+            restore_path_matches=lambda *_args: False,
+            stage_pinned_restore=lambda *_args: pytest.fail("unexpected stage"),
+            replace_staged_restore=lambda *_args: None,
+            unlink_if_identity=lambda *_args: None,
+            fsync_parent=lambda _path: None,
+        )
+
+    assert str(exc_info.value) == (
+        f"rollback restore is incomplete; recover from {journal_path}"
+    )
+    assert exc_info.value.__cause__ is body_error
+    assert events == [
+        "trusted journal",
+        "final restore set",
+        "staged config",
+        "staged database",
+        "sidecars",
+    ]
+    assert all(
+        resource.closed
+        for resource in (trusted, final_set, *staged.values(), sidecars)
+    )
+    assert exc_info.value.__notes__ == [
+        "trusted journal cleanup failed: RuntimeError: trusted journal close failed",
+        "final restore set cleanup failed: RuntimeError: final restore set close failed",
+        "staged artifact 0 cleanup failed: RuntimeError: staged config close failed",
+        "staged artifact 1 cleanup failed: RuntimeError: staged database close failed",
+        "sidecars cleanup failed: RuntimeError: sidecars close failed",
+    ]
 
 
 def _direct_restore(manifest_path: Path) -> dict[str, Path]:

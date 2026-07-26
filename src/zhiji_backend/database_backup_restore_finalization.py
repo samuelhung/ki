@@ -4,10 +4,12 @@ import copy
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from . import _database_backup_fs
+from ._database_backup_cleanup import run_best_effort_cleanup
 
 if TYPE_CHECKING:
     from .database_backup_artifacts import PinnedArtifact
@@ -97,7 +99,14 @@ def ensure_owned_recovery_stages(
                 created.append((stage, (stage_stat.st_dev, stage_stat.st_ino)))
                 entries[key]["stage_path"] = str(stage)
     except Exception:
-        for stage, identity in reversed(created):
-            unlink_if_identity(stage, identity)
+        run_best_effort_cleanup(
+            (
+                (
+                    f"recovery stage {stage.name}",
+                    partial(unlink_if_identity, stage, identity),
+                )
+                for stage, identity in reversed(created)
+            )
+        )
         raise
     return recoverable
