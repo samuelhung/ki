@@ -58,6 +58,17 @@ def persistence_scope(dependencies: PersistenceDependencies) -> Iterator[None]:
         _SCOPED_DEPENDENCIES.reset(token)
 
 
+def _without_plaintext_provider_credential(config: dict) -> dict:
+    general = config.get("general")
+    if not isinstance(general, dict) or "api_key" not in general:
+        return config
+    storage_config = dict(config)
+    storage_general = dict(general)
+    storage_general.pop("api_key")
+    storage_config["general"] = storage_general
+    return storage_config
+
+
 def write_config(config: dict) -> None:
     """Atomically write a config payload without changing in-memory state."""
     dependencies = _current_dependencies()
@@ -77,7 +88,8 @@ def write_config(config: dict) -> None:
         ) as temp_file:
             temp_path = Path(temp_file.name)
             os_module.fchmod(temp_file.fileno(), 0o600)
-            json.dump(config, temp_file, ensure_ascii=False, indent=2)
+            storage_config = _without_plaintext_provider_credential(config)
+            json.dump(storage_config, temp_file, ensure_ascii=False, indent=2)
             temp_file.flush()
             os_module.fsync(temp_file.fileno())
         os_module.chmod(temp_path, 0o600)

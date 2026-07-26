@@ -5,6 +5,7 @@ import logging
 import os
 import stat
 import threading
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -58,6 +59,59 @@ def test_direct_write_resolves_local_defaults_at_call_time(
     assert stat.S_IMODE(config_path.stat().st_mode) == 0o600
     assert destinations == [config_path]
     assert messages == [("Saved system config to %s", config_path)]
+
+
+@pytest.mark.parametrize(
+    "writer",
+    [config_manager._write_config, config_persistence.write_config],
+    ids=["config-manager-facade", "config-persistence"],
+)
+def test_direct_writers_never_serialize_general_api_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, writer
+) -> None:
+    config_path = tmp_path / "system_config.json"
+    payload = {
+        "api_key": "root-field-is-not-provider-credential",
+        "general": {
+            "api_key": "plaintext-provider-secret",
+            "model": "kept-model",
+            "nested": {"api_key": "nested-field-is-preserved", "enabled": True},
+        },
+        "custom": {"value": 7},
+    }
+    before = deepcopy(payload)
+    monkeypatch.setattr(config_persistence, "CONFIG_PATH", config_path)
+
+    writer(payload)
+
+    raw = config_path.read_bytes()
+    persisted = json.loads(raw)
+    assert b"plaintext-provider-secret" not in raw
+    assert b'"api_key": "plaintext-provider-secret"' not in raw
+    assert persisted == {
+        "api_key": "root-field-is-not-provider-credential",
+        "general": {
+            "model": "kept-model",
+            "nested": {"api_key": "nested-field-is-preserved", "enabled": True},
+        },
+        "custom": {"value": 7},
+    }
+    assert payload == before
+
+
+@pytest.mark.parametrize("general", [None, "unchanged", ["api_key", "unchanged"]])
+def test_write_preserves_non_dict_general_values(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, general
+) -> None:
+    config_path = tmp_path / "system_config.json"
+    payload = {"general": general, "custom": {"api_key": "unchanged"}}
+    before = deepcopy(payload)
+    monkeypatch.setattr(config_persistence, "CONFIG_PATH", config_path)
+
+    config_persistence.write_config(payload)
+
+    assert json.loads(config_path.read_bytes()) == payload
+    assert payload == before
 
 
 def test_write_uses_same_directory_temp_file_and_file_then_parent_fsync(
