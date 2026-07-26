@@ -1,28 +1,25 @@
 from __future__ import annotations
 
-import datetime as _dt
-import json as _json
 import logging
-import re as _re
 import sqlite3
 
 from . import db_schema
 
-logger = logging.getLogger("zhiji_backend.db")
-
 
 def run_migrations(conn: sqlite3.Connection) -> None:
-    _migrate_events_cn(conn)
-    _migrate_brainstorm(conn)
-    _migrate_series(conn)
-    _migrate_ingest_tasks_retry(conn)
-    _migrate_video_md5(conn)
+    from . import db as db_facade
+
+    db_facade._migrate_events_cn(conn)
+    db_facade._migrate_brainstorm(conn)
+    db_facade._migrate_series(conn)
+    db_facade._migrate_ingest_tasks_retry(conn)
+    db_facade._migrate_video_md5(conn)
     db_schema.create_indexes(conn)
-    _migrate_textbook(conn)
-    _migrate_lessons_json(conn)
-    _migrate_chain_reports(conn)
-    _migrate_chain_meta(conn)
-    _backfill_fts(conn)
+    db_facade._migrate_textbook(conn)
+    db_facade._migrate_lessons_json(conn)
+    db_facade._migrate_chain_reports(conn)
+    db_facade._migrate_chain_meta(conn)
+    db_facade._backfill_fts(conn)
 
 
 def _migrate_events_cn(conn: sqlite3.Connection) -> None:
@@ -153,6 +150,8 @@ def _migrate_brainstorm(conn: sqlite3.Connection) -> None:
         )
 
     if "answered_event_ids" in cols:
+        import json as _json
+
         rows = conn.execute(
             "SELECT id, answered_event_ids FROM brainstorm_questions"
         ).fetchall()
@@ -168,11 +167,15 @@ def _migrate_brainstorm(conn: sqlite3.Connection) -> None:
             except (_json.JSONDecodeError, TypeError):
                 pass
 
-    _migrate_brainstorm_answers_to_messages(conn)
+    from . import db as db_facade
+
+    db_facade._migrate_brainstorm_answers_to_messages(conn)
 
 
 def _migrate_brainstorm_answers_to_messages(conn: sqlite3.Connection) -> None:
     """Convert old Markdown answers into brainstorm conversation messages."""
+    import json as _json
+    import re as _re
 
     def strip_old_header(content: str) -> tuple[str, str | None]:
         match = _re.search(r"## 回答", content)
@@ -225,6 +228,8 @@ def _migrate_brainstorm_answers_to_messages(conn: sqlite3.Connection) -> None:
         )
 
         timestamp_value = None
+        import datetime as _dt
+
         if answer_ts:
             try:
                 parsed = _dt.datetime.strptime(answer_ts, "%Y-%m-%d %H:%M")
@@ -271,7 +276,9 @@ def _migrate_ingest_tasks_retry(conn: sqlite3.Connection) -> None:
             "ALTER TABLE ingest_tasks "
             "ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0"
         )
-        logger.info("Migration: added retry_count column to ingest_tasks")
+        from . import db as db_facade
+
+        db_facade.logger.info("Migration: added retry_count column to ingest_tasks")
 
 
 def _migrate_video_md5(conn: sqlite3.Connection) -> None:
@@ -279,4 +286,6 @@ def _migrate_video_md5(conn: sqlite3.Connection) -> None:
     cols = {row[1] for row in conn.execute("PRAGMA table_info(events)").fetchall()}
     if "video_md5" not in cols:
         conn.execute("ALTER TABLE events ADD COLUMN video_md5 TEXT")
-        logger.info("Migration: added video_md5 column to events")
+        from . import db as db_facade
+
+        db_facade.logger.info("Migration: added video_md5 column to events")

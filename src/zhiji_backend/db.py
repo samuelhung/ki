@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
 from collections.abc import Iterator
@@ -8,6 +9,22 @@ from pathlib import Path
 
 from . import db_migrations, db_schema
 from .paths import DEFAULT_DB_PATH
+
+logger = logging.getLogger(__name__)
+
+_migrate_events_cn = db_migrations._migrate_events_cn
+_migrate_textbook = db_migrations._migrate_textbook
+_migrate_lessons_json = db_migrations._migrate_lessons_json
+_migrate_chain_reports = db_migrations._migrate_chain_reports
+_migrate_chain_meta = db_migrations._migrate_chain_meta
+_backfill_fts = db_migrations._backfill_fts
+_migrate_brainstorm = db_migrations._migrate_brainstorm
+_migrate_brainstorm_answers_to_messages = (
+    db_migrations._migrate_brainstorm_answers_to_messages
+)
+_migrate_series = db_migrations._migrate_series
+_migrate_ingest_tasks_retry = db_migrations._migrate_ingest_tasks_retry
+_migrate_video_md5 = db_migrations._migrate_video_md5
 
 DEFAULT_SOURCES = [
     {
