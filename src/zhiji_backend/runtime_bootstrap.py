@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import MutableMapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -16,9 +17,18 @@ class LoggerLevelMutation:
 
 
 @dataclass(frozen=True)
+class EnvironmentMutation:
+    name: str
+    previous: str | None
+    applied: str | None
+
+
+@dataclass(frozen=True)
 class RuntimeResources:
     handlers: tuple[Any, ...] = ()
     level_mutations: tuple[LoggerLevelMutation, ...] = ()
+    environment: MutableMapping[str, str] | None = None
+    environment_mutations: tuple[EnvironmentMutation, ...] = ()
 
     def __iter__(self):
         return iter(self.handlers)
@@ -31,10 +41,50 @@ def restore_module_state(namespace: dict[str, Any], state: dict[str, Any]) -> No
     namespace.update(state)
 
 
-def rollback_runtime(resources: RuntimeResources, *, root_logger: Any) -> None:
+def _environment_mutations(
+    environment: MutableMapping[str, str], before: dict[str, str]
+) -> tuple[EnvironmentMutation, ...]:
+    names = before.keys() | environment.keys()
+    return tuple(
+        EnvironmentMutation(name, before.get(name), environment.get(name))
+        for name in names
+        if before.get(name) != environment.get(name)
+        or (name in before) != (name in environment)
+    )
+
+
+def rollback_environment(
+    environment: MutableMapping[str, str],
+    mutations: tuple[EnvironmentMutation, ...],
+) -> None:
+    for mutation in reversed(mutations):
+        current = environment.get(mutation.name)
+        if current != mutation.applied or (mutation.name in environment) != (
+            mutation.applied is not None
+        ):
+            continue
+        if mutation.previous is None:
+            environment.pop(mutation.name, None)
+        else:
+            environment[mutation.name] = mutation.previous
+
+
+def prepare_environment(
+    environment: MutableMapping[str, str], load: Any
+) -> tuple[EnvironmentMutation, ...]:
+    before = dict(environment)
+    try:
+        load()
+    except BaseException:
+        rollback_environment(environment, _environment_mutations(environment, before))
+        raise
+    return _environment_mutations(environment, before)
+
+
+def rollback_runtime(resources: RuntimeResources, *, root_logger: Any | None) -> None:
     for handler in resources.handlers:
         try:
-            if handler in root_logger.handlers:
+            if root_logger is not None and handler in root_logger.handlers:
                 root_logger.removeHandler(handler)
         except BaseException:
             pass
@@ -48,6 +98,8 @@ def rollback_runtime(resources: RuntimeResources, *, root_logger: Any) -> None:
                 mutation.logger.setLevel(mutation.previous)
         except BaseException:
             pass
+    if resources.environment is not None:
+        rollback_environment(resources.environment, resources.environment_mutations)
 
 
 def prepare_logging(
@@ -92,3 +144,35 @@ def prepare_logging(
         resources = RuntimeResources(tuple(installed), level_mutations)
         rollback_runtime(resources, root_logger=root_logger)
         raise
+
+
+def create_console_handler(logging_module: Any, formatter_type: Any) -> Any:
+    handler = logging_module.StreamHandler()
+    handler.setLevel(logging_module.INFO)
+    handler.setFormatter(
+        formatter_type(
+            "%(asctime)s [%(levelname)-7s] %(name)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    return handler
+
+
+def create_file_handler(
+    logging_module: Any, handler_type: Any, formatter_type: Any, log_dir: Any
+) -> Any:
+    handler = handler_type(
+        str(log_dir / "ki.log"),
+        when="midnight",
+        interval=1,
+        backupCount=30,
+        encoding="utf-8",
+    )
+    handler.setLevel(logging_module.DEBUG)
+    handler.setFormatter(
+        formatter_type(
+            "%(asctime)s [%(levelname)-7s] %(name)s:%(lineno)d | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    return handler

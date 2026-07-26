@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import logging as _logging
+import os
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from pathlib import Path as _Path
@@ -27,8 +28,9 @@ FastAPI, HTTPException, JSONResponse, Path = (
     _Path,
 )
 CORSMiddleware = _cors.CORSMiddleware
-FRONTEND_DIST, INGEST_ROOT, LOG_DIR, RELEASES_DIR, ZHIJI_HOME = (
-    _paths.FRONTEND_DIST,
+if "FRONTEND_DIST" not in globals():
+    FRONTEND_DIST = _paths.FRONTEND_DIST
+INGEST_ROOT, LOG_DIR, RELEASES_DIR, ZHIJI_HOME = (
     _paths.INGEST_ROOT,
     _paths.LOG_DIR,
     _paths.RELEASES_DIR,
@@ -73,33 +75,19 @@ def _root_logger():
 
 
 def _create_console_handler():
-    handler = _logging.StreamHandler()
-    handler.setLevel(_logging.INFO)
-    handler.setFormatter(
-        RedactingFormatter(
-            "%(asctime)s [%(levelname)-7s] %(name)s | %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
+    return runtime_bootstrap.create_console_handler(
+        _logging,
+        RedactingFormatter,
     )
-    return handler
 
 
 def _create_file_handler():
-    handler = SecureTimedRotatingFileHandler(
-        str(LOG_DIR / "ki.log"),
-        when="midnight",
-        interval=1,
-        backupCount=30,
-        encoding="utf-8",
+    return runtime_bootstrap.create_file_handler(
+        _logging,
+        SecureTimedRotatingFileHandler,
+        RedactingFormatter,
+        LOG_DIR,
     )
-    handler.setLevel(_logging.DEBUG)
-    handler.setFormatter(
-        RedactingFormatter(
-            "%(asctime)s [%(levelname)-7s] %(name)s:%(lineno)d | %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-    )
-    return handler
 
 
 def _remove_runtime_handlers(handlers) -> None:
@@ -117,7 +105,7 @@ def _rollback_runtime_resources(resources: runtime_bootstrap.RuntimeResources) -
     try:
         root = _root_logger()
     except BaseException:
-        return
+        root = None
     runtime_bootstrap.rollback_runtime(resources, root_logger=root)
 
 
@@ -126,14 +114,30 @@ def _prepare_runtime() -> runtime_bootstrap.RuntimeResources:
     env_path = ZHIJI_HOME / ".env"
     if not env_path.exists() and not env_path.is_symlink():
         env_path = Path(__file__).resolve().parents[2] / ".env"
-    load_hardened_env(env_path, override=True)
-
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-    return runtime_bootstrap.prepare_logging(
-        logging_module=_logging,
-        root_logger=_root_logger(),
-        create_console_handler=_create_console_handler,
-        create_file_handler=_create_file_handler,
+    environment_mutations = runtime_bootstrap.prepare_environment(
+        os.environ,
+        lambda: load_hardened_env(env_path, override=True),
+    )
+    environment_resources = runtime_bootstrap.RuntimeResources(
+        environment=os.environ,
+        environment_mutations=environment_mutations,
+    )
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        logging_resources = runtime_bootstrap.prepare_logging(
+            logging_module=_logging,
+            root_logger=_root_logger(),
+            create_console_handler=_create_console_handler,
+            create_file_handler=_create_file_handler,
+        )
+    except BaseException:
+        _rollback_runtime_resources(environment_resources)
+        raise
+    return runtime_bootstrap.RuntimeResources(
+        handlers=logging_resources.handlers,
+        level_mutations=logging_resources.level_mutations,
+        environment=os.environ,
+        environment_mutations=environment_mutations,
     )
 
 
@@ -166,7 +170,7 @@ def _publish_dependencies(dependencies: SimpleNamespace) -> None:
     global hmac, _csv_env, _allowed_hosts, _cors_origins, _api_token
     global _is_loopback_host, _is_protected_path, _requires_token_for_request
     global _request_token, _DEFAULT_ALLOWED_HOSTS, _DEFAULT_CORS_ORIGINS
-    global PUBLIC_INGEST_ARTIFACTS
+    global PUBLIC_INGEST_ARTIFACTS, FRONTEND_DIST
 
     app_lifecycle = dependencies.app_lifecycle
     api_middleware = dependencies.api_middleware
@@ -196,6 +200,7 @@ def _publish_dependencies(dependencies: SimpleNamespace) -> None:
     _DEFAULT_ALLOWED_HOSTS = api_middleware.DEFAULT_ALLOWED_HOSTS
     _DEFAULT_CORS_ORIGINS = api_middleware.DEFAULT_CORS_ORIGINS
     PUBLIC_INGEST_ARTIFACTS = static_delivery.PUBLIC_INGEST_ARTIFACTS
+    FRONTEND_DIST = _paths.FRONTEND_DIST
     for route_name, route_module in dependencies.routes.items():
         globals()[f"{route_name}_router"] = route_module.router
 
@@ -220,16 +225,7 @@ def _snapshot_requires_token_policy():
 
 
 def _middleware_dependencies():
-    return api_middleware.MiddlewareDependencies(
-        api_token=_api_token,
-        request_token=_request_token,
-        requires_token_for_request=_snapshot_requires_token_policy(),
-        is_protected_path=_is_protected_path,
-        is_loopback_host=_is_loopback_host,
-        compare_digest=hmac.compare_digest,
-        has_frontend=_HAS_FRONTEND,
-        frontend_dist=FRONTEND_DIST,
-    )
+    return api_middleware.create_facade_dependency_factory(globals())()
 
 
 @asynccontextmanager
@@ -347,15 +343,16 @@ def _assemble_application(dependencies: SimpleNamespace) -> SimpleNamespace:
     global _HAS_FRONTEND, _assembly, _dependencies, app
     previous_state = globals().copy()
     middleware = dependencies.api_middleware
+    dependency_factory = middleware.create_facade_dependency_factory(globals())
     try:
         with middleware.default_dependency_factory_transaction(
-            _middleware_dependencies, owner=__name__
+            dependency_factory, owner=__name__
         ):
             application = FastAPI(title="知几", version=__version__, lifespan=lifespan)
             _add_middleware(application, dependencies)
             _add_routes(application, dependencies)
             has_frontend = dependencies.static_delivery.mount_frontend(
-                application, frontend_dist=FRONTEND_DIST
+                application, frontend_dist=_paths.FRONTEND_DIST
             )
             _publish_dependencies(dependencies)
             _HAS_FRONTEND = has_frontend

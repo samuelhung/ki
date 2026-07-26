@@ -7,6 +7,7 @@ from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from fastapi import Request
 from fastapi.responses import (
@@ -47,6 +48,55 @@ class MiddlewareDependencies:
 
 
 DefaultDependencyFactory = Callable[[], MiddlewareDependencies]
+
+
+def _build_facade_policy(
+    protected_path: Callable[[str], bool],
+    loopback_host: Callable[[str | None], bool],
+) -> Callable[[str, str | None], bool]:
+    def policy(path: str, client_host: str | None) -> bool:
+        if path == "/api/health" or not protected_path(path):
+            return False
+        return not loopback_host(client_host)
+
+    return policy
+
+
+@dataclass(frozen=True)
+class FacadeDependencyFactory:
+    namespace: dict[str, Any]
+    dependencies_type: type[MiddlewareDependencies]
+    default_policy: Callable[[str, str | None], bool]
+    policy_builder: Callable[..., Callable[[str, str | None], bool]]
+
+    def __call__(self) -> MiddlewareDependencies:
+        namespace = self.namespace
+        protected_path = namespace["_is_protected_path"]
+        loopback_host = namespace["_is_loopback_host"]
+        policy = namespace["_requires_token_for_request"]
+        if policy is self.default_policy:
+            policy = self.policy_builder(protected_path, loopback_host)
+        return self.dependencies_type(
+            api_token=namespace["_api_token"],
+            request_token=namespace["_request_token"],
+            requires_token_for_request=policy,
+            is_protected_path=protected_path,
+            is_loopback_host=loopback_host,
+            compare_digest=namespace["hmac"].compare_digest,
+            has_frontend=namespace["_HAS_FRONTEND"],
+            frontend_dist=namespace["FRONTEND_DIST"],
+        )
+
+
+def create_facade_dependency_factory(
+    namespace: dict[str, Any],
+) -> FacadeDependencyFactory:
+    return FacadeDependencyFactory(
+        namespace=namespace,
+        dependencies_type=MiddlewareDependencies,
+        default_policy=requires_token_for_request,
+        policy_builder=_build_facade_policy,
+    )
 
 
 @dataclass(frozen=True)
@@ -193,8 +243,9 @@ def register_default_dependency_factory(
         raise TypeError("default dependency factory must be callable")
     if not isinstance(owner, str) or not owner:
         raise ValueError("default dependency factory owner must be a non-empty string")
-    module = getattr(factory, "__module__", None)
-    qualname = getattr(factory, "__qualname__", None)
+    factory_identity = factory if hasattr(factory, "__qualname__") else type(factory)
+    module = getattr(factory_identity, "__module__", None)
+    qualname = getattr(factory_identity, "__qualname__", None)
     if not isinstance(module, str) or not isinstance(qualname, str):
         raise TypeError("default dependency factory must be a named callable")
 
