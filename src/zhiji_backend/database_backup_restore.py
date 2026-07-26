@@ -287,6 +287,7 @@ def recover_rollback_restore(
                             final_set,
                             destinations,
                             stage_pinned_restore=stage_pinned_restore,
+                            unlink_if_identity=unlink_if_identity,
                         )
                     )
                 if recovery_journal == journal:

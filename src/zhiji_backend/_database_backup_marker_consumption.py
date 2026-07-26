@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from ._database_backup_fs import identity, restore_displaced
 from ._database_backup_path_publication import (
     PathSignature,
     expected_destination_publication,
@@ -18,11 +19,7 @@ from ._database_backup_path_publication import (
     transition_marker_exclusive,
 )
 from .database_backup_manifest import parse_created_at
-from .database_backup_restore_private import (
-    create_recovery_copy,
-    identity,
-    restore_displaced,
-)
+from .database_backup_restore_private import create_recovery_copy
 
 _READY_KEYS = {
     "schema_version",

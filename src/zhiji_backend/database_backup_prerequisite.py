@@ -42,7 +42,7 @@ class BackupPrerequisiteLease:
     manifest: dict[str, Any]
     pinned_files: list[tuple[PinnedArtifact, str]]
     _assert_pinned_artifact: ClassVar[Callable[[PinnedArtifact, str], None]] = (
-        _default_assert_pinned_artifact
+        staticmethod(_default_assert_pinned_artifact)
     )
 
     def assert_published(self) -> None:

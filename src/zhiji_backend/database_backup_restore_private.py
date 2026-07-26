@@ -1,47 +1,17 @@
 from __future__ import annotations
 
-import hashlib
 import os
-import stat
 import tempfile
 from pathlib import Path
 
-FileIdentity = tuple[int, int]
+from . import _database_backup_fs
 
-
-def identity(file_stat: os.stat_result) -> FileIdentity:
-    return file_stat.st_dev, file_stat.st_ino
-
-
-def hash_fd(fd: int) -> str:
-    digest = hashlib.sha256()
-    os.lseek(fd, 0, os.SEEK_SET)
-    while chunk := os.read(fd, 1024 * 1024):
-        digest.update(chunk)
-    os.lseek(fd, 0, os.SEEK_SET)
-    return digest.hexdigest()
-
-
-def read_fd(fd: int) -> bytes:
-    chunks: list[bytes] = []
-    os.lseek(fd, 0, os.SEEK_SET)
-    while chunk := os.read(fd, 1024 * 1024):
-        chunks.append(chunk)
-    os.lseek(fd, 0, os.SEEK_SET)
-    return b"".join(chunks)
-
-
-def copy_fd(fd: int, path: Path) -> FileIdentity:
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0)
-    recovery_fd = os.open(path, flags, 0o600)
-    try:
-        view = memoryview(read_fd(fd))
-        while view:
-            view = view[os.write(recovery_fd, view) :]
-        os.fsync(recovery_fd)
-        return identity(os.fstat(recovery_fd))
-    finally:
-        os.close(recovery_fd)
+FileIdentity = _database_backup_fs.FileIdentity
+copy_fd = _database_backup_fs.copy_fd
+hash_fd = _database_backup_fs.hash_fd
+identity = _database_backup_fs.identity
+read_fd = _database_backup_fs.read_fd
+restore_displaced = _database_backup_fs.restore_displaced
 
 
 def create_recovery_copy(
@@ -71,19 +41,3 @@ def path_absent(path: Path) -> bool:
     except FileNotFoundError:
         return True
     return False
-
-
-def restore_displaced(source: Path, canonical: Path) -> bool:
-    source_stat = source.lstat()
-    if stat.S_ISDIR(source_stat.st_mode):
-        return False
-    source_identity = identity(source_stat)
-    try:
-        os.link(source, canonical, follow_symlinks=False)
-    except OSError:
-        return False
-    try:
-        canonical_stat = canonical.lstat()
-    except FileNotFoundError:
-        return False
-    return identity(canonical_stat) == source_identity

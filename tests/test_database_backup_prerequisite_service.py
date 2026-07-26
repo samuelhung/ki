@@ -65,6 +65,42 @@ def test_lease_dataclass_shape_matches_original_five_fields() -> None:
     assert set(asdict(lease)) == expected
 
 
+def test_lease_assert_published_uses_default_unbound_validator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pinned = _Pinned()
+    lease = prerequisite_service.BackupPrerequisiteLease(
+        marker_path=Path("/marker"),
+        manifest_path=Path("/manifest"),
+        marker={},
+        manifest={},
+        pinned_files=[(pinned, "marker")],
+    )
+    calls: list[tuple[object, str, object, object]] = []
+
+    def tracked_assert(
+        candidate: object,
+        label: str,
+        *,
+        stat_signature: object,
+        hash_fd: object,
+    ) -> None:
+        calls.append((candidate, label, stat_signature, hash_fd))
+
+    monkeypatch.setattr(artifacts, "assert_pinned_artifact", tracked_assert)
+
+    lease.assert_published()
+
+    assert calls == [
+        (
+            pinned,
+            "marker",
+            prerequisite_service._database_backup_fs.stat_signature,
+            prerequisite_service._database_backup_fs.hash_fd,
+        )
+    ]
+
+
 def test_assert_published_rejects_released_lease() -> None:
     lease = prerequisite_service.BackupPrerequisiteLease(
         marker_path=Path("/marker"),

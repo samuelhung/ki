@@ -12,7 +12,11 @@ from typing import Any, get_args
 
 import pytest
 
-from zhiji_backend import database_backup, database_backup_restore
+from zhiji_backend import (
+    database_backup,
+    database_backup_restore,
+    database_backup_restore_finalization,
+)
 from zhiji_backend.database_backup_artifacts import PinnedArtifact
 
 
@@ -41,6 +45,77 @@ def test_recovery_documents_execution_time_race_boundary() -> None:
 
     assert "during this function's execution" in documentation
     assert "after this function returns is outside scope" in documentation
+
+
+@pytest.mark.parametrize("foreign_replacement", [False, True])
+def test_second_recovery_stage_failure_identity_cleans_first_recreated_stage(
+    tmp_path: Path, foreign_replacement: bool,
+) -> None:
+    journal = {
+        "entries": {
+            "config": {"stage_path": "original-config-stage"},
+            "database": {"stage_path": "original-database-stage"},
+        }
+    }
+    missing_stages = {
+        "config": (tmp_path / "missing-config", (1, 2)),
+        "database": (tmp_path / "missing-database", (3, 4)),
+    }
+    destinations = {
+        "config": tmp_path / "system_config.json",
+        "database": tmp_path / "intelligence.sqlite",
+    }
+    artifacts = {"config": object(), "database": object()}
+    calls: list[tuple[object, Path]] = []
+    cleanups: list[tuple[Path, tuple[int, int]]] = []
+    recreated: Path | None = None
+    recreated_identity: tuple[int, int] | None = None
+
+    def stage(candidate: object, destination: Path) -> Path:
+        nonlocal recreated, recreated_identity
+        calls.append((candidate, destination))
+        if destination == destinations["database"]:
+            raise OSError("second recovery stage failed")
+        recreated = tmp_path / ".config.recreated.restore-stage"
+        recreated.write_bytes(b"recreated config")
+        file_stat = recreated.stat()
+        recreated_identity = file_stat.st_dev, file_stat.st_ino
+        return recreated
+
+    def cleanup(path: Path, identity: tuple[int, int]) -> None:
+        cleanups.append((path, identity))
+        if foreign_replacement:
+            foreign = tmp_path / "foreign-stage"
+            foreign.write_bytes(b"foreign stage")
+            os.replace(foreign, path)
+        database_backup._unlink_if_identity(path, identity)
+
+    with pytest.raises(OSError, match="^second recovery stage failed$"):
+        database_backup_restore_finalization.ensure_owned_recovery_stages(
+            journal,
+            missing_stages,
+            database_backup_restore_finalization.FinalRestoreSet(artifacts),
+            destinations,
+            stage_pinned_restore=stage,
+            unlink_if_identity=cleanup,
+        )
+
+    assert calls == [
+        (artifacts["config"], destinations["config"]),
+        (artifacts["database"], destinations["database"]),
+    ]
+    assert journal["entries"] == {
+        "config": {"stage_path": "original-config-stage"},
+        "database": {"stage_path": "original-database-stage"},
+    }
+    assert recreated is not None
+    assert recreated_identity is not None
+    assert cleanups == [(recreated, recreated_identity)]
+    if foreign_replacement:
+        assert recreated.read_bytes() == b"foreign stage"
+        assert (recreated.stat().st_dev, recreated.stat().st_ino) != recreated_identity
+    else:
+        assert list(tmp_path.glob("*.restore-stage")) == []
 
 
 def _create_database(path: Path) -> None:

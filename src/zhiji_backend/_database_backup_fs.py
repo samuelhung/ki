@@ -5,6 +5,12 @@ import os
 import stat
 from pathlib import Path
 
+FileIdentity = tuple[int, int]
+
+
+def identity(file_stat: os.stat_result) -> FileIdentity:
+    return file_stat.st_dev, file_stat.st_ino
+
 
 def read_only_uri(path: Path) -> str:
     return f"{path.as_uri()}?mode=ro"
@@ -59,13 +65,46 @@ def hash_fd(fd: int) -> str:
     return digest.hexdigest()
 
 
-def read_fd_bytes(fd: int) -> bytes:
+def read_fd(fd: int) -> bytes:
     chunks: list[bytes] = []
     os.lseek(fd, 0, os.SEEK_SET)
     while chunk := os.read(fd, 1024 * 1024):
         chunks.append(chunk)
     os.lseek(fd, 0, os.SEEK_SET)
     return b"".join(chunks)
+
+
+def read_fd_bytes(fd: int) -> bytes:
+    return read_fd(fd)
+
+
+def copy_fd(fd: int, path: Path) -> FileIdentity:
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0)
+    destination_fd = os.open(path, flags, 0o600)
+    try:
+        view = memoryview(read_fd(fd))
+        while view:
+            view = view[os.write(destination_fd, view) :]
+        os.fsync(destination_fd)
+        return identity(os.fstat(destination_fd))
+    finally:
+        os.close(destination_fd)
+
+
+def restore_displaced(source: Path, canonical: Path) -> bool:
+    source_stat = source.lstat()
+    if stat.S_ISDIR(source_stat.st_mode):
+        return False
+    source_identity = identity(source_stat)
+    try:
+        os.link(source, canonical, follow_symlinks=False)
+    except OSError:
+        return False
+    try:
+        canonical_stat = canonical.lstat()
+    except FileNotFoundError:
+        return False
+    return identity(canonical_stat) == source_identity
 
 
 def source_metadata(path: Path) -> dict[str, int]:

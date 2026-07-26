@@ -8,8 +8,8 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 
+from ._database_backup_fs import identity, restore_displaced
 from ._database_backup_identity_cleanup import isolate_and_unlink
-from .database_backup_restore_private import identity, restore_displaced
 
 PathIdentity = tuple[int, int]
 PathSignature = tuple[int, int, int]

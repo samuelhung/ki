@@ -48,6 +48,7 @@ def _create_rollback_backup(
     output_dir: Path,
     *,
     write_json_atomic=database_backup._write_json_atomic,
+    connect=sqlite3.connect,
 ) -> Path:
     return creation.create_rollback_backup(
         source,
@@ -68,7 +69,7 @@ def _create_rollback_backup(
         unlink_if_identity=database_backup._unlink_if_identity,
         migration_is_pending=database_backup._migration_is_pending,
         read_only_uri=database_backup._read_only_uri,
-        connect=sqlite3.connect,
+        connect=connect,
         now=lambda: datetime(2026, 7, 25, 12, 34, 56),
         now_utc=lambda: datetime(2026, 7, 25, 4, 34, 56, tzinfo=UTC),
     )
@@ -82,6 +83,24 @@ def _sources(tmp_path: Path) -> tuple[Path, Path]:
         conn.execute("INSERT INTO entities VALUES ('entity-1')")
     config_path.write_bytes(b'{"general":{"language":"zh-CN"}}\n')
     return source, config_path
+
+
+class _CleanupFailingConnection:
+    def __init__(self, *, rollback_error: Exception, close_error: Exception) -> None:
+        self.rollback_error = rollback_error
+        self.close_error = close_error
+        self.events: list[str] = []
+
+    def execute(self, _statement: str) -> None:
+        pass
+
+    def rollback(self) -> None:
+        self.events.append("rollback")
+        raise self.rollback_error
+
+    def close(self) -> None:
+        self.events.append("close")
+        raise self.close_error
 
 
 def test_backup_database_directly_preserves_committed_wal_data_and_cleans_stage(
@@ -110,6 +129,61 @@ def test_backup_database_directly_preserves_committed_wal_data_and_cleans_stage(
         path.name.startswith(database_backup.BACKUP_TEMP_PREFIX)
         for path in output_dir.iterdir()
     )
+
+
+def test_active_backup_error_survives_rollback_and_close_failures(
+    tmp_path: Path,
+) -> None:
+    source, config_path = _sources(tmp_path)
+    connection = _CleanupFailingConnection(
+        rollback_error=RuntimeError("rollback failed"),
+        close_error=OSError("close failed"),
+    )
+
+    def fail_marker(*_args: object, **_kwargs: object) -> None:
+        raise ValueError("marker publication failed")
+
+    with pytest.raises(ValueError) as exc_info:
+        _create_rollback_backup(
+            source,
+            config_path,
+            tmp_path / "backups",
+            write_json_atomic=fail_marker,
+            connect=lambda _path: connection,
+        )
+
+    assert connection.events == ["rollback", "close"]
+    assert str(exc_info.value) == "marker publication failed"
+    assert exc_info.value.__notes__ == [
+        "rollback cleanup failed: RuntimeError: rollback failed",
+        "close cleanup failed: OSError: close failed",
+    ]
+
+
+def test_rollback_failure_remains_primary_when_close_also_fails(
+    tmp_path: Path,
+) -> None:
+    source, config_path = _sources(tmp_path)
+    rollback_error = RuntimeError("rollback failed")
+    connection = _CleanupFailingConnection(
+        rollback_error=rollback_error,
+        close_error=OSError("close failed"),
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        _create_rollback_backup(
+            source,
+            config_path,
+            tmp_path / "backups",
+            connect=lambda _path: connection,
+        )
+
+    assert exc_info.value is rollback_error
+    assert str(exc_info.value) == "rollback failed"
+    assert connection.events == ["rollback", "close"]
+    assert exc_info.value.__notes__ == [
+        "close cleanup failed: OSError: close failed"
+    ]
 
 
 def test_create_rollback_backup_directly_publishes_exact_manifest_then_marker(

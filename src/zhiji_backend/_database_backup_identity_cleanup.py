@@ -6,7 +6,7 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
-from .database_backup_restore_private import identity, restore_displaced
+from ._database_backup_fs import identity, restore_displaced
 
 Identity = tuple[int, int]
 

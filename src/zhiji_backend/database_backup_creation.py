@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import sys
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -14,6 +15,40 @@ class PinnedManifest(Protocol):
     sha256: str
 
     def close(self) -> None: ...
+
+
+def _close_lock_connection(lock_conn: sqlite3.Connection) -> None:
+    active_error = sys.exception()
+    rollback_error: Exception | None = None
+    close_error: Exception | None = None
+    try:
+        lock_conn.rollback()
+    except Exception as exc:
+        rollback_error = exc
+    try:
+        lock_conn.close()
+    except Exception as exc:
+        close_error = exc
+
+    if active_error is not None:
+        if rollback_error is not None:
+            active_error.add_note(
+                f"rollback cleanup failed: {type(rollback_error).__name__}: "
+                f"{rollback_error}"
+            )
+        if close_error is not None:
+            active_error.add_note(
+                f"close cleanup failed: {type(close_error).__name__}: {close_error}"
+            )
+        return
+    if rollback_error is not None:
+        if close_error is not None:
+            rollback_error.add_note(
+                f"close cleanup failed: {type(close_error).__name__}: {close_error}"
+            )
+        raise rollback_error
+    if close_error is not None:
+        raise close_error
 
 
 def _migration_is_pending(
@@ -207,8 +242,7 @@ def create_rollback_backup(
                 unlink_if_identity(path, identity)
         raise
     finally:
-        lock_conn.rollback()
-        lock_conn.close()
+        _close_lock_connection(lock_conn)
 
     if manifest_path is None:
         raise RuntimeError("rollback backup manifest was not created")
