@@ -9,6 +9,7 @@ import sqlite3
 import subprocess
 import sys
 from contextlib import asynccontextmanager, contextmanager
+from types import ModuleType
 from typing import Any
 
 import pytest
@@ -516,20 +517,17 @@ print(json.dumps([
 
 
 @pytest.mark.parametrize(
-    "first_module_name",
+    "target_module_name",
     ["db_schema", "db_migrations"],
     ids=["db-schema", "db-migrations"],
 )
-def test_db_platform_forwarding_contract(first_module_name, monkeypatch) -> None:
-    first_module = _planned_module(first_module_name)
-    other_module_name = (
-        "db_migrations" if first_module_name == "db_schema" else "db_schema"
+def test_db_platform_forwarding_contract(target_module_name, monkeypatch) -> None:
+    target_module = _planned_module(target_module_name)
+    counterpart_name = (
+        "db_migrations" if target_module_name == "db_schema" else "db_schema"
     )
-    other_module = _planned_module(other_module_name)
-    modules = {
-        first_module_name: first_module,
-        other_module_name: other_module,
-    }
+    counterpart_full_name = f"zhiji_backend.{counterpart_name}"
+    counterpart_module = ModuleType(counterpart_full_name)
     connection = object()
     calls: list[tuple[str, object]] = []
 
@@ -537,17 +535,32 @@ def test_db_platform_forwarding_contract(first_module_name, monkeypatch) -> None
     def fake_connect(**_kwargs):
         yield connection
 
-    monkeypatch.setattr(db, "connect", fake_connect)
+    def create_schema(received_connection) -> None:
+        calls.append(("create_schema", received_connection))
+
+    def run_migrations(received_connection) -> None:
+        calls.append(("run_migrations", received_connection))
+
+    modules = {
+        target_module_name: target_module,
+        counterpart_name: counterpart_module,
+    }
     monkeypatch.setattr(
         modules["db_schema"],
         "create_schema",
-        lambda received: calls.append(("create_schema", received)),
+        create_schema,
+        raising=target_module_name == "db_schema",
     )
     monkeypatch.setattr(
         modules["db_migrations"],
         "run_migrations",
-        lambda received: calls.append(("run_migrations", received)),
+        run_migrations,
+        raising=target_module_name == "db_migrations",
     )
+    monkeypatch.setitem(sys.modules, counterpart_full_name, counterpart_module)
+    monkeypatch.setattr(db, counterpart_name, counterpart_module, raising=False)
+    monkeypatch.setattr(db, target_module_name, target_module, raising=False)
+    monkeypatch.setattr(db, "connect", fake_connect)
 
     db.init_db()
 
