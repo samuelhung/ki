@@ -108,6 +108,47 @@ def test_private_restore_publication_rejects_swapped_clone_inode(
     assert clone.directory.exists()
 
 
+@pytest.mark.parametrize("destination_state", ["absent", "replaced"])
+def test_restore_publication_never_overwrites_boundary_collision(
+    tmp_path: Path,
+    destination_state: str,
+) -> None:
+    stage = tmp_path / "stage"
+    stage.write_bytes(b"restored")
+    destination = tmp_path / "destination"
+    if destination_state == "replaced":
+        destination.write_bytes(b"expected current")
+    foreign = tmp_path / "foreign"
+    foreign.write_bytes(b"foreign")
+    foreign_identity = (foreign.stat().st_dev, foreign.stat().st_ino)
+    calls: list[tuple[Path, Path]] = []
+
+    def collide_then_replace(source: Path, target: Path) -> None:
+        calls.append((source, target))
+        os.replace(foreign, destination)
+        os.replace(source, target)
+
+    with pytest.raises(RuntimeError, match="publication path collision"):
+        database_backup_restore_stages.replace_staged_restore(
+            stage,
+            destination,
+            replace=collide_then_replace,
+            fsync_parent=lambda _path: None,
+        )
+
+    assert len(calls) == 1
+    assert destination.read_bytes() == b"foreign"
+    assert (destination.stat().st_dev, destination.stat().st_ino) == foreign_identity
+    evidence = list(tmp_path.glob(".destination.publication-*"))
+    if destination_state == "replaced":
+        assert any(
+            path.read_bytes() == b"expected current"
+            for directory in evidence
+            for path in directory.iterdir()
+            if path.is_file()
+        )
+
+
 def test_private_restore_clone_failure_cleans_only_owned_inode(
     tmp_path: Path,
 ) -> None:

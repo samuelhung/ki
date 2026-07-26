@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import fcntl
+import json
 import os
+import stat
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -8,8 +11,69 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from . import _database_backup_fs, database_backup_artifacts
+from ._database_backup_path_publication import transition_marker_exclusive
 
 PinnedArtifact = database_backup_artifacts.PinnedArtifact
+
+
+def _read_locked_marker(fd: int) -> dict[str, Any]:
+    os.lseek(fd, 0, os.SEEK_SET)
+    chunks: list[bytes] = []
+    while chunk := os.read(fd, 1024 * 1024):
+        chunks.append(chunk)
+    os.lseek(fd, 0, os.SEEK_SET)
+    value = json.loads(b"".join(chunks).decode("utf-8"))
+    if not isinstance(value, dict):
+        raise RuntimeError("marker path collision")
+    return value
+
+
+def _consume_existing_marker(
+    consumed: Path,
+    source: Path,
+    migration_name: str,
+    *,
+    validate_marker_for_consumption: Callable[..., None],
+    write_json_atomic: Callable[[Path, dict[str, Any]], None],
+    now: Callable[[], datetime],
+    schema_version: int,
+) -> Path:
+    for _attempt in range(3):
+        fd = os.open(
+            consumed,
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            pinned = os.fstat(fd)
+            published = consumed.lstat()
+            if (pinned.st_dev, pinned.st_ino) != (
+                published.st_dev,
+                published.st_ino,
+            ):
+                continue
+            receipt = _read_locked_marker(fd)
+            if receipt.get("migration_name") != migration_name:
+                raise RuntimeError("backup prerequisite migration mismatch")
+            if receipt.get("schema_version") != schema_version:
+                raise RuntimeError("backup prerequisite marker schema is invalid")
+            if receipt.get("state") == "consumed":
+                return consumed
+            if receipt.get("state") != "ready":
+                raise RuntimeError(
+                    "backup prerequisite consumed marker state is invalid"
+                )
+            validate_marker_for_consumption(source, migration_name, receipt)
+            receipt = dict(receipt)
+            receipt["state"] = "consumed"
+            receipt["consumed_at"] = now().isoformat()
+            write_json_atomic(consumed, receipt)
+            return consumed
+        finally:
+            os.close(fd)
+    raise RuntimeError("marker path collision")
 
 
 def _default_assert_pinned_artifact(pinned: PinnedArtifact, label: str) -> None:
@@ -209,21 +273,16 @@ def consume_backup_prerequisite(
     if not ready.exists():
         if not consumed.exists():
             return None
-        receipt = load_json_regular(consumed, "consumed marker")
-        if receipt.get("migration_name") != migration_name:
-            raise RuntimeError("backup prerequisite migration mismatch")
-        if receipt.get("schema_version") != schema_version:
-            raise RuntimeError("backup prerequisite marker schema is invalid")
-        if receipt.get("state") == "consumed":
-            return consumed
-        if receipt.get("state") != "ready":
-            raise RuntimeError("backup prerequisite consumed marker state is invalid")
-        validate_marker_for_consumption(source, migration_name, receipt)
-        receipt = dict(receipt)
-        receipt["state"] = "consumed"
-        receipt["consumed_at"] = now().isoformat()
-        write_json_atomic(consumed, receipt)
-        return consumed
+        load_json_regular(consumed, "consumed marker")
+        return _consume_existing_marker(
+            consumed,
+            source,
+            migration_name,
+            validate_marker_for_consumption=validate_marker_for_consumption,
+            write_json_atomic=write_json_atomic,
+            now=now,
+            schema_version=schema_version,
+        )
     try:
         marker = (
             prerequisite.marker
@@ -254,12 +313,58 @@ def consume_backup_prerequisite(
         validate_loaded_marker_for_consumption(
             source, migration_name, marker, prerequisite.manifest
         )
-    receipt = dict(marker)
-    receipt["state"] = "consumed"
-    receipt["consumed_at"] = now().isoformat()
+    lock_fd = -1
+    replay = False
     try:
-        replace(ready, consumed)
+        lock_fd = os.open(
+            ready,
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
+        fcntl.flock(lock_fd, fcntl.LOCK_EX)
+        locked_stat = os.fstat(lock_fd)
+        try:
+            published_stat = ready.lstat()
+        except FileNotFoundError:
+            replay = True
+        if not replay and (
+            not stat.S_ISREG(locked_stat.st_mode)
+            or (locked_stat.st_dev, locked_stat.st_ino)
+            != (published_stat.st_dev, published_stat.st_ino)
+        ):
+            raise RuntimeError("marker path collision")
+        if not replay:
+            locked_marker = _read_locked_marker(lock_fd)
+            locked_after = os.fstat(lock_fd)
+            published_after = ready.lstat()
+            if (
+                locked_marker != marker
+                or (locked_after.st_dev, locked_after.st_ino)
+                != (locked_stat.st_dev, locked_stat.st_ino)
+                or locked_after.st_size != locked_stat.st_size
+                or locked_after.st_mtime_ns != locked_stat.st_mtime_ns
+                or locked_after.st_ctime_ns != locked_stat.st_ctime_ns
+                or (published_after.st_dev, published_after.st_ino)
+                != (locked_stat.st_dev, locked_stat.st_ino)
+            ):
+                raise RuntimeError("marker path collision")
+            receipt = dict(locked_marker)
+            receipt["state"] = "consumed"
+            receipt["consumed_at"] = now().isoformat()
+            transition_marker_exclusive(
+                ready,
+                consumed,
+                source_identity=(locked_stat.st_dev, locked_stat.st_ino),
+                replace=replace,
+            )
+            write_json_atomic(consumed, receipt)
     except FileNotFoundError:
+        replay = True
+    finally:
+        if lock_fd >= 0:
+            os.close(lock_fd)
+    if replay:
         if consumed.exists():
             return consume_backup_prerequisite(
                 source,
@@ -276,6 +381,5 @@ def consume_backup_prerequisite(
                 schema_version=schema_version,
                 replace=replace,
             )
-        raise
-    write_json_atomic(consumed, receipt)
+        raise FileNotFoundError(ready)
     return consumed

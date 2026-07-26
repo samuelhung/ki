@@ -13,6 +13,7 @@ from . import (
     database_backup_restore_sidecars,
     database_backup_restore_stages,
 )
+from ._database_backup_identity_cleanup import isolate_and_unlink
 
 if TYPE_CHECKING:
     from .database_backup_artifacts import PinnedArtifact
@@ -118,11 +119,7 @@ def _stage_identity(path: Path) -> StageIdentity:
 
 
 def _unlink_stage_if_identity(path: Path, identity: StageIdentity) -> None:
-    try:
-        if _stage_identity(path) == identity:
-            path.unlink()
-    except FileNotFoundError:
-        pass
+    isolate_and_unlink(path, identity)
 
 
 def recover_rollback_restore(

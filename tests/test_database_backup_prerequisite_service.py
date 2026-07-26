@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from dataclasses import asdict, fields
 from datetime import UTC, datetime
 from pathlib import Path
@@ -172,6 +173,214 @@ def test_consume_ready_marker_serializes_exact_receipt_and_is_idempotent(
         == consumed
     )
     assert consumed.read_bytes() == receipt_before
+
+
+def test_consume_replays_partially_linked_ready_transition(tmp_path: Path) -> None:
+    source = tmp_path / "database.sqlite"
+    ready = tmp_path / "ready.json"
+    consumed = tmp_path / "consumed.json"
+    marker = {
+        "schema_version": 1,
+        "state": "ready",
+        "migration_name": "migration",
+    }
+    ready.write_text(json.dumps(marker), encoding="utf-8")
+    os.link(ready, consumed)
+
+    result = prerequisite_service.consume_backup_prerequisite(
+        source,
+        "migration",
+        ready_marker_path=lambda *_args: ready,
+        consumed_marker_path=lambda *_args: consumed,
+        load_json_regular=lambda path, _label: json.loads(path.read_bytes()),
+        validate_marker_for_consumption=lambda *_args: None,
+        validate_loaded_marker_for_consumption=lambda *_args: None,
+        write_json_atomic=lambda path, payload: artifacts.write_json_atomic(
+            path,
+            payload,
+            fsync_parent=lambda _path: None,
+        ),
+        now=lambda: datetime(2026, 7, 25, 13, tzinfo=UTC),
+        schema_version=1,
+        replace=os.replace,
+    )
+
+    assert result == consumed
+    assert not ready.exists()
+    assert json.loads(consumed.read_bytes())["state"] == "consumed"
+
+
+def test_concurrent_consumed_ready_replay_is_idempotent(tmp_path: Path) -> None:
+    source = tmp_path / "database.sqlite"
+    ready = tmp_path / "ready.json"
+    consumed = tmp_path / "consumed.json"
+    consumed.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "state": "ready",
+                "migration_name": "migration",
+            }
+        ),
+        encoding="utf-8",
+    )
+    load_barrier = threading.Barrier(2)
+    results: list[Path | None] = []
+    errors: list[BaseException] = []
+
+    def load_marker(path: Path, _label: str) -> dict[str, object]:
+        value = json.loads(path.read_bytes())
+        load_barrier.wait(timeout=5)
+        return value
+
+    def write_receipt(path: Path, payload: dict[str, object]) -> None:
+        artifacts.write_json_atomic(
+            path,
+            payload,
+            fsync_parent=lambda _path: None,
+        )
+
+    def consume() -> None:
+        try:
+            results.append(
+                prerequisite_service.consume_backup_prerequisite(
+                    source,
+                    "migration",
+                    ready_marker_path=lambda *_args: ready,
+                    consumed_marker_path=lambda *_args: consumed,
+                    load_json_regular=load_marker,
+                    validate_marker_for_consumption=lambda *_args: None,
+                    validate_loaded_marker_for_consumption=lambda *_args: None,
+                    write_json_atomic=write_receipt,
+                    now=lambda: datetime(2026, 7, 25, 13, tzinfo=UTC),
+                    schema_version=1,
+                    replace=os.replace,
+                )
+            )
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=consume) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert errors == []
+    assert results == [consumed, consumed]
+    assert json.loads(consumed.read_bytes())["state"] == "consumed"
+
+
+@pytest.mark.parametrize("collision", ["existing-file", "appearing-symlink"])
+def test_consume_transition_preserves_consumed_marker_collision(
+    tmp_path: Path,
+    collision: str,
+) -> None:
+    source = tmp_path / "database.sqlite"
+    ready = tmp_path / "ready.json"
+    consumed = tmp_path / "consumed.json"
+    marker = {
+        "schema_version": 1,
+        "state": "ready",
+        "migration_name": "migration",
+    }
+    ready.write_text(json.dumps(marker), encoding="utf-8")
+    victim = tmp_path / "victim.json"
+    victim.write_text('{"victim":true}', encoding="utf-8")
+    if collision == "existing-file":
+        consumed.write_text('{"foreign":true}', encoding="utf-8")
+    real_replace = os.replace
+
+    def transition(source_path: Path, target_path: Path) -> None:
+        if collision == "appearing-symlink":
+            replacement = tmp_path / "foreign-consumed-link"
+            replacement.symlink_to(victim)
+            os.replace(replacement, consumed)
+        real_replace(source_path, target_path)
+
+    with pytest.raises(RuntimeError, match="marker path collision"):
+        prerequisite_service.consume_backup_prerequisite(
+            source,
+            "migration",
+            ready_marker_path=lambda *_args: ready,
+            consumed_marker_path=lambda *_args: consumed,
+            load_json_regular=lambda path, _label: json.loads(path.read_bytes()),
+            validate_marker_for_consumption=lambda *_args: None,
+            validate_loaded_marker_for_consumption=lambda *_args: None,
+            write_json_atomic=lambda *_args: pytest.fail("receipt publication began"),
+            now=lambda: datetime(2026, 7, 25, 13, tzinfo=UTC),
+            schema_version=1,
+            replace=transition,
+        )
+
+    if collision == "existing-file":
+        assert consumed.read_text(encoding="utf-8") == '{"foreign":true}'
+    else:
+        assert consumed.is_symlink()
+        assert consumed.resolve() == victim
+        assert victim.read_text(encoding="utf-8") == '{"victim":true}'
+    assert ready.exists()
+
+
+@pytest.mark.parametrize("foreign_kind", ["file", "symlink"])
+def test_consume_receipt_publication_preserves_boundary_collision(
+    tmp_path: Path,
+    foreign_kind: str,
+) -> None:
+    source = tmp_path / "database.sqlite"
+    ready = tmp_path / "ready.json"
+    consumed = tmp_path / "consumed.json"
+    ready.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "state": "ready",
+                "migration_name": "migration",
+            }
+        ),
+        encoding="utf-8",
+    )
+    victim = tmp_path / "victim.json"
+    victim.write_text('{"victim":true}', encoding="utf-8")
+    real_replace = os.replace
+
+    def write_receipt(path: Path, payload: dict[str, object]) -> None:
+        def collide_then_replace(temp_path: Path, target_path: Path) -> None:
+            if foreign_kind == "file":
+                path.write_text('{"foreign":true}', encoding="utf-8")
+            else:
+                path.symlink_to(victim)
+            real_replace(temp_path, target_path)
+
+        artifacts.write_json_atomic(
+            path,
+            payload,
+            fsync_parent=lambda _path: None,
+            replace=collide_then_replace,
+        )
+
+    with pytest.raises(RuntimeError, match="publication path collision"):
+        prerequisite_service.consume_backup_prerequisite(
+            source,
+            "migration",
+            ready_marker_path=lambda *_args: ready,
+            consumed_marker_path=lambda *_args: consumed,
+            load_json_regular=lambda path, _label: json.loads(path.read_bytes()),
+            validate_marker_for_consumption=lambda *_args: None,
+            validate_loaded_marker_for_consumption=lambda *_args: None,
+            write_json_atomic=write_receipt,
+            now=lambda: datetime(2026, 7, 25, 13, tzinfo=UTC),
+            schema_version=1,
+            replace=real_replace,
+        )
+
+    if foreign_kind == "file":
+        assert consumed.read_text(encoding="utf-8") == '{"foreign":true}'
+    else:
+        assert consumed.is_symlink()
+        assert consumed.resolve() == victim
+        assert victim.read_text(encoding="utf-8") == '{"victim":true}'
 
 
 def test_validate_failure_closes_every_acquired_pin(tmp_path: Path) -> None:

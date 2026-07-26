@@ -10,6 +10,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ._database_backup_path_publication import (
+    PathSignature,
+    path_signature,
+    publish_from_private_replace,
+)
 from .database_backup_artifacts import PinnedArtifact
 
 StageIdentity = tuple[int, int]
@@ -43,6 +48,7 @@ class PrivateRestoreClone:
     directory_identity: StageIdentity
     directory_fd: int
     pinned: PinnedArtifact
+    expected_destination: PathSignature | None
 
     def cleanup(self) -> None:
         try:
@@ -120,8 +126,23 @@ def replace_staged_restore(
             or _identity(source_stat) != expected_identity
         ):
             raise RuntimeError("rollback restore publication source identity mismatch")
-    replace(stage, destination)
-    fsync_parent(destination)
+    if expected_identity is None:
+        expected_identity = _identity(stage.lstat())
+    if expectation is not None:
+        expected_destination = expectation.expected_destination
+    else:
+        try:
+            expected_destination = path_signature(destination)
+        except FileNotFoundError:
+            expected_destination = None
+    publish_from_private_replace(
+        stage,
+        destination,
+        source_identity=expected_identity,
+        expected_destination=expected_destination,
+        replace=replace,
+        fsync_parent=fsync_parent,
+    )
 
 
 def validate_restore_stage(
@@ -192,6 +213,10 @@ def create_private_restore_clone(
     clone_identity: StageIdentity | None = None
     verified: PinnedArtifact | None = None
     try:
+        expected_destination = path_signature(destination)
+    except FileNotFoundError:
+        expected_destination = None
+    try:
         if stat.S_IMODE(directory_stat.st_mode) != 0o700:
             raise RuntimeError("rollback restore private directory mode is invalid")
         directory_fd = os.open(
@@ -250,6 +275,7 @@ def create_private_restore_clone(
             directory_identity,
             directory_fd,
             verified,
+            expected_destination,
         )
     except Exception:
         if verified is not None:

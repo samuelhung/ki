@@ -7,6 +7,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from ._database_backup_identity_cleanup import isolate_and_unlink
+from ._database_backup_path_publication import (
+    path_signature,
+    publish_from_private_replace,
+)
+
 
 def write_json_atomic(
     path: Path,
@@ -18,6 +24,7 @@ def write_json_atomic(
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp_path: Path | None = None
+    temp_identity: tuple[int, int] | None = None
     try:
         with tempfile.NamedTemporaryFile(
             mode="w",
@@ -32,11 +39,22 @@ def write_json_atomic(
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
-        replace(temp_path, path)
+            created = os.fstat(handle.fileno())
+            temp_identity = created.st_dev, created.st_ino
+        try:
+            expected_destination = path_signature(path)
+        except FileNotFoundError:
+            expected_destination = None
+        publish_from_private_replace(
+            temp_path,
+            path,
+            source_identity=temp_identity,
+            expected_destination=expected_destination,
+            replace=replace,
+            fsync_parent=fsync_parent,
+            on_published=on_published,
+        )
         temp_path = None
-        if on_published is not None:
-            on_published()
-        fsync_parent(path)
     finally:
-        if temp_path is not None:
-            temp_path.unlink(missing_ok=True)
+        if temp_path is not None and temp_identity is not None:
+            isolate_and_unlink(temp_path, temp_identity)

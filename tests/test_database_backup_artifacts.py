@@ -353,6 +353,36 @@ def test_write_json_atomic_cleans_temp_file_when_replace_fails(
     assert not list(tmp_path.iterdir())
 
 
+def test_write_json_atomic_cleanup_preserves_temp_path_replacement(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "marker.json"
+    moved_temp = tmp_path / "owned-temp"
+    foreign_identity: tuple[int, int] | None = None
+    temp_path: Path | None = None
+
+    def replace_temp_then_fail(source: Path, _target: Path) -> None:
+        nonlocal foreign_identity, temp_path
+        temp_path = source
+        os.replace(source, moved_temp)
+        source.write_bytes(b"foreign temp")
+        foreign_identity = (source.stat().st_dev, source.stat().st_ino)
+        raise OSError("injected publication failure")
+
+    with pytest.raises(OSError, match="injected publication failure"):
+        artifacts.write_json_atomic(
+            target,
+            {"state": "ready"},
+            fsync_parent=lambda _path: None,
+            replace=replace_temp_then_fail,
+        )
+
+    assert temp_path is not None
+    assert temp_path.read_bytes() == b"foreign temp"
+    assert (temp_path.stat().st_dev, temp_path.stat().st_ino) == foreign_identity
+    assert moved_temp.exists()
+
+
 @pytest.mark.parametrize("operation", ["exclusive", "atomic", "copy"])
 def test_database_backup_composites_resolve_fsync_parent_through_facade(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str

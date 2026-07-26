@@ -521,14 +521,16 @@ def test_restore_journal_schema_recovery_result_and_repeated_recovery(
     config_path = rollback_bundle["config"]
     manifest_path = rollback_bundle["manifest"]
     config_path.write_text('{"current": true}', encoding="utf-8")
-    real_replace = os.replace
+    real_replace = database_backup._replace_staged_restore
 
     def interrupt_database_replace(source, destination):
         if Path(destination) == database_path:
             raise OSError("injected database replacement failure")
         real_replace(source, destination)
 
-    monkeypatch.setattr(os, "replace", interrupt_database_replace)
+    monkeypatch.setattr(
+        database_backup, "_replace_staged_restore", interrupt_database_replace
+    )
 
     with pytest.raises(RuntimeError) as exc_info:
         database_backup.restore_rollback_backup(manifest_path)
@@ -563,7 +565,7 @@ def test_restore_journal_schema_recovery_result_and_repeated_recovery(
             assert stage_path.exists()
             assert stat.S_IMODE(os.lstat(stage_path).st_mode) == 0o600
 
-    monkeypatch.setattr(os, "replace", real_replace)
+    monkeypatch.setattr(database_backup, "_replace_staged_restore", real_replace)
     assert database_backup.recover_rollback_restore(journal_path) == {
         "database": database_path,
         "config": config_path,
@@ -582,17 +584,19 @@ def test_restore_detects_destination_replacement_and_keeps_journal(
     _create_database(attacker)
     with sqlite3.connect(attacker) as conn:
         conn.execute("INSERT INTO entities VALUES ('replacement')")
-    real_replace = os.replace
+    real_fsync_parent = database_backup._fsync_parent
     replaced = False
 
-    def replace_destination_after_restore(source, destination):
+    def replace_destination_during_fsync(destination):
         nonlocal replaced
-        real_replace(source, destination)
         if Path(destination) == database_path:
-            real_replace(attacker, destination)
+            os.replace(attacker, destination)
             replaced = True
+        real_fsync_parent(destination)
 
-    monkeypatch.setattr(os, "replace", replace_destination_after_restore)
+    monkeypatch.setattr(
+        database_backup, "_fsync_parent", replace_destination_during_fsync
+    )
 
     with pytest.raises(RuntimeError) as exc_info:
         database_backup.restore_rollback_backup(manifest_path)

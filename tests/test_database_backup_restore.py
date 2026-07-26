@@ -226,6 +226,35 @@ def test_stage_pinned_restore_rejects_path_swap_without_unlinking_replacement(
     assert moved_stage.read_bytes() == b"rollback payload"
 
 
+def test_stage_cleanup_preserves_replacement_racing_isolation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stage = tmp_path / "stage"
+    stage.write_bytes(b"owned stage")
+    identity = (stage.stat().st_dev, stage.stat().st_ino)
+    foreign = tmp_path / "foreign"
+    foreign.write_bytes(b"foreign stage")
+    foreign_identity = (foreign.stat().st_dev, foreign.stat().st_ino)
+    real_rename = database_backup_restore.os.rename
+    raced = False
+
+    def replace_before_isolation(source: Path, destination: Path) -> None:
+        nonlocal raced
+        if source == stage and not raced:
+            os.replace(foreign, stage)
+            raced = True
+        real_rename(source, destination)
+
+    monkeypatch.setattr(database_backup_restore.os, "rename", replace_before_isolation)
+
+    database_backup_restore._unlink_stage_if_identity(stage, identity)
+
+    assert raced
+    assert stage.read_bytes() == b"foreign stage"
+    assert (stage.stat().st_dev, stage.stat().st_ino) == foreign_identity
+
+
 def test_replace_staged_restore_propagates_parent_fsync_failure(
     tmp_path: Path,
 ) -> None:
@@ -247,7 +276,10 @@ def test_replace_staged_restore_propagates_parent_fsync_failure(
             stage, destination, replace=replace, fsync_parent=fail_fsync
         )
 
-    assert calls == [("replace", destination), ("fsync", destination)]
+    assert calls[0][0] == "replace"
+    assert calls[0][1].name == "publication-source"
+    assert calls[0][1].parent.parent == tmp_path
+    assert calls[1:] == [("fsync", destination)]
     assert destination.read_bytes() == b"restored"
 
 
