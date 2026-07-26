@@ -364,18 +364,41 @@ def valid_live_digest_tombstone(payload: object) -> bool:
         isinstance(payload, dict)
         and payload.get("routes") == expected_routes
         and payload.get("same_endpoint") is True
-        and payload.get("statuses") == [404]
+        and payload.get("live_404") is True
+        and payload.get("overlap_routes") == []
         and payload.get("schema_paths") == []
     )
 
 
 def validate_live_digest_tombstone(root: Path) -> list[str]:
     probe = r'''
-import asyncio
-import inspect
 import json
+import re
 
+from fastapi.testclient import TestClient
 from zhiji_backend.main import app
+
+
+def digest_candidate(path):
+    segments = [segment for segment in path.strip("/").split("/") if segment]
+    target = ("api", "digest")
+    built = []
+    for index, segment in enumerate(segments):
+        dynamic = re.fullmatch(r"\{[^{}:]+(?::([^{}]+))?\}", segment)
+        if dynamic:
+            if dynamic.group(1) == "path":
+                built.extend(target[index:] if index < len(target) else ("probe",))
+                built.append("probe")
+                break
+            built.append(target[index] if index < len(target) else "probe")
+            continue
+        if index < len(target) and segment != target[index]:
+            return None
+        built.append(segment)
+    if len(built) < len(target) or tuple(built[:2]) != target:
+        return None
+    return "/" + "/".join(built)
+
 
 routes = [
     route
@@ -388,17 +411,22 @@ for route in routes:
     if not any(route.endpoint is endpoint for endpoint in endpoints):
         endpoints.append(route.endpoint)
 
-async def response_statuses():
-    statuses = []
-    for endpoint in endpoints:
-        try:
-            response = endpoint()
-            if inspect.isawaitable(response):
-                response = await response
-            statuses.append(getattr(response, "status_code", None))
-        except BaseException as exc:
-            statuses.append(f"error:{type(exc).__name__}")
-    return statuses
+expected_paths = {"/api/digest/generate", "/api/digest/latest"}
+overlap_routes = []
+for route in app.routes:
+    candidate = digest_candidate(getattr(route, "path", ""))
+    if candidate is not None and getattr(route, "path", "") not in expected_paths:
+        overlap_routes.append(getattr(route, "path", ""))
+
+client = TestClient(app, client=("127.0.0.1", 50000))
+tombstone_statuses = [
+    client.post("/api/digest/generate").status_code,
+    client.get("/api/digest/latest").status_code,
+]
+unknown_statuses = [
+    client.get("/api/digest/__retired_probe__").status_code,
+    client.post("/api/digest/__retired_probe__").status_code,
+]
 
 payload = {
     "routes": sorted(
@@ -414,7 +442,9 @@ payload = {
         key=lambda item: item["path"],
     ),
     "same_endpoint": len(endpoints) == 1,
-    "statuses": asyncio.run(response_statuses()),
+    "live_404": tombstone_statuses == [404, 404]
+    and all(status in {404, 405} for status in unknown_statuses),
+    "overlap_routes": sorted(overlap_routes),
     "schema_paths": sorted(
         path
         for path in app.openapi().get("paths", {})
@@ -426,14 +456,17 @@ print(json.dumps(payload, sort_keys=True))
     with tempfile.TemporaryDirectory(prefix="zhiji-retired-runtime-") as temp_dir:
         home = Path(temp_dir)
         (home / ".env").write_text("", encoding="utf-8")
-        environment = dict(os.environ)
-        environment["ZHIJI_HOME"] = str(home)
-        existing_pythonpath = environment.get("PYTHONPATH", "")
-        environment["PYTHONPATH"] = os.pathsep.join(
-            item
-            for item in (str(root / "src"), str(root), existing_pythonpath)
-            if item
-        )
+        environment = {
+            "HOME": str(home),
+            "PATH": os.environ.get("PATH", ""),
+            "PYTHONHASHSEED": "0",
+            "PYTHONPATH": os.pathsep.join((str(root / "src"), str(root))),
+            "TMPDIR": str(home),
+            "ZHIJI_HOME": str(home),
+        }
+        for name in ("LANG", "LC_ALL"):
+            if name in os.environ:
+                environment[name] = os.environ[name]
         completed = subprocess.run(
             [sys.executable, "-c", probe],
             cwd=root,
@@ -1122,7 +1155,8 @@ async def retired_digest_endpoint() -> JSONResponse:
             },
         ],
         "same_endpoint": True,
-        "statuses": [404],
+        "live_404": True,
+        "overlap_routes": [],
         "schema_paths": [],
     }
     if not valid_live_digest_tombstone(live_payload):
@@ -1130,7 +1164,8 @@ async def retired_digest_endpoint() -> JSONResponse:
     for key, unsafe in (
         ("routes", live_payload["routes"] + [{"path": "/api/digest/admin"}]),
         ("same_endpoint", False),
-        ("statuses", [410]),
+        ("live_404", False),
+        ("overlap_routes", ["/api/{feature}/admin"]),
         ("schema_paths", ["/api/digest/latest"]),
     ):
         candidate = dict(live_payload)
