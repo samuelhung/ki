@@ -164,12 +164,12 @@
 - Modify: `tests/test_access_security.py`
 - Modify: `tests/test_backend_smoke.py`
 
-- [ ] Move startup/shutdown ordering for database, usage writer, task worker, and cleanup into `app_lifecycle.py`.
-- [ ] Move trusted-host normalization, protected-path rules, token extraction/comparison, auth middleware, and SPA fallback middleware into `api_middleware.py`.
-- [ ] Move retired endpoint adapters, ingest artifact serving, release serving, frontend mount, and path-safe file responses into `static_delivery.py`.
-- [ ] Keep `app`, router inclusion, middleware registration, and compatibility imports in `main.py`; assert middleware and route order remain byte-for-byte equivalent in OpenAPI/route snapshots.
-- [ ] Remove E402 ignores from `main.py`, `routes/log_routes.py`, and `routes/system_routes.py` by moving environment-sensitive setup behind explicit functions rather than delayed imports.
-- [ ] Commit with `git commit -m "refactor: separate FastAPI platform assembly"`.
+- [x] Move startup/shutdown ordering for database, usage writer, task worker, and cleanup into `app_lifecycle.py`.
+- [x] Move trusted-host normalization, protected-path rules, token extraction/comparison, auth middleware, and SPA fallback middleware into `api_middleware.py`.
+- [x] Move retired endpoint adapters, ingest artifact serving, release serving, frontend mount, and path-safe file responses into `static_delivery.py`.
+- [x] Keep `app`, router inclusion, middleware registration, and compatibility imports in `main.py`; assert middleware and route order remain byte-for-byte equivalent in OpenAPI/route snapshots.
+- [x] Remove E402 ignores from `main.py`, `routes/log_routes.py`, and `routes/system_routes.py` by moving environment-sensitive setup behind explicit functions rather than delayed imports.
+- [x] Commit with `git commit -m "refactor: separate FastAPI platform assembly"`.
 
 ### Task 2.6: Retire platform baselines and integrate PR 2
 
