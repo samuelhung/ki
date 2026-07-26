@@ -374,7 +374,9 @@ def valid_live_digest_tombstone(payload: object) -> bool:
 def validate_live_digest_tombstone(root: Path) -> list[str]:
     probe = r'''
 import json
+import os
 import re
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 from starlette.routing import Mount
@@ -437,6 +439,7 @@ for index, route in enumerate(app.routes):
         and getattr(route, "path", None) == ""
         and getattr(route, "name", None) == "frontend"
         and isinstance(getattr(route, "app", None), StaticFiles)
+        and not os.path.lexists(Path(route.app.directory) / "api" / "digest")
         and tombstone_indices
         and index > max(tombstone_indices)
     )
@@ -824,6 +827,11 @@ def validate_named_compatibility(
 def scan(root: Path) -> list[str]:
     compatibility_violations, allowed_ranges = validate_named_compatibility(root)
     violations = validate_digest_tombstone(root) + compatibility_violations
+    public_digest_path = root / "app/frontend/public/api/digest"
+    if os.path.lexists(public_digest_path):
+        violations.append(
+            "app/frontend/public/api/digest: retired frontend static path must not exist"
+        )
     retired_files = {
         "app/frontend/src/pages/BrandDepthDemo.tsx",
         "app/frontend/src/pages/BrandLockupDemo.tsx",
@@ -931,6 +939,12 @@ def self_test() -> None:
             write(root, relative, source)
             if not any("retired frontend route" in item for item in scan(root)):
                 raise SystemExit(f"FAIL retired feature scan missed route fixture: {relative}")
+
+    with tempfile.TemporaryDirectory(prefix="zhiji-retired-public-digest-") as temp_dir:
+        root = Path(temp_dir)
+        write(root, "app/frontend/public/api/digest/legacy.json", "{}\n")
+        if not any("retired frontend static path" in item for item in scan(root)):
+            raise SystemExit("FAIL retired feature scan allowed a static digest path")
 
     retired_table_cases = (
         'CREATE TEMP TABLE digests (id TEXT);',
@@ -1499,6 +1513,9 @@ if ! grep -q "index-${VERSION}-" app/frontend/dist/index.html; then
   echo "FAIL: dist/index.html does not reference versioned assets for $VERSION" >&2
   exit 1
 fi
+
+echo "== Post-build retired route scan =="
+run_retired_feature_scan
 
 echo "== Cinematic QA baseline =="
 if [[ "${ZHIJI_RUN_CINEMATIC_QA:-}" == "1" ]]; then
