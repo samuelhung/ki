@@ -1,4 +1,7 @@
 import asyncio
+import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -231,6 +234,181 @@ def test_application_bootstrap_prepares_environment_before_importing_dependencie
     assert calls == ["prepare-runtime", "load-dependencies"]
 
 
+def test_prepare_runtime_installs_tagged_handlers_only_once(tmp_path, monkeypatch):
+    from zhiji_backend import main
+
+    class HandlerSpy:
+        def setLevel(self, _level):
+            pass
+
+        def setFormatter(self, _formatter):
+            pass
+
+        def close(self):
+            pass
+
+    class RootSpy:
+        def __init__(self):
+            self.handlers = []
+
+        def setLevel(self, _level):
+            pass
+
+        def addHandler(self, handler):
+            self.handlers.append(handler)
+
+        def removeHandler(self, handler):
+            self.handlers.remove(handler)
+
+    root = RootSpy()
+    monkeypatch.setattr(main, "ensure_data_dirs", lambda: None)
+    monkeypatch.setattr(main, "load_hardened_env", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(main, "LOG_DIR", tmp_path)
+    monkeypatch.setattr(main, "_root_logger", lambda: root)
+    monkeypatch.setattr(main, "_create_console_handler", HandlerSpy)
+    monkeypatch.setattr(main, "_create_file_handler", lambda: HandlerSpy())
+
+    first = main._prepare_runtime()
+    second = main._prepare_runtime()
+
+    assert tuple(first) == tuple(root.handlers)
+    assert second == ()
+    assert [handler._zhiji_handler_role for handler in root.handlers] == [
+        "console",
+        "file",
+    ]
+
+
+def test_bootstrap_cleans_only_handlers_installed_by_each_failed_attempt(
+    monkeypatch,
+):
+    from zhiji_backend import main
+
+    class HandlerSpy:
+        def __init__(self, name):
+            self.name = name
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    class RootSpy:
+        def __init__(self):
+            self.handlers = [HandlerSpy("user")]
+
+        def removeHandler(self, handler):
+            self.handlers.remove(handler)
+
+    root = RootSpy()
+    attempts = []
+    monkeypatch.setattr(main, "_root_logger", lambda: root)
+
+    def prepare():
+        handlers = (
+            HandlerSpy(f"ki-{len(attempts)}-console"),
+            HandlerSpy(f"ki-{len(attempts)}-file"),
+        )
+        root.handlers.extend(handlers)
+        attempts.append(handlers)
+        return handlers
+
+    def fail_load():
+        raise ImportError("dependency load failed")
+
+    for _attempt in range(2):
+        with pytest.raises(ImportError, match="dependency load failed"):
+            main._bootstrap_application(
+                prepare_runtime=prepare,
+                load_dependencies=fail_load,
+            )
+        assert [handler.name for handler in root.handlers] == ["user"]
+
+    assert all(handler.closed for attempt in attempts for handler in attempt)
+
+
+def test_bootstrap_cleanup_failure_preserves_dependency_import_error(monkeypatch):
+    from zhiji_backend import main
+
+    class HandlerSpy:
+        def close(self):
+            raise RuntimeError("close failed")
+
+    class RootSpy:
+        handlers = []
+
+        def removeHandler(self, _handler):
+            raise RuntimeError("remove failed")
+
+    monkeypatch.setattr(main, "_root_logger", lambda: RootSpy())
+
+    with pytest.raises(ImportError, match="original import failure"):
+        main._bootstrap_application(
+            prepare_runtime=lambda: (HandlerSpy(),),
+            load_dependencies=lambda: (_ for _ in ()).throw(
+                ImportError("original import failure")
+            ),
+        )
+
+
+def test_main_reload_reuses_ki_handlers_and_does_not_duplicate_file_records(tmp_path):
+    script = """
+import importlib
+import json
+import logging
+from zhiji_backend import main
+
+root = logging.getLogger()
+user_handler = logging.NullHandler()
+root.addHandler(user_handler)
+tagged_before = [h for h in root.handlers if getattr(h, '_zhiji_handler_owner', None) == 'zhiji']
+identities_before = [id(h) for h in tagged_before]
+importlib.reload(main)
+importlib.reload(main)
+tagged_after = [h for h in root.handlers if getattr(h, '_zhiji_handler_owner', None) == 'zhiji']
+logging.getLogger('reload-test').warning('reload-record-marker')
+for handler in tagged_after:
+    handler.flush()
+log_text = (main.LOG_DIR / 'ki.log').read_text(encoding='utf-8')
+print(json.dumps({
+    'before': identities_before,
+    'after': [id(h) for h in tagged_after],
+    'marker_count': log_text.count('reload-record-marker'),
+    'user_handler_preserved': user_handler in root.handlers,
+}))
+"""
+    environment = dict(
+        os.environ,
+        PYTHONPATH=str(ROOT / "src"),
+        ZHIJI_HOME=str(tmp_path / "home"),
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+    result = json.loads(completed.stdout)
+
+    assert result["after"] == result["before"]
+    assert len(result["after"]) == 2
+    assert result["marker_count"] == 1
+    assert result["user_handler_preserved"] is True
+
+
+def test_router_manifest_drives_dependency_loading_and_inclusion_order():
+    from zhiji_backend import main
+
+    assert tuple(main._dependencies.routes) == main.ROUTE_NAMES
+    included = [
+        route.original_router
+        for route in main.app.routes
+        if type(route).__name__ == "_IncludedRouter"
+    ]
+    assert included == [getattr(main, f"{name}_router") for name in main.ROUTE_NAMES]
+
+
 def test_missing_frontend_is_not_mounted(tmp_path):
     from zhiji_backend import static_delivery
 
@@ -248,3 +426,16 @@ def test_missing_frontend_is_not_mounted(tmp_path):
 
     assert mounted is False
     assert calls == []
+
+
+def test_main_frontend_state_matches_the_single_frontend_mount():
+    from zhiji_backend import main
+
+    frontend_mounts = [
+        route
+        for route in main.app.routes
+        if type(route).__name__ == "Mount" and route.name == "frontend"
+    ]
+
+    assert main._HAS_FRONTEND is bool(frontend_mounts)
+    assert len(frontend_mounts) <= 1

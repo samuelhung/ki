@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import hmac
 import os
+import threading
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
 
 from fastapi import Request
 from fastapi.responses import (
@@ -27,7 +31,33 @@ DEFAULT_CORS_ORIGINS = [
     "tauri://localhost",
     "https://tauri.localhost",
 ]
-_HAS_FRONTEND = FRONTEND_DIST.exists()
+
+
+@dataclass(frozen=True)
+class MiddlewareDependencies:
+    api_token: Callable[[], str]
+    request_token: Callable[[Request], str]
+    requires_token_for_request: Callable[[str, str | None], bool]
+    is_protected_path: Callable[[str], bool]
+    compare_digest: Callable[[str, str], bool]
+    has_frontend: bool
+    frontend_dist: Path
+
+
+DefaultDependencyFactory = Callable[[], MiddlewareDependencies]
+
+
+@dataclass(frozen=True)
+class _DefaultFactoryRegistration:
+    owner: str
+    identity: tuple[str, str]
+    factory: DefaultDependencyFactory
+
+
+if "_DEFAULT_FACTORY_LOCK" not in globals():
+    _DEFAULT_FACTORY_LOCK = threading.Lock()
+if "_DEFAULT_FACTORY_REGISTRATION" not in globals():
+    _DEFAULT_FACTORY_REGISTRATION: _DefaultFactoryRegistration | None = None
 
 
 def csv_env(name: str, defaults: list[str]) -> list[str]:
@@ -91,7 +121,8 @@ class ProtectedPathMiddleware(BaseHTTPMiddleware):
     """Tag protected paths so SPA fallback never serves index.html for them."""
 
     async def dispatch(self, request: Request, call_next):
-        if is_protected_path(request.url.path):
+        dependencies = _current_dependencies()
+        if dependencies.is_protected_path(request.url.path):
             request.state.protected_path = True
         return await call_next(request)
 
@@ -129,30 +160,90 @@ def request_token(request: Request) -> str:
     return api_key_header
 
 
+def _local_dependencies() -> MiddlewareDependencies:
+    return MiddlewareDependencies(
+        api_token=api_token,
+        request_token=request_token,
+        requires_token_for_request=requires_token_for_request,
+        is_protected_path=is_protected_path,
+        compare_digest=hmac.compare_digest,
+        has_frontend=FRONTEND_DIST.exists(),
+        frontend_dist=FRONTEND_DIST,
+    )
+
+
+def register_default_dependency_factory(
+    factory: DefaultDependencyFactory,
+    *,
+    owner: str,
+) -> None:
+    """Register one application resolver; same-owner reloads may refresh it."""
+    if not callable(factory):
+        raise TypeError("default dependency factory must be callable")
+    if not isinstance(owner, str) or not owner:
+        raise ValueError("default dependency factory owner must be a non-empty string")
+    module = getattr(factory, "__module__", None)
+    qualname = getattr(factory, "__qualname__", None)
+    if not isinstance(module, str) or not isinstance(qualname, str):
+        raise TypeError("default dependency factory must be a named callable")
+
+    registration = _DefaultFactoryRegistration(
+        owner=owner,
+        identity=(module, qualname),
+        factory=factory,
+    )
+    global _DEFAULT_FACTORY_REGISTRATION
+    with _DEFAULT_FACTORY_LOCK:
+        current = _DEFAULT_FACTORY_REGISTRATION
+        if current is None:
+            _DEFAULT_FACTORY_REGISTRATION = registration
+        elif current.factory is factory:
+            return
+        elif current.owner == owner and current.identity == registration.identity:
+            _DEFAULT_FACTORY_REGISTRATION = registration
+        else:
+            raise RuntimeError(
+                f"default dependency factory already registered by {current.owner}"
+            )
+
+
+def _current_dependencies() -> MiddlewareDependencies:
+    with _DEFAULT_FACTORY_LOCK:
+        registration = _DEFAULT_FACTORY_REGISTRATION
+    dependencies = (
+        registration.factory() if registration is not None else _local_dependencies()
+    )
+    if not isinstance(dependencies, MiddlewareDependencies):
+        raise TypeError("default dependency factory must return MiddlewareDependencies")
+    return dependencies
+
+
 async def api_auth(request: Request, call_next):
     """Require a configured API token for protected remote requests."""
+    dependencies = _current_dependencies()
     client_host = request.client.host if request.client else None
-    if requires_token_for_request(request.url.path, client_host):
-        token = api_token()
+    if dependencies.requires_token_for_request(request.url.path, client_host):
+        token = dependencies.api_token()
         if request.method == "OPTIONS":
             return await call_next(request)
         if not token:
             return JSONResponse({"error": "unauthorized"}, status_code=401)
-        if not hmac.compare_digest(request_token(request), token):
+        if not dependencies.compare_digest(dependencies.request_token(request), token):
             return JSONResponse({"error": "unauthorized"}, status_code=401)
     return await call_next(request)
 
 
 async def spa_fallback(request: Request, call_next):
     """Serve the SPA entry point for missing public frontend routes."""
+    dependencies = _current_dependencies()
     response = await call_next(request)
     if (
-        _HAS_FRONTEND
+        dependencies.has_frontend
         and response.status_code == 404
         and not getattr(request.state, "protected_path", False)
     ):
-        response = FileResponse(FRONTEND_DIST / "index.html")
-    if _HAS_FRONTEND and not request.url.path.startswith("/api"):
+        response = FileResponse(dependencies.frontend_dist / "index.html")
+    if dependencies.has_frontend and not request.url.path.startswith("/api"):
         path = request.url.path
         if path in ("", "/") or path.endswith((".html", ".js", ".css")):
             response.headers["Cache-Control"] = (

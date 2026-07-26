@@ -360,13 +360,13 @@ def test_protected_spa_fallback_never_serves_frontend_index(tmp_path, monkeypatc
     from starlette.requests import Request
     from starlette.responses import Response
 
-    from zhiji_backend import api_middleware
+    from zhiji_backend import main
 
     frontend_dist = tmp_path / "frontend"
     frontend_dist.mkdir()
     (frontend_dist / "index.html").write_text("frontend-index", encoding="utf-8")
-    monkeypatch.setattr(api_middleware, "FRONTEND_DIST", frontend_dist)
-    monkeypatch.setattr(api_middleware, "_HAS_FRONTEND", True)
+    monkeypatch.setattr(main, "FRONTEND_DIST", frontend_dist)
+    monkeypatch.setattr(main, "_HAS_FRONTEND", True)
     request = Request(
         {
             "type": "http",
@@ -386,12 +386,115 @@ def test_protected_spa_fallback_never_serves_frontend_index(tmp_path, monkeypatc
         return Response(status_code=404)
 
     async def exercise():
-        return await api_middleware.spa_fallback(request, missing_response)
+        return await main.spa_fallback(request, missing_response)
 
     response = asyncio.run(exercise())
 
     assert response.status_code == 404
     assert response.headers.get("cache-control") is None
+
+
+def test_registered_auth_resolves_main_helper_aliases_at_request_time(monkeypatch):
+    monkeypatch.setattr(main, "_requires_token_for_request", lambda *_args: True)
+    monkeypatch.setattr(main, "_api_token", lambda: "runtime-token")
+    monkeypatch.setattr(main, "_request_token", lambda _request: "runtime-token")
+    client = TestClient(app, client=("10.8.0.2", 50000))
+
+    allowed = client.get("/api/dashboard/summary")
+    monkeypatch.setattr(main, "_request_token", lambda _request: "wrong-token")
+    denied = client.get("/api/dashboard/summary")
+
+    assert allowed.status_code == 200
+    assert denied.status_code == 401
+
+
+def test_registered_protected_path_resolves_main_alias_at_request_time(
+    tmp_path, monkeypatch
+):
+    frontend_dist = tmp_path / "frontend"
+    frontend_dist.mkdir()
+    (frontend_dist / "index.html").write_text("runtime-index", encoding="utf-8")
+    monkeypatch.setattr(main, "FRONTEND_DIST", frontend_dist)
+    monkeypatch.setattr(main, "_HAS_FRONTEND", True)
+    monkeypatch.setattr(main, "_is_protected_path", lambda _path: True)
+
+    response = TestClient(app).get("/runtime-protected-missing")
+
+    assert response.status_code == 404
+    assert b"runtime-index" not in response.content
+
+
+def test_spa_fallback_pins_one_main_dependency_snapshot_per_request(
+    tmp_path, monkeypatch
+):
+    from starlette.requests import Request
+    from starlette.responses import Response
+
+    first_dist = tmp_path / "first"
+    second_dist = tmp_path / "second"
+    first_dist.mkdir()
+    second_dist.mkdir()
+    (first_dist / "index.html").write_text("first-index", encoding="utf-8")
+    (second_dist / "index.html").write_text("second-index", encoding="utf-8")
+    monkeypatch.setattr(main, "FRONTEND_DIST", first_dist)
+    monkeypatch.setattr(main, "_HAS_FRONTEND", True)
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/snapshot",
+            "raw_path": b"/snapshot",
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 50000),
+            "server": ("testserver", 80),
+            "scheme": "http",
+        }
+    )
+
+    async def missing_response(_request):
+        monkeypatch.setattr(main, "FRONTEND_DIST", second_dist)
+        return Response(status_code=404)
+
+    response = asyncio.run(main.spa_fallback(request, missing_response))
+
+    assert Path(response.path) == first_dist / "index.html"
+
+
+def test_direct_api_middleware_fallback_checks_frontend_at_request_time(
+    tmp_path, monkeypatch
+):
+    from starlette.requests import Request
+    from starlette.responses import Response
+
+    from zhiji_backend import api_middleware
+
+    frontend_dist = tmp_path / "frontend"
+    frontend_dist.mkdir()
+    (frontend_dist / "index.html").write_text("direct-index", encoding="utf-8")
+    monkeypatch.setattr(api_middleware, "_DEFAULT_FACTORY_REGISTRATION", None)
+    monkeypatch.setattr(api_middleware, "FRONTEND_DIST", frontend_dist)
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/direct",
+            "raw_path": b"/direct",
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 50000),
+            "server": ("testserver", 80),
+            "scheme": "http",
+        }
+    )
+
+    async def missing_response(_request):
+        return Response(status_code=404)
+
+    response = asyncio.run(api_middleware.spa_fallback(request, missing_response))
+
+    assert Path(response.path) == frontend_dist / "index.html"
+    assert not hasattr(api_middleware, "_HAS_FRONTEND")
 
 
 def test_static_delivery_closes_opened_artifact_when_response_creation_fails():

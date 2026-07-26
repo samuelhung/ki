@@ -32,8 +32,83 @@ from .security.redaction import RedactingFormatter, SecureTimedRotatingFileHandl
 
 logging = SimpleNamespace(getLogger=_logging.getLogger)
 
+_KI_HANDLER_OWNER = "zhiji"
+_KI_HANDLER_OWNER_ATTR = "_zhiji_handler_owner"
+_KI_HANDLER_ROLE_ATTR = "_zhiji_handler_role"
 
-def _prepare_runtime() -> None:
+ROUTE_NAMES = (
+    "dashboard",
+    "source",
+    "event",
+    "translate",
+    "brainstorm",
+    "briefing",
+    "ingest",
+    "series",
+    "config",
+    "task",
+    "usage",
+    "log",
+    "system",
+    "prompt",
+    "study",
+    "chain",
+)
+
+
+def _root_logger():
+    return _logging.getLogger()
+
+
+def _create_console_handler():
+    handler = _logging.StreamHandler()
+    handler.setLevel(_logging.INFO)
+    handler.setFormatter(
+        RedactingFormatter(
+            "%(asctime)s [%(levelname)-7s] %(name)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    return handler
+
+
+def _create_file_handler():
+    handler = SecureTimedRotatingFileHandler(
+        str(LOG_DIR / "ki.log"),
+        when="midnight",
+        interval=1,
+        backupCount=30,
+        encoding="utf-8",
+    )
+    handler.setLevel(_logging.DEBUG)
+    handler.setFormatter(
+        RedactingFormatter(
+            "%(asctime)s [%(levelname)-7s] %(name)s:%(lineno)d | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    return handler
+
+
+def _remove_runtime_handlers(handlers) -> None:
+    try:
+        root = _root_logger()
+    except BaseException:
+        root = None
+    for handler in handlers:
+        if root is not None:
+            try:
+                if handler in root.handlers:
+                    root.removeHandler(handler)
+            except BaseException:
+                pass
+        try:
+            handler.close()
+        except BaseException:
+            pass
+
+
+def _prepare_runtime() -> tuple[Any, ...]:
     ensure_data_dirs()
     env_path = ZHIJI_HOME / ".env"
     if not env_path.exists() and not env_path.is_symlink():
@@ -41,38 +116,32 @@ def _prepare_runtime() -> None:
     load_hardened_env(env_path, override=True)
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    root = _logging.getLogger()
+    root = _root_logger()
     root.setLevel(_logging.DEBUG)
-
-    console = _logging.StreamHandler()
-    console.setLevel(_logging.INFO)
-    console.setFormatter(
-        RedactingFormatter(
-            "%(asctime)s [%(levelname)-7s] %(name)s | %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-    )
-    root.addHandler(console)
-
-    file_handler = SecureTimedRotatingFileHandler(
-        str(LOG_DIR / "ki.log"),
-        when="midnight",
-        interval=1,
-        backupCount=30,
-        encoding="utf-8",
-    )
-    file_handler.setLevel(_logging.DEBUG)
-    file_handler.setFormatter(
-        RedactingFormatter(
-            "%(asctime)s [%(levelname)-7s] %(name)s:%(lineno)d | %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-    )
-    root.addHandler(file_handler)
-
-    _logging.getLogger("httpx").setLevel(_logging.WARNING)
-    _logging.getLogger("httpcore").setLevel(_logging.WARNING)
-    _logging.getLogger("urllib3").setLevel(_logging.WARNING)
+    installed = []
+    try:
+        for role, create_handler in (
+            ("console", _create_console_handler),
+            ("file", _create_file_handler),
+        ):
+            if any(
+                getattr(handler, _KI_HANDLER_OWNER_ATTR, None) == _KI_HANDLER_OWNER
+                and getattr(handler, _KI_HANDLER_ROLE_ATTR, None) == role
+                for handler in root.handlers
+            ):
+                continue
+            handler = create_handler()
+            setattr(handler, _KI_HANDLER_OWNER_ATTR, _KI_HANDLER_OWNER)
+            setattr(handler, _KI_HANDLER_ROLE_ATTR, role)
+            installed.append(handler)
+            root.addHandler(handler)
+        _logging.getLogger("httpx").setLevel(_logging.WARNING)
+        _logging.getLogger("httpcore").setLevel(_logging.WARNING)
+        _logging.getLogger("urllib3").setLevel(_logging.WARNING)
+    except BaseException:
+        _remove_runtime_handlers(installed)
+        raise
+    return tuple(installed)
 
 
 def _load_dependencies() -> SimpleNamespace:
@@ -86,41 +155,27 @@ def _load_dependencies() -> SimpleNamespace:
         "task_queue",
         "usage_writer",
     )
-    route_names = (
-        "dashboard",
-        "source",
-        "event",
-        "translate",
-        "brainstorm",
-        "briefing",
-        "ingest",
-        "series",
-        "config",
-        "task",
-        "usage",
-        "log",
-        "system",
-        "prompt",
-        "study",
-        "chain",
-    )
     modules = {
         name: importlib.import_module(f".{name}", __package__) for name in module_names
     }
     routes = {
         name: importlib.import_module(f".routes.{name}_routes", __package__)
-        for name in route_names
+        for name in ROUTE_NAMES
     }
     return SimpleNamespace(**modules, routes=routes)
 
 
 def _bootstrap_application(
     *,
-    prepare_runtime: Callable[[], None] = _prepare_runtime,
+    prepare_runtime: Callable[[], Any] = _prepare_runtime,
     load_dependencies: Callable[[], Any] = _load_dependencies,
 ) -> Any:
-    prepare_runtime()
-    return load_dependencies()
+    installed_handlers = tuple(prepare_runtime() or ())
+    try:
+        return load_dependencies()
+    except BaseException:
+        _remove_runtime_handlers(installed_handlers)
+        raise
 
 
 _dependencies = _bootstrap_application()
@@ -153,7 +208,25 @@ _requires_token_for_request = api_middleware.requires_token_for_request
 _request_token = api_middleware.request_token
 _DEFAULT_ALLOWED_HOSTS = api_middleware.DEFAULT_ALLOWED_HOSTS
 _DEFAULT_CORS_ORIGINS = api_middleware.DEFAULT_CORS_ORIGINS
-_HAS_FRONTEND = api_middleware._HAS_FRONTEND
+_HAS_FRONTEND = False
+
+
+def _middleware_dependencies():
+    return api_middleware.MiddlewareDependencies(
+        api_token=_api_token,
+        request_token=_request_token,
+        requires_token_for_request=_requires_token_for_request,
+        is_protected_path=_is_protected_path,
+        compare_digest=hmac.compare_digest,
+        has_frontend=_HAS_FRONTEND,
+        frontend_dist=FRONTEND_DIST,
+    )
+
+
+api_middleware.register_default_dependency_factory(
+    _middleware_dependencies,
+    owner=__name__,
+)
 
 PUBLIC_INGEST_ARTIFACTS = static_delivery.PUBLIC_INGEST_ARTIFACTS
 
@@ -210,24 +283,7 @@ app.add_middleware(
     ],
 )
 
-for _route_name in (
-    "dashboard",
-    "source",
-    "event",
-    "translate",
-    "brainstorm",
-    "briefing",
-    "ingest",
-    "series",
-    "config",
-    "task",
-    "usage",
-    "log",
-    "system",
-    "prompt",
-    "study",
-    "chain",
-):
+for _route_name in ROUTE_NAMES:
     app.include_router(globals()[f"{_route_name}_router"])
 
 
@@ -269,4 +325,4 @@ async def serve_release(filename: str):
     )
 
 
-static_delivery.mount_frontend(app, frontend_dist=FRONTEND_DIST)
+_HAS_FRONTEND = static_delivery.mount_frontend(app, frontend_dist=FRONTEND_DIST)
