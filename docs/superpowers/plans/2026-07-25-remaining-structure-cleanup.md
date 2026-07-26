@@ -135,11 +135,11 @@
 - Modify: `src/zhiji_backend/config_manager.py`
 - Create: `tests/test_config_persistence.py`
 
-- [ ] Move config-file snapshots, identity comparison, atomic write, rollback restore, symlink rejection, parent fsync, and JSON serialization into `config_persistence.py`.
-- [ ] Keep defaults, normalization, provider validation, deep merge, API-key scrubbing, and public get/update functions in `config_manager.py`.
-- [ ] Preserve the configuration/credential transaction boundary and exact `0600` behavior; inject persistence operations so failure at each write point can be tested.
-- [ ] Remove the `config_manager.py` E402 ignore after imports become conventional.
-- [ ] Commit with `git commit -m "refactor: extract secure config persistence"`.
+- [x] Move config-file snapshots, identity comparison, atomic write, rollback restore, symlink rejection, parent fsync, and JSON serialization into `config_persistence.py`.
+- [x] Keep defaults, normalization, provider validation, deep merge, API-key scrubbing, and public get/update functions in `config_manager.py`.
+- [x] Preserve the configuration/credential transaction boundary and exact `0600` behavior; inject persistence operations so failure at each write point can be tested.
+- [x] Remove the `config_manager.py` E402 ignore after imports become conventional.
+- [x] Commit with `git commit -m "refactor: extract secure config persistence"`.
 
 ### Task 2.4: Split redaction from secure log handling
 
