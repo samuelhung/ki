@@ -22,7 +22,10 @@ run_retired_feature_scan() {
 from __future__ import annotations
 
 import ast
+import json
+import os
 import re
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -342,10 +345,120 @@ def returns_json_404(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     )
 
 
+def valid_live_digest_tombstone(payload: object) -> bool:
+    expected_routes = [
+        {
+            "path": "/api/digest/generate",
+            "methods": ["POST"],
+            "hidden": True,
+            "endpoint": "retired_digest_endpoint",
+        },
+        {
+            "path": "/api/digest/latest",
+            "methods": ["GET"],
+            "hidden": True,
+            "endpoint": "retired_digest_endpoint",
+        },
+    ]
+    return bool(
+        isinstance(payload, dict)
+        and payload.get("routes") == expected_routes
+        and payload.get("same_endpoint") is True
+        and payload.get("statuses") == [404]
+        and payload.get("schema_paths") == []
+    )
+
+
+def validate_live_digest_tombstone(root: Path) -> list[str]:
+    probe = r'''
+import asyncio
+import inspect
+import json
+
+from zhiji_backend.main import app
+
+routes = [
+    route
+    for route in app.routes
+    if getattr(route, "path", "") == "/api/digest"
+    or getattr(route, "path", "").startswith("/api/digest/")
+]
+endpoints = []
+for route in routes:
+    if not any(route.endpoint is endpoint for endpoint in endpoints):
+        endpoints.append(route.endpoint)
+
+async def response_statuses():
+    statuses = []
+    for endpoint in endpoints:
+        try:
+            response = endpoint()
+            if inspect.isawaitable(response):
+                response = await response
+            statuses.append(getattr(response, "status_code", None))
+        except BaseException as exc:
+            statuses.append(f"error:{type(exc).__name__}")
+    return statuses
+
+payload = {
+    "routes": sorted(
+        (
+            {
+                "path": route.path,
+                "methods": sorted(route.methods or ()),
+                "hidden": route.include_in_schema is False,
+                "endpoint": getattr(route.endpoint, "__name__", ""),
+            }
+            for route in routes
+        ),
+        key=lambda item: item["path"],
+    ),
+    "same_endpoint": len(endpoints) == 1,
+    "statuses": asyncio.run(response_statuses()),
+    "schema_paths": sorted(
+        path
+        for path in app.openapi().get("paths", {})
+        if path == "/api/digest" or path.startswith("/api/digest/")
+    ),
+}
+print(json.dumps(payload, sort_keys=True))
+'''
+    with tempfile.TemporaryDirectory(prefix="zhiji-retired-runtime-") as temp_dir:
+        home = Path(temp_dir)
+        (home / ".env").write_text("", encoding="utf-8")
+        environment = dict(os.environ)
+        environment["ZHIJI_HOME"] = str(home)
+        existing_pythonpath = environment.get("PYTHONPATH", "")
+        environment["PYTHONPATH"] = os.pathsep.join(
+            item
+            for item in (str(root / "src"), str(root), existing_pythonpath)
+            if item
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", probe],
+            cwd=root,
+            capture_output=True,
+            check=False,
+            env=environment,
+            text=True,
+        )
+    if completed.returncode != 0:
+        return ["src/zhiji_backend/main.py: retired digest runtime probe failed"]
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return ["src/zhiji_backend/main.py: retired digest runtime probe was invalid"]
+    if not valid_live_digest_tombstone(payload):
+        return ["src/zhiji_backend/main.py: retired digest paths must remain hidden and return 404"]
+    return []
+
+
 def validate_digest_tombstone(root: Path) -> list[str]:
     main_path = root / "src/zhiji_backend/main.py"
     if not main_path.exists():
         return []
+    if root.resolve() == ROOT.resolve():
+        return validate_live_digest_tombstone(root)
     source = main_path.read_text(encoding="utf-8")
     tree, violations = parse_python(main_path, "digest tombstone")
     if violations:
@@ -992,6 +1105,38 @@ async def retired_digest_endpoint() -> JSONResponse:
         write(root, "app/frontend/src/App.test.mjs", 'assert.match(app, /\\/demo\\//);\n')
         if violations := scan(root):
             raise SystemExit("FAIL retired feature allowlist self-test:\n" + "\n".join(violations))
+
+    live_payload = {
+        "routes": [
+            {
+                "path": "/api/digest/generate",
+                "methods": ["POST"],
+                "hidden": True,
+                "endpoint": "retired_digest_endpoint",
+            },
+            {
+                "path": "/api/digest/latest",
+                "methods": ["GET"],
+                "hidden": True,
+                "endpoint": "retired_digest_endpoint",
+            },
+        ],
+        "same_endpoint": True,
+        "statuses": [404],
+        "schema_paths": [],
+    }
+    if not valid_live_digest_tombstone(live_payload):
+        raise SystemExit("FAIL live digest tombstone validator rejected valid routes")
+    for key, unsafe in (
+        ("routes", live_payload["routes"] + [{"path": "/api/digest/admin"}]),
+        ("same_endpoint", False),
+        ("statuses", [410]),
+        ("schema_paths", ["/api/digest/latest"]),
+    ):
+        candidate = dict(live_payload)
+        candidate[key] = unsafe
+        if valid_live_digest_tombstone(candidate):
+            raise SystemExit(f"FAIL live digest tombstone validator allowed unsafe {key}")
 
     with tempfile.TemporaryDirectory(prefix="zhiji-retired-allowlist-drift-") as temp_dir:
         root = Path(temp_dir)
