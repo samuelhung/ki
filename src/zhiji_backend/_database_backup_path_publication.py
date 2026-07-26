@@ -73,6 +73,18 @@ def _remove_empty(directory: Path) -> None:
         pass
 
 
+def _fsync_parent(path: Path) -> None:
+    fd = os.open(path.parent, os.O_RDONLY | getattr(os, "O_CLOEXEC", 0))
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def fsync_marker_parent(path: Path) -> None:
+    _fsync_parent(path)
+
+
 def publish_from_private_replace(
     source: Path,
     destination: Path,
@@ -185,6 +197,7 @@ def transition_marker_exclusive(
         )
     )
     os.chmod(directory, 0o700)
+    candidate = directory / "ready-marker-candidate"
     moved = directory / "ready-marker"
     expected_mode = source.lstat().st_mode
     expected_signature = (*source_identity, expected_mode)
@@ -207,23 +220,35 @@ def transition_marker_exclusive(
             f"marker path collision; preserved recovery evidence at {directory}"
         )
 
+    _fsync_parent(destination)
+    os.link(source, candidate, follow_symlinks=False)
+
     try:
-        replace(source, moved)
+        replace(candidate, moved)
     except FileNotFoundError:
         _remove_empty(directory)
         raise
     except Exception:
         isolate_and_unlink(destination, source_identity)
-        _restore(moved, source)
         _remove_empty(directory)
         raise
-    if not _matches(moved, expected_signature) or not _matches(
+    if not _matches(source, expected_signature) or not _matches(
+        moved, expected_signature
+    ) or not _matches(
         destination, expected_signature
     ):
-        _restore(moved, source)
         isolate_and_unlink(destination, source_identity)
         raise RuntimeError(
             f"marker path collision; preserved recovery evidence at {directory}"
         )
     moved.unlink()
     directory.rmdir()
+
+
+def remove_marker_identity(path: Path, expected: PathIdentity) -> None:
+    displaced = isolate_and_unlink(path, expected)
+    if displaced is not None:
+        raise RuntimeError(
+            f"marker path collision; preserved recovery evidence at {displaced.parent}"
+        )
+    _fsync_parent(path)

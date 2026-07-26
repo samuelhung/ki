@@ -323,6 +323,47 @@ def test_consume_transition_preserves_consumed_marker_collision(
     assert ready.exists()
 
 
+def test_consume_transition_preserves_preexisting_consumed_symlink(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "database.sqlite"
+    ready = tmp_path / "ready.json"
+    consumed = tmp_path / "consumed.json"
+    ready.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "state": "ready",
+                "migration_name": "migration",
+            }
+        ),
+        encoding="utf-8",
+    )
+    victim = tmp_path / "victim.json"
+    victim.write_text('{"victim":true}', encoding="utf-8")
+    consumed.symlink_to(victim)
+
+    with pytest.raises(RuntimeError, match="^marker path collision$"):
+        prerequisite_service.consume_backup_prerequisite(
+            source,
+            "migration",
+            ready_marker_path=lambda *_args: ready,
+            consumed_marker_path=lambda *_args: consumed,
+            load_json_regular=lambda path, _label: json.loads(path.read_bytes()),
+            validate_marker_for_consumption=lambda *_args: None,
+            validate_loaded_marker_for_consumption=lambda *_args: None,
+            write_json_atomic=lambda *_args: pytest.fail("receipt publication began"),
+            now=lambda: datetime(2026, 7, 25, 13, tzinfo=UTC),
+            schema_version=1,
+            replace=os.replace,
+        )
+
+    assert ready.exists()
+    assert consumed.is_symlink()
+    assert consumed.resolve() == victim
+    assert victim.read_text(encoding="utf-8") == '{"victim":true}'
+
+
 @pytest.mark.parametrize("foreign_kind", ["file", "symlink"])
 def test_consume_receipt_publication_preserves_boundary_collision(
     tmp_path: Path,
