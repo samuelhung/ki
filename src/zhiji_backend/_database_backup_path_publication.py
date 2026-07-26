@@ -4,6 +4,8 @@ import os
 import stat
 import tempfile
 from collections.abc import Callable
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 from ._database_backup_identity_cleanup import isolate_and_unlink
@@ -11,6 +13,26 @@ from .database_backup_restore_private import identity, restore_displaced
 
 PathIdentity = tuple[int, int]
 PathSignature = tuple[int, int, int]
+
+_EXPECTED_DESTINATION: ContextVar[tuple[Path, PathSignature] | None] = ContextVar(
+    "database_backup_expected_publication_destination", default=None
+)
+
+
+@contextmanager
+def expected_destination_publication(path: Path, signature: PathSignature):
+    token = _EXPECTED_DESTINATION.set((path, signature))
+    try:
+        yield
+    finally:
+        _EXPECTED_DESTINATION.reset(token)
+
+
+def bound_destination_signature(path: Path) -> PathSignature | None:
+    expectation = _EXPECTED_DESTINATION.get()
+    if expectation is None or expectation[0] != path:
+        return None
+    return expectation[1]
 
 
 def path_signature(path: Path) -> PathSignature:
@@ -27,6 +49,14 @@ def _matches(path: Path, expected: PathSignature) -> bool:
         identity(current) == expected[:2]
         and stat.S_IFMT(current.st_mode) == stat.S_IFMT(expected[2])
     )
+
+
+def _present(path: Path) -> bool:
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return False
+    return True
 
 
 def _restore(source: Path, destination: Path) -> bool:
@@ -86,7 +116,11 @@ def publish_from_private_replace(
     try:
         replace(source, publication)
     except Exception as exc:
-        restored = not displaced.exists() or _restore(displaced, destination)
+        restored = not _present(displaced)
+        if not restored:
+            restored = _restore(displaced, destination)
+            if restored:
+                displaced.unlink()
         _remove_empty(directory)
         if not restored:
             raise RuntimeError(
@@ -133,7 +167,7 @@ def publish_from_private_replace(
         )
 
     publication.unlink()
-    if displaced.exists():
+    if _present(displaced):
         displaced.unlink()
     directory.rmdir()
 

@@ -9,6 +9,7 @@ from typing import Any
 
 from ._database_backup_identity_cleanup import isolate_and_unlink
 from ._database_backup_path_publication import (
+    bound_destination_signature,
     path_signature,
     publish_from_private_replace,
 )
@@ -41,10 +42,12 @@ def write_json_atomic(
             os.fsync(handle.fileno())
             created = os.fstat(handle.fileno())
             temp_identity = created.st_dev, created.st_ino
-        try:
-            expected_destination = path_signature(path)
-        except FileNotFoundError:
-            expected_destination = None
+        expected_destination = bound_destination_signature(path)
+        if expected_destination is None:
+            try:
+                expected_destination = path_signature(path)
+            except FileNotFoundError:
+                expected_destination = None
         publish_from_private_replace(
             temp_path,
             path,

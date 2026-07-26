@@ -383,6 +383,109 @@ def test_consume_receipt_publication_preserves_boundary_collision(
         assert victim.read_text(encoding="utf-8") == '{"victim":true}'
 
 
+@pytest.mark.parametrize("foreign_kind", ["file", "symlink"])
+def test_consume_receipt_binds_transitioned_marker_before_writer_starts(
+    tmp_path: Path,
+    foreign_kind: str,
+) -> None:
+    source = tmp_path / "database.sqlite"
+    ready = tmp_path / "ready.json"
+    consumed = tmp_path / "consumed.json"
+    ready.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "state": "ready",
+                "migration_name": "migration",
+            }
+        ),
+        encoding="utf-8",
+    )
+    victim = tmp_path / "victim.json"
+    victim.write_text('{"victim":true}', encoding="utf-8")
+
+    def write_receipt(path: Path, payload: dict[str, object]) -> None:
+        if foreign_kind == "file":
+            replacement = tmp_path / "foreign-consumed.json"
+            replacement.write_text('{"foreign":true}', encoding="utf-8")
+        else:
+            replacement = tmp_path / "foreign-consumed-link"
+            replacement.symlink_to(victim)
+        os.replace(replacement, path)
+        artifacts.write_json_atomic(
+            path,
+            payload,
+            fsync_parent=lambda _path: None,
+        )
+
+    with pytest.raises(RuntimeError, match="publication path collision"):
+        prerequisite_service.consume_backup_prerequisite(
+            source,
+            "migration",
+            ready_marker_path=lambda *_args: ready,
+            consumed_marker_path=lambda *_args: consumed,
+            load_json_regular=lambda path, _label: json.loads(path.read_bytes()),
+            validate_marker_for_consumption=lambda *_args: None,
+            validate_loaded_marker_for_consumption=lambda *_args: None,
+            write_json_atomic=write_receipt,
+            now=lambda: datetime(2026, 7, 25, 13, tzinfo=UTC),
+            schema_version=1,
+            replace=os.replace,
+        )
+
+    if foreign_kind == "file":
+        assert consumed.read_text(encoding="utf-8") == '{"foreign":true}'
+    else:
+        assert consumed.is_symlink()
+        assert consumed.resolve() == victim
+        assert victim.read_text(encoding="utf-8") == '{"victim":true}'
+
+
+def test_consume_replay_binds_ready_receipt_before_writer_starts(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "database.sqlite"
+    ready = tmp_path / "ready.json"
+    consumed = tmp_path / "consumed.json"
+    consumed.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "state": "ready",
+                "migration_name": "migration",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def write_receipt(path: Path, payload: dict[str, object]) -> None:
+        replacement = tmp_path / "foreign-consumed.json"
+        replacement.write_text('{"foreign":true}', encoding="utf-8")
+        os.replace(replacement, path)
+        artifacts.write_json_atomic(
+            path,
+            payload,
+            fsync_parent=lambda _path: None,
+        )
+
+    with pytest.raises(RuntimeError, match="publication path collision"):
+        prerequisite_service.consume_backup_prerequisite(
+            source,
+            "migration",
+            ready_marker_path=lambda *_args: ready,
+            consumed_marker_path=lambda *_args: consumed,
+            load_json_regular=lambda path, _label: json.loads(path.read_bytes()),
+            validate_marker_for_consumption=lambda *_args: None,
+            validate_loaded_marker_for_consumption=lambda *_args: None,
+            write_json_atomic=write_receipt,
+            now=lambda: datetime(2026, 7, 25, 13, tzinfo=UTC),
+            schema_version=1,
+            replace=os.replace,
+        )
+
+    assert consumed.read_text(encoding="utf-8") == '{"foreign":true}'
+
+
 def test_validate_failure_closes_every_acquired_pin(tmp_path: Path) -> None:
     marker_pin = _Pinned()
     manifest_pin = _Pinned()

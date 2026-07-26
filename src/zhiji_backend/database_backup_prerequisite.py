@@ -11,7 +11,10 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from . import _database_backup_fs, database_backup_artifacts
-from ._database_backup_path_publication import transition_marker_exclusive
+from ._database_backup_path_publication import (
+    expected_destination_publication,
+    transition_marker_exclusive,
+)
 
 PinnedArtifact = database_backup_artifacts.PinnedArtifact
 
@@ -69,7 +72,10 @@ def _consume_existing_marker(
             receipt = dict(receipt)
             receipt["state"] = "consumed"
             receipt["consumed_at"] = now().isoformat()
-            write_json_atomic(consumed, receipt)
+            with expected_destination_publication(
+                consumed, (pinned.st_dev, pinned.st_ino, pinned.st_mode)
+            ):
+                write_json_atomic(consumed, receipt)
             return consumed
         finally:
             os.close(fd)
@@ -358,7 +364,11 @@ def consume_backup_prerequisite(
                 source_identity=(locked_stat.st_dev, locked_stat.st_ino),
                 replace=replace,
             )
-            write_json_atomic(consumed, receipt)
+            with expected_destination_publication(
+                consumed,
+                (locked_stat.st_dev, locked_stat.st_ino, locked_stat.st_mode),
+            ):
+                write_json_atomic(consumed, receipt)
     except FileNotFoundError:
         replay = True
     finally:

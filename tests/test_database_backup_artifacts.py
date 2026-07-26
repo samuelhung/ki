@@ -383,6 +383,49 @@ def test_write_json_atomic_cleanup_preserves_temp_path_replacement(
     assert moved_temp.exists()
 
 
+def test_write_json_atomic_replaces_bound_dangling_symlink_without_following(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "marker.json"
+    missing = tmp_path / "missing.json"
+    target.symlink_to(missing)
+
+    artifacts.write_json_atomic(
+        target,
+        {"state": "ready"},
+        fsync_parent=lambda _path: None,
+    )
+
+    assert not target.is_symlink()
+    assert json.loads(target.read_bytes()) == {"state": "ready"}
+    assert not missing.exists()
+    assert not list(tmp_path.glob(".marker.json.publication-*"))
+
+
+def test_write_json_atomic_restores_bound_dangling_symlink_on_replace_failure(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "marker.json"
+    missing = tmp_path / "missing.json"
+    target.symlink_to(missing)
+
+    def fail_replace(_source: Path, _destination: Path) -> None:
+        raise OSError("injected replace failure")
+
+    with pytest.raises(OSError, match="injected replace failure"):
+        artifacts.write_json_atomic(
+            target,
+            {"state": "ready"},
+            fsync_parent=lambda _path: None,
+            replace=fail_replace,
+        )
+
+    assert target.is_symlink()
+    assert target.readlink() == missing
+    assert not missing.exists()
+    assert not list(tmp_path.glob(".marker.json.publication-*"))
+
+
 @pytest.mark.parametrize("operation", ["exclusive", "atomic", "copy"])
 def test_database_backup_composites_resolve_fsync_parent_through_facade(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
