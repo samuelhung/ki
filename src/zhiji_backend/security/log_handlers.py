@@ -4,7 +4,6 @@ import io
 import logging
 import logging.handlers
 import os
-import secrets
 import stat
 from collections.abc import Callable, Iterator
 from contextlib import suppress
@@ -76,61 +75,6 @@ def _harden_existing_logs(
                 )
 
 
-def _create_rotator_staging_path(destination: Path) -> Path:
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-
-    while True:
-        token = secrets.token_hex(16)
-        staging = destination.with_name(f".zhiji-log-rotate-{token}-{destination.name}")
-        try:
-            fd = os.open(staging, flags, 0o600)
-        except FileExistsError:
-            continue
-        try:
-            os.fchmod(fd, 0o600)
-        finally:
-            os.close(fd)
-        return staging
-
-
-def _publish_custom_rotation(staging: Path, destination: Path) -> None:
-    read_flags = os.O_RDONLY
-    if hasattr(os, "O_NOFOLLOW"):
-        read_flags |= os.O_NOFOLLOW
-    staging_fd = os.open(staging, read_flags)
-    try:
-        staging_info = os.fstat(staging_fd)
-        if not stat.S_ISREG(staging_info.st_mode):
-            raise OSError(
-                f"refusing non-regular log rotation staging output: {staging.name}"
-            )
-        if staging_info.st_nlink != 1:
-            raise OSError(
-                f"refusing hard-linked log rotation staging output: {staging.name}"
-            )
-
-        write_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-        if hasattr(os, "O_NOFOLLOW"):
-            write_flags |= os.O_NOFOLLOW
-        destination_fd = os.open(destination, write_flags, 0o600)
-        try:
-            while chunk := os.read(staging_fd, 1024 * 1024):
-                remaining = memoryview(chunk)
-                while remaining:
-                    written = os.write(destination_fd, remaining)
-                    if written <= 0:
-                        raise OSError("unable to write secure log rotation output")
-                    remaining = remaining[written:]
-            os.fchmod(destination_fd, 0o600)
-            os.fsync(destination_fd)
-        finally:
-            os.close(destination_fd)
-    finally:
-        os.close(staging_fd)
-
-
 class SecureTimedRotatingFileHandler(logging.handlers.TimedRotatingFileHandler):
     """Timed rotation with no-follow creation and mode 0600 for every log."""
 
@@ -179,15 +123,14 @@ class SecureTimedRotatingFileHandler(logging.handlers.TimedRotatingFileHandler):
             raise
 
     def rotate(self, source: str, dest: str) -> None:
+        if callable(self.rotator):
+            raise RuntimeError(
+                "custom log rotators are not supported by secure handler"
+            )
+
         source_path = Path(source)
         dest_path = Path(dest)
         if not _reject_symlink(source_path):
-            return
-
-        if callable(self.rotator):
-            staging_path = _create_rotator_staging_path(dest_path)
-            self.rotator(source, str(staging_path))
-            _publish_custom_rotation(staging_path, dest_path)
             return
 
         _reject_symlink(dest_path)
