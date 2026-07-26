@@ -388,58 +388,27 @@ def test_database_transaction_commits_or_rolls_back_and_always_closes(
 
 def test_database_schema_and_migration_order_is_stable(monkeypatch) -> None:
     calls: list[str] = []
-
-    class ConnectionSpy:
-        def executescript(self, sql: str) -> None:
-            calls.append("schema" if "CREATE TABLE IF NOT EXISTS sources" in sql else "indexes")
-
-        def execute(self, sql: str, *_args) -> Any:
-            if sql == "PRAGMA table_info(brainstorm_questions)":
-                calls.append("_migrate_brainstorm")
-
-                class CursorSpy:
-                    @staticmethod
-                    def fetchall() -> list[Any]:
-                        return []
-
-                return CursorSpy()
-            return None
+    connection = object()
 
     @contextmanager
     def fake_connect(**_kwargs):
-        yield ConnectionSpy()
+        yield connection
 
-    migration_names = (
-        "_migrate_events_cn",
-        "_migrate_series",
-        "_migrate_ingest_tasks_retry",
-        "_migrate_video_md5",
-        "_migrate_textbook",
-        "_migrate_lessons_json",
-        "_migrate_chain_reports",
-        "_migrate_chain_meta",
-        "_backfill_fts",
-    )
     monkeypatch.setattr(db, "connect", fake_connect)
-    for name in migration_names:
-        monkeypatch.setattr(db, name, lambda _conn, name=name: calls.append(name))
     monkeypatch.setattr(
-        db,
-        "_migrate_brainstorm_answers_to_messages",
-        lambda _conn: calls.append("_migrate_brainstorm_answers_to_messages"),
+        db.db_schema,
+        "create_schema",
+        lambda received: calls.append("schema") if received is connection else None,
+    )
+    monkeypatch.setattr(
+        db.db_migrations,
+        "run_migrations",
+        lambda received: calls.append("migrations") if received is connection else None,
     )
 
     db.init_db()
 
-    assert calls == [
-        "schema",
-        "_migrate_events_cn",
-        "_migrate_brainstorm",
-        "_migrate_brainstorm_answers_to_messages",
-        *migration_names[1:4],
-        "indexes",
-        *migration_names[4:],
-    ]
+    assert calls == ["schema", "migrations"]
 
 
 def test_default_source_seed_count_and_idempotence(tmp_path, monkeypatch) -> None:
