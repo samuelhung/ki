@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from zhiji_backend import _database_backup_marker_consumption as marker_consumption
 from zhiji_backend import database_backup
 from zhiji_backend import database_backup_artifacts as artifacts
 from zhiji_backend import database_backup_prerequisite as prerequisite_service
@@ -89,6 +90,10 @@ def test_consume_replays_consumed_marker_without_rewriting_receipt(
         "schema_version": 1,
         "state": "consumed",
         "migration_name": migration_name,
+        "created_at": "2026-07-25T11:00:00+00:00",
+        "manifest_path": "/manifest.json",
+        "manifest_sha256": "a" * 64,
+        "source": {},
         "consumed_at": "2026-07-25T12:00:00+00:00",
     }
     consumed.write_text(
@@ -97,6 +102,7 @@ def test_consume_replays_consumed_marker_without_rewriting_receipt(
     )
     before = consumed.read_bytes()
     writes = 0
+    validated: list[dict[str, object]] = []
 
     def write_json(_path: Path, _payload: dict[str, object]) -> None:
         nonlocal writes
@@ -108,7 +114,9 @@ def test_consume_replays_consumed_marker_without_rewriting_receipt(
         ready_marker_path=lambda _source, _migration: tmp_path / "ready.json",
         consumed_marker_path=lambda _source, _migration: consumed,
         load_json_regular=lambda path, _label: json.loads(path.read_bytes()),
-        validate_marker_for_consumption=lambda *_args: None,
+        validate_marker_for_consumption=lambda _source, _migration, marker: (
+            validated.append(marker)
+        ),
         validate_loaded_marker_for_consumption=lambda *_args: None,
         write_json_atomic=write_json,
         now=lambda: datetime(2026, 7, 25, 13, tzinfo=UTC),
@@ -118,6 +126,195 @@ def test_consume_replays_consumed_marker_without_rewriting_receipt(
     assert result == consumed
     assert consumed.read_bytes() == before
     assert writes == 0
+    assert validated == [
+        {
+            **{key: value for key, value in receipt.items() if key != "consumed_at"},
+            "state": "ready",
+        }
+    ]
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        "missing-key",
+        "unknown-key",
+        "manifest-path-type",
+        "manifest-sha256-type",
+        "manifest-sha256-shape",
+        "source-type",
+        "created-naive",
+        "consumed-malformed",
+        "consumed-naive",
+        "consumed-before-created",
+    ],
+)
+def test_consume_rejects_malformed_canonical_consumed_receipt(
+    tmp_path: Path,
+    damage: str,
+) -> None:
+    source = tmp_path / "database.sqlite"
+    ready = tmp_path / "ready.json"
+    consumed = tmp_path / "consumed.json"
+    receipt: dict[str, object] = {
+        "schema_version": 1,
+        "state": "consumed",
+        "migration_name": "migration",
+        "created_at": "2026-07-25T11:00:00+00:00",
+        "manifest_path": "/manifest.json",
+        "manifest_sha256": "a" * 64,
+        "source": {},
+        "consumed_at": "2026-07-25T12:00:00+00:00",
+    }
+    if damage == "missing-key":
+        receipt.pop("manifest_path")
+    elif damage == "unknown-key":
+        receipt["unexpected"] = True
+    elif damage == "manifest-path-type":
+        receipt["manifest_path"] = 1
+    elif damage == "manifest-sha256-type":
+        receipt["manifest_sha256"] = 1
+    elif damage == "manifest-sha256-shape":
+        receipt["manifest_sha256"] = "not-a-sha256"
+    elif damage == "source-type":
+        receipt["source"] = []
+    elif damage == "created-naive":
+        receipt["created_at"] = "2026-07-25T11:00:00"
+    elif damage == "consumed-malformed":
+        receipt["consumed_at"] = "invalid"
+    elif damage == "consumed-naive":
+        receipt["consumed_at"] = "2026-07-25T12:00:00"
+    else:
+        receipt["consumed_at"] = "2026-07-25T10:59:59+00:00"
+    consumed.write_text(json.dumps(receipt), encoding="utf-8")
+    before = consumed.read_bytes()
+    writes = 0
+
+    def write_json(_path: Path, _payload: dict[str, object]) -> None:
+        nonlocal writes
+        writes += 1
+
+    with pytest.raises(RuntimeError, match="consumed marker is invalid"):
+        prerequisite_service.consume_backup_prerequisite(
+            source,
+            "migration",
+            ready_marker_path=lambda *_args: ready,
+            consumed_marker_path=lambda *_args: consumed,
+            load_json_regular=lambda path, _label: json.loads(path.read_bytes()),
+            validate_marker_for_consumption=lambda *_args: None,
+            validate_loaded_marker_for_consumption=lambda *_args: None,
+            write_json_atomic=write_json,
+            now=lambda: datetime(2026, 7, 25, 13, tzinfo=UTC),
+            schema_version=1,
+        )
+
+    assert consumed.read_bytes() == before
+    assert writes == 0
+
+
+@pytest.mark.parametrize("state", ["ready", "consumed-only-ready"])
+def test_consume_preserves_ready_when_consumed_changes_during_finalization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    state: str,
+) -> None:
+    source = tmp_path / "database.sqlite"
+    ready = tmp_path / "ready.json"
+    consumed = tmp_path / "consumed.json"
+    marker = {
+        "schema_version": 1,
+        "state": "ready",
+        "migration_name": "migration",
+        "created_at": "2026-07-25T12:00:00+00:00",
+        "manifest_path": "/manifest.json",
+        "manifest_sha256": "a" * 64,
+        "source": {},
+    }
+    if state == "ready":
+        ready.write_text(json.dumps(marker), encoding="utf-8")
+    else:
+        consumed.write_text(json.dumps(marker), encoding="utf-8")
+    foreign = tmp_path / "foreign.json"
+    foreign.write_text('{"foreign":true}', encoding="utf-8")
+    real_rename = marker_consumption.os.rename
+
+    def collide_after_ready_isolation(source_path: Path, target_path: Path) -> None:
+        real_rename(source_path, target_path)
+        if Path(source_path) == ready:
+            os.replace(foreign, consumed)
+
+    monkeypatch.setattr(marker_consumption.os, "rename", collide_after_ready_isolation)
+
+    with pytest.raises(RuntimeError, match="marker path collision"):
+        prerequisite_service.consume_backup_prerequisite(
+            source,
+            "migration",
+            ready_marker_path=lambda *_args: ready,
+            consumed_marker_path=lambda *_args: consumed,
+            load_json_regular=lambda path, _label: json.loads(path.read_bytes()),
+            validate_marker_for_consumption=lambda *_args: None,
+            validate_loaded_marker_for_consumption=lambda *_args: None,
+            write_json_atomic=lambda path, payload: artifacts.write_json_atomic(
+                path, payload, fsync_parent=lambda _path: None
+            ),
+            now=lambda: datetime(2026, 7, 25, 13, tzinfo=UTC),
+            schema_version=1,
+            replace=os.replace,
+        )
+
+    assert consumed.read_text(encoding="utf-8") == '{"foreign":true}'
+    assert ready.exists()
+    assert json.loads(ready.read_bytes())["state"] == "ready"
+
+
+def test_consume_preserves_ready_when_consumed_signature_changes_during_finalization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "database.sqlite"
+    ready = tmp_path / "ready.json"
+    consumed = tmp_path / "consumed.json"
+    marker = {
+        "schema_version": 1,
+        "state": "ready",
+        "migration_name": "migration",
+        "created_at": "2026-07-25T12:00:00+00:00",
+        "manifest_path": "/manifest.json",
+        "manifest_sha256": "a" * 64,
+        "source": {},
+    }
+    ready.write_text(json.dumps(marker), encoding="utf-8")
+    real_rename = marker_consumption.os.rename
+
+    def mutate_after_ready_isolation(source_path: Path, target_path: Path) -> None:
+        real_rename(source_path, target_path)
+        if Path(source_path) == ready:
+            receipt = consumed.read_bytes()
+            consumed.write_bytes(receipt + b" ")
+            consumed.write_bytes(receipt)
+
+    monkeypatch.setattr(marker_consumption.os, "rename", mutate_after_ready_isolation)
+
+    with pytest.raises(RuntimeError, match="marker path collision"):
+        prerequisite_service.consume_backup_prerequisite(
+            source,
+            "migration",
+            ready_marker_path=lambda *_args: ready,
+            consumed_marker_path=lambda *_args: consumed,
+            load_json_regular=lambda path, _label: json.loads(path.read_bytes()),
+            validate_marker_for_consumption=lambda *_args: None,
+            validate_loaded_marker_for_consumption=lambda *_args: None,
+            write_json_atomic=lambda path, payload: artifacts.write_json_atomic(
+                path, payload, fsync_parent=lambda _path: None
+            ),
+            now=lambda: datetime(2026, 7, 25, 13, tzinfo=UTC),
+            schema_version=1,
+            replace=os.replace,
+        )
+
+    assert ready.exists()
+    assert json.loads(ready.read_bytes())["state"] == "ready"
+    assert json.loads(consumed.read_bytes())["state"] == "consumed"
 
 
 def test_consume_ready_marker_serializes_exact_receipt_and_is_idempotent(
@@ -220,6 +417,10 @@ def test_concurrent_consumed_ready_replay_is_idempotent(tmp_path: Path) -> None:
                 "schema_version": 1,
                 "state": "ready",
                 "migration_name": "migration",
+                "created_at": "2026-07-25T12:00:00+00:00",
+                "manifest_path": "/manifest.json",
+                "manifest_sha256": "a" * 64,
+                "source": {},
             }
         ),
         encoding="utf-8",

@@ -108,7 +108,7 @@ def rename_then_pause(source, destination):
     real_rename(source, destination)
     if Path(source) == consumed and Path(destination).name == "displaced-destination":
         pause("receipt-destination-displaced")
-    if Path(source) == ready and Path(destination).name == "isolated":
+    if Path(source) == ready:
         pause("ready-isolated")
 
 def transition_fsync_then_pause(path):

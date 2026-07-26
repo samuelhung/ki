@@ -11,15 +11,14 @@ from typing import Any, ClassVar
 
 from . import _database_backup_fs, database_backup_artifacts
 from ._database_backup_marker_consumption import (
+    borrowed_consumed_receipt,
     consume_existing_marker,
-    matching_consumed_receipt,
+    finalize_ready_marker,
+    pin_consumed_receipt,
     read_locked_marker,
-    validate_consumed_receipt,
 )
 from ._database_backup_path_publication import (
     expected_destination_publication,
-    fsync_marker_parent,
-    remove_marker_identity,
     transition_marker_exclusive,
 )
 
@@ -312,13 +311,17 @@ def consume_backup_prerequisite(
                 consumed_stat.st_dev,
                 consumed_stat.st_ino,
             ) != (locked_stat.st_dev, locked_stat.st_ino):
-                matching_consumed_receipt(
+                pinned_receipt = pin_consumed_receipt(
                     consumed, locked_marker, migration_name, schema_version
                 )
-                fsync_marker_parent(consumed)
-                remove_marker_identity(
-                    ready, (locked_stat.st_dev, locked_stat.st_ino)
-                )
+                try:
+                    finalize_ready_marker(
+                        ready,
+                        (locked_stat.st_dev, locked_stat.st_ino),
+                        pinned_receipt,
+                    )
+                finally:
+                    pinned_receipt.close()
                 return consumed
             transition_marker_exclusive(
                 ready,
@@ -336,19 +339,25 @@ def consume_backup_prerequisite(
                 locked_stat.st_dev,
                 locked_stat.st_ino,
             ):
-                validate_consumed_receipt(
-                    read_locked_marker(lock_fd),
+                pinned_receipt = borrowed_consumed_receipt(
+                    consumed,
+                    lock_fd,
                     locked_marker,
                     migration_name,
                     schema_version,
                 )
-                os.fsync(lock_fd)
             else:
-                matching_consumed_receipt(
+                pinned_receipt = pin_consumed_receipt(
                     consumed, locked_marker, migration_name, schema_version
                 )
-            fsync_marker_parent(consumed)
-            remove_marker_identity(ready, (locked_stat.st_dev, locked_stat.st_ino))
+            try:
+                finalize_ready_marker(
+                    ready,
+                    (locked_stat.st_dev, locked_stat.st_ino),
+                    pinned_receipt,
+                )
+            finally:
+                pinned_receipt.close()
     except FileNotFoundError:
         replay = True
     finally:
