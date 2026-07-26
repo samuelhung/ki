@@ -6,6 +6,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import _database_backup_cleanup
 from ._database_backup_identity_cleanup import isolate_and_unlink
 
 SidecarIdentity = tuple[int, int]
@@ -214,9 +215,11 @@ class SidecarDisposition:
         self.recovery_dir = None
 
     def close(self) -> None:
-        for sidecar in self.pinned:
-            if sidecar is not None:
-                sidecar.close()
+        _database_backup_cleanup.run_best_effort_cleanup(
+            _database_backup_cleanup.close_actions(
+                "sidecar", (sidecar for sidecar in self.pinned if sidecar is not None)
+            )
+        )
 
 
 def restore_after_failure(

@@ -65,6 +65,42 @@ def test_lease_dataclass_shape_matches_original_five_fields() -> None:
     assert set(asdict(lease)) == expected
 
 
+def test_lease_close_attempts_every_pin_and_clears_ownership() -> None:
+    events: list[str] = []
+    failures = [RuntimeError("marker close failed"), OSError("manifest close failed")]
+
+    class FailingPin:
+        def __init__(self, label: str, failure: Exception) -> None:
+            self.label = label
+            self.failure = failure
+
+        def close(self) -> None:
+            events.append(self.label)
+            raise self.failure
+
+    lease = prerequisite_service.BackupPrerequisiteLease(
+        marker_path=Path("/marker"),
+        manifest_path=Path("/manifest"),
+        marker={},
+        manifest={},
+        pinned_files=[
+            (FailingPin("marker", failures[0]), "marker"),
+            (FailingPin("manifest", failures[1]), "manifest"),
+        ],
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        lease.close()
+
+    assert exc_info.value is failures[0]
+    assert events == ["marker", "manifest"]
+    assert lease.pinned_files == []
+    assert exc_info.value.__notes__ == [
+        "prerequisite lease artifact 1 cleanup failed: OSError: "
+        "manifest close failed"
+    ]
+
+
 def test_lease_assert_published_uses_default_unbound_validator(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -878,3 +914,86 @@ def test_validate_failure_closes_every_acquired_pin(tmp_path: Path) -> None:
 
     assert marker_pin.closed == 1
     assert manifest_pin.closed == 1
+
+
+def test_validate_cleanup_attempts_every_pin_and_preserves_pinning_error(
+    tmp_path: Path,
+) -> None:
+    marker_path = tmp_path / "ready.json"
+    marker_path.write_text("{}", encoding="utf-8")
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text("{}", encoding="utf-8")
+    source = tmp_path / "database.sqlite"
+    config = tmp_path / "config.json"
+    events: list[str] = []
+    pinning_error = ValueError("config pin failed")
+
+    class FailingPin:
+        def __init__(self, label: str) -> None:
+            self.label = label
+
+        def close(self) -> None:
+            events.append(self.label)
+            raise RuntimeError(f"{self.label} close failed")
+
+    marker_pin = FailingPin("marker")
+    manifest_pin = FailingPin("manifest")
+    database_pin = FailingPin("database")
+    source_metadata = {
+        "database_path": str(source),
+        "config_path": str(config),
+        "sqlite_snapshot_sha256": "snapshot",
+    }
+    marker = {
+        "schema_version": 1,
+        "state": "ready",
+        "migration_name": "migration",
+        "manifest_path": str(manifest_path),
+        "manifest_sha256": "a" * 64,
+        "source": source_metadata,
+    }
+    manifest = {
+        "schema_version": 1,
+        "migration_name": "migration",
+        "marker_path": str(marker_path),
+        "created_at": "2026-07-25T12:00:00+00:00",
+        "source": source_metadata,
+        "artifacts": {"database": {}, "config": {}},
+    }
+    json_pins = iter([(marker_pin, marker), (manifest_pin, manifest)])
+    artifact_calls = 0
+
+    def pin_artifact(*_args: object, **_kwargs: object):
+        nonlocal artifact_calls
+        artifact_calls += 1
+        if artifact_calls == 2:
+            raise pinning_error
+        return database_pin
+
+    with pytest.raises(ValueError) as exc_info:
+        prerequisite_service.validate_backup_prerequisite(
+            source,
+            config,
+            "migration",
+            allow_stale=False,
+            pin_artifacts=True,
+            marker_path_for=lambda *_args: marker_path,
+            canonical_manifest_path=lambda value, _label: Path(str(value)),
+            pin_json_file=lambda *_args, **_kwargs: next(json_pins),
+            parse_created_at=lambda value: datetime.fromisoformat(str(value)),
+            require_fresh=lambda *_args, **_kwargs: None,
+            require_current_source=lambda *_args, **_kwargs: None,
+            sqlite_snapshot_sha256=lambda _path: "snapshot",
+            pin_artifact=pin_artifact,
+            now=lambda: datetime(2026, 7, 25, 13, tzinfo=UTC),
+            schema_version=1,
+            max_age_seconds=86400,
+        )
+
+    assert exc_info.value is pinning_error
+    assert events == ["marker", "manifest", "database"]
+    assert exc_info.value.__notes__ == [
+        "prerequisite pin 0 cleanup failed: RuntimeError: marker close failed",
+        "prerequisite pin 1 cleanup failed: RuntimeError: manifest close failed",
+        "prerequisite pin 2 cleanup failed: RuntimeError: database close failed",
+    ]

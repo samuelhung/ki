@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from . import _database_backup_cleanup
 from .database_backup_artifacts import PinnedArtifact
 
 PinJsonFile = Callable[..., tuple[PinnedArtifact, dict[str, Any]]]
@@ -187,6 +188,7 @@ def validate_rollback_manifest(
         "rollback manifest",
         expected_sha256=expected_sha256,
     )
+    manifest_close_attempted = False
     try:
         if manifest.get("schema_version") != schema_version:
             raise RuntimeError("rollback manifest schema is invalid")
@@ -232,6 +234,7 @@ def validate_rollback_manifest(
             )
             pinned.append(manifest_pin)
         else:
+            manifest_close_attempted = True
             manifest_pin.close()
         return (
             manifest,
@@ -243,7 +246,14 @@ def validate_rollback_manifest(
             manifest_pin.sha256,
         )
     except Exception:
-        for artifact in pinned:
-            artifact.close()
-        manifest_pin.close()
+        cleanup_artifacts = list(pinned)
+        if not manifest_close_attempted and all(
+            artifact is not manifest_pin for artifact in cleanup_artifacts
+        ):
+            cleanup_artifacts.append(manifest_pin)
+        _database_backup_cleanup.run_best_effort_cleanup(
+            _database_backup_cleanup.close_actions(
+                "rollback artifact", cleanup_artifacts
+            )
+        )
         raise

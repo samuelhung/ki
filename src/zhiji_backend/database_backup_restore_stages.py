@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ._database_backup_cleanup import run_best_effort_cleanup
 from ._database_backup_path_publication import (
     PathSignature,
     path_signature,
@@ -50,14 +51,12 @@ class PrivateRestoreClone:
     pinned: PinnedArtifact
     expected_destination: PathSignature | None
 
-    def cleanup(self) -> None:
-        try:
-            _unlink_identity_in_directory(self.directory_fd, self.identity)
-        finally:
-            self.pinned.close()
-            if self.directory_fd >= 0:
-                os.close(self.directory_fd)
-                self.directory_fd = -1
+    def _close_directory_fd(self) -> None:
+        if self.directory_fd >= 0:
+            os.close(self.directory_fd)
+            self.directory_fd = -1
+
+    def _remove_directory(self) -> None:
         try:
             directory_stat = self.directory.lstat()
             if (
@@ -67,6 +66,21 @@ class PrivateRestoreClone:
                 self.directory.rmdir()
         except (FileNotFoundError, OSError):
             pass
+
+    def cleanup(self) -> None:
+        run_best_effort_cleanup(
+            (
+                (
+                    "private clone identity",
+                    lambda: _unlink_identity_in_directory(
+                        self.directory_fd, self.identity
+                    ),
+                ),
+                ("private clone pinned artifact", self.pinned.close),
+                ("private clone directory fd", self._close_directory_fd),
+                ("private clone directory", self._remove_directory),
+            )
+        )
 
 
 _EXPECTED_PUBLICATION: ContextVar[PrivateRestoreClone | None] = ContextVar(

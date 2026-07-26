@@ -8,12 +8,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from . import (
+    _database_backup_cleanup,
     database_backup_restore_finalization,
     database_backup_restore_journal,
     database_backup_restore_sidecars,
     database_backup_restore_stages,
 )
-from ._database_backup_cleanup import run_best_effort_cleanup
 from ._database_backup_identity_cleanup import isolate_and_unlink
 
 if TYPE_CHECKING:
@@ -315,7 +315,7 @@ def recover_rollback_restore(
         )
         if sidecars is not None:
             cleanup_actions.append(("sidecars", sidecars.close))
-        run_best_effort_cleanup(cleanup_actions)
+        _database_backup_cleanup.run_best_effort_cleanup(cleanup_actions)
     return {
         "database": destinations["database"],
         "config": destinations["config"],
@@ -389,10 +389,11 @@ def restore_rollback_backup(
         write_json_exclusive(journal_path, journal)
         journal_written = True
     finally:
-        for artifact in pinned:
-            artifact.close()
-        if not journal_written:
-            for stage, identity in owned_stages.values():
-                unlink_if_identity(stage, identity)
+        _database_backup_cleanup.run_composite_cleanup(
+            _database_backup_cleanup.close_actions("pinned artifact", pinned),
+            _database_backup_cleanup.argument_actions(
+                "owned stage", owned_stages.items(), unlink_if_identity
+            ) if not journal_written else (),
+        )
 
     return recover_rollback_restore(journal_path, _owned_stages=owned_stages)

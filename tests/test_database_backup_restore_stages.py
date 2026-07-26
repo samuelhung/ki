@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import os
+import stat
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -11,6 +13,65 @@ from zhiji_backend import database_backup, database_backup_restore_stages
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_private_restore_clone_cleanup_attempts_every_action(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    unlink_error = ValueError("clone unlink failed")
+
+    class FailingPinned:
+        def close(self) -> None:
+            events.append("pinned")
+            raise RuntimeError("pinned close failed")
+
+    class FakeDirectory:
+        def lstat(self):
+            return SimpleNamespace(
+                st_mode=stat.S_IFDIR | 0o700,
+                st_dev=1,
+                st_ino=2,
+            )
+
+        def rmdir(self) -> None:
+            events.append("directory")
+
+    def fail_unlink(_fd: int, _identity: tuple[int, int]) -> None:
+        events.append("unlink")
+        raise unlink_error
+
+    def fail_close(fd: int) -> None:
+        events.append(f"fd {fd}")
+        raise OSError("directory fd close failed")
+
+    monkeypatch.setattr(
+        database_backup_restore_stages,
+        "_unlink_identity_in_directory",
+        fail_unlink,
+    )
+    monkeypatch.setattr(database_backup_restore_stages.os, "close", fail_close)
+    clone = database_backup_restore_stages.PrivateRestoreClone(
+        path=Path("/clone"),
+        identity=(3, 4),
+        directory=FakeDirectory(),
+        directory_identity=(1, 2),
+        directory_fd=17,
+        pinned=FailingPinned(),
+        expected_destination=None,
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        clone.cleanup()
+
+    assert exc_info.value is unlink_error
+    assert events == ["unlink", "pinned", "fd 17", "directory"]
+    assert exc_info.value.__notes__ == [
+        "private clone pinned artifact cleanup failed: RuntimeError: "
+        "pinned close failed",
+        "private clone directory fd cleanup failed: OSError: "
+        "directory fd close failed",
+    ]
 
 
 def test_private_restore_clone_copies_pinned_fd_and_uses_private_directory(

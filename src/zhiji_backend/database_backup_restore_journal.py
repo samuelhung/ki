@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from . import _database_backup_cleanup
 from ._database_backup_fs import copy_fd, hash_fd, identity, read_fd
 from ._database_backup_identity_cleanup import isolate_and_unlink
 from .database_backup_restore_private import (
@@ -387,9 +388,13 @@ class TrustedJournalDisposition:
         self.recovery_dir = None
 
     def close(self) -> None:
-        if self.published_fd >= 0:
-            os.close(self.published_fd)
-            self.published_fd = -1
-        if self.fd >= 0:
-            os.close(self.fd)
-            self.fd = -1
+        _database_backup_cleanup.run_best_effort_cleanup(
+            _database_backup_cleanup.argument_actions(
+                "journal",
+                (
+                    ("published fd", (self, "published_fd")),
+                    ("source fd", (self, "fd")),
+                ),
+                _database_backup_cleanup.close_file_descriptor,
+            )
+        )

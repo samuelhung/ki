@@ -8,8 +8,7 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from . import _database_backup_fs
-from ._database_backup_cleanup import run_best_effort_cleanup
+from . import _database_backup_cleanup, _database_backup_fs
 
 if TYPE_CHECKING:
     from .database_backup_artifacts import PinnedArtifact
@@ -44,8 +43,11 @@ class FinalRestoreSet:
                 raise RuntimeError(f"rollback restore {key} final binding changed")
 
     def close(self) -> None:
-        for artifact in self.artifacts.values():
-            artifact.close()
+        _database_backup_cleanup.run_best_effort_cleanup(
+            _database_backup_cleanup.close_actions(
+                "final restore artifact", self.artifacts.values()
+            )
+        )
 
 
 def pin_final_restore_set(
@@ -68,8 +70,7 @@ def pin_final_restore_set(
         final_set.assert_valid()
         return final_set
     except Exception:
-        for artifact in artifacts.values():
-            artifact.close()
+        FinalRestoreSet(artifacts).close()
         raise
 
 
@@ -99,7 +100,7 @@ def ensure_owned_recovery_stages(
                 created.append((stage, (stage_stat.st_dev, stage_stat.st_ino)))
                 entries[key]["stage_path"] = str(stage)
     except Exception:
-        run_best_effort_cleanup(
+        _database_backup_cleanup.run_best_effort_cleanup(
             (
                 (
                     f"recovery stage {stage.name}",

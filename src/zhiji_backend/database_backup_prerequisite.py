@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar
 
-from . import _database_backup_fs, database_backup_artifacts
+from . import _database_backup_cleanup, _database_backup_fs, database_backup_artifacts
 from ._database_backup_marker_consumption import (
     borrowed_consumed_receipt,
     consume_existing_marker,
@@ -50,9 +50,14 @@ class BackupPrerequisiteLease:
             self._assert_pinned_artifact(pinned, label)
 
     def close(self) -> None:
-        for pinned, _label in self.pinned_files:
-            pinned.close()
+        owned_files = self.pinned_files
         self.pinned_files = []
+        _database_backup_cleanup.run_best_effort_cleanup(
+            _database_backup_cleanup.close_actions(
+                "prerequisite lease artifact",
+                (pinned for pinned, _label in owned_files),
+            )
+        )
 
 
 def backup_marker_path(source: Path, migration_name: str) -> Path:
@@ -176,8 +181,11 @@ def validate_backup_prerequisite(
         if assert_pinned_artifact is not None:
             lease._assert_pinned_artifact = assert_pinned_artifact
     except Exception:
-        for pinned_file, _label in pinned:
-            pinned_file.close()
+        _database_backup_cleanup.run_best_effort_cleanup(
+            _database_backup_cleanup.close_actions(
+                "prerequisite pin", (pinned_file for pinned_file, _label in pinned)
+            )
+        )
         raise
     if not pin_artifacts:
         lease.close()

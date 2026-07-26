@@ -171,6 +171,79 @@ def test_recovery_stage_cleanup_failure_preserves_second_stage_error(
     ]
 
 
+def test_final_restore_set_close_attempts_all_artifacts() -> None:
+    events: list[str] = []
+    failures = [RuntimeError("config close failed"), OSError("database close failed")]
+
+    class FailingArtifact:
+        def __init__(self, label: str, failure: Exception) -> None:
+            self.label = label
+            self.failure = failure
+
+        def close(self) -> None:
+            events.append(self.label)
+            raise self.failure
+
+    final_set = database_backup_restore_finalization.FinalRestoreSet(
+        {
+            "config": FailingArtifact("config", failures[0]),
+            "database": FailingArtifact("database", failures[1]),
+        }
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        final_set.close()
+
+    assert exc_info.value is failures[0]
+    assert events == ["config", "database"]
+    assert exc_info.value.__notes__ == [
+        "final restore artifact 1 cleanup failed: OSError: database close failed"
+    ]
+
+
+def test_final_restore_pin_cleanup_preserves_validation_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[str] = []
+    validation_error = ValueError("final restore validation failed")
+
+    class FailingArtifact:
+        def __init__(self, label: str) -> None:
+            self.label = label
+
+        def close(self) -> None:
+            events.append(self.label)
+            raise RuntimeError(f"{self.label} close failed")
+
+    artifacts = {
+        "config": FailingArtifact("config"),
+        "database": FailingArtifact("database"),
+    }
+    monkeypatch.setattr(
+        database_backup_restore_finalization.FinalRestoreSet,
+        "assert_valid",
+        lambda _self: (_ for _ in ()).throw(validation_error),
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        database_backup_restore_finalization.pin_final_restore_set(
+            {
+                "config": (tmp_path / "config", {}),
+                "database": (tmp_path / "database", {}),
+            },
+            pin_artifact=lambda _candidate, label, **_kwargs: artifacts[
+                "config" if label.startswith("config") else "database"
+            ],
+        )
+
+    assert exc_info.value is validation_error
+    assert events == ["config", "database"]
+    assert exc_info.value.__notes__ == [
+        "final restore artifact 0 cleanup failed: RuntimeError: config close failed",
+        "final restore artifact 1 cleanup failed: RuntimeError: database close failed",
+    ]
+
+
 def _create_database(path: Path) -> None:
     with sqlite3.connect(path) as conn:
         conn.executescript(
@@ -379,6 +452,77 @@ def test_recover_close_attempts_every_resource_and_preserves_body_error(
     ]
 
 
+def test_trusted_journal_close_attempts_both_file_descriptors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    journal_module = database_backup_restore.database_backup_restore_journal
+    events: list[int] = []
+    failures = {
+        12: OSError("published fd close failed"),
+        11: RuntimeError("source fd close failed"),
+    }
+
+    def fail_close(fd: int) -> None:
+        events.append(fd)
+        raise failures[fd]
+
+    monkeypatch.setattr(journal_module.os, "close", fail_close)
+    disposition = journal_module.TrustedJournalDisposition(
+        journal_path=tmp_path / "journal.json",
+        fd=11,
+        identity=(1, 2),
+        sha256="sha",
+        size=2,
+        raw=b"{}",
+        published_fd=12,
+    )
+
+    with pytest.raises(OSError) as exc_info:
+        disposition.close()
+
+    assert exc_info.value is failures[12]
+    assert events == [12, 11]
+    assert exc_info.value.__notes__ == [
+        "journal source fd cleanup failed: RuntimeError: source fd close failed"
+    ]
+
+
+def test_sidecar_disposition_close_attempts_every_pinned_sidecar(
+    tmp_path: Path,
+) -> None:
+    sidecar_module = database_backup_restore.database_backup_restore_sidecars
+    events: list[str] = []
+    failures = [RuntimeError("wal close failed"), OSError("shm close failed")]
+
+    class FailingSidecar:
+        def __init__(self, label: str, failure: Exception) -> None:
+            self.label = label
+            self.failure = failure
+
+        def close(self) -> None:
+            events.append(self.label)
+            raise self.failure
+
+    disposition = sidecar_module.SidecarDisposition(
+        database_path=tmp_path / "database.sqlite",
+        database_identity=(1, 2),
+        paths=(tmp_path / "database.sqlite-wal", tmp_path / "database.sqlite-shm"),
+        pinned=(
+            FailingSidecar("wal", failures[0]),
+            FailingSidecar("shm", failures[1]),
+        ),
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        disposition.close()
+
+    assert exc_info.value is failures[0]
+    assert events == ["wal", "shm"]
+    assert exc_info.value.__notes__ == [
+        "sidecar 1 cleanup failed: OSError: shm close failed"
+    ]
+
+
 def _direct_restore(manifest_path: Path) -> dict[str, Path]:
     return database_backup_restore.restore_rollback_backup(
         manifest_path,
@@ -394,6 +538,93 @@ def _direct_restore(manifest_path: Path) -> dict[str, Path]:
         now=lambda: datetime.now(UTC),
         journal_schema_version=database_backup.RESTORE_JOURNAL_SCHEMA_VERSION,
     )
+
+
+def test_restore_setup_cleanup_attempts_all_actions_and_preserves_write_error(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text("{}", encoding="utf-8")
+    destinations = {
+        "database": tmp_path / "intelligence.sqlite",
+        "config": tmp_path / "system_config.json",
+    }
+    manifest = {
+        "artifacts": {
+            "database": {"sha256": "database-sha", "size": 8},
+            "config": {"sha256": "config-sha", "size": 2},
+        }
+    }
+    events: list[str] = []
+    write_error = OSError("journal write failed")
+
+    class FailingPinned:
+        def __init__(self, label: str) -> None:
+            self.label = label
+
+        def close(self) -> None:
+            events.append(f"close {self.label}")
+            raise RuntimeError(f"{self.label} close failed")
+
+    pinned = [
+        FailingPinned("database"),
+        FailingPinned("config"),
+        FailingPinned("manifest"),
+    ]
+    validate_calls = 0
+
+    def validate(*_args: object, **_kwargs: object):
+        nonlocal validate_calls
+        validate_calls += 1
+        return (
+            manifest,
+            [] if validate_calls == 1 else pinned,
+            destinations,
+            "manifest-sha",
+        )
+
+    def stage(candidate: object, destination: Path) -> Path:
+        path = tmp_path / f"{destination.name}.restore-stage"
+        path.write_bytes(b"stage")
+        return path
+
+    def remove(stage_path: Path, _identity: tuple[int, int]) -> None:
+        events.append(f"remove {stage_path.name}")
+        raise OSError(f"{stage_path.name} removal failed")
+
+    with pytest.raises(OSError) as exc_info:
+        database_backup_restore.restore_rollback_backup(
+            manifest_path,
+            validate_rollback_manifest=validate,
+            restore_journal_path_for=lambda _path: tmp_path / "journal.json",
+            recover_rollback_restore=lambda *_args, **_kwargs: pytest.fail(
+                "unexpected recovery"
+            ),
+            stage_pinned_restore=stage,
+            unlink_if_identity=remove,
+            assert_pinned_artifact=lambda *_args: None,
+            write_json_exclusive=lambda *_args: (_ for _ in ()).throw(write_error),
+            now=lambda: datetime.now(UTC),
+            journal_schema_version=1,
+        )
+
+    assert exc_info.value is write_error
+    assert events == [
+        "close database",
+        "close config",
+        "close manifest",
+        "remove intelligence.sqlite.restore-stage",
+        "remove system_config.json.restore-stage",
+    ]
+    assert exc_info.value.__notes__ == [
+        "pinned artifact 0 cleanup failed: RuntimeError: database close failed",
+        "pinned artifact 1 cleanup failed: RuntimeError: config close failed",
+        "pinned artifact 2 cleanup failed: RuntimeError: manifest close failed",
+        "owned stage database cleanup failed: OSError: "
+        "intelligence.sqlite.restore-stage removal failed",
+        "owned stage config cleanup failed: OSError: "
+        "system_config.json.restore-stage removal failed",
+    ]
 
 
 def _staged_restore_journal(

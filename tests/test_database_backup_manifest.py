@@ -270,3 +270,65 @@ def test_validate_rollback_manifest_rejects_invalid_structure(
             canonical_path=manifest_service.canonical_manifest_path,
             parse_timestamp=manifest_service.parse_created_at,
         )
+
+
+def test_validate_rollback_manifest_cleanup_closes_each_pin_once(
+    tmp_path: Path,
+) -> None:
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text("{}", encoding="utf-8")
+    digest_error = ValueError("manifest digest unavailable")
+    events: list[str] = []
+
+    class FailingPin:
+        def __init__(self, label: str) -> None:
+            self.label = label
+
+        def close(self) -> None:
+            events.append(self.label)
+            raise RuntimeError(f"{self.label} close failed")
+
+    class ManifestPin(FailingPin):
+        @property
+        def sha256(self) -> str:
+            raise digest_error
+
+    manifest_pin = ManifestPin("manifest")
+    artifact_pins = {
+        "database backup": FailingPin("database"),
+        "config backup": FailingPin("config"),
+    }
+    payload = {
+        "schema_version": 1,
+        "migration_name": "migration",
+        "created_at": datetime.now(UTC).isoformat(),
+        "source": {
+            "database_path": str(tmp_path / "live.sqlite"),
+            "config_path": str(tmp_path / "live.json"),
+        },
+        "artifacts": {"database": {}, "config": {}},
+    }
+
+    with pytest.raises(ValueError) as exc_info:
+        manifest_service.validate_rollback_manifest(
+            manifest_path,
+            allow_stale=False,
+            pin_artifacts=True,
+            expected_sha256=artifacts.EXPECTED_SHA256_UNSET,
+            schema_version=1,
+            migration_name="migration",
+            max_age_seconds=86400,
+            now=lambda: datetime.now(UTC),
+            pin_json_file=lambda *_args, **_kwargs: (manifest_pin, payload),
+            pin_artifact=lambda _metadata, label, **_kwargs: artifact_pins[label],
+            canonical_path=lambda path, _label: Path(str(path)),
+            parse_timestamp=manifest_service.parse_created_at,
+        )
+
+    assert exc_info.value is digest_error
+    assert events == ["database", "config", "manifest"]
+    assert exc_info.value.__notes__ == [
+        "rollback artifact 0 cleanup failed: RuntimeError: database close failed",
+        "rollback artifact 1 cleanup failed: RuntimeError: config close failed",
+        "rollback artifact 2 cleanup failed: RuntimeError: manifest close failed",
+    ]
