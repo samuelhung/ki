@@ -5,7 +5,12 @@ import json
 import logging
 import os
 import stat
+import subprocess
+import sys
+import textwrap
 import threading
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from copy import deepcopy
 from pathlib import Path
 from types import FunctionType
@@ -21,6 +26,26 @@ def _dependencies(path: Path) -> config_persistence.PersistenceDependencies:
         os_module=os,
         logger=logging.getLogger("test.config_persistence"),
     )
+
+
+@contextmanager
+def _registered_manager_factory(
+    factory: Callable[[], config_persistence.PersistenceDependencies],
+) -> Iterator[None]:
+    original = config_manager._persistence_dependencies
+    factory.__module__ = original.__module__
+    factory.__qualname__ = original.__qualname__
+    config_persistence.register_default_dependency_factory(
+        factory,
+        owner=config_manager.__name__,
+    )
+    try:
+        yield
+    finally:
+        config_persistence.register_default_dependency_factory(
+            original,
+            owner=config_manager.__name__,
+        )
 
 
 @pytest.mark.parametrize(
@@ -117,6 +142,102 @@ def test_same_owner_named_factory_can_refresh_for_module_reload(
             original,
             owner=config_manager.__name__,
         )
+
+
+def test_registered_factory_survives_reload_for_existing_facade_aliases(
+    tmp_path: Path,
+) -> None:
+    manager_path = tmp_path / "manager" / "system_config.json"
+    fallback_path = tmp_path / "fallback" / "system_config.json"
+    script = textwrap.dedent(
+        f"""
+        import importlib
+        from pathlib import Path
+
+        from zhiji_backend import config_manager, config_persistence
+
+        old_write = config_manager._write_config
+        old_snapshot = config_manager._snapshot_config_file
+        importlib.reload(config_persistence)
+        config_manager.CONFIG_PATH = Path({str(manager_path)!r})
+        config_persistence.CONFIG_PATH = Path({str(fallback_path)!r})
+
+        old_write({{"value": "manager"}})
+        snapshot = old_snapshot()
+
+        assert snapshot.data == config_manager.CONFIG_PATH.read_bytes()
+        assert config_manager.CONFIG_PATH.exists()
+        assert not config_persistence.CONFIG_PATH.exists()
+        """
+    )
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
+
+    subprocess.run([sys.executable, "-c", script], check=True, env=env)
+
+
+def test_write_pins_registered_dependencies_for_entire_operation(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target.json"
+    target.write_text('{"target": true}', encoding="utf-8")
+    guarded_path = tmp_path / "guarded" / "system_config.json"
+    guarded_path.parent.mkdir()
+    guarded_path.symlink_to(target)
+    alternate_path = tmp_path / "alternate" / "system_config.json"
+    resolutions = 0
+
+    def alternating_factory() -> config_persistence.PersistenceDependencies:
+        nonlocal resolutions
+        path = guarded_path if resolutions == 0 else alternate_path
+        resolutions += 1
+        return _dependencies(path)
+
+    with _registered_manager_factory(alternating_factory):
+        with pytest.raises(OSError, match=f"symlink system config: {guarded_path}"):
+            config_persistence.write_config({"replacement": True})
+
+    assert resolutions == 1
+    assert guarded_path.is_symlink()
+    assert target.read_text(encoding="utf-8") == '{"target": true}'
+    assert not alternate_path.exists()
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        config_persistence.snapshot_config_file,
+        lambda: config_persistence.config_file_matches(
+            config_persistence.ConfigFileSnapshot(True, b'{"value": 1}', 0o600)
+        ),
+        lambda: config_persistence.restore_config_file(
+            config_persistence.ConfigFileSnapshot(True, b'{"value": 1}', 0o600)
+        ),
+        config_persistence.reject_config_symlink,
+        config_persistence.fsync_parent_directory,
+    ],
+    ids=["snapshot", "matches", "restore", "reject", "parent-fsync"],
+)
+def test_public_operations_resolve_registered_dependencies_once(
+    tmp_path: Path,
+    operation,
+) -> None:
+    pinned_path = tmp_path / "pinned" / "system_config.json"
+    pinned_path.parent.mkdir()
+    pinned_path.write_bytes(b'{"value": 1}')
+    alternate_path = tmp_path / "alternate" / "system_config.json"
+    resolutions = 0
+
+    def alternating_factory() -> config_persistence.PersistenceDependencies:
+        nonlocal resolutions
+        path = pinned_path if resolutions == 0 else alternate_path
+        resolutions += 1
+        return _dependencies(path)
+
+    with _registered_manager_factory(alternating_factory):
+        operation()
+
+    assert resolutions == 1
 
 
 @pytest.mark.parametrize(

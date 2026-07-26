@@ -46,8 +46,11 @@ class _DefaultFactoryRegistration:
 _SCOPED_DEPENDENCIES: ContextVar[PersistenceDependencies | None] = ContextVar(
     "zhiji_config_persistence_dependencies", default=None
 )
-_DEFAULT_FACTORY_LOCK = threading.Lock()
-_DEFAULT_FACTORY_REGISTRATION: _DefaultFactoryRegistration | None = None
+# Reload must not discard the application resolver used by existing facade aliases.
+if "_DEFAULT_FACTORY_LOCK" not in globals():
+    _DEFAULT_FACTORY_LOCK = threading.Lock()
+if "_DEFAULT_FACTORY_REGISTRATION" not in globals():
+    _DEFAULT_FACTORY_REGISTRATION: _DefaultFactoryRegistration | None = None
 
 
 def _local_dependencies() -> PersistenceDependencies:
@@ -133,7 +136,7 @@ def write_config(config: dict) -> None:
     dependencies = _current_dependencies()
     config_path = dependencies.config_path
     os_module = dependencies.os_module
-    reject_config_symlink()
+    _reject_config_symlink(dependencies)
     config_path.parent.mkdir(parents=True, exist_ok=True)
     temp_path: Path | None = None
     try:
@@ -154,7 +157,7 @@ def write_config(config: dict) -> None:
         os_module.chmod(temp_path, 0o600)
         os_module.replace(temp_path, config_path)
         temp_path = None
-        fsync_parent_directory()
+        _fsync_parent_directory(dependencies)
         dependencies.logger.info("Saved system config to %s", config_path)
     finally:
         if temp_path is not None:
@@ -164,7 +167,7 @@ def write_config(config: dict) -> None:
 def snapshot_config_file() -> ConfigFileSnapshot:
     dependencies = _current_dependencies()
     config_path = dependencies.config_path
-    reject_config_symlink()
+    _reject_config_symlink(dependencies)
     exists = config_path.exists()
     return ConfigFileSnapshot(
         exists=exists,
@@ -176,7 +179,7 @@ def snapshot_config_file() -> ConfigFileSnapshot:
 def config_file_matches(snapshot: ConfigFileSnapshot) -> bool:
     dependencies = _current_dependencies()
     config_path = dependencies.config_path
-    reject_config_symlink()
+    _reject_config_symlink(dependencies)
     exists = config_path.exists()
     if exists != snapshot.exists:
         return False
@@ -192,7 +195,7 @@ def restore_config_file(snapshot: ConfigFileSnapshot) -> None:
     dependencies = _current_dependencies()
     config_path = dependencies.config_path
     os_module = dependencies.os_module
-    reject_config_symlink()
+    _reject_config_symlink(dependencies)
     if not snapshot.exists:
         config_path.unlink(missing_ok=True)
         return
@@ -221,6 +224,10 @@ def restore_config_file(snapshot: ConfigFileSnapshot) -> None:
 
 def reject_config_symlink() -> None:
     dependencies = _current_dependencies()
+    _reject_config_symlink(dependencies)
+
+
+def _reject_config_symlink(dependencies: PersistenceDependencies) -> None:
     config_path = dependencies.config_path
     try:
         mode = dependencies.os_module.lstat(config_path).st_mode
@@ -233,6 +240,10 @@ def reject_config_symlink() -> None:
 def fsync_parent_directory() -> None:
     """Durably record an atomic rename when directory fsync is supported."""
     dependencies = _current_dependencies()
+    _fsync_parent_directory(dependencies)
+
+
+def _fsync_parent_directory(dependencies: PersistenceDependencies) -> None:
     config_path = dependencies.config_path
     os_module = dependencies.os_module
     directory_fd: int | None = None
