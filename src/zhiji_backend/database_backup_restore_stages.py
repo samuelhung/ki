@@ -292,17 +292,34 @@ def create_private_restore_clone(
             expected_destination,
         )
     except Exception:
+        cleanup_actions = []
         if verified is not None:
-            verified.close()
+            cleanup_actions.append(
+                ("private clone verified artifact", verified.close)
+            )
         if clone_identity is not None and directory_fd >= 0:
-            _unlink_identity_in_directory(directory_fd, clone_identity)
+            cleanup_actions.append(
+                (
+                    "private clone identity",
+                    lambda: _unlink_identity_in_directory(
+                        directory_fd, clone_identity
+                    ),
+                )
+            )
         if directory_fd >= 0:
-            os.close(directory_fd)
-        try:
-            if _identity(directory.lstat()) == directory_identity:
-                directory.rmdir()
-        except (FileNotFoundError, OSError):
-            pass
+            cleanup_actions.append(
+                ("private clone directory fd", lambda: os.close(directory_fd))
+            )
+
+        def remove_directory() -> None:
+            try:
+                if _identity(directory.lstat()) == directory_identity:
+                    directory.rmdir()
+            except (FileNotFoundError, OSError):
+                pass
+
+        cleanup_actions.append(("private clone directory", remove_directory))
+        run_best_effort_cleanup(cleanup_actions)
         raise
 
 

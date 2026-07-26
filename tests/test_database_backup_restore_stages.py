@@ -258,6 +258,89 @@ def test_private_restore_clone_failure_cleans_only_owned_inode(
     assert clone_path.read_bytes() == b'{"expected": true}'
 
 
+def test_private_restore_clone_failure_attempts_all_cleanup_after_close_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "source.json"
+    source.write_bytes(b'{"expected": true}')
+    metadata = {
+        "path": str(source),
+        "sha256": _sha256(source),
+        "size": source.stat().st_size,
+    }
+    pinned = database_backup._pin_artifact(metadata, "source")
+    primary_error = RuntimeError("injected clone verification failure")
+    events: list[str] = []
+    pin_started = False
+
+    class FailingVerified:
+        @property
+        def signature(self) -> tuple[int, int]:
+            raise primary_error
+
+        def close(self) -> None:
+            events.append("verified close")
+            raise OSError("verified close failed")
+
+    def pin_clone(*_args: object, **_kwargs: object) -> FailingVerified:
+        nonlocal pin_started
+        pin_started = True
+        return FailingVerified()
+
+    real_unlink = database_backup_restore_stages._unlink_identity_in_directory
+    real_close = os.close
+    real_rmdir = Path.rmdir
+
+    def track_unlink(directory_fd: int, identity: tuple[int, int]) -> None:
+        events.append("clone unlink")
+        real_unlink(directory_fd, identity)
+
+    def track_close(fd: int) -> None:
+        if pin_started:
+            events.append("directory fd close")
+        real_close(fd)
+
+    def track_rmdir(path: Path) -> None:
+        if path.name.startswith(".destination.json.restore-publish-"):
+            events.append("directory rmdir")
+        real_rmdir(path)
+
+    monkeypatch.setattr(
+        database_backup_restore_stages,
+        "_unlink_identity_in_directory",
+        track_unlink,
+    )
+    monkeypatch.setattr(database_backup_restore_stages.os, "close", track_close)
+    monkeypatch.setattr(Path, "rmdir", track_rmdir)
+
+    try:
+        with pytest.raises(RuntimeError) as exc_info:
+            database_backup_restore_stages.create_private_restore_clone(
+                pinned,
+                tmp_path / "destination.json",
+                metadata,
+                sqlite_backup=False,
+                pin_artifact=pin_clone,
+            )
+    finally:
+        pin_started = False
+        pinned.close()
+
+    assert exc_info.value is primary_error
+    assert events == [
+        "verified close",
+        "clone unlink",
+        "directory fd close",
+        "directory rmdir",
+    ]
+    assert primary_error.__notes__ == [
+        "private clone verified artifact cleanup failed: OSError: "
+        "verified close failed"
+    ]
+    assert not list(tmp_path.glob(".destination.json.restore-publish-*"))
+
+
 def test_private_restore_publication_rejects_swapped_private_directory(
     tmp_path: Path,
 ) -> None:
