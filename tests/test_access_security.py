@@ -170,6 +170,23 @@ def test_trusted_hosts_and_cors_are_narrow_and_have_desktop_defaults():
     ]
 
 
+def test_middleware_order_keeps_cors_outside_auth_and_host_validation():
+    from fastapi.middleware.cors import CORSMiddleware
+    from starlette.middleware.base import BaseHTTPMiddleware
+
+    assert [middleware.cls for middleware in app.user_middleware] == [
+        CORSMiddleware,
+        BaseHTTPMiddleware,
+        BaseHTTPMiddleware,
+        main.ProtectedPathMiddleware,
+        main.TrustedHostMiddleware,
+    ]
+    assert [
+        middleware.kwargs.get("dispatch")
+        for middleware in app.user_middleware[1:3]
+    ] == [main.spa_fallback, main.api_auth]
+
+
 def test_allowed_origin_head_preflight_accepts_authorization_header():
     client = TestClient(app, client=("10.8.0.2", 50000))
 

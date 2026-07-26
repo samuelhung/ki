@@ -83,6 +83,29 @@ def test_remote_requests_require_token_when_no_token_configured():
     assert _requires_token_for_request("/releases/zhiji_1.3.7.dmg", "10.8.0.2") is True
 
 
+def test_public_and_protected_path_classification_is_exact():
+    from zhiji_backend import main
+
+    assert {
+        path: main._is_protected_path(path)
+        for path in (
+            "/api",
+            "/api/health",
+            "/ingest/videos/a.mp4",
+            "/releases/appcast.xml",
+            "/",
+            "/assets/index.js",
+        )
+    } == {
+        "/api": True,
+        "/api/health": True,
+        "/ingest/videos/a.mp4": True,
+        "/releases/appcast.xml": True,
+        "/": False,
+        "/assets/index.js": False,
+    }
+
+
 def test_local_requests_do_not_require_token_by_default():
     assert _requires_token_for_request("/api/sources", "127.0.0.1") is False
     assert _requires_token_for_request("/api/sources", "::1") is False

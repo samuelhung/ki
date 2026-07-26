@@ -71,6 +71,18 @@ def test_redact_text_is_deterministic_and_preserves_non_sensitive_query_values()
     assert "limit=20" in redact_text(text)
 
 
+def test_redact_text_exact_compound_output_is_stable():
+    text = (
+        "POST https://user:pw@example.test/v1?token=query-secret&limit=20 "
+        'Authorization: Bearer bearer-secret prompt={"role":"user","content":"private"}'
+    )
+
+    assert redact_text(text) == (
+        "POST https://[REDACTED]@example.test/v1?token=[REDACTED]&limit=20 "
+        "Authorization: [REDACTED] prompt=[REDACTED]"
+    )
+
+
 def test_redact_text_scrubs_json_dumped_message_content_and_preserves_roles():
     messages = [
         {"role": "system", "content": "system prompt secret"},

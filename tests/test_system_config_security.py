@@ -21,6 +21,34 @@ def test_credential_store_module_exists():
     assert importlib.util.find_spec("zhiji_backend.credential_store") is not None
 
 
+def test_config_normalization_merges_legacy_briefing_and_removes_retired_modules():
+    raw = {
+        "general": {"model": "custom-model"},
+        "digest_briefing": {
+            "briefing_quick": {"temperature": 0.8, "max_tokens": 1000},
+            "briefing_daily": {"thinking": True},
+        },
+        "briefing": {
+            "briefing_quick": {"temperature": 0.2},
+        },
+        "knowledge_graph": {"retired": True},
+        "custom": {"preserved": True},
+    }
+
+    normalized, changed = config_manager._normalize_persisted_config(raw)
+
+    assert changed is True
+    assert normalized == {
+        "general": {"model": "custom-model"},
+        "briefing": {
+            "briefing_quick": {"temperature": 0.2, "max_tokens": 1000},
+            "briefing_daily": {"thinking": True},
+        },
+        "custom": {"preserved": True},
+    }
+    assert raw["digest_briefing"]["briefing_quick"]["temperature"] == 0.8
+
+
 @pytest.fixture
 def env_path(tmp_path, monkeypatch):
     path = tmp_path / "home" / ".env"
