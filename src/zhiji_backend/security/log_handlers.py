@@ -95,6 +95,42 @@ def _create_rotator_staging_path(destination: Path) -> Path:
         return staging
 
 
+def _publish_custom_rotation(staging: Path, destination: Path) -> None:
+    read_flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        read_flags |= os.O_NOFOLLOW
+    staging_fd = os.open(staging, read_flags)
+    try:
+        staging_info = os.fstat(staging_fd)
+        if not stat.S_ISREG(staging_info.st_mode):
+            raise OSError(
+                f"refusing non-regular log rotation staging output: {staging.name}"
+            )
+        if staging_info.st_nlink != 1:
+            raise OSError(
+                f"refusing hard-linked log rotation staging output: {staging.name}"
+            )
+
+        write_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        if hasattr(os, "O_NOFOLLOW"):
+            write_flags |= os.O_NOFOLLOW
+        destination_fd = os.open(destination, write_flags, 0o600)
+        try:
+            while chunk := os.read(staging_fd, 1024 * 1024):
+                remaining = memoryview(chunk)
+                while remaining:
+                    written = os.write(destination_fd, remaining)
+                    if written <= 0:
+                        raise OSError("unable to write secure log rotation output")
+                    remaining = remaining[written:]
+            os.fchmod(destination_fd, 0o600)
+            os.fsync(destination_fd)
+        finally:
+            os.close(destination_fd)
+    finally:
+        os.close(staging_fd)
+
+
 class SecureTimedRotatingFileHandler(logging.handlers.TimedRotatingFileHandler):
     """Timed rotation with no-follow creation and mode 0600 for every log."""
 
@@ -151,11 +187,7 @@ class SecureTimedRotatingFileHandler(logging.handlers.TimedRotatingFileHandler):
         if callable(self.rotator):
             staging_path = _create_rotator_staging_path(dest_path)
             self.rotator(source, str(staging_path))
-            _reject_symlink(staging_path)
-            staging_path.chmod(0o600, follow_symlinks=False)
-            os.replace(staging_path, dest_path)
-            _reject_symlink(dest_path)
-            dest_path.chmod(0o600, follow_symlinks=False)
+            _publish_custom_rotation(staging_path, dest_path)
             return
 
         _reject_symlink(dest_path)

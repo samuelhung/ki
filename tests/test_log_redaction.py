@@ -656,6 +656,7 @@ def test_secure_log_handler_presecures_custom_rotator_destination(
     source.write_bytes(b"source")
     observed_modes = []
     staging_paths = []
+    expected_outputs = []
     handler = module.SecureTimedRotatingFileHandler(source, when="midnight", delay=True)
 
     def rotate(source_name, destination_name):
@@ -673,6 +674,7 @@ def test_secure_log_handler_presecures_custom_rotator_destination(
                     shutil.copyfileobj(source_stream, destination_stream)
         else:
             shutil.copyfile(source_name, destination_name)
+        expected_outputs.append(staging.read_bytes())
 
     handler.rotator = rotate
     try:
@@ -681,8 +683,9 @@ def test_secure_log_handler_presecures_custom_rotator_destination(
         handler.close()
 
     assert observed_modes == [0o600]
-    assert not staging_paths[0].exists()
+    assert staging_paths[0].is_file()
     assert stat.S_IMODE(destination.stat().st_mode) == 0o600
+    assert destination.read_bytes() == expected_outputs[0]
     if compression:
         with gzip.open(destination, "rb") as stream:
             assert stream.read() == b"source"
@@ -711,7 +714,7 @@ def test_secure_log_handler_rejects_custom_rotator_symlink_result(tmp_path):
 
     handler.rotator = malicious_rotator
     try:
-        with pytest.raises(OSError, match="refusing symlink log target"):
+        with pytest.raises(OSError):
             handler.rotate(str(source), str(destination))
     finally:
         handler.close()
@@ -722,7 +725,7 @@ def test_secure_log_handler_rejects_custom_rotator_symlink_result(tmp_path):
     assert stat.S_IMODE(outside.stat().st_mode) == 0o644
 
 
-def test_secure_log_handler_custom_rotation_replaces_final_symlink(tmp_path):
+def test_secure_log_handler_rejects_hard_linked_custom_output(tmp_path):
     module = _log_handlers_module()
     source = tmp_path / "ki.log"
     destination = tmp_path / "ki.log.rotated"
@@ -730,20 +733,176 @@ def test_secure_log_handler_custom_rotation_replaces_final_symlink(tmp_path):
     source.write_text("source", encoding="utf-8")
     outside.write_text("outside", encoding="utf-8")
     outside.chmod(0o644)
-    destination.symlink_to(outside)
     handler = module.SecureTimedRotatingFileHandler(source, when="midnight", delay=True)
-    handler.rotator = shutil.copyfile
 
+    def hard_link_rotator(_source_name, destination_name):
+        staging = Path(destination_name)
+        staging.unlink()
+        os.link(outside, staging)
+
+    handler.rotator = hard_link_rotator
+    try:
+        with pytest.raises(OSError, match="hard-linked"):
+            handler.rotate(str(source), str(destination))
+    finally:
+        handler.close()
+
+    assert not destination.exists()
+    assert outside.read_text(encoding="utf-8") == "outside"
+    assert stat.S_IMODE(outside.stat().st_mode) == 0o644
+
+
+def test_secure_log_handler_publishes_from_pinned_stage_after_path_swap(
+    tmp_path, monkeypatch
+):
+    module = _log_handlers_module()
+    source = tmp_path / "ki.log"
+    destination = tmp_path / "ki.log.rotated"
+    outside = tmp_path / "outside.log"
+    held_output = tmp_path / "held-output.log"
+    source.write_text("source", encoding="utf-8")
+    outside.write_text("outside", encoding="utf-8")
+    outside.chmod(0o644)
+    staging_paths = []
+    original_open = os.open
+    handler = module.SecureTimedRotatingFileHandler(source, when="midnight", delay=True)
+
+    def write_callback(_source_name, destination_name):
+        staging = Path(destination_name)
+        staging_paths.append(staging)
+        staging.write_text("callback-output", encoding="utf-8")
+
+    def swap_after_pinned_open(path, flags, *args, **kwargs):
+        fd = original_open(path, flags, *args, **kwargs)
+        candidate = Path(path)
+        if staging_paths and candidate == staging_paths[0] and not flags & os.O_WRONLY:
+            candidate.rename(held_output)
+            candidate.symlink_to(outside)
+        return fd
+
+    handler.rotator = write_callback
+    monkeypatch.setattr(module.os, "open", swap_after_pinned_open)
     try:
         handler.rotate(str(source), str(destination))
     finally:
         handler.close()
 
-    assert not destination.is_symlink()
-    assert destination.read_text(encoding="utf-8") == "source"
+    assert destination.read_text(encoding="utf-8") == "callback-output"
     assert stat.S_IMODE(destination.stat().st_mode) == 0o600
+    assert staging_paths[0].is_symlink()
+    assert held_output.read_text(encoding="utf-8") == "callback-output"
     assert outside.read_text(encoding="utf-8") == "outside"
     assert stat.S_IMODE(outside.stat().st_mode) == 0o644
+
+
+def test_secure_log_handler_custom_rotation_rejects_final_symlink_race(
+    tmp_path, monkeypatch
+):
+    module = _log_handlers_module()
+    source = tmp_path / "ki.log"
+    destination = tmp_path / "ki.log.rotated"
+    outside = tmp_path / "outside.log"
+    source.write_text("source", encoding="utf-8")
+    outside.write_text("outside", encoding="utf-8")
+    outside.chmod(0o644)
+    handler = module.SecureTimedRotatingFileHandler(source, when="midnight", delay=True)
+    handler.rotator = shutil.copyfile
+    original_open = os.open
+
+    def race_final_creation(path, flags, *args, **kwargs):
+        if Path(path) == destination and flags & os.O_EXCL:
+            destination.symlink_to(outside)
+        return original_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(module.os, "open", race_final_creation)
+    try:
+        with pytest.raises(OSError):
+            handler.rotate(str(source), str(destination))
+    finally:
+        handler.close()
+
+    assert destination.is_symlink()
+    assert outside.read_text(encoding="utf-8") == "outside"
+    assert stat.S_IMODE(outside.stat().st_mode) == 0o644
+
+
+@pytest.mark.parametrize(
+    "failure_point",
+    ["final-open", "read", "write", "fchmod", "fsync"],
+)
+def test_secure_log_handler_closes_pinned_rotation_fds_on_failure(
+    tmp_path, monkeypatch, failure_point
+):
+    module = _log_handlers_module()
+    source = tmp_path / "ki.log"
+    destination = tmp_path / "ki.log.rotated"
+    source.write_text("source", encoding="utf-8")
+    injected_error = OSError(f"injected {failure_point} failure")
+    opened_fds = []
+    roles = {}
+    original_open = os.open
+    original_read = os.read
+    original_write = os.write
+    original_fchmod = os.fchmod
+    original_fsync = os.fsync
+    handler = module.SecureTimedRotatingFileHandler(source, when="midnight", delay=True)
+    handler.rotator = shutil.copyfile
+
+    def observe_open(path, flags, *args, **kwargs):
+        candidate = Path(path)
+        if candidate == destination and failure_point == "final-open":
+            raise injected_error
+        fd = original_open(path, flags, *args, **kwargs)
+        if candidate == destination:
+            role = "final"
+        elif candidate.name.startswith(".zhiji-log-rotate-"):
+            role = "stage-read" if not flags & os.O_WRONLY else "stage-create"
+        else:
+            return fd
+        opened_fds.append(fd)
+        roles[role] = fd
+        return fd
+
+    def fail_read(fd, *args, **kwargs):
+        if failure_point == "read" and fd == roles.get("stage-read"):
+            raise injected_error
+        return original_read(fd, *args, **kwargs)
+
+    def fail_write(fd, *args, **kwargs):
+        if failure_point == "write" and fd == roles.get("final"):
+            raise injected_error
+        return original_write(fd, *args, **kwargs)
+
+    def fail_fchmod(fd, *args, **kwargs):
+        if failure_point == "fchmod" and fd == roles.get("final"):
+            raise injected_error
+        return original_fchmod(fd, *args, **kwargs)
+
+    def fail_fsync(fd, *args, **kwargs):
+        if failure_point == "fsync" and fd == roles.get("final"):
+            raise injected_error
+        return original_fsync(fd, *args, **kwargs)
+
+    monkeypatch.setattr(module.os, "open", observe_open)
+    monkeypatch.setattr(module.os, "read", fail_read)
+    monkeypatch.setattr(module.os, "write", fail_write)
+    monkeypatch.setattr(module.os, "fchmod", fail_fchmod)
+    monkeypatch.setattr(module.os, "fsync", fail_fsync)
+
+    try:
+        with pytest.raises(OSError) as raised:
+            handler.rotate(str(source), str(destination))
+    finally:
+        handler.close()
+
+    assert raised.value is injected_error
+    assert "stage-read" in roles
+    if failure_point != "final-open":
+        assert "final" in roles
+    for fd in set(opened_fds):
+        with pytest.raises(OSError) as closed:
+            os.fstat(fd)
+        assert closed.value.errno == errno.EBADF
 
 
 def test_secure_log_handler_skips_custom_rotator_when_source_is_absent(tmp_path):
