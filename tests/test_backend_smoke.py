@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -250,9 +251,10 @@ def test_prepare_runtime_installs_tagged_handlers_only_once(tmp_path, monkeypatc
     class RootSpy:
         def __init__(self):
             self.handlers = []
+            self.level = 0
 
-        def setLevel(self, _level):
-            pass
+        def setLevel(self, level):
+            self.level = level
 
         def addHandler(self, handler):
             self.handlers.append(handler)
@@ -271,8 +273,8 @@ def test_prepare_runtime_installs_tagged_handlers_only_once(tmp_path, monkeypatc
     first = main._prepare_runtime()
     second = main._prepare_runtime()
 
-    assert tuple(first) == tuple(root.handlers)
-    assert second == ()
+    assert first.handlers == tuple(root.handlers)
+    assert second.handlers == ()
     assert [handler._zhiji_handler_role for handler in root.handlers] == [
         "console",
         "file",
@@ -406,6 +408,17 @@ import sys
 from zhiji_backend import api_middleware, static_delivery
 
 root = logging.getLogger()
+root.setLevel(logging.ERROR)
+for name, level in (
+    ('httpx', logging.INFO),
+    ('httpcore', logging.ERROR),
+    ('urllib3', logging.CRITICAL),
+):
+    logging.getLogger(name).setLevel(level)
+levels_before = {
+    name: logging.getLogger(name).level
+    for name in ('', 'httpx', 'httpcore', 'urllib3')
+}
 tagged_before = [
     id(handler)
     for handler in root.handlers
@@ -429,6 +442,10 @@ tagged_after = [
     for handler in root.handlers
     if getattr(handler, '_zhiji_handler_owner', None) == 'zhiji'
 ]
+levels_after = {
+    name: logging.getLogger(name).level
+    for name in ('', 'httpx', 'httpcore', 'urllib3')
+}
 print(json.dumps({
     'failure': failure,
     'module_present': 'zhiji_backend.main' in sys.modules,
@@ -437,6 +454,7 @@ print(json.dumps({
     'registration_restored': (
         api_middleware._DEFAULT_FACTORY_REGISTRATION is registration_before
     ),
+    'levels_restored': levels_after == levels_before,
 }))
 """
     environment = dict(
@@ -460,6 +478,7 @@ print(json.dumps({
         "tagged_before": [],
         "tagged_after": [],
         "registration_restored": True,
+        "levels_restored": True,
     }
 
 
@@ -471,6 +490,17 @@ import logging
 from zhiji_backend import api_middleware, main
 
 root = logging.getLogger()
+root.setLevel(logging.ERROR)
+for name, level in (
+    ('httpx', logging.INFO),
+    ('httpcore', logging.ERROR),
+    ('urllib3', logging.CRITICAL),
+):
+    logging.getLogger(name).setLevel(level)
+levels_before = {
+    name: logging.getLogger(name).level
+    for name in ('', 'httpx', 'httpcore', 'urllib3')
+}
 tagged_before = [
     id(handler)
     for handler in root.handlers
@@ -496,6 +526,10 @@ tagged_after = [
     for handler in root.handlers
     if getattr(handler, '_zhiji_handler_owner', None) == 'zhiji'
 ]
+levels_after = {
+    name: logging.getLogger(name).level
+    for name in ('', 'httpx', 'httpcore', 'urllib3')
+}
 registration_after = api_middleware._DEFAULT_FACTORY_REGISTRATION
 print(json.dumps({
     'failure': failure,
@@ -505,6 +539,7 @@ print(json.dumps({
     'factory_frontend_restored': (
         registration_after.factory().has_frontend is frontend_before
     ),
+    'levels_restored': levels_after == levels_before,
 }))
 """
     environment = dict(
@@ -527,7 +562,134 @@ print(json.dumps({
         "registration_restored": True,
         "frontend_restored": True,
         "factory_frontend_restored": True,
+        "levels_restored": True,
     }
+
+
+@pytest.mark.parametrize("failure_stage", ["prepare", "load"])
+def test_failed_early_reload_preserves_completed_application_state(
+    tmp_path, failure_stage
+):
+    script = f"""
+import importlib
+import json
+from zhiji_backend import api_middleware, main, paths
+
+app_before = main.app
+lifespan_before = main.lifespan
+registration_before = api_middleware._DEFAULT_FACTORY_REGISTRATION
+main._HAS_FRONTEND = True
+
+def fail(*_args, **_kwargs):
+    raise RuntimeError('{failure_stage} failed')
+
+if '{failure_stage}' == 'prepare':
+    paths.ensure_data_dirs = fail
+else:
+    real_import_module = importlib.import_module
+    def fail_dependency(name, package=None):
+        if name == '.config_manager':
+            return fail()
+        return real_import_module(name, package)
+    importlib.import_module = fail_dependency
+
+try:
+    importlib.reload(main)
+except RuntimeError as error:
+    failure = str(error)
+else:
+    failure = ''
+
+registration_after = api_middleware._DEFAULT_FACTORY_REGISTRATION
+print(json.dumps({{
+    'failure': failure,
+    'app_restored': main.app is app_before,
+    'lifespan_restored': main.lifespan is lifespan_before,
+    'registration_restored': registration_after is registration_before,
+    'frontend_restored': main._HAS_FRONTEND is True,
+    'factory_frontend_restored': registration_after.factory().has_frontend is True,
+}}))
+"""
+    environment = dict(
+        os.environ,
+        PYTHONPATH=f"{ROOT / 'src'}:{ROOT}",
+        ZHIJI_HOME=str(tmp_path / "home"),
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert json.loads(completed.stdout) == {
+        "failure": f"{failure_stage} failed",
+        "app_restored": True,
+        "lifespan_restored": True,
+        "registration_restored": True,
+        "frontend_restored": True,
+        "factory_frontend_restored": True,
+    }
+
+
+@pytest.mark.parametrize(
+    "failure_stage",
+    ["registration", "fastapi", "middleware", "routes", "mkdir", "mount", "publish"],
+)
+def test_failed_application_assembly_restores_facade_and_registration(
+    monkeypatch, failure_stage
+):
+    from zhiji_backend import api_middleware, main
+
+    state_names = ("app", "_assembly", "_dependencies", "_HAS_FRONTEND", "api_auth")
+    state_before = {name: getattr(main, name) for name in state_names}
+    registration_before = api_middleware._DEFAULT_FACTORY_REGISTRATION
+
+    def fail(*_args, **_kwargs):
+        raise RuntimeError(f"{failure_stage} failed")
+
+    if failure_stage == "registration":
+
+        @contextmanager
+        def fail_registration(*_args, **_kwargs):
+            fail()
+            yield
+
+        monkeypatch.setattr(
+            api_middleware,
+            "default_dependency_factory_transaction",
+            fail_registration,
+        )
+    elif failure_stage == "fastapi":
+        monkeypatch.setattr(main, "FastAPI", fail)
+    elif failure_stage == "middleware":
+        monkeypatch.setattr(main, "_add_middleware", fail)
+    elif failure_stage == "routes":
+        monkeypatch.setattr(main, "_add_routes", fail)
+    elif failure_stage == "mkdir":
+
+        class ReleasesDirFailure:
+            def mkdir(self, **_kwargs):
+                fail()
+
+        monkeypatch.setattr(main, "RELEASES_DIR", ReleasesDirFailure())
+    elif failure_stage == "mount":
+        monkeypatch.setattr(main.static_delivery, "mount_frontend", fail)
+    else:
+
+        def fail_publish(_dependencies):
+            main.api_auth = object()
+            fail()
+
+        monkeypatch.setattr(main, "_publish_dependencies", fail_publish)
+
+    with pytest.raises(RuntimeError, match=rf"{failure_stage} failed"):
+        main._assemble_application(main._dependencies)
+
+    assert {name: getattr(main, name) for name in state_names} == state_before
+    assert api_middleware._DEFAULT_FACTORY_REGISTRATION is registration_before
 
 
 def test_router_manifest_drives_dependency_loading_and_inclusion_order():

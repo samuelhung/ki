@@ -4,6 +4,7 @@ import hmac
 import os
 import threading
 from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -62,8 +63,9 @@ class DefaultFactoryRegistrationChange:
     changed: bool
 
 
-if "_DEFAULT_FACTORY_LOCK" not in globals():
-    _DEFAULT_FACTORY_LOCK = threading.Lock()
+_existing_factory_lock = globals().get("_DEFAULT_FACTORY_LOCK")
+if _existing_factory_lock is None or not hasattr(_existing_factory_lock, "_is_owned"):
+    _DEFAULT_FACTORY_LOCK = threading.RLock()
 if "_DEFAULT_FACTORY_REGISTRATION" not in globals():
     _DEFAULT_FACTORY_REGISTRATION: _DefaultFactoryRegistration | None = None
 
@@ -217,6 +219,24 @@ def register_default_dependency_factory(
     return DefaultFactoryRegistrationChange(current, registration, True)
 
 
+@contextmanager
+def default_dependency_factory_transaction(
+    factory: DefaultDependencyFactory,
+    *,
+    owner: str,
+):
+    """Keep dependency resolution on the last committed factory during assembly."""
+    global _DEFAULT_FACTORY_REGISTRATION
+    with _DEFAULT_FACTORY_LOCK:
+        change = register_default_dependency_factory(factory, owner=owner)
+        try:
+            yield change
+        except BaseException:
+            if change.changed:
+                _DEFAULT_FACTORY_REGISTRATION = change.previous
+            raise
+
+
 def rollback_default_dependency_factory(
     change: DefaultFactoryRegistrationChange,
 ) -> bool:
@@ -236,12 +256,12 @@ def rollback_default_dependency_factory(
 def _current_dependencies() -> MiddlewareDependencies:
     with _DEFAULT_FACTORY_LOCK:
         registration = _DEFAULT_FACTORY_REGISTRATION
-    dependencies = (
-        registration.factory() if registration is not None else _local_dependencies()
-    )
-    if not isinstance(dependencies, MiddlewareDependencies):
-        raise TypeError("default dependency factory must return MiddlewareDependencies")
-    return dependencies
+        dependencies = (
+            registration.factory() if registration is not None else _local_dependencies()
+        )
+        if not isinstance(dependencies, MiddlewareDependencies):
+            raise TypeError("default dependency factory must return MiddlewareDependencies")
+        return dependencies
 
 
 _REQUEST_DEPENDENCIES_KEY = "zhiji.middleware_dependencies"

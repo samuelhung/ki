@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import os
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -455,6 +456,167 @@ def test_middleware_pipeline_resolves_one_dependency_snapshot_per_request(
 
     assert response.status_code == 200
     assert calls == ["resolve"]
+
+
+def _dependency_snapshot(api_middleware, frontend_dist: Path):
+    return api_middleware.MiddlewareDependencies(
+        api_token=lambda: "",
+        request_token=lambda _request: "",
+        requires_token_for_request=lambda _path, _host: False,
+        is_protected_path=lambda _path: False,
+        is_loopback_host=lambda _host: True,
+        compare_digest=lambda left, right: left == right,
+        has_frontend=True,
+        frontend_dist=frontend_dist,
+    )
+
+
+def _reload_factory(snapshot):
+    def factory():
+        return snapshot
+
+    factory.__qualname__ = "test_reload_dependency_factory"
+    return factory
+
+
+def test_dependency_resolution_waits_for_factory_transaction_commit(
+    tmp_path, monkeypatch
+):
+    from zhiji_backend import api_middleware
+
+    base = _dependency_snapshot(api_middleware, tmp_path / "base")
+    candidate = _dependency_snapshot(api_middleware, tmp_path / "candidate")
+    monkeypatch.setattr(api_middleware, "_DEFAULT_FACTORY_LOCK", threading.RLock())
+    monkeypatch.setattr(api_middleware, "_DEFAULT_FACTORY_REGISTRATION", None)
+    api_middleware.register_default_dependency_factory(_reload_factory(base), owner="test")
+    transaction_open = threading.Event()
+    finish_transaction = threading.Event()
+    resolver_started = threading.Event()
+    resolved = threading.Event()
+    observed = []
+
+    def assemble():
+        with api_middleware.default_dependency_factory_transaction(
+            _reload_factory(candidate), owner="test"
+        ):
+            transaction_open.set()
+            assert finish_transaction.wait(2)
+
+    def resolve():
+        resolver_started.set()
+        observed.append(api_middleware._current_dependencies())
+        resolved.set()
+
+    assembly_thread = threading.Thread(target=assemble)
+    assembly_thread.start()
+    assert transaction_open.wait(2)
+    resolver_thread = threading.Thread(target=resolve)
+    resolver_thread.start()
+    assert resolver_started.wait(2)
+    assert not resolved.wait(0.1)
+
+    finish_transaction.set()
+    assembly_thread.join(2)
+    resolver_thread.join(2)
+
+    assert observed == [candidate]
+
+
+def test_dependency_resolution_waits_for_factory_transaction_rollback(
+    tmp_path, monkeypatch
+):
+    from zhiji_backend import api_middleware
+
+    base = _dependency_snapshot(api_middleware, tmp_path / "base")
+    candidate = _dependency_snapshot(api_middleware, tmp_path / "candidate")
+    monkeypatch.setattr(api_middleware, "_DEFAULT_FACTORY_LOCK", threading.RLock())
+    monkeypatch.setattr(api_middleware, "_DEFAULT_FACTORY_REGISTRATION", None)
+    api_middleware.register_default_dependency_factory(_reload_factory(base), owner="test")
+    transaction_open = threading.Event()
+    fail_transaction = threading.Event()
+    resolved = threading.Event()
+    observed = []
+    failures = []
+
+    def assemble():
+        try:
+            with api_middleware.default_dependency_factory_transaction(
+                _reload_factory(candidate), owner="test"
+            ):
+                transaction_open.set()
+                assert fail_transaction.wait(2)
+                raise RuntimeError("assembly failed")
+        except RuntimeError as error:
+            failures.append(str(error))
+
+    def resolve():
+        observed.append(api_middleware._current_dependencies())
+        resolved.set()
+
+    assembly_thread = threading.Thread(target=assemble)
+    assembly_thread.start()
+    assert transaction_open.wait(2)
+    resolver_thread = threading.Thread(target=resolve)
+    resolver_thread.start()
+    assert not resolved.wait(0.1)
+
+    fail_transaction.set()
+    assembly_thread.join(2)
+    resolver_thread.join(2)
+
+    assert failures == ["assembly failed"]
+    assert observed == [base]
+
+
+def test_overlapping_failed_factory_transactions_restore_committed_base(
+    tmp_path, monkeypatch
+):
+    from zhiji_backend import api_middleware
+
+    base = _dependency_snapshot(api_middleware, tmp_path / "base")
+    first = _dependency_snapshot(api_middleware, tmp_path / "first")
+    second = _dependency_snapshot(api_middleware, tmp_path / "second")
+    monkeypatch.setattr(api_middleware, "_DEFAULT_FACTORY_LOCK", threading.RLock())
+    monkeypatch.setattr(api_middleware, "_DEFAULT_FACTORY_REGISTRATION", None)
+    api_middleware.register_default_dependency_factory(_reload_factory(base), owner="test")
+    first_open = threading.Event()
+    fail_first = threading.Event()
+    second_started = threading.Event()
+    second_open = threading.Event()
+    fail_second = threading.Event()
+
+    def fail_transaction(snapshot, opened, release):
+        try:
+            with api_middleware.default_dependency_factory_transaction(
+                _reload_factory(snapshot), owner="test"
+            ):
+                opened.set()
+                assert release.wait(2)
+                raise RuntimeError("assembly failed")
+        except RuntimeError:
+            pass
+
+    first_thread = threading.Thread(
+        target=fail_transaction, args=(first, first_open, fail_first)
+    )
+    first_thread.start()
+    assert first_open.wait(2)
+
+    def run_second():
+        second_started.set()
+        fail_transaction(second, second_open, fail_second)
+
+    second_thread = threading.Thread(target=run_second)
+    second_thread.start()
+    assert second_started.wait(2)
+    assert not second_open.wait(0.1)
+    fail_first.set()
+    assert second_open.wait(2)
+    fail_second.set()
+    first_thread.join(2)
+    second_thread.join(2)
+
+    assert api_middleware._current_dependencies() is base
 
 
 def test_registered_protected_path_resolves_main_alias_at_request_time(

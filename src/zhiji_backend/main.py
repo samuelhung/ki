@@ -4,38 +4,50 @@ import importlib
 import logging as _logging
 from collections.abc import Callable
 from contextlib import asynccontextmanager
-from pathlib import Path
+from pathlib import Path as _Path
 from types import SimpleNamespace
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+import fastapi as _fastapi
+from fastapi import responses as _responses
+from fastapi.middleware import cors as _cors
 
-from . import __version__
-from .credential_store import load_hardened_env
-from .paths import (
-    FRONTEND_DIST,
-    INGEST_ROOT,
-    LOG_DIR,
-    RELEASES_DIR,
-    ZHIJI_HOME,
-    ensure_data_dirs,
-)
-from .security.artifacts import (
-    ArtifactOpenError,
-    PinnedFileResponse,
-    open_regular_under,
-)
-from .security.constraints import safe_identifier
-from .security.redaction import RedactingFormatter, SecureTimedRotatingFileHandler
+from . import __version__, runtime_bootstrap
+from . import credential_store as _credential_store
+from . import paths as _paths
+from .security import artifacts as _artifacts
+from .security import constraints as _constraints
+from .security import redaction as _redaction
 
+_PREVIOUS_MODULE_STATE = globals().copy()
+FastAPI, HTTPException, JSONResponse, Path = (
+    _fastapi.FastAPI,
+    _fastapi.HTTPException,
+    _responses.JSONResponse,
+    _Path,
+)
+CORSMiddleware = _cors.CORSMiddleware
+FRONTEND_DIST, INGEST_ROOT, LOG_DIR, RELEASES_DIR, ZHIJI_HOME = (
+    _paths.FRONTEND_DIST,
+    _paths.INGEST_ROOT,
+    _paths.LOG_DIR,
+    _paths.RELEASES_DIR,
+    _paths.ZHIJI_HOME,
+)
+ensure_data_dirs = _paths.ensure_data_dirs
+load_hardened_env = _credential_store.load_hardened_env
+ArtifactOpenError, PinnedFileResponse, open_regular_under = (
+    _artifacts.ArtifactOpenError,
+    _artifacts.PinnedFileResponse,
+    _artifacts.open_regular_under,
+)
+safe_identifier = _constraints.safe_identifier
+RedactingFormatter = _redaction.RedactingFormatter
+SecureTimedRotatingFileHandler = _redaction.SecureTimedRotatingFileHandler
 logging = SimpleNamespace(getLogger=_logging.getLogger)
-
-_KI_HANDLER_OWNER = "zhiji"
-_KI_HANDLER_OWNER_ATTR = "_zhiji_handler_owner"
-_KI_HANDLER_ROLE_ATTR = "_zhiji_handler_role"
-
+_KI_HANDLER_OWNER = runtime_bootstrap.KI_HANDLER_OWNER
+_KI_HANDLER_OWNER_ATTR = runtime_bootstrap.KI_HANDLER_OWNER_ATTR
+_KI_HANDLER_ROLE_ATTR = runtime_bootstrap.KI_HANDLER_ROLE_ATTR
 ROUTE_NAMES = (
     "dashboard",
     "source",
@@ -94,21 +106,22 @@ def _remove_runtime_handlers(handlers) -> None:
     try:
         root = _root_logger()
     except BaseException:
-        root = None
-    for handler in handlers:
-        if root is not None:
-            try:
-                if handler in root.handlers:
-                    root.removeHandler(handler)
-            except BaseException:
-                pass
-        try:
-            handler.close()
-        except BaseException:
-            pass
+        return
+    runtime_bootstrap.rollback_runtime(
+        runtime_bootstrap.RuntimeResources(tuple(handlers)),
+        root_logger=root,
+    )
 
 
-def _prepare_runtime() -> tuple[Any, ...]:
+def _rollback_runtime_resources(resources: runtime_bootstrap.RuntimeResources) -> None:
+    try:
+        root = _root_logger()
+    except BaseException:
+        return
+    runtime_bootstrap.rollback_runtime(resources, root_logger=root)
+
+
+def _prepare_runtime() -> runtime_bootstrap.RuntimeResources:
     ensure_data_dirs()
     env_path = ZHIJI_HOME / ".env"
     if not env_path.exists() and not env_path.is_symlink():
@@ -116,32 +129,12 @@ def _prepare_runtime() -> tuple[Any, ...]:
     load_hardened_env(env_path, override=True)
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    root = _root_logger()
-    root.setLevel(_logging.DEBUG)
-    installed = []
-    try:
-        for role, create_handler in (
-            ("console", _create_console_handler),
-            ("file", _create_file_handler),
-        ):
-            if any(
-                getattr(handler, _KI_HANDLER_OWNER_ATTR, None) == _KI_HANDLER_OWNER
-                and getattr(handler, _KI_HANDLER_ROLE_ATTR, None) == role
-                for handler in root.handlers
-            ):
-                continue
-            handler = create_handler()
-            setattr(handler, _KI_HANDLER_OWNER_ATTR, _KI_HANDLER_OWNER)
-            setattr(handler, _KI_HANDLER_ROLE_ATTR, role)
-            installed.append(handler)
-            root.addHandler(handler)
-        _logging.getLogger("httpx").setLevel(_logging.WARNING)
-        _logging.getLogger("httpcore").setLevel(_logging.WARNING)
-        _logging.getLogger("urllib3").setLevel(_logging.WARNING)
-    except BaseException:
-        _remove_runtime_handlers(installed)
-        raise
-    return tuple(installed)
+    return runtime_bootstrap.prepare_logging(
+        logging_module=_logging,
+        root_logger=_root_logger(),
+        create_console_handler=_create_console_handler,
+        create_file_handler=_create_file_handler,
+    )
 
 
 def _load_dependencies() -> SimpleNamespace:
@@ -207,8 +200,8 @@ def _publish_dependencies(dependencies: SimpleNamespace) -> None:
         globals()[f"{route_name}_router"] = route_module.router
 
 
-_PREVIOUS_HAS_FRONTEND = globals().get("_HAS_FRONTEND", False)
-_HAS_FRONTEND = False
+if "_HAS_FRONTEND" not in globals():
+    _HAS_FRONTEND = False
 
 
 def _snapshot_requires_token_policy():
@@ -289,14 +282,19 @@ async def serve_release(filename: str):
     )
 
 
-def _add_middleware(application: FastAPI) -> None:
-    application.add_middleware(TrustedHostMiddleware, allowed_hosts=_allowed_hosts())
-    application.add_middleware(ProtectedPathMiddleware)
-    application.middleware("http")(api_auth)
-    application.middleware("http")(spa_fallback)
+def _add_middleware(
+    application: FastAPI, dependencies: SimpleNamespace | None = None
+) -> None:
+    middleware = dependencies.api_middleware if dependencies else api_middleware
+    application.add_middleware(
+        middleware.TrustedHostMiddleware, allowed_hosts=middleware.allowed_hosts()
+    )
+    application.add_middleware(middleware.ProtectedPathMiddleware)
+    application.middleware("http")(middleware.api_auth)
+    application.middleware("http")(middleware.spa_fallback)
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=_cors_origins(),
+        allow_origins=middleware.cors_origins(),
         allow_credentials=False,
         allow_methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=[
@@ -320,9 +318,16 @@ def _add_middleware(application: FastAPI) -> None:
     )
 
 
-def _add_routes(application: FastAPI) -> None:
+def _add_routes(
+    application: FastAPI, dependencies: SimpleNamespace | None = None
+) -> None:
     for route_name in ROUTE_NAMES:
-        application.include_router(globals()[f"{route_name}_router"])
+        router = (
+            dependencies.routes[route_name].router
+            if dependencies
+            else globals()[f"{route_name}_router"]
+        )
+        application.include_router(router)
     application.post("/api/digest/generate", include_in_schema=False)(
         retired_digest_endpoint
     )
@@ -339,28 +344,28 @@ def _add_routes(application: FastAPI) -> None:
 
 
 def _assemble_application(dependencies: SimpleNamespace) -> SimpleNamespace:
-    global _HAS_FRONTEND
-    _publish_dependencies(dependencies)
-    registration = api_middleware.register_default_dependency_factory(
-        _middleware_dependencies,
-        owner=__name__,
-    )
+    global _HAS_FRONTEND, _assembly, _dependencies, app
+    previous_state = globals().copy()
+    middleware = dependencies.api_middleware
     try:
-        application = FastAPI(title="知几", version=__version__, lifespan=lifespan)
-        _add_middleware(application)
-        _add_routes(application)
-        has_frontend = static_delivery.mount_frontend(
-            application, frontend_dist=FRONTEND_DIST
-        )
+        with middleware.default_dependency_factory_transaction(
+            _middleware_dependencies, owner=__name__
+        ):
+            application = FastAPI(title="知几", version=__version__, lifespan=lifespan)
+            _add_middleware(application, dependencies)
+            _add_routes(application, dependencies)
+            has_frontend = dependencies.static_delivery.mount_frontend(
+                application, frontend_dist=FRONTEND_DIST
+            )
+            _publish_dependencies(dependencies)
+            _HAS_FRONTEND = has_frontend
+            _assembly = SimpleNamespace(dependencies=dependencies, app=application)
+            _dependencies = dependencies
+            app = application
+            return _assembly
     except BaseException:
-        _HAS_FRONTEND = _PREVIOUS_HAS_FRONTEND
-        try:
-            api_middleware.rollback_default_dependency_factory(registration)
-        except BaseException:
-            pass
+        runtime_bootstrap.restore_module_state(globals(), previous_state)
         raise
-    _HAS_FRONTEND = has_frontend
-    return SimpleNamespace(dependencies=dependencies, app=application)
 
 
 def _bootstrap_application(
@@ -369,17 +374,27 @@ def _bootstrap_application(
     load_dependencies: Callable[[], Any] = _load_dependencies,
     assemble_application: Callable[[Any], Any] | None = None,
 ) -> Any:
-    installed_handlers = tuple(prepare_runtime() or ())
+    resources = runtime_bootstrap.RuntimeResources()
     try:
+        prepared = prepare_runtime()
+        resources = (
+            prepared
+            if isinstance(prepared, runtime_bootstrap.RuntimeResources)
+            else runtime_bootstrap.RuntimeResources(tuple(prepared or ()))
+        )
         dependencies = load_dependencies()
         if assemble_application is None:
             return dependencies
         return assemble_application(dependencies)
     except BaseException:
-        _remove_runtime_handlers(installed_handlers)
+        _rollback_runtime_resources(resources)
         raise
 
 
-_assembly = _bootstrap_application(assemble_application=_assemble_application)
-_dependencies = _assembly.dependencies
-app = _assembly.app
+try:
+    _bootstrap_application(assemble_application=_assemble_application)
+except BaseException:
+    runtime_bootstrap.restore_module_state(globals(), _PREVIOUS_MODULE_STATE)
+    raise
+else:
+    _PREVIOUS_MODULE_STATE = None
