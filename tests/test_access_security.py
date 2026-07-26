@@ -458,6 +458,172 @@ def test_middleware_pipeline_resolves_one_dependency_snapshot_per_request(
     assert calls == ["resolve"]
 
 
+def test_facade_dependency_snapshot_captures_api_token_once(monkeypatch):
+    from zhiji_backend import api_middleware
+
+    values = ["first-token", "second-token"]
+    calls = []
+
+    def api_token():
+        calls.append("token")
+        return values.pop(0)
+
+    monkeypatch.setattr(main, "_api_token", api_token)
+    snapshot = api_middleware._DEFAULT_FACTORY_REGISTRATION.factory()
+
+    assert snapshot.api_token() == "first-token"
+    assert snapshot.api_token() == "first-token"
+    assert calls == ["token"]
+
+
+def test_api_middleware_reload_keeps_old_app_dependencies_valid(tmp_path):
+    script = """
+import importlib
+import json
+from fastapi.testclient import TestClient
+from zhiji_backend import api_middleware, main
+
+old_app = main.app
+importlib.reload(api_middleware)
+old_response = TestClient(old_app).get('/api/health')
+importlib.reload(main)
+new_response = TestClient(main.app).get('/api/health')
+registration = api_middleware._DEFAULT_FACTORY_REGISTRATION
+print(json.dumps({
+    'old_status': old_response.status_code,
+    'new_status': new_response.status_code,
+    'factory_type': type(registration.factory).__name__,
+    'api_auth_identity': main.api_auth is api_middleware.api_auth,
+}))
+"""
+    environment = dict(
+        os.environ,
+        PYTHONPATH=f"{ROOT / 'src'}:{ROOT}",
+        ZHIJI_HOME=str(tmp_path / "home"),
+    )
+
+    completed = __import__("subprocess").run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert __import__("json").loads(completed.stdout) == {
+        "old_status": 200,
+        "new_status": 200,
+        "factory_type": "FacadeDependencyFactory",
+        "api_auth_identity": True,
+    }
+
+
+def test_factory_registration_change_survives_api_middleware_reload(tmp_path):
+    script = """
+import importlib
+import json
+from zhiji_backend import api_middleware
+
+api_middleware._DEFAULT_FACTORY_REGISTRATION = None
+
+def factory():
+    return None
+
+first = api_middleware.register_default_dependency_factory(factory, owner='test')
+
+def replacement():
+    return None
+
+replacement.__qualname__ = factory.__qualname__
+change = api_middleware.register_default_dependency_factory(replacement, owner='test')
+installed = change.installed
+previous = change.previous
+importlib.reload(api_middleware)
+rolled_back = api_middleware.rollback_default_dependency_factory(change)
+print(json.dumps({
+    'changed': first.changed and change.changed,
+    'installed_before_reload': installed.factory is replacement,
+    'rolled_back': rolled_back,
+    'previous_restored': api_middleware._DEFAULT_FACTORY_REGISTRATION is previous,
+}))
+"""
+    environment = dict(
+        os.environ,
+        PYTHONPATH=f"{ROOT / 'src'}:{ROOT}",
+        ZHIJI_HOME=str(tmp_path / "home"),
+    )
+
+    completed = __import__("subprocess").run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert __import__("json").loads(completed.stdout) == {
+        "changed": True,
+        "installed_before_reload": True,
+        "rolled_back": True,
+        "previous_restored": True,
+    }
+
+
+def test_factory_registration_rollback_rejects_malformed_artifact(monkeypatch):
+    from types import SimpleNamespace
+
+    from zhiji_backend import api_middleware
+
+    installed = api_middleware._DEFAULT_FACTORY_REGISTRATION
+    malformed = SimpleNamespace(
+        previous=object(),
+        installed=installed,
+        changed=True,
+    )
+
+    with pytest.raises(TypeError, match="DefaultFactoryRegistrationChange"):
+        api_middleware.rollback_default_dependency_factory(malformed)
+
+    assert api_middleware._DEFAULT_FACTORY_REGISTRATION is installed
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda dependencies: vars(dependencies).pop("api_token"),
+        lambda dependencies: setattr(dependencies, "request_token", "not-callable"),
+        lambda dependencies: setattr(dependencies, "has_frontend", "yes"),
+        lambda dependencies: setattr(dependencies, "frontend_dist", object()),
+    ],
+)
+def test_malformed_structural_middleware_dependencies_are_rejected(
+    monkeypatch, mutation
+):
+    from types import SimpleNamespace
+
+    from zhiji_backend import api_middleware
+
+    dependencies = SimpleNamespace(
+        api_token=lambda: "",
+        request_token=lambda _request: "",
+        requires_token_for_request=lambda _path, _host: False,
+        is_protected_path=lambda _path: False,
+        is_loopback_host=lambda _host: True,
+        compare_digest=lambda left, right: left == right,
+        has_frontend=True,
+        frontend_dist=Path("frontend"),
+    )
+    mutation(dependencies)
+    monkeypatch.setattr(
+        api_middleware,
+        "_DEFAULT_FACTORY_REGISTRATION",
+        SimpleNamespace(factory=lambda: dependencies),
+    )
+
+    with pytest.raises(TypeError, match="default dependency factory"):
+        api_middleware._current_dependencies()
+
+
 def _dependency_snapshot(api_middleware, frontend_dist: Path):
     return api_middleware.MiddlewareDependencies(
         api_token=lambda: "",

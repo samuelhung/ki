@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -754,6 +755,180 @@ print(json.dumps({
         },
         "failure": ["mount failed"],
         "registration_restored": True,
+    }
+
+
+def test_failed_concurrent_bootstraps_serialize_runtime_mutations(
+    tmp_path, monkeypatch
+):
+    from zhiji_backend import main
+
+    monkeypatch.setenv("KI_API_TOKEN", "committed-token")
+    monkeypatch.setattr(main, "ensure_data_dirs", lambda: None)
+    monkeypatch.setattr(main, "LOG_DIR", tmp_path / "logs")
+    thread_context = threading.local()
+    monkeypatch.setattr(
+        main,
+        "load_hardened_env",
+        lambda *_args, **_kwargs: os.environ.__setitem__(
+            "KI_API_TOKEN", thread_context.candidate
+        ),
+    )
+    first_entered = threading.Event()
+    second_entered = threading.Event()
+    release_first = threading.Event()
+    release_second = threading.Event()
+    before_values = []
+    failures = []
+
+    def prepare(entered, release):
+        before_values.append(os.environ["KI_API_TOKEN"])
+        resources = main._prepare_runtime()
+        entered.set()
+        assert release.wait(2)
+        return resources
+
+    def attempt(candidate, entered, release):
+        thread_context.candidate = candidate
+        try:
+            main._bootstrap_application(
+                prepare_runtime=lambda: prepare(entered, release),
+                load_dependencies=lambda: object(),
+                assemble_application=lambda _dependencies: (_ for _ in ()).throw(
+                    RuntimeError(f"{candidate} failed")
+                ),
+            )
+        except RuntimeError as error:
+            failures.append(str(error))
+
+    first = threading.Thread(
+        target=attempt,
+        args=("candidate-one", first_entered, release_first),
+    )
+    second = threading.Thread(
+        target=attempt,
+        args=("candidate-two", second_entered, release_second),
+    )
+    first.start()
+    assert first_entered.wait(2)
+    second.start()
+    assert not second_entered.wait(0.1)
+    release_first.set()
+    assert second_entered.wait(2)
+    release_second.set()
+    first.join(2)
+    second.join(2)
+    assert not first.is_alive()
+    assert not second.is_alive()
+
+    tagged_roles = [
+        getattr(handler, "_zhiji_handler_role", None)
+        for handler in main._root_logger().handlers
+        if getattr(handler, "_zhiji_handler_owner", None) == "zhiji"
+    ]
+    assert before_values == ["committed-token", "committed-token"]
+    assert sorted(failures) == ["candidate-one failed", "candidate-two failed"]
+    assert os.environ["KI_API_TOKEN"] == "committed-token"
+    assert sorted(tagged_roles) == ["console", "file"]
+
+
+def test_request_waits_for_failed_reload_runtime_rollback(tmp_path):
+    script = """
+import importlib
+import json
+import os
+import threading
+from fastapi.testclient import TestClient
+from pathlib import Path
+
+env_path = Path(os.environ['ZHIJI_HOME']) / '.env'
+env_path.parent.mkdir(parents=True, exist_ok=True)
+env_path.write_text('KI_API_TOKEN=committed-token\\n', encoding='utf-8')
+from zhiji_backend import main, runtime_bootstrap
+
+env_path.write_text('KI_API_TOKEN=candidate-token\\n', encoding='utf-8')
+prepare_blocked = threading.Event()
+release_prepare = threading.Event()
+request_started = threading.Event()
+request_finished = threading.Event()
+reload_failures = []
+responses = []
+real_prepare_logging = runtime_bootstrap.prepare_logging
+
+def block_logging(**kwargs):
+    prepare_blocked.set()
+    if not release_prepare.wait(2):
+        raise RuntimeError('logging timeout')
+    return real_prepare_logging(**kwargs)
+
+def fail_mount(*_args, **_kwargs):
+    raise RuntimeError('mount failed')
+
+runtime_bootstrap.prepare_logging = block_logging
+main.static_delivery.mount_frontend = fail_mount
+
+def reload_main():
+    try:
+        importlib.reload(main)
+    except RuntimeError as error:
+        reload_failures.append(str(error))
+
+def request_candidate():
+    request_started.set()
+    response = TestClient(main.app, client=('10.8.0.2', 50000)).get(
+        '/api/bootstrap-lock-missing',
+        headers={'Authorization': 'Bearer candidate-token'},
+    )
+    responses.append(response.status_code)
+    request_finished.set()
+
+reload_thread = threading.Thread(target=reload_main)
+reload_thread.start()
+if not prepare_blocked.wait(2):
+    raise RuntimeError('reload did not block in logging')
+candidate_visible_during_prepare = os.environ.get('KI_API_TOKEN')
+request_thread = threading.Thread(target=request_candidate)
+request_thread.start()
+if not request_started.wait(2):
+    raise RuntimeError('request did not start')
+request_completed_before_rollback = request_finished.wait(0.1)
+release_prepare.set()
+reload_thread.join(2)
+request_thread.join(2)
+old_response = TestClient(main.app, client=('10.8.0.2', 50000)).get(
+    '/api/bootstrap-lock-missing',
+    headers={'Authorization': 'Bearer committed-token'},
+)
+print(json.dumps({
+    'candidate_visible_during_prepare': candidate_visible_during_prepare,
+    'request_completed_before_rollback': request_completed_before_rollback,
+    'candidate_status': responses,
+    'old_status': old_response.status_code,
+    'effective_token': os.environ.get('KI_API_TOKEN'),
+    'reload_failures': reload_failures,
+}))
+"""
+    environment = dict(
+        os.environ,
+        PYTHONPATH=f"{ROOT / 'src'}:{ROOT}",
+        ZHIJI_HOME=str(tmp_path / "home"),
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert json.loads(completed.stdout) == {
+        "candidate_visible_during_prepare": "candidate-token",
+        "request_completed_before_rollback": False,
+        "candidate_status": [401],
+        "old_status": 404,
+        "effective_token": "committed-token",
+        "reload_failures": ["mount failed"],
     }
 
 

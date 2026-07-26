@@ -26,14 +26,10 @@ from .paths import FRONTEND_DIST
 
 DEFAULT_ALLOWED_HOSTS = ["localhost", "127.0.0.1", "::1", "testserver"]
 DEFAULT_CORS_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:9120",
-    "http://127.0.0.1:9120",
-    "tauri://localhost",
-    "https://tauri.localhost",
+    "http://localhost:5173", "http://127.0.0.1:5173",
+    "http://localhost:9120", "http://127.0.0.1:9120",
+    "tauri://localhost", "https://tauri.localhost",
 ]
-
 
 @dataclass(frozen=True)
 class MiddlewareDependencies:
@@ -46,9 +42,7 @@ class MiddlewareDependencies:
     has_frontend: bool
     frontend_dist: Path
 
-
 DefaultDependencyFactory = Callable[[], MiddlewareDependencies]
-
 
 def _build_facade_policy(
     protected_path: Callable[[str], bool],
@@ -61,7 +55,6 @@ def _build_facade_policy(
 
     return policy
 
-
 @dataclass(frozen=True)
 class FacadeDependencyFactory:
     namespace: dict[str, Any]
@@ -71,13 +64,14 @@ class FacadeDependencyFactory:
 
     def __call__(self) -> MiddlewareDependencies:
         namespace = self.namespace
+        api_token = namespace["_api_token"]()
         protected_path = namespace["_is_protected_path"]
         loopback_host = namespace["_is_loopback_host"]
         policy = namespace["_requires_token_for_request"]
         if policy is self.default_policy:
             policy = self.policy_builder(protected_path, loopback_host)
         return self.dependencies_type(
-            api_token=namespace["_api_token"],
+            api_token=lambda: api_token,
             request_token=namespace["_request_token"],
             requires_token_for_request=policy,
             is_protected_path=protected_path,
@@ -86,7 +80,6 @@ class FacadeDependencyFactory:
             has_frontend=namespace["_HAS_FRONTEND"],
             frontend_dist=namespace["FRONTEND_DIST"],
         )
-
 
 def create_facade_dependency_factory(
     namespace: dict[str, Any],
@@ -97,7 +90,6 @@ def create_facade_dependency_factory(
         default_policy=requires_token_for_request,
         policy_builder=_build_facade_policy,
     )
-
 
 @dataclass(frozen=True)
 class _DefaultFactoryRegistration:
@@ -118,6 +110,13 @@ if _existing_factory_lock is None or not hasattr(_existing_factory_lock, "_is_ow
     _DEFAULT_FACTORY_LOCK = threading.RLock()
 if "_DEFAULT_FACTORY_REGISTRATION" not in globals():
     _DEFAULT_FACTORY_REGISTRATION: _DefaultFactoryRegistration | None = None
+
+
+@contextmanager
+def application_bootstrap_transaction():
+    """Serialize runtime mutation, assembly, publication, and rollback."""
+    with _DEFAULT_FACTORY_LOCK:
+        yield
 
 
 def csv_env(name: str, defaults: list[str]) -> list[str]:
@@ -292,8 +291,22 @@ def rollback_default_dependency_factory(
     change: DefaultFactoryRegistrationChange,
 ) -> bool:
     """Restore the registration replaced by a failed application assembly."""
-    if not isinstance(change, DefaultFactoryRegistrationChange):
+    if not all(hasattr(change, name) for name in ("previous", "installed", "changed")):
         raise TypeError("registration change must be DefaultFactoryRegistrationChange")
+    if not isinstance(change.changed, bool):
+        raise TypeError("registration change must be DefaultFactoryRegistrationChange")
+    for registration in (change.previous, change.installed):
+        if registration is None:
+            continue
+        identity = getattr(registration, "identity", None)
+        if not (
+            isinstance(getattr(registration, "owner", None), str)
+            and isinstance(identity, tuple)
+            and len(identity) == 2
+            and all(isinstance(part, str) for part in identity)
+            and callable(getattr(registration, "factory", None))
+        ):
+            raise TypeError("registration change must be DefaultFactoryRegistrationChange")
     if not change.changed:
         return False
     global _DEFAULT_FACTORY_REGISTRATION
@@ -304,29 +317,51 @@ def rollback_default_dependency_factory(
     return True
 
 
-def _current_dependencies() -> MiddlewareDependencies:
+_DEPENDENCY_CALLABLE_FIELDS = (
+    "api_token", "request_token", "requires_token_for_request",
+    "is_protected_path", "is_loopback_host", "compare_digest",
+)
+
+
+def _validated_dependencies(dependencies: Any, message: str) -> Any:
+    try:
+        callables_valid = all(
+            callable(getattr(dependencies, name)) for name in _DEPENDENCY_CALLABLE_FIELDS
+        )
+        has_frontend = dependencies.has_frontend
+        frontend_dist = dependencies.frontend_dist
+        path_valid = isinstance(frontend_dist, os.PathLike)
+        if path_valid:
+            frontend_dist / "index.html"
+    except (AttributeError, TypeError):
+        raise TypeError(message) from None
+    if not callables_valid or not isinstance(has_frontend, bool) or not path_valid:
+        raise TypeError(message)
+    return dependencies
+
+
+def _current_dependencies() -> Any:
     with _DEFAULT_FACTORY_LOCK:
         registration = _DEFAULT_FACTORY_REGISTRATION
         dependencies = (
             registration.factory() if registration is not None else _local_dependencies()
         )
-        if not isinstance(dependencies, MiddlewareDependencies):
-            raise TypeError("default dependency factory must return MiddlewareDependencies")
-        return dependencies
+        return _validated_dependencies(
+            dependencies,
+            "default dependency factory must return MiddlewareDependencies",
+        )
 
 
 _REQUEST_DEPENDENCIES_KEY = "zhiji.middleware_dependencies"
 
 
-def _request_dependencies(request: Request) -> MiddlewareDependencies:
+def _request_dependencies(request: Request) -> Any:
     state = request.scope.setdefault("state", {})
     dependencies = state.get(_REQUEST_DEPENDENCIES_KEY)
     if dependencies is None:
         dependencies = _current_dependencies()
         state[_REQUEST_DEPENDENCIES_KEY] = dependencies
-    if not isinstance(dependencies, MiddlewareDependencies):
-        raise TypeError("request middleware dependencies are invalid")
-    return dependencies
+    return _validated_dependencies(dependencies, "request middleware dependencies are invalid")
 
 
 async def api_auth(request: Request, call_next):

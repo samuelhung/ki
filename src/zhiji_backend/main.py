@@ -14,6 +14,7 @@ from fastapi import responses as _responses
 from fastapi.middleware import cors as _cors
 
 from . import __version__, runtime_bootstrap
+from . import api_middleware as _api_middleware_runtime
 from . import credential_store as _credential_store
 from . import paths as _paths
 from .security import artifacts as _artifacts
@@ -210,18 +211,7 @@ if "_HAS_FRONTEND" not in globals():
 
 
 def _snapshot_requires_token_policy():
-    policy = _requires_token_for_request
-    if policy is not api_middleware.requires_token_for_request:
-        return policy
-    protected_path = _is_protected_path
-    loopback_host = _is_loopback_host
-
-    def facade_policy(path: str, client_host: str | None) -> bool:
-        if path == "/api/health" or not protected_path(path):
-            return False
-        return not loopback_host(client_host)
-
-    return facade_policy
+    return _middleware_dependencies().requires_token_for_request
 
 
 def _middleware_dependencies():
@@ -371,27 +361,29 @@ def _bootstrap_application(
     load_dependencies: Callable[[], Any] = _load_dependencies,
     assemble_application: Callable[[Any], Any] | None = None,
 ) -> Any:
-    resources = runtime_bootstrap.RuntimeResources()
+    with _api_middleware_runtime.application_bootstrap_transaction():
+        resources = runtime_bootstrap.RuntimeResources()
+        try:
+            prepared = prepare_runtime()
+            resources = (
+                prepared
+                if isinstance(prepared, runtime_bootstrap.RuntimeResources)
+                else runtime_bootstrap.RuntimeResources(tuple(prepared or ()))
+            )
+            dependencies = load_dependencies()
+            if assemble_application is None:
+                return dependencies
+            return assemble_application(dependencies)
+        except BaseException:
+            _rollback_runtime_resources(resources)
+            raise
+
+
+with _api_middleware_runtime.application_bootstrap_transaction():
     try:
-        prepared = prepare_runtime()
-        resources = (
-            prepared
-            if isinstance(prepared, runtime_bootstrap.RuntimeResources)
-            else runtime_bootstrap.RuntimeResources(tuple(prepared or ()))
-        )
-        dependencies = load_dependencies()
-        if assemble_application is None:
-            return dependencies
-        return assemble_application(dependencies)
+        _bootstrap_application(assemble_application=_assemble_application)
     except BaseException:
-        _rollback_runtime_resources(resources)
+        runtime_bootstrap.restore_module_state(globals(), _PREVIOUS_MODULE_STATE)
         raise
-
-
-try:
-    _bootstrap_application(assemble_application=_assemble_application)
-except BaseException:
-    runtime_bootstrap.restore_module_state(globals(), _PREVIOUS_MODULE_STATE)
-    raise
-else:
-    _PREVIOUS_MODULE_STATE = None
+    else:
+        _PREVIOUS_MODULE_STATE = None
