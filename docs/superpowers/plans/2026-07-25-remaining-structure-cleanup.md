@@ -95,7 +95,7 @@
 - [x] Remove only `src/zhiji_backend/database_backup.py` from `oversized_files`.
 - [x] Run focused tests, full `uv run --frozen pytest -q`, `scripts/check.sh`, and `git diff --check`.
 - [x] Request independent review focused on TOCTOU, crash consistency, file permissions, fd cleanup, and compatibility.
-- [ ] Commit baseline retirement, push, create a Draft PR, wait for CI, merge only after review, then fast-forward local `main`.
+- [x] Commit baseline retirement, push, create a Draft PR, wait for CI, merge only after review, then fast-forward local `main`.
 
 ## PR 2: Backend Platform Foundations
 
