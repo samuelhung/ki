@@ -4,6 +4,7 @@ import io
 import logging
 import logging.handlers
 import os
+import secrets
 import stat
 from collections.abc import Callable, Iterator
 from contextlib import suppress
@@ -75,47 +76,23 @@ def _harden_existing_logs(
                 )
 
 
-def _secure_rotator_destination(path: Path) -> tuple[int, int] | None:
-    if _reject_symlink(path):
-        path.chmod(0o600, follow_symlinks=False)
-        return None
-
+def _create_rotator_staging_path(destination: Path) -> Path:
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
-    fd = os.open(path, flags, 0o600)
-    try:
-        os.fchmod(fd, 0o600)
-        created = os.fstat(fd)
-        return created.st_dev, created.st_ino
-    finally:
-        os.close(fd)
 
-
-def _remove_owned_placeholder(path: Path, identity: tuple[int, int]) -> None:
-    try:
-        current = path.lstat()
-    except FileNotFoundError:
-        return
-    except OSError as exc:
-        logger.warning(
-            "Unable to inspect failed log rotation placeholder file=%s error_class=%s",
-            path.name,
-            type(exc).__name__,
-        )
-        return
-    if not stat.S_ISREG(current.st_mode):
-        return
-    if (current.st_dev, current.st_ino) != identity:
-        return
-    try:
-        path.unlink()
-    except OSError as exc:
-        logger.warning(
-            "Unable to remove failed log rotation placeholder file=%s error_class=%s",
-            path.name,
-            type(exc).__name__,
-        )
+    while True:
+        token = secrets.token_hex(16)
+        staging = destination.with_name(f".zhiji-log-rotate-{token}-{destination.name}")
+        try:
+            fd = os.open(staging, flags, 0o600)
+        except FileExistsError:
+            continue
+        try:
+            os.fchmod(fd, 0o600)
+        finally:
+            os.close(fd)
+        return staging
 
 
 class SecureTimedRotatingFileHandler(logging.handlers.TimedRotatingFileHandler):
@@ -170,21 +147,20 @@ class SecureTimedRotatingFileHandler(logging.handlers.TimedRotatingFileHandler):
         dest_path = Path(dest)
         if not _reject_symlink(source_path):
             return
+
+        if callable(self.rotator):
+            staging_path = _create_rotator_staging_path(dest_path)
+            self.rotator(source, str(staging_path))
+            _reject_symlink(staging_path)
+            staging_path.chmod(0o600, follow_symlinks=False)
+            os.replace(staging_path, dest_path)
+            _reject_symlink(dest_path)
+            dest_path.chmod(0o600, follow_symlinks=False)
+            return
+
         _reject_symlink(dest_path)
-        custom_rotator = callable(self.rotator)
-        placeholder_identity = None
-        if custom_rotator:
-            placeholder_identity = _secure_rotator_destination(dest_path)
-        try:
-            super().rotate(source, dest)
-        except BaseException:
-            if placeholder_identity is not None:
-                with suppress(BaseException):
-                    _remove_owned_placeholder(dest_path, placeholder_identity)
-            raise
+        super().rotate(source, dest)
         if not _reject_symlink(dest_path):
-            if custom_rotator:
-                dest_path.chmod(0o600, follow_symlinks=False)
             return
         dest_path.chmod(0o600, follow_symlinks=False)
 

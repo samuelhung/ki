@@ -652,13 +652,21 @@ def test_secure_log_handler_presecures_custom_rotator_destination(
 ):
     module = _log_handlers_module()
     source = tmp_path / "ki.log"
-    destination = tmp_path / "ki.log.rotated"
+    destination = tmp_path / ("ki.log.rotated.gz" if compression else "ki.log.rotated")
     source.write_bytes(b"source")
     observed_modes = []
+    staging_paths = []
     handler = module.SecureTimedRotatingFileHandler(source, when="midnight", delay=True)
 
     def rotate(source_name, destination_name):
-        observed_modes.append(stat.S_IMODE(destination.stat().st_mode))
+        staging = Path(destination_name)
+        staging_paths.append(staging)
+        observed_modes.append(stat.S_IMODE(staging.stat().st_mode))
+        assert staging.parent == destination.parent
+        assert staging != destination
+        assert staging.name.startswith(".")
+        assert staging.name.endswith(destination.name)
+        assert not destination.exists()
         if compression:
             with open(source_name, "rb") as source_stream:
                 with gzip.open(destination_name, "wb") as destination_stream:
@@ -673,6 +681,7 @@ def test_secure_log_handler_presecures_custom_rotator_destination(
         handler.close()
 
     assert observed_modes == [0o600]
+    assert not staging_paths[0].exists()
     assert stat.S_IMODE(destination.stat().st_mode) == 0o600
     if compression:
         with gzip.open(destination, "rb") as stream:
@@ -691,10 +700,14 @@ def test_secure_log_handler_rejects_custom_rotator_symlink_result(tmp_path):
     outside.chmod(0o644)
     handler = module.SecureTimedRotatingFileHandler(source, when="midnight", delay=True)
 
-    def malicious_rotator(_source_name, _destination_name):
-        assert destination.is_file()
-        destination.unlink()
-        destination.symlink_to(outside)
+    staging_paths = []
+
+    def malicious_rotator(_source_name, destination_name):
+        staging = Path(destination_name)
+        staging_paths.append(staging)
+        assert staging.is_file()
+        staging.unlink()
+        staging.symlink_to(outside)
 
     handler.rotator = malicious_rotator
     try:
@@ -703,6 +716,32 @@ def test_secure_log_handler_rejects_custom_rotator_symlink_result(tmp_path):
     finally:
         handler.close()
 
+    assert not destination.exists()
+    assert staging_paths[0].is_symlink()
+    assert outside.read_text(encoding="utf-8") == "outside"
+    assert stat.S_IMODE(outside.stat().st_mode) == 0o644
+
+
+def test_secure_log_handler_custom_rotation_replaces_final_symlink(tmp_path):
+    module = _log_handlers_module()
+    source = tmp_path / "ki.log"
+    destination = tmp_path / "ki.log.rotated"
+    outside = tmp_path / "outside.log"
+    source.write_text("source", encoding="utf-8")
+    outside.write_text("outside", encoding="utf-8")
+    outside.chmod(0o644)
+    destination.symlink_to(outside)
+    handler = module.SecureTimedRotatingFileHandler(source, when="midnight", delay=True)
+    handler.rotator = shutil.copyfile
+
+    try:
+        handler.rotate(str(source), str(destination))
+    finally:
+        handler.close()
+
+    assert not destination.is_symlink()
+    assert destination.read_text(encoding="utf-8") == "source"
+    assert stat.S_IMODE(destination.stat().st_mode) == 0o600
     assert outside.read_text(encoding="utf-8") == "outside"
     assert stat.S_IMODE(outside.stat().st_mode) == 0o644
 
@@ -724,16 +763,26 @@ def test_secure_log_handler_skips_custom_rotator_when_source_is_absent(tmp_path)
     assert not destination.exists()
 
 
-def test_secure_log_handler_removes_untouched_placeholder_after_rotator_failure(
+def test_secure_log_handler_failed_rotator_leaves_only_non_candidate_staging(
     tmp_path,
 ):
     module = _log_handlers_module()
     source = tmp_path / "ki.log"
-    destination = tmp_path / "ki.log.rotated"
+    destination = tmp_path / "ki.log.2026-07-20"
     source.write_text("source", encoding="utf-8")
     rotator_error = RuntimeError("rotator failed")
+    staging_paths = []
     handler = module.SecureTimedRotatingFileHandler(source, when="midnight", delay=True)
-    handler.rotator = lambda *_args: (_ for _ in ()).throw(rotator_error)
+
+    def fail_before_touching(_source_name, destination_name):
+        staging = Path(destination_name)
+        staging_paths.append(staging)
+        assert staging.is_file()
+        assert stat.S_IMODE(staging.stat().st_mode) == 0o600
+        assert not destination.exists()
+        raise rotator_error
+
+    handler.rotator = fail_before_touching
 
     try:
         with pytest.raises(RuntimeError) as raised:
@@ -744,21 +793,31 @@ def test_secure_log_handler_removes_untouched_placeholder_after_rotator_failure(
     assert raised.value is rotator_error
     assert source.read_text(encoding="utf-8") == "source"
     assert not destination.exists()
+    assert len(staging_paths) == 1
+    assert staging_paths[0].is_file()
+    assert stat.S_IMODE(staging_paths[0].stat().st_mode) == 0o600
+    candidates = list(
+        module._rotation_candidates(source, handler.extMatch, handler.namer)
+    )
+    assert staging_paths[0] not in candidates
 
 
-def test_secure_log_handler_keeps_replaced_destination_after_rotator_failure(tmp_path):
+def test_secure_log_handler_never_deletes_hostile_staging_replacement(tmp_path):
     module = _log_handlers_module()
     source = tmp_path / "ki.log"
     destination = tmp_path / "ki.log.rotated"
     source.write_text("source", encoding="utf-8")
     rotator_error = RuntimeError("rotator failed after replacement")
     replacement_identity = []
+    staging_paths = []
     handler = module.SecureTimedRotatingFileHandler(source, when="midnight", delay=True)
 
-    def replace_then_fail(_source_name, _destination_name):
-        destination.unlink()
-        destination.write_text("replacement", encoding="utf-8")
-        replacement = destination.lstat()
+    def replace_then_fail(_source_name, destination_name):
+        staging = Path(destination_name)
+        staging_paths.append(staging)
+        staging.unlink()
+        staging.write_text("replacement", encoding="utf-8")
+        replacement = staging.lstat()
         replacement_identity.append((replacement.st_dev, replacement.st_ino))
         raise rotator_error
 
@@ -769,76 +828,11 @@ def test_secure_log_handler_keeps_replaced_destination_after_rotator_failure(tmp
     finally:
         handler.close()
 
-    final = destination.lstat()
+    replacement = staging_paths[0].lstat()
     assert raised.value is rotator_error
-    assert (final.st_dev, final.st_ino) == replacement_identity[0]
-    assert destination.read_text(encoding="utf-8") == "replacement"
-
-
-def test_secure_log_handler_keeps_symlink_replacement_after_rotator_failure(tmp_path):
-    module = _log_handlers_module()
-    source = tmp_path / "ki.log"
-    destination = tmp_path / "ki.log.rotated"
-    outside = tmp_path / "outside.log"
-    source.write_text("source", encoding="utf-8")
-    outside.write_text("outside", encoding="utf-8")
-    outside.chmod(0o644)
-    rotator_error = RuntimeError("rotator failed after symlink swap")
-    handler = module.SecureTimedRotatingFileHandler(source, when="midnight", delay=True)
-
-    def swap_then_fail(_source_name, _destination_name):
-        destination.unlink()
-        destination.symlink_to(outside)
-        raise rotator_error
-
-    handler.rotator = swap_then_fail
-    try:
-        with pytest.raises(RuntimeError) as raised:
-            handler.rotate(str(source), str(destination))
-    finally:
-        handler.close()
-
-    assert raised.value is rotator_error
-    assert destination.is_symlink()
-    assert outside.read_text(encoding="utf-8") == "outside"
-    assert stat.S_IMODE(outside.stat().st_mode) == 0o644
-
-
-def test_secure_log_handler_preserves_rotator_error_when_placeholder_cleanup_fails(
-    tmp_path, monkeypatch, caplog
-):
-    module = _log_handlers_module()
-    source = tmp_path / "ki.log"
-    destination = tmp_path / "ki.log.rotated"
-    source.write_text("source", encoding="utf-8")
-    rotator_error = RuntimeError("rotator failed")
-    original_unlink = Path.unlink
-    handler = module.SecureTimedRotatingFileHandler(source, when="midnight", delay=True)
-    handler.rotator = lambda *_args: (_ for _ in ()).throw(rotator_error)
-
-    def fail_placeholder_unlink(path, *args, **kwargs):
-        if path == destination:
-            raise PermissionError("unstable cleanup detail")
-        return original_unlink(path, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "unlink", fail_placeholder_unlink)
-    try:
-        with caplog.at_level("WARNING"):
-            with pytest.raises(RuntimeError) as raised:
-                handler.rotate(str(source), str(destination))
-    finally:
-        handler.close()
-
-    assert raised.value is rotator_error
-    assert destination.is_file()
-    cleanup_records = [
-        record for record in caplog.records if "rotation placeholder" in record.message
-    ]
-    assert len(cleanup_records) == 1
-    assert cleanup_records[0].name == "zhiji_backend.security.redaction"
-    assert destination.name in cleanup_records[0].message
-    assert "PermissionError" in cleanup_records[0].message
-    assert "unstable cleanup detail" not in cleanup_records[0].message
+    assert (replacement.st_dev, replacement.st_ino) == replacement_identity[0]
+    assert staging_paths[0].read_text(encoding="utf-8") == "replacement"
+    assert not destination.exists()
 
 
 def test_secure_log_handler_rollover_retries_after_rotator_failure(tmp_path):
@@ -853,30 +847,53 @@ def test_secure_log_handler_rollover_retries_after_rotator_failure(tmp_path):
     )
     handler.rolloverAt = 0
     rotator_error = RuntimeError("first rotation failed")
-    handler.rotator = lambda *_args: (_ for _ in ()).throw(rotator_error)
+    failed_stages = []
+    successful_stages = []
+
+    def fail_first_rotation(_source_name, destination_name):
+        failed_stages.append(Path(destination_name))
+        raise rotator_error
+
+    handler.rotator = fail_first_rotation
 
     try:
         with pytest.raises(RuntimeError) as raised:
             handler.doRollover()
 
         assert raised.value is rotator_error
-        assert [path.name for path in tmp_path.iterdir()] == ["ki.log"]
+        assert not any(
+            path.name.startswith("ki.log.") for path in tmp_path.iterdir()
+        )
         assert source.read_text(encoding="utf-8") == "before\n"
         assert handler.rolloverAt == 0
+        assert len(failed_stages) == 1
+        assert failed_stages[0].is_file()
+        assert failed_stages[0].stat().st_size == 0
+        assert stat.S_IMODE(failed_stages[0].stat().st_mode) == 0o600
+        assert failed_stages[0] not in list(
+            module._rotation_candidates(source, handler.extMatch, handler.namer)
+        )
 
-        handler.rotator = os.replace
+        def successful_rotation(source_name, destination_name):
+            successful_stages.append(Path(destination_name))
+            os.replace(source_name, destination_name)
+
+        handler.rotator = successful_rotation
         handler.doRollover()
         assert handler.rolloverAt > 0
     finally:
         handler.close()
 
-    rotated = [path for path in tmp_path.iterdir() if path != source]
+    rotated = list(module._rotation_candidates(source, handler.extMatch, handler.namer))
     assert len(rotated) == 1
     assert rotated[0].read_text(encoding="utf-8") == "before\n"
     assert stat.S_IMODE(rotated[0].stat().st_mode) == 0o600
     assert source.is_file()
     assert source.stat().st_size == 0
     assert stat.S_IMODE(source.stat().st_mode) == 0o600
+    assert failed_stages[0].is_file()
+    assert len(successful_stages) == 1
+    assert successful_stages[0] != failed_stages[0]
 
 
 def test_secure_log_handler_hardens_existing_regular_log_files(tmp_path):
