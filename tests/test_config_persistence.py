@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -7,6 +8,7 @@ import stat
 import threading
 from copy import deepcopy
 from pathlib import Path
+from types import FunctionType
 
 import pytest
 
@@ -21,13 +23,18 @@ def _dependencies(path: Path) -> config_persistence.PersistenceDependencies:
     )
 
 
-def test_direct_write_resolves_local_defaults_at_call_time(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    "writer",
+    [config_manager._write_config, config_persistence.write_config],
+    ids=["config-manager-facade", "config-persistence"],
+)
+def test_direct_writers_resolve_registered_facade_defaults_at_call_time(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, writer
 ) -> None:
     config_path = tmp_path / "system_config.json"
+    fallback_path = tmp_path / "unregistered-default.json"
     destinations: list[Path] = []
     messages: list[tuple[str, Path]] = []
-    real_get_logger = logging.getLogger
     real_replace = os.replace
 
     class RecordingLogger:
@@ -41,24 +48,75 @@ def test_direct_write_resolves_local_defaults_at_call_time(
         destinations.append(Path(destination))
         real_replace(source, destination)
 
-    monkeypatch.setattr(config_persistence, "CONFIG_PATH", config_path)
-    monkeypatch.setattr(config_persistence.os, "replace", replace)
-    monkeypatch.setattr(
-        config_persistence.logging,
-        "getLogger",
-        lambda name=None: (
-            RecordingLogger()
-            if name == "zhiji_backend.config_manager"
-            else real_get_logger(name)
-        ),
-    )
+    class FacadeOS:
+        def __getattr__(self, name: str):
+            return getattr(os, name)
 
-    config_persistence.write_config({"label": "\u77e5\u51e0"})
+        def replace(self, source: Path, destination: Path) -> None:
+            replace(source, destination)
+
+    monkeypatch.setattr(config_persistence, "CONFIG_PATH", fallback_path)
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(config_manager, "os", FacadeOS())
+    monkeypatch.setattr(config_manager, "logger", RecordingLogger())
+
+    writer({"label": "\u77e5\u51e0"})
 
     assert config_path.read_text(encoding="utf-8") == '{\n  "label": "\u77e5\u51e0"\n}'
     assert stat.S_IMODE(config_path.stat().st_mode) == 0o600
     assert destinations == [config_path]
     assert messages == [("Saved system config to %s", config_path)]
+    assert not fallback_path.exists()
+
+
+def test_default_factory_registration_is_idempotent_and_rejects_other_owners() -> None:
+    config_persistence.register_default_dependency_factory(
+        config_manager._persistence_dependencies,
+        owner=config_manager.__name__,
+    )
+
+    def competing_factory() -> config_persistence.PersistenceDependencies:
+        return _dependencies(Path("unused.json"))
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "default dependency factory already registered by "
+            "zhiji_backend.config_manager"
+        ),
+    ):
+        config_persistence.register_default_dependency_factory(
+            competing_factory,
+            owner=__name__,
+        )
+
+
+def test_same_owner_named_factory_can_refresh_for_module_reload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = config_manager._persistence_dependencies
+    replacement = FunctionType(
+        original.__code__,
+        original.__globals__,
+        name=original.__name__,
+        argdefs=original.__defaults__,
+        closure=original.__closure__,
+    )
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", tmp_path / "reloaded.json")
+
+    try:
+        config_persistence.register_default_dependency_factory(
+            replacement,
+            owner=config_manager.__name__,
+        )
+        assert config_persistence._current_dependencies().config_path == (
+            tmp_path / "reloaded.json"
+        )
+    finally:
+        config_persistence.register_default_dependency_factory(
+            original,
+            owner=config_manager.__name__,
+        )
 
 
 @pytest.mark.parametrize(
@@ -80,7 +138,7 @@ def test_direct_writers_never_serialize_general_api_key(
         "custom": {"value": 7},
     }
     before = deepcopy(payload)
-    monkeypatch.setattr(config_persistence, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
 
     writer(payload)
 
@@ -106,7 +164,7 @@ def test_write_preserves_non_dict_general_values(
     config_path = tmp_path / "system_config.json"
     payload = {"general": general, "custom": {"api_key": "unchanged"}}
     before = deepcopy(payload)
-    monkeypatch.setattr(config_persistence, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
 
     config_persistence.write_config(payload)
 
@@ -202,6 +260,76 @@ def test_snapshot_match_and_restore_preserve_bytes_and_mode(tmp_path: Path) -> N
     assert stat.S_IMODE(config_path.stat().st_mode) == 0o640
 
 
+def test_direct_facade_snapshot_match_restore_and_reject_use_manager_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config_path = tmp_path / "system_config.json"
+    fallback_path = tmp_path / "unregistered-default.json"
+    original = b'{"value": "original"}\n'
+    config_path.write_bytes(original)
+    os.chmod(config_path, 0o640)
+    monkeypatch.setattr(config_persistence, "CONFIG_PATH", fallback_path)
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
+
+    snapshot = config_manager._snapshot_config_file()
+    config_path.write_bytes(b'{"value": "changed"}\n')
+    assert config_manager._config_file_matches(snapshot) is False
+    config_manager._restore_config_file(snapshot)
+
+    assert config_path.read_bytes() == original
+    assert stat.S_IMODE(config_path.stat().st_mode) == 0o640
+    assert not fallback_path.exists()
+
+    target = tmp_path / "target.json"
+    target.write_text('{"target": true}', encoding="utf-8")
+    config_path.unlink()
+    config_path.symlink_to(target)
+    with pytest.raises(OSError, match=f"symlink system config: {config_path}"):
+        config_manager._reject_config_symlink()
+    assert target.read_text(encoding="utf-8") == '{"target": true}'
+
+
+def test_direct_facade_parent_fsync_uses_manager_os_and_logger(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    closed: list[int] = []
+    messages: list[tuple[str, Path]] = []
+
+    class FacadeOS:
+        O_RDONLY = os.O_RDONLY
+        O_DIRECTORY = getattr(os, "O_DIRECTORY", 0)
+
+        @staticmethod
+        def open(_path: Path, _flags: int) -> int:
+            return 73
+
+        @staticmethod
+        def fsync(_fd: int) -> None:
+            raise OSError("directory fsync unsupported")
+
+        @staticmethod
+        def close(fd: int) -> None:
+            closed.append(fd)
+
+    class RecordingLogger:
+        @staticmethod
+        def debug(message: str, path: Path, *, exc_info: bool) -> None:
+            assert exc_info is True
+            messages.append((message, path))
+
+    config_path = tmp_path / "system_config.json"
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
+    monkeypatch.setattr(config_manager, "os", FacadeOS())
+    monkeypatch.setattr(config_manager, "logger", RecordingLogger())
+
+    config_manager._fsync_parent_directory()
+
+    assert closed == [73]
+    assert messages == [
+        ("Parent directory fsync is unavailable for %s", config_path.parent)
+    ]
+
+
 def test_restore_missing_snapshot_removes_created_file(tmp_path: Path) -> None:
     config_path = tmp_path / "system_config.json"
 
@@ -282,6 +410,23 @@ def test_nested_scope_restores_outer_dependencies_after_failure(tmp_path: Path) 
     assert json.loads(outer.read_text(encoding="utf-8")) == {"scope": "outer"}
 
 
+def test_scoped_dependencies_override_registered_defaults_and_reset_afterward(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registered_path = tmp_path / "registered.json"
+    scoped_path = tmp_path / "scoped.json"
+    monkeypatch.setattr(config_manager, "CONFIG_PATH", registered_path)
+
+    with config_persistence.persistence_scope(_dependencies(scoped_path)):
+        config_persistence.write_config({"scope": "scoped"})
+    config_persistence.write_config({"scope": "registered"})
+
+    assert json.loads(scoped_path.read_text(encoding="utf-8")) == {"scope": "scoped"}
+    assert json.loads(registered_path.read_text(encoding="utf-8")) == {
+        "scope": "registered"
+    }
+
+
 def test_concurrent_scopes_do_not_leak_dependencies(tmp_path: Path) -> None:
     barrier = threading.Barrier(2)
     errors: list[BaseException] = []
@@ -307,6 +452,26 @@ def test_concurrent_scopes_do_not_leak_dependencies(tmp_path: Path) -> None:
         "scope": "a"
     }
     assert json.loads((tmp_path / "b.json").read_text(encoding="utf-8")) == {
+        "scope": "b"
+    }
+
+
+def test_concurrent_task_scopes_do_not_leak_dependencies(tmp_path: Path) -> None:
+    async def write(name: str) -> None:
+        path = tmp_path / f"task-{name}.json"
+        with config_persistence.persistence_scope(_dependencies(path)):
+            await asyncio.sleep(0)
+            config_persistence.write_config({"scope": name})
+
+    async def exercise() -> None:
+        await asyncio.gather(write("a"), write("b"))
+
+    asyncio.run(exercise())
+
+    assert json.loads((tmp_path / "task-a.json").read_text(encoding="utf-8")) == {
+        "scope": "a"
+    }
+    assert json.loads((tmp_path / "task-b.json").read_text(encoding="utf-8")) == {
         "scope": "b"
     }
 

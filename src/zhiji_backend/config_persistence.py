@@ -5,7 +5,8 @@ import logging
 import os
 import stat
 import tempfile
-from collections.abc import Iterator
+import threading
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -32,9 +33,21 @@ class PersistenceDependencies:
     logger: Any
 
 
+DefaultDependencyFactory = Callable[[], PersistenceDependencies]
+
+
+@dataclass(frozen=True)
+class _DefaultFactoryRegistration:
+    owner: str
+    identity: tuple[str, str]
+    factory: DefaultDependencyFactory
+
+
 _SCOPED_DEPENDENCIES: ContextVar[PersistenceDependencies | None] = ContextVar(
     "zhiji_config_persistence_dependencies", default=None
 )
+_DEFAULT_FACTORY_LOCK = threading.Lock()
+_DEFAULT_FACTORY_REGISTRATION: _DefaultFactoryRegistration | None = None
 
 
 def _local_dependencies() -> PersistenceDependencies:
@@ -45,8 +58,54 @@ def _local_dependencies() -> PersistenceDependencies:
     )
 
 
+def register_default_dependency_factory(
+    factory: DefaultDependencyFactory,
+    *,
+    owner: str,
+) -> None:
+    """Register one application resolver; same-owner reloads may refresh it."""
+    if not callable(factory):
+        raise TypeError("default dependency factory must be callable")
+    if not isinstance(owner, str) or not owner:
+        raise ValueError("default dependency factory owner must be a non-empty string")
+    module = getattr(factory, "__module__", None)
+    qualname = getattr(factory, "__qualname__", None)
+    if not isinstance(module, str) or not isinstance(qualname, str):
+        raise TypeError("default dependency factory must be a named callable")
+
+    registration = _DefaultFactoryRegistration(
+        owner=owner,
+        identity=(module, qualname),
+        factory=factory,
+    )
+    global _DEFAULT_FACTORY_REGISTRATION
+    with _DEFAULT_FACTORY_LOCK:
+        current = _DEFAULT_FACTORY_REGISTRATION
+        if current is None:
+            _DEFAULT_FACTORY_REGISTRATION = registration
+        elif current.factory is factory:
+            return
+        elif current.owner == owner and current.identity == registration.identity:
+            _DEFAULT_FACTORY_REGISTRATION = registration
+        else:
+            raise RuntimeError(
+                f"default dependency factory already registered by {current.owner}"
+            )
+
+
 def _current_dependencies() -> PersistenceDependencies:
-    return _SCOPED_DEPENDENCIES.get() or _local_dependencies()
+    # Context-local overrides always win; the registered resolver is the app default.
+    scoped = _SCOPED_DEPENDENCIES.get()
+    if scoped is not None:
+        return scoped
+    with _DEFAULT_FACTORY_LOCK:
+        registration = _DEFAULT_FACTORY_REGISTRATION
+    dependencies = (
+        registration.factory() if registration is not None else _local_dependencies()
+    )
+    if not isinstance(dependencies, PersistenceDependencies):
+        raise TypeError("default dependency factory must return PersistenceDependencies")
+    return dependencies
 
 
 @contextmanager

@@ -26,6 +26,20 @@ DEFAULT_AI_BASE_URL = "http://10.8.0.13:3000/v1"
 _config: dict[str, Any] = {}
 _config_lock = threading.RLock()
 
+
+def _persistence_dependencies() -> config_persistence.PersistenceDependencies:
+    return config_persistence.PersistenceDependencies(
+        config_path=CONFIG_PATH,
+        os_module=os,
+        logger=logger,
+    )
+
+
+config_persistence.register_default_dependency_factory(
+    _persistence_dependencies,
+    owner=__name__,
+)
+
 _ConfigFileSnapshot = config_persistence._ConfigFileSnapshot
 _write_config = config_persistence.write_config
 _snapshot_config_file = config_persistence.snapshot_config_file
@@ -37,12 +51,7 @@ _fsync_parent_directory = config_persistence.fsync_parent_directory
 
 @contextmanager
 def _persistence_scope() -> Iterator[None]:
-    dependencies = config_persistence.PersistenceDependencies(
-        config_path=CONFIG_PATH,
-        os_module=os,
-        logger=logger,
-    )
-    with config_persistence.persistence_scope(dependencies):
+    with config_persistence.persistence_scope(_persistence_dependencies()):
         yield
 
 
