@@ -1,10 +1,18 @@
 from __future__ import annotations
 
-import hmac
-import logging
-import os
+import importlib
+import logging as _logging
+from collections.abc import Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from . import __version__
 from .credential_store import load_hardened_env
 from .paths import (
     FRONTEND_DIST,
@@ -14,286 +22,169 @@ from .paths import (
     ZHIJI_HOME,
     ensure_data_dirs,
 )
-from .security.redaction import RedactingFormatter, SecureTimedRotatingFileHandler
-
-# ---- 数据目录初始化 ----
-ensure_data_dirs()
-
-# ---- .env loading ----
-_env_path = ZHIJI_HOME / ".env"
-if not _env_path.exists() and not _env_path.is_symlink():
-    # fallback: 开发时可能在项目根目录
-    _project_root = Path(__file__).resolve().parents[2]
-    _env_path = _project_root / ".env"
-load_hardened_env(_env_path, override=True)
-
-# ---- Logging setup ----
-_LOG_DIR = LOG_DIR
-_LOG_DIR.mkdir(parents=True, exist_ok=True)
-
-# Root logger config — captures all "knowledge-intelligence" + module loggers
-_root = logging.getLogger()
-_root.setLevel(logging.DEBUG)
-
-# Console handler: INFO+ to stderr (visible in uvicorn output)
-_console = logging.StreamHandler()
-_console.setLevel(logging.INFO)
-_console.setFormatter(RedactingFormatter(
-    "%(asctime)s [%(levelname)-7s] %(name)s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-))
-_root.addHandler(_console)
-
-# File handler: DEBUG+ with daily rotation, keep 30 days
-_file = SecureTimedRotatingFileHandler(
-    str(_LOG_DIR / "ki.log"),
-    when="midnight",
-    interval=1,
-    backupCount=30,
-    encoding="utf-8",
-)
-_file.setLevel(logging.DEBUG)
-_file.setFormatter(RedactingFormatter(
-    "%(asctime)s [%(levelname)-7s] %(name)s:%(lineno)d | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-))
-_root.addHandler(_file)
-
-# Silence noisy third-party loggers
-logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("httpcore").setLevel(logging.WARNING)
-logging.getLogger("urllib3").setLevel(logging.WARNING)
-
-from contextlib import asynccontextmanager
-
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import (
-    FileResponse,
-    JSONResponse,
-    PlainTextResponse,
-    RedirectResponse,
-)
-from fastapi.staticfiles import StaticFiles
-from starlette.datastructures import URL, Headers
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.middleware.trustedhost import (
-    TrustedHostMiddleware as StarletteTrustedHostMiddleware,
-)
-
-from . import __version__
-from .config_manager import load_config
-from .db import get_db_path, init_db, seed_default_sources
-from .migrations import ensure_migrations
-from .routes.brainstorm_routes import router as brainstorm_router
-from .routes.briefing_routes import router as briefing_router
-from .routes.chain_routes import router as chain_router
-from .routes.config_routes import router as config_router
-
-# Route modules
-from .routes.dashboard_routes import router as dashboard_router
-from .routes.event_routes import router as event_router
-from .routes.ingest_routes import router as ingest_router
-from .routes.log_routes import router as log_router
-from .routes.prompt_routes import router as prompt_router
-from .routes.series_routes import router as series_router
-from .routes.source_routes import router as source_router
-from .routes.study_routes import router as study_router
-from .routes.system_routes import router as system_router
-from .routes.task_routes import router as task_router
-from .routes.translate_routes import router as translate_router
-from .routes.usage_routes import router as usage_router
 from .security.artifacts import (
     ArtifactOpenError,
     PinnedFileResponse,
     open_regular_under,
 )
 from .security.constraints import safe_identifier
-from .task_queue import start_worker, stop_worker
-from .usage_writer import start_usage_writer, stop_usage_writer
+from .security.redaction import RedactingFormatter, SecureTimedRotatingFileHandler
+
+logging = SimpleNamespace(getLogger=_logging.getLogger)
+
+
+def _prepare_runtime() -> None:
+    ensure_data_dirs()
+    env_path = ZHIJI_HOME / ".env"
+    if not env_path.exists() and not env_path.is_symlink():
+        env_path = Path(__file__).resolve().parents[2] / ".env"
+    load_hardened_env(env_path, override=True)
+
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    root = _logging.getLogger()
+    root.setLevel(_logging.DEBUG)
+
+    console = _logging.StreamHandler()
+    console.setLevel(_logging.INFO)
+    console.setFormatter(
+        RedactingFormatter(
+            "%(asctime)s [%(levelname)-7s] %(name)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    root.addHandler(console)
+
+    file_handler = SecureTimedRotatingFileHandler(
+        str(LOG_DIR / "ki.log"),
+        when="midnight",
+        interval=1,
+        backupCount=30,
+        encoding="utf-8",
+    )
+    file_handler.setLevel(_logging.DEBUG)
+    file_handler.setFormatter(
+        RedactingFormatter(
+            "%(asctime)s [%(levelname)-7s] %(name)s:%(lineno)d | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    root.addHandler(file_handler)
+
+    _logging.getLogger("httpx").setLevel(_logging.WARNING)
+    _logging.getLogger("httpcore").setLevel(_logging.WARNING)
+    _logging.getLogger("urllib3").setLevel(_logging.WARNING)
+
+
+def _load_dependencies() -> SimpleNamespace:
+    module_names = (
+        "app_lifecycle",
+        "api_middleware",
+        "config_manager",
+        "db",
+        "migrations",
+        "static_delivery",
+        "task_queue",
+        "usage_writer",
+    )
+    route_names = (
+        "dashboard",
+        "source",
+        "event",
+        "translate",
+        "brainstorm",
+        "briefing",
+        "ingest",
+        "series",
+        "config",
+        "task",
+        "usage",
+        "log",
+        "system",
+        "prompt",
+        "study",
+        "chain",
+    )
+    modules = {
+        name: importlib.import_module(f".{name}", __package__) for name in module_names
+    }
+    routes = {
+        name: importlib.import_module(f".routes.{name}_routes", __package__)
+        for name in route_names
+    }
+    return SimpleNamespace(**modules, routes=routes)
+
+
+def _bootstrap_application(
+    *,
+    prepare_runtime: Callable[[], None] = _prepare_runtime,
+    load_dependencies: Callable[[], Any] = _load_dependencies,
+) -> Any:
+    prepare_runtime()
+    return load_dependencies()
+
+
+_dependencies = _bootstrap_application()
+app_lifecycle = _dependencies.app_lifecycle
+api_middleware = _dependencies.api_middleware
+static_delivery = _dependencies.static_delivery
+
+ensure_migrations = _dependencies.migrations.ensure_migrations
+get_db_path = _dependencies.db.get_db_path
+init_db = _dependencies.db.init_db
+seed_default_sources = _dependencies.db.seed_default_sources
+load_config = _dependencies.config_manager.load_config
+start_usage_writer = _dependencies.usage_writer.start_usage_writer
+stop_usage_writer = _dependencies.usage_writer.stop_usage_writer
+start_worker = _dependencies.task_queue.start_worker
+stop_worker = _dependencies.task_queue.stop_worker
+
+TrustedHostMiddleware = api_middleware.TrustedHostMiddleware
+ProtectedPathMiddleware = api_middleware.ProtectedPathMiddleware
+api_auth = api_middleware.api_auth
+spa_fallback = api_middleware.spa_fallback
+hmac = api_middleware.hmac
+_csv_env = api_middleware.csv_env
+_allowed_hosts = api_middleware.allowed_hosts
+_cors_origins = api_middleware.cors_origins
+_api_token = api_middleware.api_token
+_is_loopback_host = api_middleware.is_loopback_host
+_is_protected_path = api_middleware.is_protected_path
+_requires_token_for_request = api_middleware.requires_token_for_request
+_request_token = api_middleware.request_token
+_DEFAULT_ALLOWED_HOSTS = api_middleware.DEFAULT_ALLOWED_HOSTS
+_DEFAULT_CORS_ORIGINS = api_middleware.DEFAULT_CORS_ORIGINS
+_HAS_FRONTEND = api_middleware._HAS_FRONTEND
+
+PUBLIC_INGEST_ARTIFACTS = static_delivery.PUBLIC_INGEST_ARTIFACTS
+
+for _route_name, _route_module in _dependencies.routes.items():
+    globals()[f"{_route_name}_router"] = _route_module.router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: init DB, seed sources, start ingest task worker.
-    Shutdown: gracefully stop worker."""
-    logging.getLogger("main").info("KI server starting — init DB + worker")
-    ensure_migrations(get_db_path())
-    load_config()
-    init_db()
-    seed_default_sources()
-    start_usage_writer()
-    worker_started = False
-    worker_quiesced = False
-    try:
-        start_worker()
-        worker_started = True
-        logging.getLogger("main").info("KI server ready")
-        try:
-            yield
-        finally:
-            logging.getLogger("main").info("KI server shutting down")
-            worker_quiesced = stop_worker() is True
-    finally:
-        if not worker_started or worker_quiesced:
-            stop_usage_writer()
-        else:
-            logging.getLogger("main").error(
-                "Ingest worker is still active; keeping usage writer available until process exit"
-            )
+    # app_lifecycle preserves ensure_migrations(get_db_path()) before load_config().
+    async with app_lifecycle.lifespan(
+        app,
+        logger=logging.getLogger("main"),
+        ensure_migrations=ensure_migrations,
+        get_db_path=get_db_path,
+        load_config=load_config,
+        init_db=init_db,
+        seed_default_sources=seed_default_sources,
+        start_usage_writer=start_usage_writer,
+        stop_usage_writer=stop_usage_writer,
+        start_worker=start_worker,
+        stop_worker=stop_worker,
+    ) as state:
+        yield state
 
 
 app = FastAPI(title="知几", version=__version__, lifespan=lifespan)
-
-_DEFAULT_ALLOWED_HOSTS = ["localhost", "127.0.0.1", "::1", "testserver"]
-_DEFAULT_CORS_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:9120",
-    "http://127.0.0.1:9120",
-    "tauri://localhost",
-    "https://tauri.localhost",
-]
-
-
-def _csv_env(name: str, defaults: list[str]) -> list[str]:
-    value = os.getenv(name, "").strip()
-    if not value:
-        return defaults.copy()
-    return [item.strip() for item in value.split(",") if item.strip()]
-
-
-def _allowed_hosts() -> list[str]:
-    return _csv_env("KI_ALLOWED_HOSTS", _DEFAULT_ALLOWED_HOSTS)
-
-
-def _cors_origins() -> list[str]:
-    return _csv_env("KI_CORS_ORIGINS", _DEFAULT_CORS_ORIGINS)
-
-
-class TrustedHostMiddleware(StarletteTrustedHostMiddleware):
-    """TrustedHostMiddleware with bracketed IPv6 Host parsing."""
-
-    async def __call__(self, scope, receive, send) -> None:
-        if self.allow_any or scope["type"] not in ("http", "websocket"):
-            await self.app(scope, receive, send)
-            return
-
-        host_header = Headers(scope=scope).get("host", "")
-        if host_header.startswith("[") and "]" in host_header:
-            closing_bracket = host_header.index("]")
-            suffix = host_header[closing_bracket + 1:]
-            valid_suffix = not suffix
-            if suffix.startswith(":") and suffix[1:].isdigit():
-                port = int(suffix[1:])
-                valid_suffix = 1 <= port <= 65535
-            host = host_header[1:closing_bracket] if valid_suffix else ""
-        else:
-            host = host_header.split(":", 1)[0]
-
-        is_valid_host = False
-        found_www_redirect = False
-        for pattern in self.allowed_hosts:
-            if host == pattern or (pattern.startswith("*") and host.endswith(pattern[1:])):
-                is_valid_host = True
-                break
-            if "www." + host == pattern:
-                found_www_redirect = True
-
-        if is_valid_host:
-            await self.app(scope, receive, send)
-        elif found_www_redirect and self.www_redirect:
-            url = URL(scope=scope)
-            response = RedirectResponse(url=str(url.replace(netloc="www." + url.netloc)))
-            await response(scope, receive, send)
-        else:
-            response = PlainTextResponse("Invalid host header", status_code=400)
-            await response(scope, receive, send)
-
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=_allowed_hosts())
-
-# ---- 前端静态文件服务 ----
-# FRONTEND_DIST 随包分发（pip install 时一起安装到 site-packages）
-_HAS_FRONTEND = FRONTEND_DIST.exists()
-
-# API token authentication. Local loopback remains open for the desktop app;
-# non-loopback clients must provide KI_API_TOKEN for API and sensitive files.
-
-
-class ProtectedPathMiddleware(BaseHTTPMiddleware):
-    """Tag protected paths so SPA fallback never turns denied files into index.html."""
-
-    async def dispatch(self, request: Request, call_next):
-        if _is_protected_path(request.url.path):
-            request.state.protected_path = True
-        return await call_next(request)
-
-
 app.add_middleware(ProtectedPathMiddleware)
-
-
-def _api_token() -> str:
-    return os.getenv("KI_API_TOKEN", "").strip()
-
-
-def _is_loopback_host(host: str | None) -> bool:
-    return (host or "").split("%", 1)[0] in {"127.0.0.1", "::1", "localhost", "testclient"}
-
-
-def _is_protected_path(path: str) -> bool:
-    return path.startswith("/api") or path.startswith("/ingest") or path.startswith("/releases")
-
-
-def _requires_token_for_request(path: str, client_host: str | None) -> bool:
-    if path == "/api/health" or not _is_protected_path(path):
-        return False
-    return not _is_loopback_host(client_host)
-
-
-def _request_token(request: Request) -> str:
-    auth_header = request.headers.get("Authorization", "")
-    api_key_header = request.headers.get("X-API-Key", "")
-    if auth_header.startswith("Bearer "):
-        return auth_header[7:]
-    return api_key_header
-
-
-@app.middleware("http")
-async def api_auth(request: Request, call_next):
-    """Protect API and sensitive file paths.
-
-    Local loopback clients keep zero-config desktop behavior. Remote clients
-    must send KI_API_TOKEN; if unset, remote protected paths are still denied.
-    Accepts Authorization: Bearer *** or X-API-Key: *** headers."""
-    client_host = request.client.host if request.client else None
-    if _requires_token_for_request(request.url.path, client_host):
-        api_token = _api_token()
-        if request.method == "OPTIONS":
-            return await call_next(request)
-        if not api_token:
-            return JSONResponse({"error": "unauthorized"}, status_code=401)
-        if not hmac.compare_digest(_request_token(request), api_token):
-            return JSONResponse({"error": "unauthorized"}, status_code=401)
-    return await call_next(request)
-
-
-@app.middleware("http")
-async def spa_fallback(request: Request, call_next):
-    """Serve index.html for non-API paths (SPA client-side routing).
-    Only active when frontend dist exists (dev/browser mode)."""
-    response = await call_next(request)
-    if _HAS_FRONTEND and response.status_code == 404 and not getattr(request.state, "protected_path", False):
-        response = FileResponse(FRONTEND_DIST / "index.html")
-    if _HAS_FRONTEND and not request.url.path.startswith("/api"):
-        path = request.url.path
-        if path in ("", "/") or path.endswith((".html", ".js", ".css")):
-            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-            response.headers["Pragma"] = "no-cache"
-            response.headers["Expires"] = "0"
-    return response
-
-
-# Added last so CORS wraps authentication and decorates early 401 responses.
+app.middleware("http")(api_auth)
+app.middleware("http")(spa_fallback)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),
@@ -319,83 +210,63 @@ app.add_middleware(
     ],
 )
 
-
-# ---- Register route modules ----
-
-app.include_router(dashboard_router)
-app.include_router(source_router)
-app.include_router(event_router)
-app.include_router(translate_router)
-app.include_router(brainstorm_router)
-app.include_router(briefing_router)
-app.include_router(ingest_router)
-app.include_router(series_router)
-app.include_router(config_router)
-app.include_router(task_router)
-app.include_router(usage_router)
-app.include_router(log_router)
-app.include_router(system_router)
-app.include_router(prompt_router)
-app.include_router(study_router)
-app.include_router(chain_router)
+for _route_name in (
+    "dashboard",
+    "source",
+    "event",
+    "translate",
+    "brainstorm",
+    "briefing",
+    "ingest",
+    "series",
+    "config",
+    "task",
+    "usage",
+    "log",
+    "system",
+    "prompt",
+    "study",
+    "chain",
+):
+    app.include_router(globals()[f"{_route_name}_router"])
 
 
 @app.get("/api/digest/latest", include_in_schema=False)
 @app.post("/api/digest/generate", include_in_schema=False)
 async def retired_digest_endpoint():
-    """Keep retired digest API paths from falling through to static mounts."""
-    return JSONResponse({"detail": "Not Found"}, status_code=404)
-
-
-# ---- Static file mounts ----
-
-PUBLIC_INGEST_ARTIFACTS = frozenset(
-    {"videos", "audio", "documents", "transcripts", "summaries"}
-)
+    return await static_delivery.retired_digest_endpoint(json_response=JSONResponse)
 
 
 @app.api_route("/ingest/{kind}/{filename:path}", methods=["GET", "HEAD"])
 async def serve_ingest_artifact(kind: str, filename: str):
-    if kind not in PUBLIC_INGEST_ARTIFACTS:
-        raise HTTPException(status_code=404, detail="Not Found")
-    if "/" in filename or "\\" in filename:
-        raise HTTPException(status_code=422, detail="Invalid artifact path")
-    try:
-        safe_identifier(filename)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail="Invalid artifact path") from exc
-    try:
-        opened = open_regular_under(INGEST_ROOT, kind, filename)
-    except ArtifactOpenError:
-        raise HTTPException(status_code=404, detail="Not Found") from None
-    try:
-        return PinnedFileResponse(opened, filename=filename)
-    except BaseException:
-        opened.close()
-        raise
+    return await static_delivery.serve_ingest_artifact(
+        kind,
+        filename,
+        public_ingest_artifacts=PUBLIC_INGEST_ARTIFACTS,
+        ingest_root=INGEST_ROOT,
+        safe_identifier=safe_identifier,
+        open_regular_under=open_regular_under,
+        pinned_file_response=PinnedFileResponse,
+        artifact_open_error=ArtifactOpenError,
+        http_exception=HTTPException,
+    )
+
 
 RELEASES_DIR.mkdir(parents=True, exist_ok=True)
-# Use direct route to avoid conflict with root SPA mount (html=True intercepts everything)
+
+
 @app.api_route("/releases/{filename:path}", methods=["GET", "HEAD"])
 async def serve_release(filename: str):
-    requested = Path(filename)
-    if any(part in {".", ".."} for part in requested.parts):
-        raise HTTPException(status_code=422, detail="Invalid release path")
-    if requested.name != filename or requested.suffix.lower() not in {".dmg", ".xml"}:
-        raise HTTPException(status_code=404, detail="Not Found")
-    try:
-        safe_identifier(filename)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail="Invalid release path") from exc
-    try:
-        opened = open_regular_under(RELEASES_DIR, filename)
-    except ArtifactOpenError:
-        raise HTTPException(status_code=404, detail="Not Found") from None
-    try:
-        return PinnedFileResponse(opened, filename=filename)
-    except BaseException:
-        opened.close()
-        raise
+    return await static_delivery.serve_release(
+        filename,
+        releases_dir=RELEASES_DIR,
+        path_type=Path,
+        safe_identifier=safe_identifier,
+        open_regular_under=open_regular_under,
+        pinned_file_response=PinnedFileResponse,
+        artifact_open_error=ArtifactOpenError,
+        http_exception=HTTPException,
+    )
 
-if _HAS_FRONTEND:
-    app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
+
+static_delivery.mount_frontend(app, frontend_dist=FRONTEND_DIST)

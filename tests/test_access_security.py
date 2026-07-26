@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 import os
 import sys
 from pathlib import Path
@@ -353,6 +354,78 @@ def test_release_route_rejects_percent_encoded_traversal_and_symlink(tmp_path, m
     assert traversal.status_code == 422
     assert symlink.status_code == 404
     assert b"outside-release" not in traversal.content + symlink.content
+
+
+def test_protected_spa_fallback_never_serves_frontend_index(tmp_path, monkeypatch):
+    from starlette.requests import Request
+    from starlette.responses import Response
+
+    from zhiji_backend import api_middleware
+
+    frontend_dist = tmp_path / "frontend"
+    frontend_dist.mkdir()
+    (frontend_dist / "index.html").write_text("frontend-index", encoding="utf-8")
+    monkeypatch.setattr(api_middleware, "FRONTEND_DIST", frontend_dist)
+    monkeypatch.setattr(api_middleware, "_HAS_FRONTEND", True)
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/ingest/private/missing.txt",
+            "raw_path": b"/ingest/private/missing.txt",
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 50000),
+            "server": ("testserver", 80),
+            "scheme": "http",
+        }
+    )
+    request.state.protected_path = True
+
+    async def missing_response(_request):
+        return Response(status_code=404)
+
+    async def exercise():
+        return await api_middleware.spa_fallback(request, missing_response)
+
+    response = asyncio.run(exercise())
+
+    assert response.status_code == 404
+    assert response.headers.get("cache-control") is None
+
+
+def test_static_delivery_closes_opened_artifact_when_response_creation_fails():
+    from fastapi import HTTPException
+
+    from zhiji_backend import static_delivery
+
+    class OpenedSpy:
+        closed = False
+
+        def close(self):
+            self.closed = True
+
+    opened = OpenedSpy()
+
+    async def exercise():
+        await static_delivery.serve_ingest_artifact(
+            "videos",
+            "event.mp4",
+            public_ingest_artifacts={"videos"},
+            ingest_root=object(),
+            safe_identifier=lambda value: value,
+            open_regular_under=lambda *_args: opened,
+            pinned_file_response=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                RuntimeError("response failed")
+            ),
+            artifact_open_error=OSError,
+            http_exception=HTTPException,
+        )
+
+    with pytest.raises(RuntimeError, match="response failed"):
+        asyncio.run(exercise())
+
+    assert opened.closed is True
 
 
 @pytest.mark.parametrize("host", ["127.0.0.1", "localhost", "::1"])

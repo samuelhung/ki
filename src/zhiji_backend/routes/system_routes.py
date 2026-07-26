@@ -4,10 +4,9 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from ..db import connect
+from ..paths import DATA_DIR as DATA_ROOT
 
 router = APIRouter(prefix="/api/system", tags=["system"])
-
-from ..paths import DATA_DIR as DATA_ROOT
 
 TABLE_DESCRIPTIONS: dict[str, str] = {
     "events": "采集事件",

@@ -9,10 +9,10 @@ from pathlib import Path
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 
-router = APIRouter(prefix="/api/logs", tags=["logs"])
-
 from ..paths import LOG_DIR
 from ..security.redaction import redact_text
+
+router = APIRouter(prefix="/api/logs", tags=["logs"])
 
 LOG_FILE = LOG_DIR / "ki.log"
 

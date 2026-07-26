@@ -1,6 +1,8 @@
+import asyncio
 import sys
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -156,3 +158,93 @@ def test_releases_only_serves_top_level_dmg_or_appcast(tmp_path, monkeypatch):
     assert client.get("/releases/appcast.xml").status_code == 404
     assert client.get("/releases/secret.txt").status_code == 404
     assert client.get("/releases/nested/zhiji_1.3.7.dmg").status_code == 404
+
+
+def test_extracted_lifespan_preserves_cancellation_and_cleanup_order():
+    from zhiji_backend import app_lifecycle
+
+    calls = []
+
+    class LoggerSpy:
+        def info(self, message):
+            calls.append(("info", message))
+
+        def error(self, message):
+            calls.append(("error", message))
+
+    def record(name, result=None):
+        def operation(*_args):
+            calls.append(name)
+            return result
+
+        return operation
+
+    async def exercise():
+        with pytest.raises(asyncio.CancelledError):
+            async with app_lifecycle.lifespan(
+                object(),
+                logger=LoggerSpy(),
+                ensure_migrations=record("migrate"),
+                get_db_path=lambda: calls.append("db-path") or Path("db.sqlite"),
+                load_config=record("config"),
+                init_db=record("db"),
+                seed_default_sources=record("seed"),
+                start_usage_writer=record("usage-start"),
+                stop_usage_writer=record("usage-stop"),
+                start_worker=record("worker-start"),
+                stop_worker=record("worker-stop", True),
+            ):
+                calls.append("running")
+                raise asyncio.CancelledError
+
+    asyncio.run(exercise())
+
+    assert calls == [
+        ("info", "KI server starting — init DB + worker"),
+        "db-path",
+        "migrate",
+        "config",
+        "db",
+        "seed",
+        "usage-start",
+        "worker-start",
+        ("info", "KI server ready"),
+        "running",
+        ("info", "KI server shutting down"),
+        "worker-stop",
+        "usage-stop",
+    ]
+
+
+def test_application_bootstrap_prepares_environment_before_importing_dependencies():
+    from zhiji_backend import main
+
+    calls = []
+    dependencies = object()
+
+    result = main._bootstrap_application(
+        prepare_runtime=lambda: calls.append("prepare-runtime"),
+        load_dependencies=lambda: calls.append("load-dependencies") or dependencies,
+    )
+
+    assert result is dependencies
+    assert calls == ["prepare-runtime", "load-dependencies"]
+
+
+def test_missing_frontend_is_not_mounted(tmp_path):
+    from zhiji_backend import static_delivery
+
+    calls = []
+
+    class AppSpy:
+        def mount(self, *args, **kwargs):
+            calls.append((args, kwargs))
+
+    mounted = static_delivery.mount_frontend(
+        AppSpy(),
+        frontend_dist=tmp_path / "missing",
+        static_files=lambda **_kwargs: pytest.fail("StaticFiles must not be created"),
+    )
+
+    assert mounted is False
+    assert calls == []
