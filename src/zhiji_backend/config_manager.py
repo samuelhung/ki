@@ -10,33 +10,40 @@ import copy
 import json
 import logging
 import os
-import stat
-import tempfile
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
-from . import credential_store
+from . import config_persistence, credential_store
+from .paths import CONFIG_PATH
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_AI_MODEL = "deepseek-v4-pro-max"
 DEFAULT_AI_BASE_URL = "http://10.8.0.13:3000/v1"
 
-from .paths import CONFIG_PATH
-
 _config: dict[str, Any] = {}
 _config_lock = threading.RLock()
 
+_ConfigFileSnapshot = config_persistence._ConfigFileSnapshot
+_write_config = config_persistence.write_config
+_snapshot_config_file = config_persistence.snapshot_config_file
+_config_file_matches = config_persistence.config_file_matches
+_restore_config_file = config_persistence.restore_config_file
+_reject_config_symlink = config_persistence.reject_config_symlink
+_fsync_parent_directory = config_persistence.fsync_parent_directory
 
-@dataclass(frozen=True)
-class _ConfigFileSnapshot:
-    exists: bool
-    data: bytes
-    mode: int
+
+@contextmanager
+def _persistence_scope() -> Iterator[None]:
+    dependencies = config_persistence.PersistenceDependencies(
+        config_path=CONFIG_PATH,
+        os_module=os,
+        logger=logger,
+    )
+    with config_persistence.persistence_scope(dependencies):
+        yield
 
 
 def _defaults() -> dict:
@@ -91,7 +98,8 @@ def _defaults() -> dict:
 def load_config(*, persist_normalization: bool = True) -> dict[str, Any]:
     """Load config from disk, falling back to defaults if missing/corrupt."""
     with _config_lock:
-        return _load_config_unlocked(persist_normalization=persist_normalization)
+        with _persistence_scope():
+            return _load_config_unlocked(persist_normalization=persist_normalization)
 
 
 def _load_config_unlocked(*, persist_normalization: bool = True) -> dict[str, Any]:
@@ -184,7 +192,8 @@ def get_config_and_credential() -> tuple[dict[str, Any], str]:
 def save_config(config: dict | None = None) -> None:
     """Persist config to disk. If config is None, saves the current in-memory copy."""
     with _config_lock:
-        _save_config_unlocked(config)
+        with _persistence_scope():
+            _save_config_unlocked(config)
 
 
 def update_config_and_credential(
@@ -213,7 +222,7 @@ def update_config_and_credential(
 def _config_credential_transaction() -> Iterator[None]:
     global _config
     with _config_lock:
-        with credential_store.locked():
+        with credential_store.locked(), _persistence_scope():
             config_snapshot = _snapshot_config_file()
             credential_snapshot = credential_store.snapshot_state()
             active_before = _config
@@ -253,113 +262,6 @@ def _build_active_config(config: dict | None = None) -> dict:
         incoming, _ = _scrub_api_key(incoming)
         active = _deep_merge(active, incoming)
     return active
-
-
-def _write_config(config: dict) -> None:
-    """Atomically write a config payload without changing in-memory state."""
-    _reject_config_symlink()
-    config, _ = _scrub_api_key(config)
-    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    temp_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=CONFIG_PATH.parent,
-            prefix=f".{CONFIG_PATH.name}.",
-            suffix=".tmp",
-            delete=False,
-        ) as temp_file:
-            temp_path = Path(temp_file.name)
-            os.fchmod(temp_file.fileno(), 0o600)
-            json.dump(config, temp_file, ensure_ascii=False, indent=2)
-            temp_file.flush()
-            os.fsync(temp_file.fileno())
-        os.chmod(temp_path, 0o600)
-        os.replace(temp_path, CONFIG_PATH)
-        temp_path = None
-        _fsync_parent_directory()
-        logger.info("Saved system config to %s", CONFIG_PATH)
-    finally:
-        if temp_path is not None:
-            temp_path.unlink(missing_ok=True)
-
-
-def _snapshot_config_file() -> _ConfigFileSnapshot:
-    _reject_config_symlink()
-    exists = CONFIG_PATH.exists()
-    return _ConfigFileSnapshot(
-        exists=exists,
-        data=CONFIG_PATH.read_bytes() if exists else b"",
-        mode=stat.S_IMODE(CONFIG_PATH.stat().st_mode) if exists else 0o600,
-    )
-
-
-def _config_file_matches(snapshot: _ConfigFileSnapshot) -> bool:
-    _reject_config_symlink()
-    exists = CONFIG_PATH.exists()
-    if exists != snapshot.exists:
-        return False
-    if not exists:
-        return True
-    return (
-        CONFIG_PATH.read_bytes() == snapshot.data
-        and stat.S_IMODE(CONFIG_PATH.stat().st_mode) == snapshot.mode
-    )
-
-
-def _restore_config_file(snapshot: _ConfigFileSnapshot) -> None:
-    _reject_config_symlink()
-    if not snapshot.exists:
-        CONFIG_PATH.unlink(missing_ok=True)
-        return
-
-    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    temp_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="wb",
-            dir=CONFIG_PATH.parent,
-            prefix=f".{CONFIG_PATH.name}.rollback.",
-            suffix=".tmp",
-            delete=False,
-        ) as temp_file:
-            temp_path = Path(temp_file.name)
-            os.fchmod(temp_file.fileno(), snapshot.mode)
-            temp_file.write(snapshot.data)
-            temp_file.flush()
-            os.fsync(temp_file.fileno())
-        os.replace(temp_path, CONFIG_PATH)
-        temp_path = None
-    finally:
-        if temp_path is not None:
-            temp_path.unlink(missing_ok=True)
-
-
-def _reject_config_symlink() -> None:
-    try:
-        mode = os.lstat(CONFIG_PATH).st_mode
-    except FileNotFoundError:
-        return
-    if stat.S_ISLNK(mode):
-        raise OSError(f"refusing to use symlink system config: {CONFIG_PATH}")
-
-
-def _fsync_parent_directory() -> None:
-    """Durably record the atomic rename on filesystems that support directory fsync."""
-    directory_fd: int | None = None
-    try:
-        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-        directory_fd = os.open(CONFIG_PATH.parent, flags)
-        os.fsync(directory_fd)
-    except OSError:
-        logger.debug("Parent directory fsync is unavailable for %s", CONFIG_PATH.parent, exc_info=True)
-    finally:
-        if directory_fd is not None:
-            try:
-                os.close(directory_fd)
-            except OSError:
-                logger.debug("Failed to close config directory fd", exc_info=True)
 
 
 def get_module_config(module: str, task: str) -> dict:
