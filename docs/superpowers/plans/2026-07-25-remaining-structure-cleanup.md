@@ -148,11 +148,11 @@
 - Modify: `src/zhiji_backend/security/redaction.py`
 - Modify: `tests/test_log_redaction.py`
 
-- [ ] Move log-path symlink rejection, permission hardening, `SecureTimedRotatingFileHandler`, rollover safety, and handler setup into `security/log_handlers.py`.
-- [ ] Keep value detection, URL/assignment/structure redaction, `RedactingFormatter`, bounding, and task-error classification in `security/redaction.py`.
-- [ ] Preserve import compatibility by re-exporting moved handler names from `security.redaction` until repository consumers migrate.
-- [ ] Test rotation, symlink races, file modes, multiline secrets, nested payloads, bounded output, and stable task-error summaries.
-- [ ] Commit with `git commit -m "refactor: separate secure logging from redaction"`.
+- [x] Move log-path symlink rejection, permission hardening, `SecureTimedRotatingFileHandler`, rollover safety, and handler setup into `security/log_handlers.py`.
+- [x] Keep value detection, URL/assignment/structure redaction, `RedactingFormatter`, bounding, and task-error classification in `security/redaction.py`.
+- [x] Preserve import compatibility by re-exporting moved handler names from `security.redaction` until repository consumers migrate.
+- [x] Test rotation, symlink races, file modes, multiline secrets, nested payloads, bounded output, and stable task-error summaries.
+- [x] Commit with `git commit -m "refactor: separate secure logging from redaction"`.
 
 ### Task 2.5: Split application lifecycle, middleware, and static delivery
 
