@@ -179,8 +179,8 @@
 
 - [x] Require `db.py`, `config_manager.py`, `main.py`, `security/redaction.py`, and every new module to be at most 400 lines.
 - [x] Remove exactly those four baseline entries and the four resolved E402 entries.
-- [ ] Run platform-focused tests, complete pytest, `scripts/check.sh`, backend smoke, protected endpoint `401`, public `/api/health`, detailed `/api/system/health`, and `git diff --check`.
-- [ ] Request independent review focused on migration ordering, auth bypass, middleware order, credential rollback, and secret leakage.
+- [x] Run platform-focused tests, complete pytest, `scripts/check.sh`, backend smoke, protected endpoint `401`, public `/api/health`, detailed `/api/system/health`, and `git diff --check`.
+- [x] Request independent review focused on migration ordering, auth bypass, middleware order, credential rollback, and secret leakage.
 - [ ] Commit, push Draft PR, merge after CI, and fast-forward `main`.
 
 ## PR 3: Ingestion Pipeline
