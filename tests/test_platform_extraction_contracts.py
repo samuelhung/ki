@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import importlib
 import inspect
 import json
@@ -148,10 +147,162 @@ PUBLIC_SIGNATURES = {
     },
 }
 
+EXPECTED_ROUTE_ORDER = [
+    ("Route", "/openapi.json", ("GET", "HEAD"), "openapi"),
+    ("Route", "/docs", ("GET", "HEAD"), "swagger_ui_html"),
+    ("Route", "/docs/oauth2-redirect", ("GET", "HEAD"), "swagger_ui_redirect"),
+    ("Route", "/redoc", ("GET", "HEAD"), "redoc_html"),
+    ("IncludedRouter", "dashboard_router"),
+    ("IncludedRouter", "source_router"),
+    ("IncludedRouter", "event_router"),
+    ("IncludedRouter", "translate_router"),
+    ("IncludedRouter", "brainstorm_router"),
+    ("IncludedRouter", "briefing_router"),
+    ("IncludedRouter", "ingest_router"),
+    ("IncludedRouter", "series_router"),
+    ("IncludedRouter", "config_router"),
+    ("IncludedRouter", "task_router"),
+    ("IncludedRouter", "usage_router"),
+    ("IncludedRouter", "log_router"),
+    ("IncludedRouter", "system_router"),
+    ("IncludedRouter", "prompt_router"),
+    ("IncludedRouter", "study_router"),
+    ("IncludedRouter", "chain_router"),
+    ("APIRoute", "/api/digest/generate", ("POST",), "retired_digest_endpoint"),
+    ("APIRoute", "/api/digest/latest", ("GET",), "retired_digest_endpoint"),
+    (
+        "APIRoute",
+        "/ingest/{kind}/{filename:path}",
+        ("GET", "HEAD"),
+        "serve_ingest_artifact",
+    ),
+    ("APIRoute", "/releases/{filename:path}", ("GET", "HEAD"), "serve_release"),
+]
 
-def _digest(value: Any) -> str:
-    encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode()
-    return hashlib.sha256(encoded).hexdigest()
+EXPECTED_OPENAPI_OPERATIONS = [
+    ("/api/health", "get", "health_api_health_get"),
+    ("/api/system/health", "get", "system_health_api_system_health_get"),
+    ("/api/ingest/stats", "get", "ingest_stats_api_ingest_stats_get"),
+    ("/api/dashboard/summary", "get", "dashboard_summary_api_dashboard_summary_get"),
+    ("/api/dashboard/trend", "get", "dashboard_trend_api_dashboard_trend_get"),
+    ("/api/sources", "get", "list_sources_api_sources_get"),
+    ("/api/sources/{source_id}/toggle", "put", "toggle_source_api_sources__source_id__toggle_put"),
+    ("/api/sources/{source_id}/collect", "post", "collect_source_api_sources__source_id__collect_post"),
+    ("/api/events", "get", "list_events_api_events_get"),
+    ("/api/events/topic-counts", "get", "event_topic_counts_api_events_topic_counts_get"),
+    ("/api/events/{event_id}", "get", "get_event_api_events__event_id__get"),
+    ("/api/events/{event_id}", "delete", "delete_event_api_events__event_id__delete"),
+    ("/api/events/batch-delete", "post", "batch_delete_events_api_events_batch_delete_post"),
+    ("/api/events/{event_id}/summarize", "post", "summarize_event_api_events__event_id__summarize_post"),
+    ("/api/collect", "post", "collect_api_collect_post"),
+    ("/api/events/{event_id}/tag", "post", "tag_single_event_api_events__event_id__tag_post"),
+    ("/api/tag/batch", "post", "tag_batch_api_tag_batch_post"),
+    ("/api/events/{event_id}/similar", "get", "similar_events_api_events__event_id__similar_get"),
+    ("/api/classify/batch", "post", "batch_classify_api_classify_batch_post"),
+    ("/api/classify/event/{event_id}", "post", "classify_single_api_classify_event__event_id__post"),
+    ("/api/translate/run", "post", "run_translation_api_translate_run_post"),
+    ("/api/translate/backfill", "post", "backfill_translation_api_translate_backfill_post"),
+    ("/api/brainstorm", "get", "list_brainstorm_questions_api_brainstorm_get"),
+    ("/api/brainstorm", "post", "create_brainstorm_question_api_brainstorm_post"),
+    ("/api/brainstorm/topic-counts", "get", "brainstorm_topic_counts_api_brainstorm_topic_counts_get"),
+    ("/api/brainstorm/{question_id}", "get", "get_brainstorm_question_api_brainstorm__question_id__get"),
+    ("/api/brainstorm/{question_id}", "delete", "delete_brainstorm_question_api_brainstorm__question_id__delete"),
+    ("/api/brainstorm/batch-delete", "post", "batch_delete_brainstorm_questions_api_brainstorm_batch_delete_post"),
+    ("/api/brainstorm/{question_id}/done", "post", "mark_brainstorm_done_api_brainstorm__question_id__done_post"),
+    ("/api/brainstorm/answer", "post", "get_answer_for_question_api_brainstorm_answer_post"),
+    ("/api/brainstorm/{question_id}/conversation/start", "post", "start_conversation_api_brainstorm__question_id__conversation_start_post"),
+    ("/api/brainstorm/{question_id}/conversation/message", "post", "send_conversation_message_api_brainstorm__question_id__conversation_message_post"),
+    ("/api/brainstorm/{question_id}/conversation", "get", "get_conversation_api_brainstorm__question_id__conversation_get"),
+    ("/api/brainstorm/{question_id}/conversation/summary", "post", "generate_conversation_summary_api_brainstorm__question_id__conversation_summary_post"),
+    ("/api/brainstorm/contemplate", "post", "contemplate_api_brainstorm_contemplate_post"),
+    ("/api/brainstorm/event/{event_id}/linked-questions", "get", "get_linked_questions_api_brainstorm_event__event_id__linked_questions_get"),
+    ("/api/brainstorm/{question_id}/concepts", "get", "list_summary_concepts_api_brainstorm__question_id__concepts_get"),
+    ("/api/brainstorm/concepts/precipitate", "post", "precipitate_concept_api_brainstorm_concepts_precipitate_post"),
+    ("/api/briefing/generate", "post", "generate_news_briefing_api_briefing_generate_post"),
+    ("/api/briefing/latest", "get", "get_latest_briefing_api_briefing_latest_get"),
+    ("/api/briefing", "get", "get_briefing_history_api_briefing_get"),
+    ("/api/briefing/{briefing_id}", "get", "get_briefing_detail_api_briefing__briefing_id__get"),
+    ("/api/ingest/douyin", "post", "ingest_douyin_api_ingest_douyin_post"),
+    ("/api/ingest/concept", "post", "ingest_concept_api_ingest_concept_post"),
+    ("/api/ingest/file", "post", "ingest_file_api_ingest_file_post"),
+    ("/api/ingest/queue", "get", "ingest_queue_api_ingest_queue_get"),
+    ("/api/ingest/status/{event_id}", "get", "ingest_status_api_ingest_status__event_id__get"),
+    ("/api/ingest/clear-old", "delete", "clear_old_ingest_api_ingest_clear_old_delete"),
+    ("/api/ingest/queue/{task_id}", "delete", "delete_queue_task_api_ingest_queue__task_id__delete"),
+    ("/api/ingest/queue/{task_id}/retry", "post", "retry_queue_task_api_ingest_queue__task_id__retry_post"),
+    ("/api/ingest/series", "get", "list_series_api_ingest_series_get"),
+    ("/api/ingest/series", "post", "create_series_api_ingest_series_post"),
+    ("/api/ingest/series/candidates", "get", "list_candidates_api_ingest_series_candidates_get"),
+    ("/api/ingest/series/discover", "post", "discover_series_api_ingest_series_discover_post"),
+    ("/api/ingest/series/discover/stage1", "post", "discover_stage1_api_ingest_series_discover_stage1_post"),
+    ("/api/ingest/series/discover/stage2", "post", "discover_stage2_api_ingest_series_discover_stage2_post"),
+    ("/api/ingest/series/discover/by-topic", "post", "discover_by_topic_api_ingest_series_discover_by_topic_post"),
+    ("/api/ingest/series/{series_id}/expand", "post", "expand_series_api_ingest_series__series_id__expand_post"),
+    ("/api/ingest/series/suggest-name", "post", "suggest_series_name_api_ingest_series_suggest_name_post"),
+    ("/api/ingest/series/{series_id}", "delete", "delete_series_api_ingest_series__series_id__delete"),
+    ("/api/ingest/series/{series_id}", "put", "update_series_api_ingest_series__series_id__put"),
+    ("/api/ingest/series/{series_id}", "get", "get_series_detail_api_ingest_series__series_id__get"),
+    ("/api/ingest/series/merge", "post", "merge_series_api_ingest_series_merge_post"),
+    ("/api/ingest/series/{series_id}/intro", "put", "generate_series_intro_api_ingest_series__series_id__intro_put"),
+    ("/api/ingest/series/{series_id}/summary", "put", "generate_series_summary_api_ingest_series__series_id__summary_put"),
+    ("/api/ingest/series/{series_id}/paper", "put", "generate_series_paper_api_ingest_series__series_id__paper_put"),
+    ("/api/ingest/series/{series_id}/sort", "put", "reorder_series_api_ingest_series__series_id__sort_put"),
+    ("/api/ingest/series/{series_id}/suggestions", "get", "get_series_suggestions_api_ingest_series__series_id__suggestions_get"),
+    ("/api/ingest/series/{series_id}/members", "post", "add_series_members_api_ingest_series__series_id__members_post"),
+    ("/api/system-config", "get", "read_config_api_system_config_get"),
+    ("/api/system-config", "put", "write_config_api_system_config_put"),
+    ("/api/tasks", "get", "list_tasks_api_tasks_get"),
+    ("/api/tasks", "post", "create_task_api_tasks_post"),
+    ("/api/tasks/due", "get", "list_tasks_due_range_api_tasks_due_get"),
+    ("/api/tasks/stats", "get", "get_task_stats_api_tasks_stats_get"),
+    ("/api/tasks/{task_id}", "get", "get_task_api_tasks__task_id__get"),
+    ("/api/tasks/{task_id}", "put", "update_task_api_tasks__task_id__put"),
+    ("/api/tasks/{task_id}", "delete", "delete_task_api_tasks__task_id__delete"),
+    ("/api/tasks/{task_id}/judge", "post", "judge_task_api_tasks__task_id__judge_post"),
+    ("/api/usage/dashboard", "get", "dashboard_api_usage_dashboard_get"),
+    ("/api/logs", "get", "get_logs_api_logs_get"),
+    ("/api/system/database", "get", "database_info_api_system_database_get"),
+    ("/api/system/prompts", "get", "list_prompts_api_system_prompts_get"),
+    ("/api/study/list", "get", "list_materials_api_study_list_get"),
+    ("/api/study/{material_id}", "get", "get_material_api_study__material_id__get"),
+    ("/api/study/{material_id}", "put", "update_material_api_study__material_id__put"),
+    ("/api/study/{material_id}", "delete", "delete_material_api_study__material_id__delete"),
+    ("/api/study/create", "post", "create_material_api_study_create_post"),
+    ("/api/study/upload", "post", "upload_and_ocr_api_study_upload_post"),
+    ("/api/study/{material_id}/generate", "post", "generate_material_api_study__material_id__generate_post"),
+    ("/api/study/{material_id}/review", "post", "review_mistake_api_study__material_id__review_post"),
+    ("/api/study/{material_id}/file/{fmt}", "get", "get_study_file_api_study__material_id__file__fmt__get"),
+    ("/api/study/upload-image", "post", "upload_image_api_study_upload_image_post"),
+    ("/api/study/mistakes/list", "get", "list_mistakes_api_study_mistakes_list_get"),
+    ("/api/study/stats", "get", "get_stats_api_study_stats_get"),
+    ("/api/chains", "get", "list_chains_api_chains_get"),
+    ("/api/chains/meta", "get", "list_chain_meta_api_chains_meta_get"),
+    ("/api/chains/flow-summary", "post", "save_flow_summary_api_chains_flow_summary_post"),
+    ("/api/chains/nodes", "get", "list_nodes_api_chains_nodes_get"),
+    ("/api/chains/nodes", "post", "create_node_api_chains_nodes_post"),
+    ("/api/chains/analyze", "post", "analyze_chain_impact_api_chains_analyze_post"),
+    ("/api/chains/report", "post", "chain_report_api_chains_report_post"),
+    ("/api/chains/nodes/{node_id}", "put", "update_node_api_chains_nodes__node_id__put"),
+    ("/api/chains/nodes/{node_id}", "delete", "delete_node_api_chains_nodes__node_id__delete"),
+    ("/api/chains/nodes/ai-update", "post", "ai_update_node_api_chains_nodes_ai_update_post"),
+    ("/api/chains/nodes/ai-collect", "post", "ai_collect_node_data_api_chains_nodes_ai_collect_post"),
+    ("/api/chains/ai-collect-all", "post", "ai_collect_chain_all_api_chains_ai_collect_all_post"),
+    ("/api/chains/hints", "get", "list_hints_api_chains_hints_get"),
+    ("/api/chains/hints/count", "get", "count_hints_api_chains_hints_count_get"),
+    ("/api/chains/hints/{hint_id}/resolve", "post", "resolve_hint_api_chains_hints__hint_id__resolve_post"),
+    ("/api/chains/suggestions", "get", "list_suggestions_api_chains_suggestions_get"),
+    ("/api/chains/suggestions/count", "get", "count_suggestions_api_chains_suggestions_count_get"),
+    ("/api/chains/suggestions/{sid}/adopt", "post", "adopt_suggestion_api_chains_suggestions__sid__adopt_post"),
+    ("/api/chains/suggestions/{sid}/dismiss", "post", "dismiss_suggestion_api_chains_suggestions__sid__dismiss_post"),
+    ("/api/chains/hints/sync", "post", "sync_extracted_hints_api_chains_hints_sync_post"),
+    ("/api/chains/chat", "post", "chain_chat_api_chains_chat_post"),
+    ("/api/chains/overlap-check", "get", "check_chain_overlaps_api_chains_overlap_check_get"),
+    ("/api/chains/merge", "post", "merge_chains_api_chains_merge_post"),
+    ("/ingest/{kind}/{filename}", "get", "serve_ingest_artifact_ingest__kind___filename__get"),
+    ("/ingest/{kind}/{filename}", "head", "serve_ingest_artifact_ingest__kind___filename__get"),
+    ("/releases/{filename}", "get", "serve_release_releases__filename__get"),
+    ("/releases/{filename}", "head", "serve_release_releases__filename__get"),
+]
 
 
 def _planned_module(name: str) -> Any:
@@ -301,39 +452,55 @@ def test_default_source_seed_count_and_idempotence(tmp_path, monkeypatch) -> Non
 
 
 def test_fastapi_route_order_and_openapi_operation_ids_are_stable() -> None:
-    route_snapshot = [
-        (
-            type(route).__name__,
-            getattr(route, "path", None),
-            tuple(sorted(getattr(route, "methods", ()) or ())),
-            getattr(route, "name", None),
+    router_names = {
+        id(getattr(main, name)): name
+        for name in (
+            "dashboard_router",
+            "source_router",
+            "event_router",
+            "translate_router",
+            "brainstorm_router",
+            "briefing_router",
+            "ingest_router",
+            "series_router",
+            "config_router",
+            "task_router",
+            "usage_router",
+            "log_router",
+            "system_router",
+            "prompt_router",
+            "study_router",
+            "chain_router",
         )
-        for route in main.app.routes
-    ]
-    assert len(route_snapshot) == 24
-    assert _digest(route_snapshot) == (
-        "7bed4e2d9d005ebfc01d53dbd18242e499e84d1539b81e25e01acad78ee4e0c4"
-    )
+    }
+    route_snapshot = []
+    for route in main.app.routes:
+        if type(route).__name__ == "_IncludedRouter":
+            route_snapshot.append(
+                (
+                    "IncludedRouter",
+                    router_names.get(id(route.original_router), "<unknown-router>"),
+                )
+            )
+        else:
+            route_snapshot.append(
+                (
+                    type(route).__name__,
+                    getattr(route, "path", None),
+                    tuple(sorted(getattr(route, "methods", ()) or ())),
+                    getattr(route, "name", None),
+                )
+            )
+    assert route_snapshot == EXPECTED_ROUTE_ORDER
 
-    stable_operations = []
-    for path, path_item in main.app.openapi()["paths"].items():
-        for method, operation in path_item.items():
-            snapshot = (path, method, operation["operationId"])
-            if path not in {"/ingest/{kind}/{filename}", "/releases/{filename}"}:
-                stable_operations.append(snapshot)
-
-    assert len(stable_operations) == 118
-    assert _digest(stable_operations) == (
-        "aff6f53139311a554f48b216df56df07d21ef5e8943a1e79566d99b578afdfb4"
-    )
     snapshot_script = """
 import json
 from zhiji_backend.main import app
 paths = app.openapi()["paths"]
 print(json.dumps([
     (path, method, operation["operationId"])
-    for path in ("/ingest/{kind}/{filename}", "/releases/{filename}")
-    for method, operation in paths[path].items()
+    for path, path_item in paths.items()
+    for method, operation in path_item.items()
 ]))
 """
     environment = dict(os.environ, PYTHONHASHSEED="0")
@@ -344,40 +511,50 @@ print(json.dumps([
         env=environment,
         text=True,
     )
-    assert json.loads(completed.stdout) == [
-        [
-            "/ingest/{kind}/{filename}",
-            "get",
-            "serve_ingest_artifact_ingest__kind___filename__get",
-        ],
-        [
-            "/ingest/{kind}/{filename}",
-            "head",
-            "serve_ingest_artifact_ingest__kind___filename__get",
-        ],
-        [
-            "/releases/{filename}",
-            "get",
-            "serve_release_releases__filename__get",
-        ],
-        [
-            "/releases/{filename}",
-            "head",
-            "serve_release_releases__filename__get",
-        ],
+    operation_snapshot = [tuple(item) for item in json.loads(completed.stdout)]
+    assert operation_snapshot == EXPECTED_OPENAPI_OPERATIONS
+
+
+@pytest.mark.parametrize(
+    "first_module_name",
+    ["db_schema", "db_migrations"],
+    ids=["db-schema", "db-migrations"],
+)
+def test_db_platform_forwarding_contract(first_module_name, monkeypatch) -> None:
+    first_module = _planned_module(first_module_name)
+    other_module_name = (
+        "db_migrations" if first_module_name == "db_schema" else "db_schema"
+    )
+    other_module = _planned_module(other_module_name)
+    modules = {
+        first_module_name: first_module,
+        other_module_name: other_module,
+    }
+    connection = object()
+    calls: list[tuple[str, object]] = []
+
+    @contextmanager
+    def fake_connect(**_kwargs):
+        yield connection
+
+    monkeypatch.setattr(db, "connect", fake_connect)
+    monkeypatch.setattr(
+        modules["db_schema"],
+        "create_schema",
+        lambda received: calls.append(("create_schema", received)),
+    )
+    monkeypatch.setattr(
+        modules["db_migrations"],
+        "run_migrations",
+        lambda received: calls.append(("run_migrations", received)),
+    )
+
+    db.init_db()
+
+    assert calls == [
+        ("create_schema", connection),
+        ("run_migrations", connection),
     ]
-
-
-def test_db_schema_forwarding_contract() -> None:
-    module = _planned_module("db_schema")
-    assert callable(module.create_schema)
-    assert "create_schema" in db.init_db.__code__.co_names
-
-
-def test_db_migrations_forwarding_contract() -> None:
-    module = _planned_module("db_migrations")
-    assert callable(module.run_migrations)
-    assert "run_migrations" in db.init_db.__code__.co_names
 
 
 def test_config_persistence_forwarding_contract() -> None:
