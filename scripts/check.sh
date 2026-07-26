@@ -359,27 +359,13 @@ def runtime_route(node: ast.AST) -> tuple[str, str, bool] | None:
     return registration.func.attr, path.value, hidden
 
 
-def exact_return(function: ast.FunctionDef | ast.AsyncFunctionDef) -> ast.Return | None:
-    body = function.body
-    if (
-        body
-        and isinstance(body[0], ast.Expr)
-        and isinstance(body[0].value, ast.Constant)
-        and isinstance(body[0].value.value, str)
-    ):
-        body = body[1:]
-    if len(body) != 1 or not isinstance(body[0], ast.Return):
-        return None
-    return body[0]
-
-
 def returns_named_404(
     function: ast.FunctionDef | ast.AsyncFunctionDef, response_name: str
 ) -> bool:
-    returned = exact_return(function)
-    if returned is None or not isinstance(returned.value, ast.Call):
+    returns = [node for node in function.body if isinstance(node, ast.Return)]
+    if len(returns) != 1 or not isinstance(returns[0].value, ast.Call):
         return False
-    call = returned.value
+    call = returns[0].value
     if call_name(call.func) != response_name:
         return False
     return any(
@@ -395,10 +381,10 @@ def returns_json_404(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
 
 
 def delegates_retired_digest(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
-    returned = exact_return(function)
-    if returned is None or not isinstance(returned.value, ast.Await):
+    returns = [node for node in function.body if isinstance(node, ast.Return)]
+    if len(returns) != 1 or not isinstance(returns[0].value, ast.Await):
         return False
-    call = returned.value.value
+    call = returns[0].value.value
     if not isinstance(call, ast.Call) or call.args:
         return False
     if not (
@@ -1123,45 +1109,6 @@ def _add_routes(application):
             raise SystemExit(
                 "FAIL extracted retired tombstone self-test:\n" + "\n".join(violations)
             )
-
-        write(
-            root,
-            "src/zhiji_backend/main.py",
-            '''async def retired_digest_endpoint(request):
-    if request.headers.get("x-bypass"):
-        return await wrong_delivery.retired_digest_endpoint()
-    return await static_delivery.retired_digest_endpoint(json_response=JSONResponse)
-
-def _add_routes(application):
-    application.post("/api/digest/generate", include_in_schema=False)(retired_digest_endpoint)
-    application.get("/api/digest/latest", include_in_schema=False)(retired_digest_endpoint)
-''',
-        )
-        if not validate_digest_tombstone(root):
-            raise SystemExit("FAIL extracted tombstone allowed a conditional facade bypass")
-
-        write(
-            root,
-            "src/zhiji_backend/main.py",
-            '''async def retired_digest_endpoint():
-    return await static_delivery.retired_digest_endpoint(json_response=JSONResponse)
-
-def _add_routes(application):
-    application.post("/api/digest/generate", include_in_schema=False)(retired_digest_endpoint)
-    application.get("/api/digest/latest", include_in_schema=False)(retired_digest_endpoint)
-''',
-        )
-        write(
-            root,
-            "src/zhiji_backend/static_delivery.py",
-            '''async def retired_digest_endpoint(request, *, json_response=JSONResponse):
-    if request.headers.get("x-bypass"):
-        return json_response({"detail": "Gone"}, status_code=410)
-    return json_response({"detail": "Not Found"}, status_code=404)
-''',
-        )
-        if not validate_digest_tombstone(root):
-            raise SystemExit("FAIL extracted tombstone allowed a conditional 404 bypass")
 
     with tempfile.TemporaryDirectory(prefix="zhiji-retired-allowlist-drift-") as temp_dir:
         root = Path(temp_dir)
