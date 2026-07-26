@@ -30,10 +30,10 @@
 - Modify: `tests/test_backup_prerequisite.py`
 - Modify: `tests/test_cleanup_migration.py`
 
-- [ ] Record the public signatures and return types of `backup_marker_path`, `consumed_backup_marker_path`, `create_rollback_backup`, `validate_backup_prerequisite`, `assert_backup_prerequisite_published`, `release_backup_prerequisite`, `consume_backup_prerequisite`, `restore_journal_path`, `recover_rollback_restore`, `restore_rollback_backup`, and `backup_database`.
-- [ ] Add fixture-based snapshots for manifest keys, path encoding, timestamps, hashes, file modes, marker transitions, journal phases, and returned path dictionaries.
-- [ ] Add failure characterization for symlinks, inode replacement, truncated JSON, changed source files, invalid hashes, interrupted staging, destination replacement, repeated recovery, and repeated consume/release calls.
-- [ ] Verify Red with:
+- [x] Record the public signatures and return types of `backup_marker_path`, `consumed_backup_marker_path`, `create_rollback_backup`, `validate_backup_prerequisite`, `assert_backup_prerequisite_published`, `release_backup_prerequisite`, `consume_backup_prerequisite`, `restore_journal_path`, `recover_rollback_restore`, `restore_rollback_backup`, and `backup_database`.
+- [x] Add fixture-based snapshots for manifest keys, path encoding, timestamps, hashes, file modes, marker transitions, journal phases, and returned path dictionaries.
+- [x] Add failure characterization for symlinks, inode replacement, truncated JSON, changed source files, invalid hashes, interrupted staging, destination replacement, repeated recovery, and repeated consume/release calls.
+- [x] Verify Red with:
 
   ```bash
   ZHIJI_HOME=/private/tmp/zhiji-structure-backup PYTHONPATH=src \
@@ -43,7 +43,7 @@
   ```
 
   Expected: baseline behavior assertions pass; forwarding assertions for the new modules fail.
-- [ ] Commit with `git commit -m "test: lock database backup extraction contracts"`.
+- [x] Commit with `git commit -m "test: lock database backup extraction contracts"`.
 
 ### Task 1.2: Extract artifact pinning and filesystem publication
 
@@ -52,11 +52,11 @@
 - Modify: `src/zhiji_backend/database_backup.py`
 - Create: `tests/test_database_backup_artifacts.py`
 
-- [ ] Define immutable `PinnedArtifact` and move regular-file identity, descriptor hashing/reading, artifact pinning, pinned-artifact assertion, secure copy, exclusive JSON write, atomic JSON write, and parent-directory fsync into `database_backup_artifacts.py`.
-- [ ] Pass filesystem primitives as explicit optional dependencies where tests currently monkeypatch `os`, `Path`, or `_database_backup_fs`; preserve call-time resolution in the facade.
-- [ ] Add tests for file-descriptor closure, inode/device checks, mode `0600`, fsync order, destination collision, symlink rejection, and cleanup after every exception edge.
-- [ ] Run artifact plus contract tests and require exact exception classes/messages and no leaked temporary files.
-- [ ] Commit with `git commit -m "refactor: extract backup artifact safety"`.
+- [x] Define immutable `PinnedArtifact` and move regular-file identity, descriptor hashing/reading, artifact pinning, pinned-artifact assertion, secure copy, exclusive JSON write, atomic JSON write, and parent-directory fsync into `database_backup_artifacts.py`.
+- [x] Pass filesystem primitives as explicit optional dependencies where tests currently monkeypatch `os`, `Path`, or `_database_backup_fs`; preserve call-time resolution in the facade.
+- [x] Add tests for file-descriptor closure, inode/device checks, mode `0600`, fsync order, destination collision, symlink rejection, and cleanup after every exception edge.
+- [x] Run artifact plus contract tests and require exact exception classes/messages and no leaked temporary files.
+- [x] Commit with `git commit -m "refactor: extract backup artifact safety"`.
 
 ### Task 1.3: Extract manifests and prerequisite leases
 
@@ -66,11 +66,11 @@
 - Modify: `src/zhiji_backend/database_backup.py`
 - Create: `tests/test_database_backup_manifest.py`
 
-- [ ] Move manifest path canonicalization, timestamp parsing, metadata generation, JSON loading, artifact verification, source matching, and marker validation into `database_backup_manifest.py`.
-- [ ] Move `BackupPrerequisiteLease`, prerequisite validation, publication assertion, release, consumption, and consumed-marker transition into `database_backup_prerequisite.py`.
-- [ ] Retain the exact manifest schema and existing facade exports from `database_backup.py`; prove object and exception compatibility through contract tests.
-- [ ] Add tests for path traversal, non-absolute manifest paths, malformed metadata, stale sources, replayed markers, double consumption, and lease cleanup.
-- [ ] Commit with `git commit -m "refactor: extract backup manifests and leases"`.
+- [x] Move manifest path canonicalization, timestamp parsing, metadata generation, JSON loading, artifact verification, source matching, and marker validation into `database_backup_manifest.py`.
+- [x] Move `BackupPrerequisiteLease`, prerequisite validation, publication assertion, release, consumption, and consumed-marker transition into `database_backup_prerequisite.py`.
+- [x] Retain the exact manifest schema and existing facade exports from `database_backup.py`; prove object and exception compatibility through contract tests.
+- [x] Add tests for path traversal, non-absolute manifest paths, malformed metadata, stale sources, replayed markers, double consumption, and lease cleanup.
+- [x] Commit with `git commit -m "refactor: extract backup manifests and leases"`.
 
 ### Task 1.4: Extract rollback restore and recovery
 
@@ -79,11 +79,11 @@
 - Modify: `src/zhiji_backend/database_backup.py`
 - Create: `tests/test_database_backup_restore.py`
 
-- [ ] Move rollback-manifest validation, pinned restore staging, staged replacement, restore-journal persistence, journal recovery, and complete restore orchestration into `database_backup_restore.py`.
-- [ ] Model restore journal phases with a `Literal` or enum whose serialized values remain identical to current journal strings.
-- [ ] Add crash-point tests before and after every journal transition; rerun recovery twice and assert idempotence and exact final hashes.
-- [ ] Keep `create_rollback_backup` and `backup_database` in the facade or a focused creation module only if `database_backup.py` stays under 400 lines.
-- [ ] Commit with `git commit -m "refactor: extract rollback restore lifecycle"`.
+- [x] Move rollback-manifest validation, pinned restore staging, staged replacement, restore-journal persistence, journal recovery, and complete restore orchestration into `database_backup_restore.py`.
+- [x] Model restore journal phases with a `Literal` or enum whose serialized values remain identical to current journal strings.
+- [x] Add crash-point tests before and after every journal transition; rerun recovery twice and assert idempotence and exact final hashes.
+- [x] Keep `create_rollback_backup` and `backup_database` in the facade or a focused creation module only if `database_backup.py` stays under 400 lines.
+- [x] Commit with `git commit -m "refactor: extract rollback restore lifecycle"`.
 
 ### Task 1.5: Retire the backup baseline and integrate PR 1
 
@@ -91,10 +91,10 @@
 - Modify: `structure-baseline.json`
 - Modify: `docs/superpowers/plans/2026-07-25-remaining-structure-cleanup.md` only to mark completed checkboxes during execution
 
-- [ ] Run `wc -l` on the facade and all new backup modules; require every production file to be at most 400 lines.
-- [ ] Remove only `src/zhiji_backend/database_backup.py` from `oversized_files`.
-- [ ] Run focused tests, full `uv run --frozen pytest -q`, `scripts/check.sh`, and `git diff --check`.
-- [ ] Request independent review focused on TOCTOU, crash consistency, file permissions, fd cleanup, and compatibility.
+- [x] Run `wc -l` on the facade and all new backup modules; require every production file to be at most 400 lines.
+- [x] Remove only `src/zhiji_backend/database_backup.py` from `oversized_files`.
+- [x] Run focused tests, full `uv run --frozen pytest -q`, `scripts/check.sh`, and `git diff --check`.
+- [x] Request independent review focused on TOCTOU, crash consistency, file permissions, fd cleanup, and compatibility.
 - [ ] Commit baseline retirement, push, create a Draft PR, wait for CI, merge only after review, then fast-forward local `main`.
 
 ## PR 2: Backend Platform Foundations
