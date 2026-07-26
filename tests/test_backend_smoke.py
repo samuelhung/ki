@@ -397,6 +397,139 @@ print(json.dumps({
     assert result["user_handler_preserved"] is True
 
 
+def test_failed_static_mount_rolls_back_complete_import_bootstrap(tmp_path):
+    script = """
+import importlib
+import json
+import logging
+import sys
+from zhiji_backend import api_middleware, static_delivery
+
+root = logging.getLogger()
+tagged_before = [
+    id(handler)
+    for handler in root.handlers
+    if getattr(handler, '_zhiji_handler_owner', None) == 'zhiji'
+]
+registration_before = api_middleware._DEFAULT_FACTORY_REGISTRATION
+
+def fail_mount(*_args, **_kwargs):
+    raise RuntimeError('mount failed')
+
+static_delivery.mount_frontend = fail_mount
+try:
+    importlib.import_module('zhiji_backend.main')
+except RuntimeError as error:
+    failure = str(error)
+else:
+    failure = ''
+
+tagged_after = [
+    id(handler)
+    for handler in root.handlers
+    if getattr(handler, '_zhiji_handler_owner', None) == 'zhiji'
+]
+print(json.dumps({
+    'failure': failure,
+    'module_present': 'zhiji_backend.main' in sys.modules,
+    'tagged_before': tagged_before,
+    'tagged_after': tagged_after,
+    'registration_restored': (
+        api_middleware._DEFAULT_FACTORY_REGISTRATION is registration_before
+    ),
+}))
+"""
+    environment = dict(
+        os.environ,
+        PYTHONPATH=f"{ROOT / 'src'}:{ROOT}",
+        ZHIJI_HOME=str(tmp_path / "home"),
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+    result = json.loads(completed.stdout)
+
+    assert result == {
+        "failure": "mount failed",
+        "module_present": False,
+        "tagged_before": [],
+        "tagged_after": [],
+        "registration_restored": True,
+    }
+
+
+def test_failed_static_mount_reload_preserves_prior_runtime_and_factory(tmp_path):
+    script = """
+import importlib
+import json
+import logging
+from zhiji_backend import api_middleware, main
+
+root = logging.getLogger()
+tagged_before = [
+    id(handler)
+    for handler in root.handlers
+    if getattr(handler, '_zhiji_handler_owner', None) == 'zhiji'
+]
+registration_before = api_middleware._DEFAULT_FACTORY_REGISTRATION
+main._HAS_FRONTEND = True
+frontend_before = main._HAS_FRONTEND
+
+def fail_mount(*_args, **_kwargs):
+    raise RuntimeError('reload mount failed')
+
+main.static_delivery.mount_frontend = fail_mount
+try:
+    importlib.reload(main)
+except RuntimeError as error:
+    failure = str(error)
+else:
+    failure = ''
+
+tagged_after = [
+    id(handler)
+    for handler in root.handlers
+    if getattr(handler, '_zhiji_handler_owner', None) == 'zhiji'
+]
+registration_after = api_middleware._DEFAULT_FACTORY_REGISTRATION
+print(json.dumps({
+    'failure': failure,
+    'tagged_preserved': tagged_after == tagged_before,
+    'registration_restored': registration_after is registration_before,
+    'frontend_restored': main._HAS_FRONTEND is frontend_before,
+    'factory_frontend_restored': (
+        registration_after.factory().has_frontend is frontend_before
+    ),
+}))
+"""
+    environment = dict(
+        os.environ,
+        PYTHONPATH=f"{ROOT / 'src'}:{ROOT}",
+        ZHIJI_HOME=str(tmp_path / "home"),
+    )
+
+    completed = subprocess.run(
+        [sys.executable, "-c", script],
+        check=True,
+        capture_output=True,
+        env=environment,
+        text=True,
+    )
+
+    assert json.loads(completed.stdout) == {
+        "failure": "reload mount failed",
+        "tagged_preserved": True,
+        "registration_restored": True,
+        "frontend_restored": True,
+        "factory_frontend_restored": True,
+    }
+
+
 def test_router_manifest_drives_dependency_loading_and_inclusion_order():
     from zhiji_backend import main
 

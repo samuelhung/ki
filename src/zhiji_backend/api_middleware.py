@@ -39,6 +39,7 @@ class MiddlewareDependencies:
     request_token: Callable[[Request], str]
     requires_token_for_request: Callable[[str, str | None], bool]
     is_protected_path: Callable[[str], bool]
+    is_loopback_host: Callable[[str | None], bool]
     compare_digest: Callable[[str, str], bool]
     has_frontend: bool
     frontend_dist: Path
@@ -52,6 +53,13 @@ class _DefaultFactoryRegistration:
     owner: str
     identity: tuple[str, str]
     factory: DefaultDependencyFactory
+
+
+@dataclass(frozen=True)
+class DefaultFactoryRegistrationChange:
+    previous: _DefaultFactoryRegistration | None
+    installed: _DefaultFactoryRegistration
+    changed: bool
 
 
 if "_DEFAULT_FACTORY_LOCK" not in globals():
@@ -121,7 +129,7 @@ class ProtectedPathMiddleware(BaseHTTPMiddleware):
     """Tag protected paths so SPA fallback never serves index.html for them."""
 
     async def dispatch(self, request: Request, call_next):
-        dependencies = _current_dependencies()
+        dependencies = _request_dependencies(request)
         if dependencies.is_protected_path(request.url.path):
             request.state.protected_path = True
         return await call_next(request)
@@ -166,6 +174,7 @@ def _local_dependencies() -> MiddlewareDependencies:
         request_token=request_token,
         requires_token_for_request=requires_token_for_request,
         is_protected_path=is_protected_path,
+        is_loopback_host=is_loopback_host,
         compare_digest=hmac.compare_digest,
         has_frontend=FRONTEND_DIST.exists(),
         frontend_dist=FRONTEND_DIST,
@@ -176,7 +185,7 @@ def register_default_dependency_factory(
     factory: DefaultDependencyFactory,
     *,
     owner: str,
-) -> None:
+) -> DefaultFactoryRegistrationChange:
     """Register one application resolver; same-owner reloads may refresh it."""
     if not callable(factory):
         raise TypeError("default dependency factory must be callable")
@@ -198,13 +207,30 @@ def register_default_dependency_factory(
         if current is None:
             _DEFAULT_FACTORY_REGISTRATION = registration
         elif current.factory is factory:
-            return
+            return DefaultFactoryRegistrationChange(current, current, False)
         elif current.owner == owner and current.identity == registration.identity:
             _DEFAULT_FACTORY_REGISTRATION = registration
         else:
             raise RuntimeError(
                 f"default dependency factory already registered by {current.owner}"
             )
+    return DefaultFactoryRegistrationChange(current, registration, True)
+
+
+def rollback_default_dependency_factory(
+    change: DefaultFactoryRegistrationChange,
+) -> bool:
+    """Restore the registration replaced by a failed application assembly."""
+    if not isinstance(change, DefaultFactoryRegistrationChange):
+        raise TypeError("registration change must be DefaultFactoryRegistrationChange")
+    if not change.changed:
+        return False
+    global _DEFAULT_FACTORY_REGISTRATION
+    with _DEFAULT_FACTORY_LOCK:
+        if _DEFAULT_FACTORY_REGISTRATION is not change.installed:
+            return False
+        _DEFAULT_FACTORY_REGISTRATION = change.previous
+    return True
 
 
 def _current_dependencies() -> MiddlewareDependencies:
@@ -218,9 +244,23 @@ def _current_dependencies() -> MiddlewareDependencies:
     return dependencies
 
 
+_REQUEST_DEPENDENCIES_KEY = "zhiji.middleware_dependencies"
+
+
+def _request_dependencies(request: Request) -> MiddlewareDependencies:
+    state = request.scope.setdefault("state", {})
+    dependencies = state.get(_REQUEST_DEPENDENCIES_KEY)
+    if dependencies is None:
+        dependencies = _current_dependencies()
+        state[_REQUEST_DEPENDENCIES_KEY] = dependencies
+    if not isinstance(dependencies, MiddlewareDependencies):
+        raise TypeError("request middleware dependencies are invalid")
+    return dependencies
+
+
 async def api_auth(request: Request, call_next):
     """Require a configured API token for protected remote requests."""
-    dependencies = _current_dependencies()
+    dependencies = _request_dependencies(request)
     client_host = request.client.host if request.client else None
     if dependencies.requires_token_for_request(request.url.path, client_host):
         token = dependencies.api_token()
@@ -235,7 +275,7 @@ async def api_auth(request: Request, call_next):
 
 async def spa_fallback(request: Request, call_next):
     """Serve the SPA entry point for missing public frontend routes."""
-    dependencies = _current_dependencies()
+    dependencies = _request_dependencies(request)
     response = await call_next(request)
     if (
         dependencies.has_frontend

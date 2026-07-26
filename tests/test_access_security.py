@@ -408,6 +408,55 @@ def test_registered_auth_resolves_main_helper_aliases_at_request_time(monkeypatc
     assert denied.status_code == 401
 
 
+def test_registered_auth_uses_patched_main_protected_path_helper(monkeypatch):
+    monkeypatch.delenv("KI_API_TOKEN", raising=False)
+    monkeypatch.setattr(main, "_is_protected_path", lambda _path: True)
+    client = TestClient(app, client=("10.8.0.2", 50000))
+
+    response = client.get("/facade-protected-missing")
+
+    assert response.status_code == 401
+
+
+def test_registered_auth_uses_patched_main_loopback_helper(monkeypatch):
+    monkeypatch.delenv("KI_API_TOKEN", raising=False)
+    monkeypatch.setattr(main, "_is_loopback_host", lambda _host: False)
+    client = TestClient(app, client=("127.0.0.1", 50000))
+
+    response = client.get("/api/dashboard/summary")
+
+    assert response.status_code == 401
+
+
+def test_registered_auth_preserves_patched_main_requires_token_override(monkeypatch):
+    monkeypatch.setattr(main, "_requires_token_for_request", lambda *_args: False)
+    client = TestClient(app, client=("10.8.0.2", 50000))
+
+    response = client.get("/api/dashboard/summary")
+
+    assert response.status_code == 200
+
+
+def test_middleware_pipeline_resolves_one_dependency_snapshot_per_request(
+    monkeypatch,
+):
+    from zhiji_backend import api_middleware
+
+    calls = []
+    real_current_dependencies = api_middleware._current_dependencies
+
+    def current_dependencies():
+        calls.append("resolve")
+        return real_current_dependencies()
+
+    monkeypatch.setattr(api_middleware, "_current_dependencies", current_dependencies)
+
+    response = TestClient(app).get("/api/health")
+
+    assert response.status_code == 200
+    assert calls == ["resolve"]
+
+
 def test_registered_protected_path_resolves_main_alias_at_request_time(
     tmp_path, monkeypatch
 ):
