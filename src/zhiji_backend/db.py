@@ -25,6 +25,8 @@ _migrate_brainstorm_answers_to_messages = (
 _migrate_series = db_migrations._migrate_series
 _migrate_ingest_tasks_retry = db_migrations._migrate_ingest_tasks_retry
 _migrate_video_md5 = db_migrations._migrate_video_md5
+_MigrationSteps = db_migrations.MigrationSteps
+_migration_steps_scope = db_migrations.migration_steps_scope
 
 DEFAULT_SOURCES = [
     {
@@ -129,7 +131,24 @@ def connect(*, busy_timeout_ms: int = 5000) -> Iterator[sqlite3.Connection]:
 def init_db() -> None:
     with connect() as conn:
         db_schema.create_schema(conn)
-        db_migrations.run_migrations(conn)
+        steps = _MigrationSteps(
+            migrate_events_cn=_migrate_events_cn,
+            migrate_brainstorm=_migrate_brainstorm,
+            migrate_brainstorm_answers_to_messages=(
+                _migrate_brainstorm_answers_to_messages
+            ),
+            migrate_series=_migrate_series,
+            migrate_ingest_tasks_retry=_migrate_ingest_tasks_retry,
+            migrate_video_md5=_migrate_video_md5,
+            migrate_textbook=_migrate_textbook,
+            migrate_lessons_json=_migrate_lessons_json,
+            migrate_chain_reports=_migrate_chain_reports,
+            migrate_chain_meta=_migrate_chain_meta,
+            backfill_fts=_backfill_fts,
+            logger=logger,
+        )
+        with _migration_steps_scope(steps):
+            db_migrations.run_migrations(conn)
 
 
 def seed_default_sources() -> int:

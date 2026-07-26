@@ -2,24 +2,82 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
 
 from . import db_schema
 
+MigrationFn = Callable[[sqlite3.Connection], None]
+
+
+@dataclass(frozen=True)
+class MigrationSteps:
+    migrate_events_cn: MigrationFn
+    migrate_brainstorm: MigrationFn
+    migrate_brainstorm_answers_to_messages: MigrationFn
+    migrate_series: MigrationFn
+    migrate_ingest_tasks_retry: MigrationFn
+    migrate_video_md5: MigrationFn
+    migrate_textbook: MigrationFn
+    migrate_lessons_json: MigrationFn
+    migrate_chain_reports: MigrationFn
+    migrate_chain_meta: MigrationFn
+    backfill_fts: MigrationFn
+    logger: logging.Logger
+
+
+_SCOPED_STEPS: ContextVar[MigrationSteps | None] = ContextVar(
+    "zhiji_db_migration_steps", default=None
+)
+
+
+def _local_steps() -> MigrationSteps:
+    return MigrationSteps(
+        migrate_events_cn=_migrate_events_cn,
+        migrate_brainstorm=_migrate_brainstorm,
+        migrate_brainstorm_answers_to_messages=(
+            _migrate_brainstorm_answers_to_messages
+        ),
+        migrate_series=_migrate_series,
+        migrate_ingest_tasks_retry=_migrate_ingest_tasks_retry,
+        migrate_video_md5=_migrate_video_md5,
+        migrate_textbook=_migrate_textbook,
+        migrate_lessons_json=_migrate_lessons_json,
+        migrate_chain_reports=_migrate_chain_reports,
+        migrate_chain_meta=_migrate_chain_meta,
+        backfill_fts=_backfill_fts,
+        logger=logging.getLogger("zhiji_backend.db"),
+    )
+
+
+def _current_steps() -> MigrationSteps:
+    return _SCOPED_STEPS.get() or _local_steps()
+
+
+@contextmanager
+def migration_steps_scope(steps: MigrationSteps) -> Iterator[None]:
+    token = _SCOPED_STEPS.set(steps)
+    try:
+        yield
+    finally:
+        _SCOPED_STEPS.reset(token)
+
 
 def run_migrations(conn: sqlite3.Connection) -> None:
-    from . import db as db_facade
-
-    db_facade._migrate_events_cn(conn)
-    db_facade._migrate_brainstorm(conn)
-    db_facade._migrate_series(conn)
-    db_facade._migrate_ingest_tasks_retry(conn)
-    db_facade._migrate_video_md5(conn)
+    steps = _current_steps()
+    steps.migrate_events_cn(conn)
+    steps.migrate_brainstorm(conn)
+    steps.migrate_series(conn)
+    steps.migrate_ingest_tasks_retry(conn)
+    steps.migrate_video_md5(conn)
     db_schema.create_indexes(conn)
-    db_facade._migrate_textbook(conn)
-    db_facade._migrate_lessons_json(conn)
-    db_facade._migrate_chain_reports(conn)
-    db_facade._migrate_chain_meta(conn)
-    db_facade._backfill_fts(conn)
+    steps.migrate_textbook(conn)
+    steps.migrate_lessons_json(conn)
+    steps.migrate_chain_reports(conn)
+    steps.migrate_chain_meta(conn)
+    steps.backfill_fts(conn)
 
 
 def _migrate_events_cn(conn: sqlite3.Connection) -> None:
@@ -167,9 +225,7 @@ def _migrate_brainstorm(conn: sqlite3.Connection) -> None:
             except (_json.JSONDecodeError, TypeError):
                 pass
 
-    from . import db as db_facade
-
-    db_facade._migrate_brainstorm_answers_to_messages(conn)
+    _current_steps().migrate_brainstorm_answers_to_messages(conn)
 
 
 def _migrate_brainstorm_answers_to_messages(conn: sqlite3.Connection) -> None:
@@ -276,9 +332,9 @@ def _migrate_ingest_tasks_retry(conn: sqlite3.Connection) -> None:
             "ALTER TABLE ingest_tasks "
             "ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0"
         )
-        from . import db as db_facade
-
-        db_facade.logger.info("Migration: added retry_count column to ingest_tasks")
+        _current_steps().logger.info(
+            "Migration: added retry_count column to ingest_tasks"
+        )
 
 
 def _migrate_video_md5(conn: sqlite3.Connection) -> None:
@@ -286,6 +342,4 @@ def _migrate_video_md5(conn: sqlite3.Connection) -> None:
     cols = {row[1] for row in conn.execute("PRAGMA table_info(events)").fetchall()}
     if "video_md5" not in cols:
         conn.execute("ALTER TABLE events ADD COLUMN video_md5 TEXT")
-        from . import db as db_facade
-
-        db_facade.logger.info("Migration: added video_md5 column to events")
+        _current_steps().logger.info("Migration: added video_md5 column to events")

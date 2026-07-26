@@ -1,0 +1,278 @@
+[
+  {
+    "type": "table",
+    "name": "sources",
+    "table": "sources",
+    "sql": "CREATE TABLE sources (\n              id TEXT PRIMARY KEY,\n              name TEXT NOT NULL,\n              type TEXT NOT NULL,\n              url TEXT NOT NULL,\n              topic TEXT,\n              tags_json TEXT NOT NULL DEFAULT '[]',\n              priority TEXT NOT NULL DEFAULT 'medium',\n              enabled INTEGER NOT NULL DEFAULT 1,\n              last_checked_at TEXT,\n              last_error TEXT,\n              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,\n              updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP\n            )"
+  },
+  {
+    "type": "table",
+    "name": "events",
+    "table": "events",
+    "sql": "CREATE TABLE events (\n              id TEXT PRIMARY KEY,\n              source_id TEXT NOT NULL,\n              title TEXT NOT NULL,\n              url TEXT NOT NULL,\n              published_at TEXT,\n              raw_summary TEXT,\n              ai_summary TEXT,\n              title_cn TEXT,\n              summary_cn TEXT,\n              translation_status TEXT,\n              translation_error TEXT,\n              topic TEXT,\n              tags_json TEXT NOT NULL DEFAULT '[]',\n              importance INTEGER NOT NULL DEFAULT 0,\n              actionability INTEGER NOT NULL DEFAULT 0,\n              decision TEXT NOT NULL DEFAULT 'digest',\n              status TEXT NOT NULL DEFAULT 'new',\n              content_type TEXT NOT NULL DEFAULT 'event',\n              overview TEXT,\n              video_path TEXT,\n              audio_path TEXT,\n              document_path TEXT,\n              progress_stages TEXT,\n              last_discovered_at TEXT,\n              suggested_series_json TEXT,\n              last_error TEXT,\n              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, chain_analysis TEXT, video_md5 TEXT,\n              FOREIGN KEY(source_id) REFERENCES sources(id)\n            )"
+  },
+  {
+    "type": "table",
+    "name": "briefings",
+    "table": "briefings",
+    "sql": "CREATE TABLE briefings (\n              id TEXT PRIMARY KEY,\n              type TEXT NOT NULL DEFAULT 'quick',\n              topics_json TEXT NOT NULL DEFAULT '[]',\n              events_used INTEGER NOT NULL DEFAULT 0,\n              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP\n            )"
+  },
+  {
+    "type": "table",
+    "name": "brainstorm_questions",
+    "table": "brainstorm_questions",
+    "sql": "CREATE TABLE brainstorm_questions (\n              id TEXT PRIMARY KEY,\n              event_id TEXT,\n              question TEXT NOT NULL,\n              status TEXT NOT NULL DEFAULT 'open',\n              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,\n              summary_created_at TEXT, content_md TEXT NOT NULL DEFAULT '', topic TEXT NOT NULL DEFAULT '', answer TEXT NOT NULL DEFAULT '',\n              FOREIGN KEY(event_id) REFERENCES events(id)\n            )"
+  },
+  {
+    "type": "table",
+    "name": "brainstorm_event_links",
+    "table": "brainstorm_event_links",
+    "sql": "CREATE TABLE brainstorm_event_links (\n              question_id TEXT NOT NULL,\n              event_id TEXT NOT NULL,\n              PRIMARY KEY (question_id, event_id),\n              FOREIGN KEY (question_id) REFERENCES brainstorm_questions(id),\n              FOREIGN KEY (event_id) REFERENCES events(id)\n            )"
+  },
+  {
+    "type": "table",
+    "name": "brainstorm_contemplate_cache",
+    "table": "brainstorm_contemplate_cache",
+    "sql": "CREATE TABLE brainstorm_contemplate_cache (\n              question_id TEXT NOT NULL,\n              event_id TEXT NOT NULL,\n              relevance TEXT NOT NULL,\n              reason TEXT,\n              judged_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,\n              PRIMARY KEY (question_id, event_id)\n            )"
+  },
+  {
+    "type": "table",
+    "name": "brainstorm_messages",
+    "table": "brainstorm_messages",
+    "sql": "CREATE TABLE brainstorm_messages (\n              id INTEGER PRIMARY KEY AUTOINCREMENT,\n              question_id TEXT NOT NULL,\n              role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),\n              content TEXT NOT NULL DEFAULT '',\n              refs_json TEXT NOT NULL DEFAULT '[]',\n              created_at TEXT NOT NULL DEFAULT (datetime('now')),\n              FOREIGN KEY (question_id) REFERENCES brainstorm_questions(id)\n            )"
+  },
+  {
+    "type": "table",
+    "name": "events_fts",
+    "table": "events_fts",
+    "sql": "CREATE VIRTUAL TABLE events_fts USING fts5(\n              event_id UNINDEXED,\n              title, title_cn, raw_summary, summary_cn, ai_summary,\n              tokenize='trigram'\n            )"
+  },
+  {
+    "type": "table",
+    "name": "events_fts_data",
+    "table": "events_fts_data",
+    "sql": "CREATE TABLE 'events_fts_data'(id INTEGER PRIMARY KEY, block BLOB)"
+  },
+  {
+    "type": "table",
+    "name": "events_fts_idx",
+    "table": "events_fts_idx",
+    "sql": "CREATE TABLE 'events_fts_idx'(segid, term, pgno, PRIMARY KEY(segid, term)) WITHOUT ROWID"
+  },
+  {
+    "type": "table",
+    "name": "events_fts_content",
+    "table": "events_fts_content",
+    "sql": "CREATE TABLE 'events_fts_content'(id INTEGER PRIMARY KEY, c0, c1, c2, c3, c4, c5)"
+  },
+  {
+    "type": "table",
+    "name": "events_fts_docsize",
+    "table": "events_fts_docsize",
+    "sql": "CREATE TABLE 'events_fts_docsize'(id INTEGER PRIMARY KEY, sz BLOB)"
+  },
+  {
+    "type": "table",
+    "name": "events_fts_config",
+    "table": "events_fts_config",
+    "sql": "CREATE TABLE 'events_fts_config'(k PRIMARY KEY, v) WITHOUT ROWID"
+  },
+  {
+    "type": "table",
+    "name": "ingest_tasks",
+    "table": "ingest_tasks",
+    "sql": "CREATE TABLE ingest_tasks (\n              id TEXT PRIMARY KEY,\n              event_id TEXT NOT NULL,\n              ingest_type TEXT NOT NULL,\n              payload_json TEXT NOT NULL,\n              status TEXT NOT NULL DEFAULT 'pending',\n              error TEXT,\n              retry_count INTEGER NOT NULL DEFAULT 0,\n              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,\n              started_at TEXT,\n              finished_at TEXT\n            )"
+  },
+  {
+    "type": "table",
+    "name": "tasks",
+    "table": "tasks",
+    "sql": "CREATE TABLE tasks (\n              id TEXT PRIMARY KEY,\n              title TEXT NOT NULL,\n              description TEXT NOT NULL DEFAULT '',\n              source TEXT NOT NULL DEFAULT 'manual',\n              source_id TEXT,\n              source_label TEXT,\n              priority TEXT NOT NULL DEFAULT 'medium',\n              due_date TEXT,\n              status TEXT NOT NULL DEFAULT 'todo',\n              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,\n              updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP\n            )"
+  },
+  {
+    "type": "table",
+    "name": "series",
+    "table": "series",
+    "sql": "CREATE TABLE series (\n              id TEXT PRIMARY KEY,\n              name TEXT NOT NULL,\n              description TEXT,\n              member_ids TEXT NOT NULL DEFAULT '[]',\n              sort_order TEXT DEFAULT '[]',\n              status TEXT NOT NULL DEFAULT 'draft',\n              intro TEXT,\n              summary TEXT,\n              paper TEXT,\n              updated_at TEXT,\n              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP\n            )"
+  },
+  {
+    "type": "table",
+    "name": "ai_usage",
+    "table": "ai_usage",
+    "sql": "CREATE TABLE ai_usage (\n              id INTEGER PRIMARY KEY AUTOINCREMENT,\n              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,\n              module TEXT DEFAULT '',\n              task TEXT DEFAULT '',\n              model TEXT DEFAULT '',\n              status TEXT NOT NULL DEFAULT 'success',\n              prompt_tokens INTEGER NOT NULL DEFAULT 0,\n              completion_tokens INTEGER NOT NULL DEFAULT 0,\n              total_tokens INTEGER NOT NULL DEFAULT 0,\n              cached_tokens INTEGER NOT NULL DEFAULT 0,\n              reasoning_tokens INTEGER NOT NULL DEFAULT 0,\n              cost_rmb REAL NOT NULL DEFAULT 0,\n              duration_ms INTEGER NOT NULL DEFAULT 0,\n              error TEXT DEFAULT ''\n            )"
+  },
+  {
+    "type": "table",
+    "name": "series_scan_cache",
+    "table": "series_scan_cache",
+    "sql": "CREATE TABLE series_scan_cache (\n              series_id TEXT PRIMARY KEY,\n              scanned_count INTEGER NOT NULL,\n              recommendations_json TEXT NOT NULL DEFAULT '[]',\n              scanned_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP\n            )"
+  },
+  {
+    "type": "table",
+    "name": "study_materials",
+    "table": "study_materials",
+    "sql": "CREATE TABLE study_materials (\n              id              TEXT PRIMARY KEY,\n              subject         TEXT NOT NULL DEFAULT '',\n              grade           TEXT DEFAULT '',\n              textbook        TEXT DEFAULT '',\n              study_type      TEXT NOT NULL DEFAULT '',\n              title           TEXT NOT NULL DEFAULT '',\n              source_type     TEXT DEFAULT 'manual',\n              raw_content     TEXT DEFAULT '',\n              child_version   TEXT DEFAULT '',\n              parent_version  TEXT DEFAULT '',\n              formats_json    TEXT DEFAULT '{}',\n              status          TEXT DEFAULT 'draft',\n              score           INTEGER,\n              is_correct      INTEGER,\n              mistake_tags    TEXT DEFAULT '[]',\n              tags_json       TEXT DEFAULT '[]',\n              lessons_json    TEXT DEFAULT '[]',\n              created_at      TEXT NOT NULL DEFAULT (datetime('now')),\n              updated_at      TEXT NOT NULL DEFAULT (datetime('now'))\n            )"
+  },
+  {
+    "type": "table",
+    "name": "industry_chain_nodes",
+    "table": "industry_chain_nodes",
+    "sql": "CREATE TABLE industry_chain_nodes (\n              id              TEXT PRIMARY KEY,\n              chain           TEXT NOT NULL DEFAULT '',\n              name            TEXT NOT NULL DEFAULT '',\n              node_type       TEXT NOT NULL DEFAULT '',\n              description     TEXT DEFAULT '',\n              parent_id       TEXT DEFAULT '',\n              global_shares   TEXT DEFAULT '[]',\n              substitutes     TEXT DEFAULT '[]',\n              upstream_ids    TEXT DEFAULT '[]',\n              data_sources    TEXT DEFAULT '{}',\n              last_updated    TEXT DEFAULT '',\n              sort_order      INTEGER DEFAULT 0,\n              created_at      TEXT NOT NULL DEFAULT (datetime('now'))\n            )"
+  },
+  {
+    "type": "table",
+    "name": "chain_data_hints",
+    "table": "chain_data_hints",
+    "sql": "CREATE TABLE chain_data_hints (\n              id              TEXT PRIMARY KEY,\n              event_id        TEXT NOT NULL,\n              node_id         TEXT NOT NULL,\n              chain           TEXT NOT NULL DEFAULT '',\n              field           TEXT NOT NULL DEFAULT '',\n              current_value   TEXT DEFAULT '',\n              suggested_value TEXT NOT NULL DEFAULT '',\n              source_quote    TEXT DEFAULT '',\n              confidence      REAL NOT NULL DEFAULT 0.5,\n              status          TEXT NOT NULL DEFAULT 'pending',\n              resolved_value  TEXT DEFAULT '',\n              created_at      TEXT NOT NULL DEFAULT (datetime('now')),\n              reviewed_at     TEXT,\n              FOREIGN KEY (event_id) REFERENCES events(id),\n              FOREIGN KEY (node_id) REFERENCES industry_chain_nodes(id)\n            )"
+  },
+  {
+    "type": "table",
+    "name": "chain_suggestions",
+    "table": "chain_suggestions",
+    "sql": "CREATE TABLE chain_suggestions (\n              id              TEXT PRIMARY KEY,\n              chain_name      TEXT NOT NULL DEFAULT '',\n              event_id        TEXT NOT NULL,\n              nodes_json      TEXT NOT NULL DEFAULT '[]',\n              reason          TEXT DEFAULT '',\n              source_quote    TEXT DEFAULT '',\n              confidence      REAL NOT NULL DEFAULT 0.5,\n              status          TEXT NOT NULL DEFAULT 'pending',\n              created_at      TEXT NOT NULL DEFAULT (datetime('now')),\n              reviewed_at     TEXT,\n              FOREIGN KEY (event_id) REFERENCES events(id)\n            )"
+  },
+  {
+    "type": "trigger",
+    "name": "trg_events_fts_insert",
+    "table": "events",
+    "sql": "CREATE TRIGGER trg_events_fts_insert AFTER INSERT ON events BEGIN\n              INSERT INTO events_fts(event_id, title, title_cn, raw_summary, summary_cn, ai_summary)\n              VALUES (NEW.id, NEW.title, NEW.title_cn, NEW.raw_summary, NEW.summary_cn, NEW.ai_summary);\n            END"
+  },
+  {
+    "type": "trigger",
+    "name": "trg_events_fts_delete",
+    "table": "events",
+    "sql": "CREATE TRIGGER trg_events_fts_delete AFTER DELETE ON events BEGIN\n              DELETE FROM events_fts WHERE event_id = OLD.id;\n            END"
+  },
+  {
+    "type": "trigger",
+    "name": "trg_events_fts_update",
+    "table": "events",
+    "sql": "CREATE TRIGGER trg_events_fts_update AFTER UPDATE ON events BEGIN\n              DELETE FROM events_fts WHERE event_id = OLD.id;\n              INSERT INTO events_fts(event_id, title, title_cn, raw_summary, summary_cn, ai_summary)\n              VALUES (NEW.id, NEW.title, NEW.title_cn, NEW.raw_summary, NEW.summary_cn, NEW.ai_summary);\n            END"
+  },
+  {
+    "type": "index",
+    "name": "idx_events_status",
+    "table": "events",
+    "sql": "CREATE INDEX idx_events_status ON events(status)"
+  },
+  {
+    "type": "index",
+    "name": "idx_events_source_id",
+    "table": "events",
+    "sql": "CREATE INDEX idx_events_source_id ON events(source_id)"
+  },
+  {
+    "type": "index",
+    "name": "idx_events_created_at",
+    "table": "events",
+    "sql": "CREATE INDEX idx_events_created_at ON events(created_at)"
+  },
+  {
+    "type": "index",
+    "name": "idx_events_topic",
+    "table": "events",
+    "sql": "CREATE INDEX idx_events_topic ON events(topic)"
+  },
+  {
+    "type": "index",
+    "name": "idx_events_translation_status",
+    "table": "events",
+    "sql": "CREATE INDEX idx_events_translation_status ON events(translation_status)"
+  },
+  {
+    "type": "index",
+    "name": "idx_ingest_tasks_created_at",
+    "table": "ingest_tasks",
+    "sql": "CREATE INDEX idx_ingest_tasks_created_at ON ingest_tasks(created_at)"
+  },
+  {
+    "type": "index",
+    "name": "idx_briefings_type",
+    "table": "briefings",
+    "sql": "CREATE INDEX idx_briefings_type ON briefings(type)"
+  },
+  {
+    "type": "index",
+    "name": "idx_brainstorm_event_id",
+    "table": "brainstorm_questions",
+    "sql": "CREATE INDEX idx_brainstorm_event_id ON brainstorm_questions(event_id)"
+  },
+  {
+    "type": "index",
+    "name": "idx_brainstorm_status",
+    "table": "brainstorm_questions",
+    "sql": "CREATE INDEX idx_brainstorm_status ON brainstorm_questions(status)"
+  },
+  {
+    "type": "index",
+    "name": "idx_brainstorm_links_question",
+    "table": "brainstorm_event_links",
+    "sql": "CREATE INDEX idx_brainstorm_links_question ON brainstorm_event_links(question_id)"
+  },
+  {
+    "type": "index",
+    "name": "idx_brainstorm_links_event",
+    "table": "brainstorm_event_links",
+    "sql": "CREATE INDEX idx_brainstorm_links_event ON brainstorm_event_links(event_id)"
+  },
+  {
+    "type": "index",
+    "name": "idx_brainstorm_messages_question",
+    "table": "brainstorm_messages",
+    "sql": "CREATE INDEX idx_brainstorm_messages_question ON brainstorm_messages(question_id, created_at)"
+  },
+  {
+    "type": "index",
+    "name": "idx_tasks_status",
+    "table": "tasks",
+    "sql": "CREATE INDEX idx_tasks_status ON tasks(status)"
+  },
+  {
+    "type": "index",
+    "name": "idx_tasks_due_date",
+    "table": "tasks",
+    "sql": "CREATE INDEX idx_tasks_due_date ON tasks(due_date)"
+  },
+  {
+    "type": "index",
+    "name": "idx_tasks_source",
+    "table": "tasks",
+    "sql": "CREATE INDEX idx_tasks_source ON tasks(source)"
+  },
+  {
+    "type": "index",
+    "name": "idx_study_subject",
+    "table": "study_materials",
+    "sql": "CREATE INDEX idx_study_subject ON study_materials(subject)"
+  },
+  {
+    "type": "index",
+    "name": "idx_study_type",
+    "table": "study_materials",
+    "sql": "CREATE INDEX idx_study_type ON study_materials(study_type)"
+  },
+  {
+    "type": "index",
+    "name": "idx_study_status",
+    "table": "study_materials",
+    "sql": "CREATE INDEX idx_study_status ON study_materials(status)"
+  },
+  {
+    "type": "index",
+    "name": "idx_study_created",
+    "table": "study_materials",
+    "sql": "CREATE INDEX idx_study_created ON study_materials(created_at)"
+  },
+  {
+    "type": "table",
+    "name": "chain_reports",
+    "table": "chain_reports",
+    "sql": "CREATE TABLE chain_reports (\n            chain_name      TEXT PRIMARY KEY,\n            report          TEXT NOT NULL DEFAULT '',\n            created_at      TEXT NOT NULL DEFAULT (datetime('now')),\n            updated_at      TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+  },
+  {
+    "type": "table",
+    "name": "chain_meta",
+    "table": "chain_meta",
+    "sql": "CREATE TABLE chain_meta (\n            chain_name      TEXT PRIMARY KEY,\n            icon            TEXT NOT NULL DEFAULT '',\n            flow_summary    TEXT NOT NULL DEFAULT '',\n            created_at      TEXT NOT NULL DEFAULT (datetime('now'))\n        )"
+  }
+]
