@@ -12,6 +12,7 @@ import inspect
 import json
 import signal
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -28,24 +29,17 @@ from zhiji_backend.routes import ingest_routes
 
 
 @pytest.fixture(autouse=True)
-def _isolate_task_queue_state():
-    task_queue._shutdown_flag.clear()
-    task_queue._worker = None
-    task_queue._active_process = None
-    task_queue._active_task_id = None
-    task_queue._active_process_group_id = None
-    task_queue._shutdown_interrupted = None
-    task_queue._shutdown_signals_sent.clear()
-    task_queue._shutdown_signal_delivery_confirmed = False
-    task_queue._shutdown_fallback_causation = False
-    task_queue._shutdown_signal_resolved.clear()
-    yield
-    task_queue._shutdown_flag.set()
-    task_queue._worker = None
-    task_queue._active_process = None
-    task_queue._active_task_id = None
-    task_queue._active_process_group_id = None
-    task_queue._shutdown_interrupted = None
+def _isolate_task_queue_state(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(task_queue, "_shutdown_flag", threading.Event())
+    monkeypatch.setattr(task_queue, "_worker", None)
+    monkeypatch.setattr(task_queue, "_active_process", None)
+    monkeypatch.setattr(task_queue, "_active_task_id", None)
+    monkeypatch.setattr(task_queue, "_active_process_group_id", None)
+    monkeypatch.setattr(task_queue, "_shutdown_interrupted", None)
+    monkeypatch.setattr(task_queue, "_shutdown_signals_sent", set())
+    monkeypatch.setattr(task_queue, "_shutdown_signal_delivery_confirmed", False)
+    monkeypatch.setattr(task_queue, "_shutdown_fallback_causation", False)
+    monkeypatch.setattr(task_queue, "_shutdown_signal_resolved", threading.Event())
 
 
 RSS_AND_ATOM = """<?xml version="1.0" encoding="UTF-8"?>
@@ -910,11 +904,11 @@ def test_planned_extraction_uses_call_time_forwarding(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    planned_module = importlib.import_module(module_name)
-
     monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
     monkeypatch.setenv("KI_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setattr(task_queue, "PENDING_DIR", tmp_path / "pending")
+    planned_module = importlib.import_module(module_name)
+
     init_db()
     calls = []
     sentinel = object()
