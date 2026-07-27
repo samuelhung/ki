@@ -182,3 +182,27 @@ def test_recover_stuck_resolves_sqlite_and_time_from_facade(tmp_path, monkeypatc
     assert task_queue.recover_stuck() == 0
     assert len(attempts) == 3
     assert waits == [2, 4, 8]
+
+
+def test_enqueue_resolves_json_dumps_from_facade_at_call_time(tmp_path, monkeypatch):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    init_db()
+    _insert_task("event-json", "existing-json-task")
+    calls = []
+
+    def dumps(payload, *, ensure_ascii):
+        calls.append((payload, ensure_ascii))
+        return '{"facade":"json"}'
+
+    monkeypatch.setattr(task_queue, "json", types.SimpleNamespace(dumps=dumps))
+
+    task_id = task_queue.enqueue("event-json", "document", "body", "test", "Title")
+
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT payload_json FROM ingest_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+    assert calls == [
+        ({"content_text": "body", "topic": "test", "title": "Title"}, False)
+    ]
+    assert row["payload_json"] == '{"facade":"json"}'

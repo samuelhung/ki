@@ -2,12 +2,6 @@
 
 from __future__ import annotations
 
-import errno
-import json
-import signal
-import time
-from pathlib import Path
-
 from . import task_queue_store as store
 
 POST_PROCESS = object()
@@ -48,9 +42,9 @@ def process_group_exists(process_group_id: int | None, task_id: str) -> bool:
     except ProcessLookupError:
         return False
     except OSError as exc:
-        if exc.errno == errno.ESRCH:
+        if exc.errno == q.errno.ESRCH:
             return False
-        if exc.errno == errno.EPERM:
+        if exc.errno == q.errno.EPERM:
             return True
         q.logger.warning(
             "Failed to inspect ingest process group for task %s",
@@ -105,13 +99,13 @@ def wait_for_process_tree_exit(
     group_exists_fn,
 ) -> tuple[int | None, bool]:
     q = _facade()
-    deadline = time.monotonic() + max(0.0, timeout)
+    deadline = q.time.monotonic() + max(0.0, timeout)
     returncode = observe_fn(proc, task_id, "process-tree wait")
     while True:
         group_gone = not group_exists_fn(process_group_id, task_id)
         if returncode is not None and group_gone:
             return returncode, True
-        remaining = deadline - time.monotonic()
+        remaining = deadline - q.time.monotonic()
         if remaining <= 0:
             return returncode, returncode is not None and group_gone
         if returncode is None:
@@ -129,7 +123,7 @@ def wait_for_process_tree_exit(
                     and not group_exists_fn(process_group_id, task_id)
                 )
         else:
-            time.sleep(min(0.05, remaining))
+            q.time.sleep(min(0.05, remaining))
 
 
 def _record_signal(task_id, proc, sig, used_fallback, returncode) -> None:
@@ -172,7 +166,7 @@ def release_active_process(task_id: str, proc) -> bool:
     if not selected:
         return False
     q._shutdown_signal_resolved.wait(timeout=q._SHUTDOWN_TERMINATE_TIMEOUT_SECONDS)
-    return matches_shutdown_causation(task_id, proc, proc.returncode)
+    return q._matches_shutdown_causation(task_id, proc, proc.returncode)
 
 
 def clear_shutdown_interrupted(task_id: str, proc) -> None:
@@ -216,11 +210,11 @@ def resolve_shutdown_interruption(task_id: str, proc) -> None:
 def stop_process_tree(task_id: str, proc, process_group_id, timeout: float):
     q = _facade()
     sent, fallback = q._signal_ingest_process(
-        proc, process_group_id, signal.SIGTERM, "terminate", task_id
+        proc, process_group_id, q.signal.SIGTERM, "terminate", task_id
     )
     if sent:
         code = q._observe_process_returncode(proc, task_id, "after terminate")
-        _record_signal(task_id, proc, signal.SIGTERM, fallback, code)
+        q._record_shutdown_signal(task_id, proc, q.signal.SIGTERM, fallback, code)
         code, quiesced = q._wait_for_process_tree_exit(
             proc, process_group_id, task_id, timeout
         )
@@ -231,11 +225,11 @@ def stop_process_tree(task_id: str, proc, process_group_id, timeout: float):
         )
     if not quiesced:
         sent, fallback = q._signal_ingest_process(
-            proc, process_group_id, signal.SIGKILL, "kill", task_id
+            proc, process_group_id, q.signal.SIGKILL, "kill", task_id
         )
         if sent:
             code = q._observe_process_returncode(proc, task_id, "after kill")
-            _record_signal(task_id, proc, signal.SIGKILL, fallback, code)
+            q._record_shutdown_signal(task_id, proc, q.signal.SIGKILL, fallback, code)
         code, quiesced = q._wait_for_process_tree_exit(
             proc, process_group_id, task_id, timeout
         )
@@ -280,11 +274,11 @@ def _log_task_error(task_id: str, error_class: str, raw_error) -> None:
 
 def _handle_timeout(task_id, event_id, proc, group_id) -> bool:
     q = _facade()
-    q._signal_ingest_process(proc, group_id, signal.SIGTERM, "terminate", task_id)
+    q._signal_ingest_process(proc, group_id, q.signal.SIGTERM, "terminate", task_id)
     try:
         proc.communicate(timeout=10)
     except q.subprocess.TimeoutExpired:
-        q._signal_ingest_process(proc, group_id, signal.SIGKILL, "kill", task_id)
+        q._signal_ingest_process(proc, group_id, q.signal.SIGKILL, "kill", task_id)
         try:
             proc.communicate(timeout=q._SHUTDOWN_TERMINATE_TIMEOUT_SECONDS)
         except q.subprocess.TimeoutExpired:
@@ -294,7 +288,7 @@ def _handle_timeout(task_id, event_id, proc, group_id) -> bool:
         )
     else:
         if q._process_group_exists(group_id, task_id):
-            q._signal_ingest_process(proc, group_id, signal.SIGKILL, "kill", task_id)
+            q._signal_ingest_process(proc, group_id, q.signal.SIGKILL, "kill", task_id)
             _, quiesced = q._wait_for_process_tree_exit(
                 proc, group_id, task_id, q._SHUTDOWN_TERMINATE_TIMEOUT_SECONDS
             )
@@ -342,11 +336,11 @@ def process_one(task_id: str) -> None:
     row = store.load_task(task_id, q.connect)
     if not row:
         return
-    event_id, payload = row["event_id"], json.loads(row["payload_json"])
+    event_id, payload = row["event_id"], q.json.loads(row["payload_json"])
     if payload.get("content_path"):
         try:
             q.resolve_under(
-                q.PENDING_DIR, Path(payload["content_path"]), expected="file"
+                q.PENDING_DIR, q.Path(payload["content_path"]), expected="file"
             )
         except (q.PathSecurityError, TypeError, ValueError):
             raw = "invalid queued content path"
@@ -376,11 +370,11 @@ def process_one(task_id: str) -> None:
             return
         store.mark_done(task_id, q.connect)
         if path := payload.get("content_path"):
-            store.safe_pending_unlink(str(path), q.PENDING_DIR, q.logger)
+            q._safe_pending_unlink(str(path))
         q.logger.info("Task %s completed for event %s", task_id, event_id)
     finally:
         owns_shutdown = q._shutdown_interrupted == (task_id, proc)
         interrupted = q._release_active_process(task_id, proc) or interrupted
         if owns_shutdown:
-            clear_shutdown_interrupted(task_id, proc)
+            q._clear_shutdown_interrupted_task(task_id, proc)
     return POST_PROCESS, event_id

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-
 
 def _facade():
     from . import task_queue
@@ -63,7 +61,7 @@ def enqueue(event_id: str, ingest_type: str, content, topic: str, title: str) ->
                     task_id,
                     event_id,
                     ingest_type,
-                    json.dumps(payload, ensure_ascii=False),
+                    q.json.dumps(payload, ensure_ascii=False),
                 ),
             )
     except Exception:

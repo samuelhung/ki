@@ -6,6 +6,7 @@ import signal
 import subprocess
 import sys
 import threading
+import types
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -125,9 +126,32 @@ def test_stop_worker_forwards_signal_observe_and_wait_seams_at_call_time(
     monkeypatch.setattr(task_queue, "_observe_process_returncode", observe)
     monkeypatch.setattr(task_queue, "_signal_ingest_process", send)
     monkeypatch.setattr(task_queue, "_wait_for_process_tree_exit", wait)
+    monkeypatch.setattr(
+        task_queue,
+        "_record_shutdown_signal",
+        lambda *args: calls.append(("record", *args)),
+    )
+    monkeypatch.setattr(
+        task_queue,
+        "_matches_shutdown_causation",
+        lambda *args: calls.append(("matches", *args)) or True,
+    )
+    monkeypatch.setattr(
+        task_queue,
+        "_resolve_shutdown_interruption",
+        lambda *args: calls.append(("resolve", *args)),
+    )
 
     assert task_queue.stop_worker() is True
-    assert [call[0] for call in calls] == ["observe", "signal", "observe", "wait"]
+    assert [call[0] for call in calls] == [
+        "observe",
+        "signal",
+        "observe",
+        "record",
+        "wait",
+        "matches",
+        "resolve",
+    ]
 
 
 def test_process_one_forwards_release_and_restore_seams_at_call_time(
@@ -186,3 +210,128 @@ def test_legacy_shutdown_operation_logger_preserves_message(caplog):
     assert (
         "Failed to stop ingest child for task task-log during terminate" in caplog.text
     )
+
+
+def test_process_one_forwards_clear_shutdown_hook_at_call_time(tmp_path, monkeypatch):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    init_db()
+    _insert_task()
+    process = _SuccessfulProcess()
+    monkeypatch.setattr(task_queue, "_shutdown_flag", threading.Event())
+    monkeypatch.setattr(task_queue.subprocess, "Popen", lambda *args, **kwargs: process)
+    monkeypatch.setattr(task_queue, "_shutdown_interrupted", ("task-success", process))
+    monkeypatch.setattr(task_queue, "_release_active_process", lambda *_: False)
+    cleared = []
+    monkeypatch.setattr(
+        task_queue,
+        "_clear_shutdown_interrupted_task",
+        lambda *args: cleared.append(args),
+    )
+
+    task_queue._process_one("task-success")
+
+    assert cleared == [("task-success", process)]
+
+
+def test_success_cleanup_and_payload_decode_use_facade_hooks(tmp_path, monkeypatch):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    init_db()
+    _insert_task()
+    pending = tmp_path / "pending"
+    pending.mkdir()
+    queued = pending / "queued.pdf"
+    queued.write_bytes(b"document")
+    process = _SuccessfulProcess()
+    calls = []
+    monkeypatch.setattr(task_queue, "PENDING_DIR", pending)
+    monkeypatch.setattr(task_queue, "_shutdown_flag", threading.Event())
+    monkeypatch.setattr(task_queue.subprocess, "Popen", lambda *args, **kwargs: process)
+    monkeypatch.setattr(
+        task_queue,
+        "json",
+        types.SimpleNamespace(
+            loads=lambda value: (
+                calls.append(("loads", value)) or {"content_path": str(queued)}
+            )
+        ),
+    )
+
+    def path_factory(value):
+        calls.append(("path", value))
+        return Path(value)
+
+    monkeypatch.setattr(task_queue, "Path", path_factory)
+    monkeypatch.setattr(
+        task_queue,
+        "_safe_pending_unlink",
+        lambda value: calls.append(("unlink", value)),
+    )
+
+    task_queue._process_one("task-success")
+
+    assert calls == [
+        ("loads", "{}"),
+        ("path", str(queued)),
+        ("unlink", str(queued)),
+    ]
+
+
+def test_process_group_check_resolves_errno_from_facade(monkeypatch):
+    class GroupError(OSError):
+        errno = 9876
+
+    monkeypatch.setattr(
+        task_queue,
+        "errno",
+        types.SimpleNamespace(ESRCH=9876, EPERM=9877),
+    )
+    monkeypatch.setattr(task_queue.os, "name", "posix")
+    monkeypatch.setattr(task_queue.os, "getpgrp", lambda: 111)
+    monkeypatch.setattr(
+        task_queue.os, "killpg", lambda *_: (_ for _ in ()).throw(GroupError())
+    )
+
+    assert task_queue._process_group_exists(222, "task-errno") is False
+
+
+def test_process_tree_wait_resolves_monotonic_and_sleep_from_facade(monkeypatch):
+    times = iter([10.0, 10.1])
+    sleeps = []
+    groups = iter([True, False])
+    monkeypatch.setattr(
+        task_queue,
+        "time",
+        types.SimpleNamespace(monotonic=lambda: next(times), sleep=sleeps.append),
+    )
+    monkeypatch.setattr(task_queue, "_observe_process_returncode", lambda *_: 0)
+    monkeypatch.setattr(task_queue, "_process_group_exists", lambda *_: next(groups))
+
+    assert task_queue._wait_for_process_tree_exit(
+        _SuccessfulProcess(), 4242, "task-clock", 1
+    ) == (0, True)
+    assert sleeps == [0.05]
+
+
+def test_stop_process_tree_resolves_signals_from_facade(monkeypatch):
+    sent = []
+    waits = iter([(None, False), (-202, True)])
+    monkeypatch.setattr(
+        task_queue,
+        "signal",
+        types.SimpleNamespace(SIGTERM=101, SIGKILL=202),
+    )
+    monkeypatch.setattr(
+        task_queue,
+        "_signal_ingest_process",
+        lambda _proc, _group, sig, _operation, _task: sent.append(sig) or (True, False),
+    )
+    monkeypatch.setattr(task_queue, "_observe_process_returncode", lambda *_: None)
+    monkeypatch.setattr(task_queue, "_record_shutdown_signal", lambda *args: None)
+    monkeypatch.setattr(
+        task_queue, "_wait_for_process_tree_exit", lambda *_: next(waits)
+    )
+
+    assert task_process_supervisor.stop_process_tree(
+        "task-signal", object(), 4242, 1
+    ) == (-202, True)
+    assert sent == [101, 202]

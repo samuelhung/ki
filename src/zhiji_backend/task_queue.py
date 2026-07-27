@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import errno as errno
+import json as json
 import logging
 import os as os
 import shutil as shutil
@@ -89,6 +91,10 @@ def _release_active_process(task_id: str, proc: subprocess.Popen[str]) -> bool:
 
 
 def _clear_shutdown_interrupted(task_id: str, proc: subprocess.Popen[str]) -> None:
+    _clear_shutdown_interrupted_task(task_id, proc)
+
+
+def _clear_shutdown_interrupted_task(task_id: str, proc: subprocess.Popen[str]) -> None:
     _supervisor().clear_shutdown_interrupted(task_id, proc)
 
 
@@ -294,10 +300,8 @@ def stop_worker() -> bool:
         returncode, process_tree_quiesced = supervisor.stop_process_tree(
             task_id, proc, group_id, _SHUTDOWN_TERMINATE_TIMEOUT_SECONDS
         )
-        verified_interruption = supervisor.matches_shutdown_causation(
-            task_id, proc, returncode
-        )
-        supervisor.resolve_shutdown_interruption(task_id, proc)
+        verified_interruption = _matches_shutdown_causation(task_id, proc, returncode)
+        _resolve_shutdown_interruption(task_id, proc)
 
     worker = _worker
     if _worker_is_alive(worker):
