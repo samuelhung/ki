@@ -43,13 +43,64 @@ def _serialize_briefing_row(row, parse_topics_json_fn) -> dict[str, Any]:
     return briefing
 
 
+def persist_briefing(
+    briefing: dict[str, Any], *, connect_fn, init_db_fn, json_module
+) -> None:
+    topics_json = json_module.dumps(briefing["topics"], ensure_ascii=False)
+    init_db_fn()
+    with connect_fn() as conn:
+        conn.execute(
+            "INSERT INTO briefings (id, type, topics_json, events_used) VALUES (?, ?, ?, ?)",
+            (
+                briefing["id"],
+                briefing["type"],
+                topics_json,
+                briefing["events_used"],
+            ),
+        )
+
+
+def enrich_briefing_relevance(
+    topics: list[dict[str, Any]], *, connect_fn, init_db_fn
+) -> None:
+    event_ids: list[str] = []
+    for topic in topics:
+        for event in topic.get("events", []):
+            event_id = event.get("event_id", "")
+            if event_id:
+                event_ids.append(event_id)
+    if not event_ids:
+        return
+
+    init_db_fn()
+    with connect_fn() as conn:
+        placeholders = ",".join(["?"] * len(event_ids))
+        rows = conn.execute(
+            f"""SELECT event_id, relevance
+                FROM brainstorm_contemplate_cache
+                WHERE event_id IN ({placeholders})
+                AND relevance IN ('high', 'medium')
+                ORDER BY CASE relevance WHEN 'high' THEN 1 WHEN 'medium' THEN 2 END""",
+            event_ids,
+        ).fetchall()
+
+    relevance_map: dict[str, dict[str, int]] = {}
+    for row in rows:
+        counts = relevance_map.setdefault(row["event_id"], {"high": 0, "medium": 0})
+        counts[row["relevance"]] += 1
+    for topic in topics:
+        for event in topic.get("events", []):
+            event_id = event.get("event_id", "")
+            if event_id in relevance_map:
+                event["relevance"] = relevance_map[event_id]
+
+
 def latest_briefing(
     briefing_type: str = "quick",
     *,
     connect_fn,
     init_db_fn,
     parse_topics_json_fn,
-    enrich_relevance_fn,
 ) -> dict[str, Any] | None:
     init_db_fn()
     with connect_fn() as conn:
@@ -59,9 +110,7 @@ def latest_briefing(
         ).fetchone()
     if not row:
         return None
-    briefing = _serialize_briefing_row(row, parse_topics_json_fn)
-    enrich_relevance_fn(briefing["topics"])
-    return briefing
+    return _serialize_briefing_row(row, parse_topics_json_fn)
 
 
 def list_briefings(
@@ -102,7 +151,6 @@ def get_briefing(
     connect_fn,
     init_db_fn,
     parse_topics_json_fn,
-    enrich_relevance_fn,
 ) -> dict[str, Any] | None:
     init_db_fn()
     with connect_fn() as conn:
@@ -117,6 +165,4 @@ def get_briefing(
     if row is None:
         return None
 
-    briefing = _serialize_briefing_row(row, parse_topics_json_fn)
-    enrich_relevance_fn(briefing["topics"])
-    return briefing
+    return _serialize_briefing_row(row, parse_topics_json_fn)

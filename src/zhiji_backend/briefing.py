@@ -87,20 +87,28 @@ def _parse_generated_topics(
 
 def generate_briefing(briefing_type: str = "quick", limit: int = 80) -> dict[str, Any]:
     """Generate and persist a structured Chinese news briefing."""
-    return _generation_service.generate_briefing(
+    briefing = _generation_service.generate_briefing(
         briefing_type,
         limit,
-        connect_fn=connect,
-        init_db_fn=init_db,
         call_ai_fn=_call_ai,
         fetch_events_fn=_fetch_translated_events,
         build_events_text_fn=_build_events_text,
         parse_generated_topics_fn=_parse_generated_topics,
-        batch_contemplate_fn=_batch_contemplate_briefing_events,
         uuid_fn=uuid.uuid4,
-        json_module=json,
-        logger=logger,
     )
+    _repository.persist_briefing(
+        briefing,
+        connect_fn=connect,
+        init_db_fn=init_db,
+        json_module=json,
+    )
+    try:
+        _batch_contemplate_briefing_events(briefing["topics"])
+    except Exception as exc:
+        logger.warning(
+            "Batch contemplate failed for briefing %s: %s", briefing["id"], exc
+        )
+    return briefing
 
 
 def _parse_topics_json(topics_json: str) -> list[dict[str, Any]]:
@@ -109,13 +117,15 @@ def _parse_topics_json(topics_json: str) -> list[dict[str, Any]]:
 
 def latest_briefing(briefing_type: str = "quick") -> dict[str, Any] | None:
     """Get the latest briefing of the given type."""
-    return _repository.latest_briefing(
+    briefing = _repository.latest_briefing(
         briefing_type,
         connect_fn=connect,
         init_db_fn=init_db,
         parse_topics_json_fn=_parse_topics_json,
-        enrich_relevance_fn=_enrich_briefing_relevance,
     )
+    if briefing is not None:
+        _enrich_briefing_relevance(briefing["topics"])
+    return briefing
 
 
 def list_briefings(limit: int = 30, offset: int = 0) -> dict[str, Any]:
@@ -130,18 +140,20 @@ def list_briefings(limit: int = 30, offset: int = 0) -> dict[str, Any]:
 
 def get_briefing(briefing_id: str) -> dict[str, Any] | None:
     """Return one parsed briefing, including topics, or None."""
-    return _repository.get_briefing(
+    briefing = _repository.get_briefing(
         briefing_id,
         connect_fn=connect,
         init_db_fn=init_db,
         parse_topics_json_fn=_parse_topics_json,
-        enrich_relevance_fn=_enrich_briefing_relevance,
     )
+    if briefing is not None:
+        _enrich_briefing_relevance(briefing["topics"])
+    return briefing
 
 
 def _enrich_briefing_relevance(topics: list[dict[str, Any]]) -> None:
     """Add cached brainstorm relevance labels to briefing events."""
-    _generation_service.enrich_briefing_relevance(
+    _repository.enrich_briefing_relevance(
         topics,
         connect_fn=connect,
         init_db_fn=init_db,

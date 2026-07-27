@@ -7,17 +7,6 @@ from typing import Any
 
 logger = logging.getLogger("zhiji_backend.briefing")
 
-SOURCE_LABELS: dict[str, str] = {
-    "bbc-world": "BBC 世界新闻",
-    "bbc-top-stories": "BBC 头条",
-    "bbc-business": "BBC 商业",
-    "bbc-technology": "BBC 科技",
-    "npr": "NPR",
-    "al-jazeera": "半岛电视台",
-    "reuters-world": "卫报",
-    "nyt-world": "纽约时报",
-}
-
 
 def call_ai(
     system_prompt: str,
@@ -69,7 +58,7 @@ def fetch_translated_events(
 
 
 def build_events_text(
-    events: list[dict[str, Any]], *, source_labels: dict[str, str] = SOURCE_LABELS
+    events: list[dict[str, Any]], *, source_labels: dict[str, str]
 ) -> str:
     lines = []
     for event in events:
@@ -132,27 +121,7 @@ def parse_generated_topics(
         raise RuntimeError(f"AI generated invalid JSON: {exc}") from exc
 
 
-def generate_briefing(
-    briefing_type: str = "quick",
-    limit: int = 80,
-    *,
-    connect_fn,
-    init_db_fn,
-    call_ai_fn,
-    fetch_events_fn,
-    build_events_text_fn,
-    parse_generated_topics_fn,
-    batch_contemplate_fn,
-    uuid_fn,
-    json_module,
-    logger,
-) -> dict[str, Any]:
-    events = fetch_events_fn(limit=limit)
-    if not events:
-        raise RuntimeError("No translated events available for briefing generation")
-
-    events_text = build_events_text_fn(events)
-    is_quick = briefing_type == "quick"
+def _build_quick_prompts(events_text: str) -> tuple[str, str]:
     system_prompt = (
         "你是一个专业的新闻编辑。根据提供的新闻事件列表，生成一份结构化的中文新闻概览。\n\n"
         "要求：\n"
@@ -163,15 +132,54 @@ def generate_briefing(
         '"events": [{"event_id": "...", "title_cn": "...", "highlight": "中文亮点", "source_name": "..."}]}]}\n'
         "4. topic_label 使用中文标签\n"
         "5. 每个 topic 最多选 6 条最重要的事件\n"
-        + (
-            "6. 风格简洁快速，适合即时快报\n"
-            if is_quick
-            else "6. 风格深度分析，适合每日新闻日报，可以加入趋势解读\n"
-        )
-        + "7. highlight 控制在 30 字以内，必须使用中文\n"
-        + "8. summary 必须使用中文，不得出现英文"
+        "6. 风格简洁快速，适合即时快报\n"
+        "7. highlight 控制在 30 字以内，必须使用中文\n"
+        "8. summary 必须使用中文，不得出现英文"
     )
-    user_prompt = f"请根据以下新闻事件生成{'即时快报' if is_quick else '每日深度日报'}：\n\n{events_text}"
+    user_prompt = "请根据以下新闻事件生成即时快报：\n\n{events_text}"
+    return system_prompt, user_prompt.replace("{events_text}", events_text)
+
+
+def _build_daily_prompts(events_text: str) -> tuple[str, str]:
+    system_prompt = (
+        "你是一个专业的新闻编辑。根据提供的新闻事件列表，生成一份结构化的中文新闻概览。\n\n"
+        "要求：\n"
+        "1. 按 topic 分组，每组写一个概述段落（2-4句话），概括该主题的整体趋势和关键发展\n"
+        "2. 每组下列出重要事件的要点，每条事件给出 event_id、title_cn（直接用原文）、highlight（一句话亮点）\n"
+        "3. 输出严格的 JSON 格式，结构如下：\n"
+        '  {"topics": [{"topic": "...", "topic_label": "中文标签", "summary": "中文概述", '
+        '"events": [{"event_id": "...", "title_cn": "...", "highlight": "中文亮点", "source_name": "..."}]}]}\n'
+        "4. topic_label 使用中文标签\n"
+        "5. 每个 topic 最多选 6 条最重要的事件\n"
+        "6. 风格深度分析，适合每日新闻日报，可以加入趋势解读\n"
+        "7. highlight 控制在 30 字以内，必须使用中文\n"
+        "8. summary 必须使用中文，不得出现英文"
+    )
+    user_prompt = "请根据以下新闻事件生成每日深度日报：\n\n{events_text}"
+    return system_prompt, user_prompt.replace("{events_text}", events_text)
+
+
+def generate_briefing(
+    briefing_type: str = "quick",
+    limit: int = 80,
+    *,
+    call_ai_fn,
+    fetch_events_fn,
+    build_events_text_fn,
+    parse_generated_topics_fn,
+    uuid_fn,
+) -> dict[str, Any]:
+    events = fetch_events_fn(limit=limit)
+    if not events:
+        raise RuntimeError("No translated events available for briefing generation")
+
+    events_text = build_events_text_fn(events)
+    is_quick = briefing_type == "quick"
+    system_prompt, user_prompt = (
+        _build_quick_prompts(events_text)
+        if is_quick
+        else _build_daily_prompts(events_text)
+    )
     raw = call_ai_fn(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
@@ -194,60 +202,12 @@ def generate_briefing(
                 event["created_at"] = event_map[event_id]
 
     briefing_id = f"briefing-{uuid_fn().hex[:12]}"
-    topics_json = json_module.dumps(topics_data, ensure_ascii=False)
-    init_db_fn()
-    with connect_fn() as conn:
-        conn.execute(
-            "INSERT INTO briefings (id, type, topics_json, events_used) VALUES (?, ?, ?, ?)",
-            (briefing_id, briefing_type, topics_json, events_used),
-        )
-
-    try:
-        batch_contemplate_fn(topics_data)
-    except Exception as exc:
-        logger.warning("Batch contemplate failed for briefing %s: %s", briefing_id, exc)
-
     return {
         "id": briefing_id,
         "type": briefing_type,
         "topics": topics_data,
         "events_used": events_used,
     }
-
-
-def enrich_briefing_relevance(
-    topics: list[dict[str, Any]], *, connect_fn, init_db_fn
-) -> None:
-    event_ids: list[str] = []
-    for topic in topics:
-        for event in topic.get("events", []):
-            event_id = event.get("event_id", "")
-            if event_id:
-                event_ids.append(event_id)
-    if not event_ids:
-        return
-
-    init_db_fn()
-    with connect_fn() as conn:
-        placeholders = ",".join(["?"] * len(event_ids))
-        rows = conn.execute(
-            f"""SELECT event_id, relevance
-                FROM brainstorm_contemplate_cache
-                WHERE event_id IN ({placeholders})
-                AND relevance IN ('high', 'medium')
-                ORDER BY CASE relevance WHEN 'high' THEN 1 WHEN 'medium' THEN 2 END""",
-            event_ids,
-        ).fetchall()
-
-    relevance_map: dict[str, dict[str, int]] = {}
-    for row in rows:
-        counts = relevance_map.setdefault(row["event_id"], {"high": 0, "medium": 0})
-        counts[row["relevance"]] += 1
-    for topic in topics:
-        for event in topic.get("events", []):
-            event_id = event.get("event_id", "")
-            if event_id in relevance_map:
-                event["relevance"] = relevance_map[event_id]
 
 
 def batch_contemplate_briefing_events(

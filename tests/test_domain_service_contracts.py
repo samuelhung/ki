@@ -803,11 +803,15 @@ def _briefing_repository_forwarding(module, monkeypatch) -> None:
     sentinel_connect = object()
     sentinel_init = object()
     sentinel_parse = object()
-    sentinel_enrich = object()
+    enrich_calls: list[Any] = []
     monkeypatch.setattr(briefing, "connect", sentinel_connect)
     monkeypatch.setattr(briefing, "init_db", sentinel_init)
     monkeypatch.setattr(briefing, "_parse_topics_json", sentinel_parse)
-    monkeypatch.setattr(briefing, "_enrich_briefing_relevance", sentinel_enrich)
+    monkeypatch.setattr(
+        briefing,
+        "_enrich_briefing_relevance",
+        lambda topics: enrich_calls.append(topics),
+    )
     repository_dependencies = {
         "connect_fn": sentinel_connect,
         "init_db_fn": sentinel_init,
@@ -820,30 +824,33 @@ def _briefing_repository_forwarding(module, monkeypatch) -> None:
         expected_args=(7, 3),
         expected_kwargs=repository_dependencies,
     )
-    _stub_and_assert(
-        module,
-        monkeypatch,
-        "latest_briefing",
-        lambda: briefing_routes.get_latest_briefing("daily"),
-        expected_args=("daily",),
-        expected_kwargs={
-            **repository_dependencies,
-            "parse_topics_json_fn": sentinel_parse,
-            "enrich_relevance_fn": sentinel_enrich,
-        },
-    )
-    _stub_and_assert(
-        module,
-        monkeypatch,
-        "get_briefing",
-        lambda: briefing_routes.get_briefing_detail("briefing-1"),
-        expected_args=("briefing-1",),
-        expected_kwargs={
-            **repository_dependencies,
-            "parse_topics_json_fn": sentinel_parse,
-            "enrich_relevance_fn": sentinel_enrich,
-        },
-    )
+    read_calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
+
+    def latest_replacement(*args, **kwargs):
+        read_calls.append(("latest", args, kwargs))
+        return {"id": "latest", "topics": []}
+
+    def detail_replacement(*args, **kwargs):
+        read_calls.append(("detail", args, kwargs))
+        return {"id": "briefing-1", "topics": []}
+
+    monkeypatch.setattr(module, "latest_briefing", latest_replacement)
+    monkeypatch.setattr(module, "get_briefing", detail_replacement)
+    assert briefing_routes.get_latest_briefing("daily")["id"] == "latest"
+    assert briefing_routes.get_briefing_detail("briefing-1")["id"] == "briefing-1"
+    assert read_calls == [
+        (
+            "latest",
+            ("daily",),
+            {**repository_dependencies, "parse_topics_json_fn": sentinel_parse},
+        ),
+        (
+            "detail",
+            ("briefing-1",),
+            {**repository_dependencies, "parse_topics_json_fn": sentinel_parse},
+        ),
+    ]
+    assert enrich_calls == [[], []]
 
 
 def _briefing_generation_forwarding(module, monkeypatch) -> None:
@@ -853,35 +860,63 @@ def _briefing_generation_forwarding(module, monkeypatch) -> None:
     sentinel_fetch = object()
     sentinel_build = object()
     sentinel_parse = object()
-    sentinel_batch = object()
     sentinel_uuid = object()
+    generated = {
+        "id": "briefing-1",
+        "type": "daily",
+        "topics": [],
+        "events_used": 0,
+    }
+    generation_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+    persist_calls: list[tuple[Any, dict[str, Any]]] = []
+    batch_calls: list[Any] = []
     monkeypatch.setattr(briefing, "connect", sentinel_connect)
     monkeypatch.setattr(briefing, "init_db", sentinel_init)
     monkeypatch.setattr(briefing, "_call_ai", sentinel_call_ai)
     monkeypatch.setattr(briefing, "_fetch_translated_events", sentinel_fetch)
     monkeypatch.setattr(briefing, "_build_events_text", sentinel_build)
     monkeypatch.setattr(briefing, "_parse_generated_topics", sentinel_parse)
-    monkeypatch.setattr(briefing, "_batch_contemplate_briefing_events", sentinel_batch)
     monkeypatch.setattr(briefing, "uuid", SimpleNamespace(uuid4=sentinel_uuid))
-    _stub_and_assert(
+    monkeypatch.setattr(
         module,
-        monkeypatch,
         "generate_briefing",
-        lambda: briefing.generate_briefing("daily", 9),
-        expected_args=("daily", 9),
-        expected_kwargs={
-            "connect_fn": sentinel_connect,
-            "init_db_fn": sentinel_init,
-            "call_ai_fn": sentinel_call_ai,
-            "fetch_events_fn": sentinel_fetch,
-            "build_events_text_fn": sentinel_build,
-            "parse_generated_topics_fn": sentinel_parse,
-            "batch_contemplate_fn": sentinel_batch,
-            "uuid_fn": sentinel_uuid,
-            "json_module": briefing.json,
-            "logger": briefing.logger,
-        },
+        lambda *args, **kwargs: generation_calls.append((args, kwargs)) or generated,
     )
+    monkeypatch.setattr(
+        briefing._repository,
+        "persist_briefing",
+        lambda value, **kwargs: persist_calls.append((value, kwargs)),
+    )
+    monkeypatch.setattr(
+        briefing,
+        "_batch_contemplate_briefing_events",
+        lambda topics: batch_calls.append(topics),
+    )
+
+    assert briefing.generate_briefing("daily", 9) is generated
+    assert generation_calls == [
+        (
+            ("daily", 9),
+            {
+                "call_ai_fn": sentinel_call_ai,
+                "fetch_events_fn": sentinel_fetch,
+                "build_events_text_fn": sentinel_build,
+                "parse_generated_topics_fn": sentinel_parse,
+                "uuid_fn": sentinel_uuid,
+            },
+        )
+    ]
+    assert persist_calls == [
+        (
+            generated,
+            {
+                "connect_fn": sentinel_connect,
+                "init_db_fn": sentinel_init,
+                "json_module": briefing.json,
+            },
+        )
+    ]
+    assert batch_calls == [generated["topics"]]
 
 
 def _event_query_forwarding(module, monkeypatch) -> None:
