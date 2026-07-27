@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=83.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -34,7 +34,7 @@ dev = [
     "httpx>=0.28,<1",
     "pytest>=9.1.1,<10",
     "ruff>=0.14,<1",
-    "setuptools>=80,<81",
+    "setuptools>=83.0.0,<84",
     "wheel>=0.46,<1",
 ]
 
