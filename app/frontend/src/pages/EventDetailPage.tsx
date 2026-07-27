@@ -4,7 +4,7 @@ import { ArrowLeft, Loader2, Sparkles, Globe, FileText, Lightbulb, Plus, Link2 }
 import { renderMarkdown } from '../components/MarkdownRenderer';
 import { useAuthenticatedMediaUrl } from '../components/ingest/useAuthenticatedMediaUrl';
 import { formatTimeBeijing, sourceLabel, statusLabel } from '../utils';
-import { apiFetch } from '../api';
+import { apiFetch, backendUrl } from '../api';
 
 const API_BASE = '/api/events';
 
@@ -17,7 +17,7 @@ export interface EventDetailData {
   raw_summary?: string; ai_summary?: string; overview?: string; last_error?: string;
   summary_cn?: string; translation_status?: string;
   transcript_path?: string; summary_path?: string;
-  video_path?: string; audio_path?: string; document_path?: string;
+  video_path?: string; video_url?: string; audio_path?: string; document_path?: string;
   associated_questions?: any[];
 }
 
@@ -66,7 +66,8 @@ export default function EventDetailPage({ embedded = false, eventId, onEventChan
   const [contemplateLinking, setContemplateLinking] = useState(false);
   const [linkedQuestions, setLinkedQuestions] = useState<any[]>([]);
   const [linkedQuestionsLoading, setLinkedQuestionsLoading] = useState(false);
-  const mediaUrl = useAuthenticatedMediaUrl(toMediaPath(detail?.video_path));
+  const authenticatedMediaUrl = useAuthenticatedMediaUrl(toMediaPath(detail?.video_path));
+  const mediaUrl = detail?.video_url ? backendUrl(detail.video_url) : authenticatedMediaUrl;
 
   useEffect(() => {
     if (!id) return;

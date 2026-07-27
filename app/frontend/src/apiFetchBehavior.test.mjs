@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const api = await import('./apiFetchRuntime.ts');
+const apiSource = readFileSync(new URL('./api.ts', import.meta.url), 'utf8');
+const runtimeSource = readFileSync(new URL('./apiFetchRuntime.ts', import.meta.url), 'utf8');
 
 function createRuntime(responses, overrides = {}) {
   const calls = [];
@@ -99,5 +101,17 @@ test('apiFetch authenticates every protected backend path', async () => {
 
 test('api runtime does not buffer protected media into whole-file blobs', () => {
   assert.equal(api.loadAuthenticatedObjectUrl, undefined);
-  assert.doesNotMatch(readFileSync(new URL('./apiFetchRuntime.ts', import.meta.url), 'utf8'), /response\.blob\(|createObjectURL/);
+  assert.doesNotMatch(runtimeSource, /response\.blob\(|createObjectURL/);
+});
+
+test('signed media URLs use the backend origin without protected API authentication', async () => {
+  assert.match(apiSource, /path\.startsWith\('\/media\/'\)/);
+  assert.doesNotMatch(runtimeSource, /PROTECTED_BACKEND_PREFIXES\s*=\s*\[[^\]]*['"]\/media\//s);
+
+  const harness = createRuntime([new Response(null, { status: 200 })]);
+  const apiFetch = api.createApiFetch(harness.runtime);
+  await apiFetch('/media/videos/evt-1.mp4');
+
+  assert.equal(harness.calls[0].input, '/media/videos/evt-1.mp4');
+  assert.equal(harness.prepared.length, 0);
 });
