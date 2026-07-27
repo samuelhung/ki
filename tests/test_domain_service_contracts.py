@@ -809,7 +809,7 @@ def _briefing_repository_forwarding(module, monkeypatch) -> None:
 def _briefing_generation_forwarding(module, monkeypatch) -> None:
     sentinel_connect = object()
     sentinel_init = object()
-    sentinel_chat = object()
+    sentinel_call_ai = object()
     sentinel_fetch = object()
     sentinel_build = object()
     sentinel_parse = object()
@@ -817,7 +817,7 @@ def _briefing_generation_forwarding(module, monkeypatch) -> None:
     sentinel_uuid = object()
     monkeypatch.setattr(briefing, "connect", sentinel_connect)
     monkeypatch.setattr(briefing, "init_db", sentinel_init)
-    monkeypatch.setattr(briefing, "chat", sentinel_chat)
+    monkeypatch.setattr(briefing, "_call_ai", sentinel_call_ai)
     monkeypatch.setattr(briefing, "_fetch_translated_events", sentinel_fetch)
     monkeypatch.setattr(briefing, "_build_events_text", sentinel_build)
     monkeypatch.setattr(briefing, "_parse_generated_topics", sentinel_parse)
@@ -832,7 +832,7 @@ def _briefing_generation_forwarding(module, monkeypatch) -> None:
         expected_kwargs={
             "connect_fn": sentinel_connect,
             "init_db_fn": sentinel_init,
-            "chat_fn": sentinel_chat,
+            "call_ai_fn": sentinel_call_ai,
             "fetch_events_fn": sentinel_fetch,
             "build_events_text_fn": sentinel_build,
             "parse_generated_topics_fn": sentinel_parse,
