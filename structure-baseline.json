@@ -8,11 +8,7 @@
     "app/frontend/src/pages/EventDetailPage.tsx": 565,
     "app/frontend/src/pages/Ingest.tsx": 503,
     "app/frontend/src/pages/SeriesDetail.tsx": 882,
-    "app/frontend/src/pages/StudyDetail.tsx": 554,
-    "src/zhiji_backend/briefing.py": 490,
-    "src/zhiji_backend/routes/event_routes.py": 505,
-    "src/zhiji_backend/routes/study_routes.py": 532,
-    "src/zhiji_backend/series_service.py": 499
+    "app/frontend/src/pages/StudyDetail.tsx": 554
   },
   "ruff_per_file_ignores": {
     "scripts/backfill_overviews.py": [
