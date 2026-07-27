@@ -26,3 +26,14 @@ test('brainstorm bypasses the global curtain on initial and internal navigation'
   assert.match(curtain, /pathname === '\/brainstorm'/);
   assert.match(curtain, /pathname\.startsWith\('\/brainstorm\/'\)/);
 });
+
+test('brainstorm exposes four focused topic tabs and defaults to 格局', () => {
+  const topicConfig = page.match(/const TOPICS = \[([\s\S]*?)\] as const;/)?.[1] || '';
+
+  assert.doesNotMatch(topicConfig, /key: '全部'/);
+  assert.match(topicConfig, /key: '格局'/);
+  assert.match(topicConfig, /key: '财富'/);
+  assert.match(topicConfig, /key: '认知'/);
+  assert.match(topicConfig, /key: '前瞻'/);
+  assert.match(page, /useState<TopicKey>\('格局'\)/);
+});
