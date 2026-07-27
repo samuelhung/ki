@@ -923,4 +923,22 @@ def test_planned_extraction_uses_call_time_forwarding(
     result = legacy_facade(*args, **kwargs)
 
     assert result is sentinel
-    assert calls == [(args, kwargs)]
+    if case == "process-ingest":
+        assert calls[0][0] == args
+        assert set(calls[0][1]["dependencies"]) == {
+            "connect_fn",
+            "transcripts_dir",
+            "summaries_dir",
+            "videos_dir",
+            "audio_dir",
+            "documents_dir",
+            "resolve_under_fn",
+            "set_progress_fn",
+            "md5_file_fn",
+            "safe_identifier_fn",
+            "sanitize_task_error_fn",
+            "classify_task_error_fn",
+            "logger",
+        }
+    else:
+        assert calls == [(args, kwargs)]
