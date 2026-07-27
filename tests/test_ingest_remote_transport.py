@@ -77,6 +77,40 @@ def test_safe_get_filters_cookies_again_for_redirect_target():
     response.close()
 
 
+def test_safe_get_drops_caller_cookie_and_applies_scoped_cookie_each_hop():
+    session = requests.Session()
+    session.cookies.set("origin", "one", domain="origin.example", path="/")
+    session.cookies.set("cdn", "two", domain="cdn.example", path="/")
+    redirect = Response(
+        status_code=302,
+        headers={"Location": "https://cdn.example/video.mp4"},
+    )
+    responses = [redirect, Response()]
+    requests_seen = []
+
+    response = remote_transport._safe_get(
+        session,
+        "https://origin.example/start",
+        headers={"User-Agent": "test", "cOoKiE": "caller-secret=leak"},
+        timeout=(1, 2),
+        resolver=lambda _host, _port: ["93.184.216.34"],
+        max_redirects=2,
+        connection_factory=lambda *_args: Connection(responses, requests_seen),
+    )
+
+    source_headers = requests_seen[0][1]
+    destination_headers = requests_seen[1][1]
+    assert source_headers["Cookie"] == "origin=one"
+    assert destination_headers["Cookie"] == "cdn=two"
+    assert all(key.lower() != "cookie" or key == "Cookie" for key in source_headers)
+    assert all(
+        key.lower() != "cookie" or key == "Cookie" for key in destination_headers
+    )
+    assert "caller-secret" not in str(source_headers)
+    assert "caller-secret" not in str(destination_headers)
+    response.close()
+
+
 def test_douyin_pinned_connection_uses_facade_pool_at_call_time(monkeypatch):
     pool_cls = MagicMock()
     monkeypatch.setattr(douyin, "HTTPSConnectionPool", pool_cls)

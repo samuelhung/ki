@@ -221,7 +221,10 @@ def _safe_get(
             raise ValueError("远程视频重定向循环")
         visited.add(current)
         target = validate_url(current, resolver=resolver)
-        request_headers = {**headers, "Host": target.host_header}
+        request_headers = {
+            key: value for key, value in headers.items() if key.lower() != "cookie"
+        }
+        request_headers["Host"] = target.host_header
         cookie_header = (
             cookie_header_fn(session, current)
             if cookie_header_fn is not None
