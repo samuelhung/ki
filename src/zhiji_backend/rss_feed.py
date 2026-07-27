@@ -4,13 +4,19 @@ import hashlib
 import logging
 import re
 import xml.etree.ElementTree as ET
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from html import unescape
 from html.parser import HTMLParser
 
 logger = logging.getLogger("knowledge-intelligence")
+
+StripHtml = Callable[[str | None], str]
+ChildText = Callable[[ET.Element, Iterable[str]], str | None]
+AtomLink = Callable[[ET.Element], str | None]
+ParseDatetime = Callable[[str | None], str | None]
+StableItemId = Callable[[str, str, str | None], str]
 
 _BLOCK_TAGS = {
     "blockquote",
@@ -168,7 +174,20 @@ def stable_item_id(title: str, url: str, published_at: str | None) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def parse_rss_items(feed_text: str) -> list[dict[str, str | None]]:
+def parse_rss_items(
+    feed_text: str,
+    *,
+    strip_html_fn: StripHtml | None = None,
+    child_text_fn: ChildText | None = None,
+    atom_link_fn: AtomLink | None = None,
+    parse_datetime_fn: ParseDatetime | None = None,
+    stable_item_id_fn: StableItemId | None = None,
+) -> list[dict[str, str | None]]:
+    clean_html = strip_html_fn or strip_html
+    get_child_text = child_text_fn or child_text
+    get_atom_link = atom_link_fn or atom_link
+    parse_date = parse_datetime_fn or parse_datetime
+    make_stable_id = stable_item_id_fn or stable_item_id
     root = ET.fromstring(feed_text)
     items = [
         element
@@ -177,20 +196,20 @@ def parse_rss_items(feed_text: str) -> list[dict[str, str | None]]:
     ]
     parsed: list[dict[str, str | None]] = []
     for item in items:
-        title = strip_html(child_text(item, ["title"]))
-        url = (child_text(item, ["link"]) or atom_link(item) or "").strip()
-        guid = (child_text(item, ["guid", "id"]) or "").strip()
-        published_at = parse_datetime(
-            child_text(item, ["pubDate", "published", "updated", "date"])
+        title = clean_html(get_child_text(item, ["title"]))
+        url = (get_child_text(item, ["link"]) or get_atom_link(item) or "").strip()
+        guid = (get_child_text(item, ["guid", "id"]) or "").strip()
+        published_at = parse_date(
+            get_child_text(item, ["pubDate", "published", "updated", "date"])
         )
-        summary = strip_html(
-            child_text(item, ["description", "summary", "content", "encoded"])
+        summary = clean_html(
+            get_child_text(item, ["description", "summary", "content", "encoded"])
         )
         if not title and not url:
             continue
         parsed.append(
             {
-                "external_id": guid or stable_item_id(title, url, published_at),
+                "external_id": guid or make_stable_id(title, url, published_at),
                 "title": title or url,
                 "url": url,
                 "published_at": published_at,

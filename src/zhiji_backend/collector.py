@@ -2,18 +2,23 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 import xml.etree.ElementTree as ET
 from collections.abc import Iterable
 from pathlib import Path
 
 from . import rss_collection_service, rss_feed
+from .db import connect, init_db
+
+logger = logging.getLogger("knowledge-intelligence")
 
 DEFAULT_DATA_DIR = rss_collection_service.DEFAULT_DATA_DIR
 MAX_WATERMARK_IDS = rss_collection_service.MAX_WATERMARK_IDS
 FetchUrl = rss_collection_service.FetchUrl
 
 _COLLECT_ONCE_IMPLEMENTATION = rss_collection_service.collect_once
+_PARSE_RSS_ITEMS_IMPLEMENTATION = rss_feed.parse_rss_items
 
 
 def get_data_dir() -> Path:
@@ -53,7 +58,17 @@ def stable_item_id(title: str, url: str, published_at: str | None) -> str:
 
 
 def parse_rss_items(feed_text: str) -> list[dict[str, str | None]]:
-    return rss_feed.parse_rss_items(feed_text)
+    implementation = rss_feed.parse_rss_items
+    if implementation is not _PARSE_RSS_ITEMS_IMPLEMENTATION:
+        return implementation(feed_text)
+    return implementation(
+        feed_text,
+        strip_html_fn=strip_html,
+        child_text_fn=child_text,
+        atom_link_fn=atom_link,
+        parse_datetime_fn=parse_datetime,
+        stable_item_id_fn=stable_item_id,
+    )
 
 
 def watermark_path(source_id: str) -> Path:
@@ -81,7 +96,9 @@ def insert_event(conn: sqlite3.Connection, event: dict[str, object]) -> bool:
 
 
 def enabled_rss_sources(source_ids: list[str] | None = None) -> list[dict[str, object]]:
-    return rss_collection_service.enabled_rss_sources(source_ids)
+    return rss_collection_service.enabled_rss_sources(
+        source_ids, init_db_fn=init_db, connect_fn=connect
+    )
 
 
 def _canonical_url(url: str) -> str:
@@ -103,11 +120,22 @@ def _is_duplicate_title(
 def _collect_one_source(
     source: dict[str, object], fetcher: FetchUrl
 ) -> dict[str, object]:
+    dependencies = rss_collection_service.SourceDependencies(
+        parse_items=parse_rss_items,
+        load_watermark=load_watermark,
+        save_watermark=save_watermark,
+        connect=connect,
+        is_duplicate_title=_is_duplicate_title,
+        fetch_article=fetch_article_text,
+        canonical_url=_canonical_url,
+        event_id=event_id,
+        insert_event=insert_event,
+        append_event_jsonl=append_event_jsonl,
+    )
     return rss_collection_service.collect_one_source(
         source,
         fetcher,
-        parse_items=parse_rss_items,
-        fetch_article=fetch_article_text,
+        dependencies=dependencies,
     )
 
 
@@ -120,6 +148,8 @@ def collect_once(
     return implementation(
         source_ids,
         fetcher=fetcher,
-        parse_items=parse_rss_items,
-        fetch_article=fetch_article_text,
+        init_db_fn=init_db,
+        fetch_url_fn=fetch_url,
+        enabled_sources_fn=enabled_rss_sources,
+        collect_source_fn=_collect_one_source,
     )
