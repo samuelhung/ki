@@ -51,11 +51,11 @@ MODULE_MAP: dict[str, dict[str, tuple[str, list[str]]]] = {
     "briefing": {
         "briefing_quick": (
             "briefing_generation_service.py",
-            ["_build_quick_prompts"],
+            ["generate_briefing", "batch_contemplate_briefing_events"],
         ),
         "briefing_daily": (
             "briefing_generation_service.py",
-            ["_build_daily_prompts"],
+            ["generate_briefing", "batch_contemplate_briefing_events"],
         ),
     },
     "tasks": {
@@ -76,19 +76,23 @@ class PromptSource(NamedTuple):
 PROMPT_SOURCES: dict[str, dict[str, dict[str, PromptSource]]] = {
     "briefing": {
         "briefing_quick": {
-            "system_prompt": PromptSource(
-                "briefing_generation_service.py", "_build_quick_prompts"
+            "prompt": PromptSource(
+                "briefing_generation_service.py",
+                "batch_contemplate_briefing_events",
+                "legacy_built",
             ),
             "user_prompt": PromptSource(
-                "briefing_generation_service.py", "_build_quick_prompts"
+                "briefing_generation_service.py", "generate_briefing"
             ),
         },
         "briefing_daily": {
-            "system_prompt": PromptSource(
-                "briefing_generation_service.py", "_build_daily_prompts"
+            "prompt": PromptSource(
+                "briefing_generation_service.py",
+                "batch_contemplate_briefing_events",
+                "legacy_built",
             ),
             "user_prompt": PromptSource(
-                "briefing_generation_service.py", "_build_daily_prompts"
+                "briefing_generation_service.py", "generate_briefing"
             ),
         },
     },

@@ -175,11 +175,12 @@ def generate_briefing(
 
     events_text = build_events_text_fn(events)
     is_quick = briefing_type == "quick"
-    system_prompt, user_prompt = (
+    system_prompt, _ = (
         _build_quick_prompts(events_text)
         if is_quick
         else _build_daily_prompts(events_text)
     )
+    user_prompt = f"请根据以下新闻事件生成{'即时快报' if is_quick else '每日深度日报'}：\n\n{events_text}"
     raw = call_ai_fn(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
@@ -208,6 +209,29 @@ def generate_briefing(
         "topics": topics_data,
         "events_used": events_used,
     }
+
+
+def enrich_briefing_relevance(
+    topics: list[dict[str, Any]], *, fetch_relevance_fn
+) -> None:
+    event_ids: list[str] = []
+    for topic in topics:
+        for event in topic.get("events", []):
+            event_id = event.get("event_id", "")
+            if event_id:
+                event_ids.append(event_id)
+    if not event_ids:
+        return
+
+    relevance_map: dict[str, dict[str, int]] = {}
+    for row in fetch_relevance_fn(event_ids):
+        counts = relevance_map.setdefault(row["event_id"], {"high": 0, "medium": 0})
+        counts[row["relevance"]] += 1
+    for topic in topics:
+        for event in topic.get("events", []):
+            event_id = event.get("event_id", "")
+            if event_id in relevance_map:
+                event["relevance"] = relevance_map[event_id]
 
 
 def batch_contemplate_briefing_events(

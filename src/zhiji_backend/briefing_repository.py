@@ -60,22 +60,11 @@ def persist_briefing(
         )
 
 
-def enrich_briefing_relevance(
-    topics: list[dict[str, Any]], *, connect_fn, init_db_fn
-) -> None:
-    event_ids: list[str] = []
-    for topic in topics:
-        for event in topic.get("events", []):
-            event_id = event.get("event_id", "")
-            if event_id:
-                event_ids.append(event_id)
-    if not event_ids:
-        return
-
+def fetch_briefing_relevance(event_ids: list[str], *, connect_fn, init_db_fn):
     init_db_fn()
     with connect_fn() as conn:
         placeholders = ",".join(["?"] * len(event_ids))
-        rows = conn.execute(
+        return conn.execute(
             f"""SELECT event_id, relevance
                 FROM brainstorm_contemplate_cache
                 WHERE event_id IN ({placeholders})
@@ -83,16 +72,6 @@ def enrich_briefing_relevance(
                 ORDER BY CASE relevance WHEN 'high' THEN 1 WHEN 'medium' THEN 2 END""",
             event_ids,
         ).fetchall()
-
-    relevance_map: dict[str, dict[str, int]] = {}
-    for row in rows:
-        counts = relevance_map.setdefault(row["event_id"], {"high": 0, "medium": 0})
-        counts[row["relevance"]] += 1
-    for topic in topics:
-        for event in topic.get("events", []):
-            event_id = event.get("event_id", "")
-            if event_id in relevance_map:
-                event["relevance"] = relevance_map[event_id]
 
 
 def latest_briefing(

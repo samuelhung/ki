@@ -151,12 +151,19 @@ def get_briefing(briefing_id: str) -> dict[str, Any] | None:
     return briefing
 
 
-def _enrich_briefing_relevance(topics: list[dict[str, Any]]) -> None:
-    """Add cached brainstorm relevance labels to briefing events."""
-    _repository.enrich_briefing_relevance(
-        topics,
+def _fetch_briefing_relevance(event_ids: list[str]):
+    return _repository.fetch_briefing_relevance(
+        event_ids,
         connect_fn=connect,
         init_db_fn=init_db,
+    )
+
+
+def _enrich_briefing_relevance(topics: list[dict[str, Any]]) -> None:
+    """Add cached brainstorm relevance labels to briefing events."""
+    _generation_service.enrich_briefing_relevance(
+        topics,
+        fetch_relevance_fn=_fetch_briefing_relevance,
     )
 
 

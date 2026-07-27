@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
 from contextlib import contextmanager
@@ -9,6 +10,7 @@ from typing import Any
 import pytest
 
 from zhiji_backend import briefing, prompt_registry
+from zhiji_backend.routes import prompt_routes
 
 
 class Cursor:
@@ -255,15 +257,18 @@ def test_facade_enriches_after_repository_read(monkeypatch):
     assert trace == ["read", ("enrich", stored["topics"])]
 
 
-def test_facade_forwards_relevance_enrichment_to_repository(monkeypatch):
-    sentinel_connect = object()
-    sentinel_init = object()
+def test_facade_forwards_relevance_enrichment_to_generation(monkeypatch):
+    sentinel_query = object()
     topics: list[dict[str, Any]] = []
     calls: list[tuple[Any, dict[str, Any]]] = []
-    monkeypatch.setattr(briefing, "connect", sentinel_connect)
-    monkeypatch.setattr(briefing, "init_db", sentinel_init)
     monkeypatch.setattr(
-        briefing._repository,
+        briefing,
+        "_fetch_briefing_relevance",
+        sentinel_query,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        briefing._generation_service,
         "enrich_briefing_relevance",
         lambda value, **kwargs: calls.append((value, kwargs)),
         raising=False,
@@ -274,10 +279,41 @@ def test_facade_forwards_relevance_enrichment_to_repository(monkeypatch):
     assert calls == [
         (
             topics,
-            {"connect_fn": sentinel_connect, "init_db_fn": sentinel_init},
+            {"fetch_relevance_fn": sentinel_query},
         )
     ]
-    assert not hasattr(_generation_service(), "enrich_briefing_relevance")
+    assert not hasattr(_repository(), "enrich_briefing_relevance")
+
+
+def test_repository_fetches_relevance_rows_with_exact_sql_and_params():
+    repository = _repository()
+    trace: list[Any] = []
+    rows = [{"event_id": "event-1", "relevance": "high"}]
+
+    class Connection:
+        def execute(self, sql, params=()):
+            trace.append((" ".join(sql.split()), params))
+            return Cursor(rows=rows)
+
+    @contextmanager
+    def connect_fn():
+        yield Connection()
+
+    assert (
+        repository.fetch_briefing_relevance(
+            ["event-1", "event-2"],
+            connect_fn=connect_fn,
+            init_db_fn=lambda: trace.append("init_db"),
+        )
+        == rows
+    )
+    assert trace == [
+        "init_db",
+        (
+            "SELECT event_id, relevance FROM brainstorm_contemplate_cache WHERE event_id IN (?,?) AND relevance IN ('high', 'medium') ORDER BY CASE relevance WHEN 'high' THEN 1 WHEN 'medium' THEN 2 END",
+            ["event-1", "event-2"],
+        ),
+    ]
 
 
 def test_facade_source_labels_are_authoritative_at_call_time(monkeypatch):
@@ -294,42 +330,21 @@ def test_facade_source_labels_are_authoritative_at_call_time(monkeypatch):
     assert not hasattr(_generation_service(), "SOURCE_LABELS")
 
 
-def test_briefing_prompt_registry_points_to_service_and_returns_exact_prompts():
-    quick_system = (
-        "你是一个专业的新闻编辑。根据提供的新闻事件列表，生成一份结构化的中文新闻概览。\n\n"
-        "要求：\n"
-        "1. 按 topic 分组，每组写一个概述段落（2-4句话），概括该主题的整体趋势和关键发展\n"
-        "2. 每组下列出重要事件的要点，每条事件给出 event_id、title_cn（直接用原文）、highlight（一句话亮点）\n"
-        "3. 输出严格的 JSON 格式，结构如下：\n"
-        '  {"topics": [{"topic": "...", "topic_label": "中文标签", "summary": "中文概述", '
-        '"events": [{"event_id": "...", "title_cn": "...", "highlight": "中文亮点", "source_name": "..."}]}]}\n'
-        "4. topic_label 使用中文标签\n"
-        "5. 每个 topic 最多选 6 条最重要的事件\n"
-        "6. 风格简洁快速，适合即时快报\n"
-        "7. highlight 控制在 30 字以内，必须使用中文\n"
-        "8. summary 必须使用中文，不得出现英文"
+def test_briefing_prompt_registry_matches_fdfd139_payload_snapshot():
+    prompts = prompt_registry.get_all_prompts()["briefing"]
+
+    assert set(prompts) == {"briefing_quick", "briefing_daily"}
+    for task_prompts in prompts.values():
+        assert tuple(task_prompts) == ("prompt", "user_prompt")
+        assert hashlib.sha256(task_prompts["prompt"].encode()).hexdigest() == (
+            "c1984b55a3510ed2243f473f31e316c0552947dc8fb9553f4a5021470bd7c539"
+        )
+        assert hashlib.sha256(task_prompts["user_prompt"].encode()).hexdigest() == (
+            "30df7771fc8a55272d3cb9901122a7441b9d7196a4cfbaff2968899f12ca2d7f"
+        )
+
+    payload = json.dumps(prompts, ensure_ascii=False, separators=(",", ":"))
+    assert hashlib.sha256(payload.encode()).hexdigest() == (
+        "137414899d5958bda430cd3d149e4076f69470387b19973476f4b204cac497ac"
     )
-    daily_system = quick_system.replace(
-        "6. 风格简洁快速，适合即时快报",
-        "6. 风格深度分析，适合每日新闻日报，可以加入趋势解读",
-    )
-    assert prompt_registry.MODULE_MAP["briefing"] == {
-        "briefing_quick": (
-            "briefing_generation_service.py",
-            ["_build_quick_prompts"],
-        ),
-        "briefing_daily": (
-            "briefing_generation_service.py",
-            ["_build_daily_prompts"],
-        ),
-    }
-    assert prompt_registry.get_all_prompts()["briefing"] == {
-        "briefing_quick": {
-            "system_prompt": quick_system,
-            "user_prompt": "请根据以下新闻事件生成即时快报：\n\n{events_text}",
-        },
-        "briefing_daily": {
-            "system_prompt": daily_system,
-            "user_prompt": "请根据以下新闻事件生成每日深度日报：\n\n{events_text}",
-        },
-    }
+    assert prompt_routes.list_prompts()["modules"]["briefing"] == prompts
