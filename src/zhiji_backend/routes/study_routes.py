@@ -98,14 +98,6 @@ def list_materials(
     )
 
 
-@router.get("/{material_id}")
-def get_material(material_id: SafeIdentifier):
-    """获取学习资料完整详情（含孩子版/家长版/格式）"""
-    return _material.get_material(
-        material_id, connect_fn=connect, init_db_fn=init_db, json_module=json
-    )
-
-
 @router.post("/create")
 def create_material(req: StudyCreateRequest):
     """提交学习资料（手动录入或文件上传后调用）"""
@@ -267,3 +259,11 @@ def list_mistakes(
 def get_stats():
     """各科统计 + 正确率"""
     return _material.get_stats(connect_fn=connect, init_db_fn=init_db)
+
+
+@router.get("/{material_id}")
+def get_material(material_id: SafeIdentifier):
+    """获取学习资料完整详情（含孩子版/家长版/格式）"""
+    return _material.get_material(
+        material_id, connect_fn=connect, init_db_fn=init_db, json_module=json
+    )

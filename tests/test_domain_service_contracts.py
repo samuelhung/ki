@@ -249,17 +249,17 @@ EVENT_ROUTES = [
 
 STUDY_ROUTES = [
     (0, "/api/study/list", {"GET"}, "list_materials"),
-    (1, "/api/study/{material_id}", {"GET"}, "get_material"),
-    (2, "/api/study/create", {"POST"}, "create_material"),
-    (3, "/api/study/{material_id}", {"PUT"}, "update_material"),
-    (4, "/api/study/{material_id}", {"DELETE"}, "delete_material"),
-    (5, "/api/study/upload", {"POST"}, "upload_and_ocr"),
-    (6, "/api/study/{material_id}/generate", {"POST"}, "generate_material"),
-    (7, "/api/study/{material_id}/review", {"POST"}, "review_mistake"),
-    (8, "/api/study/{material_id}/file/{fmt}", {"GET"}, "get_study_file"),
-    (9, "/api/study/upload-image", {"POST"}, "upload_image"),
-    (10, "/api/study/mistakes/list", {"GET"}, "list_mistakes"),
-    (11, "/api/study/stats", {"GET"}, "get_stats"),
+    (1, "/api/study/create", {"POST"}, "create_material"),
+    (2, "/api/study/{material_id}", {"PUT"}, "update_material"),
+    (3, "/api/study/{material_id}", {"DELETE"}, "delete_material"),
+    (4, "/api/study/upload", {"POST"}, "upload_and_ocr"),
+    (5, "/api/study/{material_id}/generate", {"POST"}, "generate_material"),
+    (6, "/api/study/{material_id}/review", {"POST"}, "review_mistake"),
+    (7, "/api/study/{material_id}/file/{fmt}", {"GET"}, "get_study_file"),
+    (8, "/api/study/upload-image", {"POST"}, "upload_image"),
+    (9, "/api/study/mistakes/list", {"GET"}, "list_mistakes"),
+    (10, "/api/study/stats", {"GET"}, "get_stats"),
+    (11, "/api/study/{material_id}", {"GET"}, "get_material"),
 ]
 
 
