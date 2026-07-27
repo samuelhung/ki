@@ -1273,8 +1273,16 @@ def _study_intake_forwarding(module, monkeypatch) -> None:
     sentinel_uuid = object()
     sentinel_process_pdf = object()
     sentinel_ocr_page = object()
-    sentinel_ocr_image = object()
-    sentinel_create = object()
+
+    def sentinel_ocr_image(path):
+        return path
+
+    def sentinel_create(request):
+        return request
+
+    def sentinel_request_factory(**kwargs):
+        return kwargs
+
     monkeypatch.setattr(study_routes, "stream_upload_to_temp", sentinel_stream)
     monkeypatch.setattr(study_routes, "validate_file", sentinel_validate)
     monkeypatch.setattr(study_routes, "kind_for_filename", sentinel_kind)
@@ -1283,11 +1291,21 @@ def _study_intake_forwarding(module, monkeypatch) -> None:
     monkeypatch.setattr(study_routes, "connect", sentinel_connect)
     monkeypatch.setattr(study_routes, "init_db", sentinel_init)
     monkeypatch.setattr(study_routes, "uuid", SimpleNamespace(uuid4=sentinel_uuid))
-    monkeypatch.setattr(study_routes, "_ocr_image_path", sentinel_ocr_image)
-    monkeypatch.setattr(study_routes, "create_material", sentinel_create)
     pdf_ocr = importlib.import_module("zhiji_backend.ingest.pdf_ocr")
     monkeypatch.setattr(pdf_ocr, "process_pdf", sentinel_process_pdf)
     monkeypatch.setattr(pdf_ocr, "ocr_page", sentinel_ocr_page)
+    path = Path("image.jpg")
+    _stub_and_assert(
+        module,
+        monkeypatch,
+        "_ocr_image_path",
+        lambda: study_routes._ocr_image_path(path),
+        expected_args=(path,),
+        expected_kwargs={"ocr_page_fn": sentinel_ocr_page},
+    )
+    monkeypatch.setattr(study_routes, "_ocr_image_path", sentinel_ocr_image)
+    monkeypatch.setattr(study_routes, "create_material", sentinel_create)
+    monkeypatch.setattr(study_routes, "StudyCreateRequest", sentinel_request_factory)
     upload = object()
     _stub_and_assert(
         module,
@@ -1326,17 +1344,9 @@ def _study_intake_forwarding(module, monkeypatch) -> None:
             "validate_file_fn": sentinel_validate,
             "ocr_image_fn": sentinel_ocr_image,
             "create_material_fn": sentinel_create,
+            "request_factory": sentinel_request_factory,
             "file_kind_type": study_routes.FileKind,
         },
-    )
-    path = Path("image.jpg")
-    _stub_and_assert(
-        module,
-        monkeypatch,
-        "_ocr_image_path",
-        lambda: study_routes._ocr_image_path(path),
-        expected_args=(path,),
-        expected_kwargs={"ocr_page_fn": sentinel_ocr_page},
     )
 
 

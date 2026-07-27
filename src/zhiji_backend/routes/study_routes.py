@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, File, Form, Query, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
@@ -87,15 +87,20 @@ def list_materials(
     page_size: int = Query(20, ge=1, le=MAX_PAGE_SIZE),
 ):
     """列出学习资料，支持按学科/题型/状态筛选"""
-    return _material.list_materials(
-        subject,
-        study_type,
-        status,
-        page,
-        page_size,
-        connect_fn=connect,
-        init_db_fn=init_db,
-    )
+    try:
+        return _material.list_materials(
+            subject,
+            study_type,
+            status,
+            page,
+            page_size,
+            connect_fn=connect,
+            init_db_fn=init_db,
+        )
+    except _material.PaginationOffsetError:
+        raise HTTPException(
+            status_code=422, detail="Pagination offset is too large"
+        ) from None
 
 
 @router.post("/create")
@@ -132,27 +137,36 @@ def upload_and_ocr(
     title: str = Form(""),
 ):
     """上传 PDF/图片。教材类保留原文件；其他类型 OCR 提取文字。"""
-    return _intake.upload_and_ocr(
-        file,
-        category,
-        subject,
-        study_type,
-        grade,
-        title,
-        kind_for_filename_fn=kind_for_filename,
-        max_bytes_for_kind_fn=max_bytes_for_kind,
-        stream_upload_to_temp_fn=stream_upload_to_temp,
-        validate_file_fn=validate_file,
-        resolve_under_fn=resolve_under,
-        connect_fn=connect,
-        init_db_fn=init_db,
-        uuid_fn=uuid.uuid4,
-        process_pdf_fn=pdf_ocr.process_pdf,
-        ocr_page_fn=pdf_ocr.ocr_page,
-        study_data_dir=STUDY_DATA_DIR,
-        ocr_pdf_max_bytes=OCR_PDF_MAX_BYTES,
-        file_kind_type=FileKind,
-    )
+    try:
+        return _intake.upload_and_ocr(
+            file,
+            category,
+            subject,
+            study_type,
+            grade,
+            title,
+            kind_for_filename_fn=kind_for_filename,
+            max_bytes_for_kind_fn=max_bytes_for_kind,
+            stream_upload_to_temp_fn=stream_upload_to_temp,
+            validate_file_fn=validate_file,
+            resolve_under_fn=resolve_under,
+            connect_fn=connect,
+            init_db_fn=init_db,
+            uuid_fn=uuid.uuid4,
+            process_pdf_fn=pdf_ocr.process_pdf,
+            ocr_page_fn=pdf_ocr.ocr_page,
+            study_data_dir=STUDY_DATA_DIR,
+            ocr_pdf_max_bytes=OCR_PDF_MAX_BYTES,
+            file_kind_type=FileKind,
+        )
+    except _intake.UnsupportedFileTypeError as exc:
+        raise HTTPException(status_code=400, detail=f"不支持的文件类型: {exc}") from exc
+    except _intake.InvalidFileTypeError:
+        raise HTTPException(
+            status_code=422, detail="文件内容与扩展名不匹配或文件已损坏"
+        ) from None
+    except _intake.PdfProcessingError as exc:
+        raise HTTPException(status_code=400, detail=f"PDF 解析失败: {exc}") from exc
 
 
 @router.post("/{material_id}/generate")
@@ -160,29 +174,39 @@ def generate_material(
     material_id: SafeIdentifier, req: GenerateRequest = GenerateRequest()
 ):
     """AI 生成讲题稿（同步执行）"""
-    return _material.generate_material(
-        material_id,
-        req,
-        connect_fn=connect,
-        init_db_fn=init_db,
-        generate_lecture_notes_fn=pipeline.generate_lecture_notes,
-        logger=logger,
-    )
+    try:
+        return _material.generate_material(
+            material_id,
+            req,
+            connect_fn=connect,
+            init_db_fn=init_db,
+            generate_lecture_notes_fn=pipeline.generate_lecture_notes,
+            logger=logger,
+        )
+    except _material.MaterialNotFoundError:
+        raise HTTPException(status_code=404, detail="资料不存在") from None
+    except _material.MaterialGenerationError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/{material_id}/review")
 def review_mistake(material_id: SafeIdentifier, req: MistakeReviewRequest):
     """生成错题复盘讲义"""
-    return _material.review_mistake(
-        material_id,
-        req,
-        connect_fn=connect,
-        init_db_fn=init_db,
-        generate_mistake_review_fn=pipeline.generate_mistake_review,
-        normalize_review_result_fn=_normalize_review_result,
-        json_module=json,
-        logger=logger,
-    )
+    try:
+        return _material.review_mistake(
+            material_id,
+            req,
+            connect_fn=connect,
+            init_db_fn=init_db,
+            generate_mistake_review_fn=pipeline.generate_mistake_review,
+            normalize_review_result_fn=_normalize_review_result,
+            json_module=json,
+            logger=logger,
+        )
+    except _material.MaterialNotFoundError:
+        raise HTTPException(status_code=404, detail="资料不存在") from None
+    except _material.MistakeReviewError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.get("/{material_id}/file/{fmt}")
@@ -191,16 +215,21 @@ def get_study_file(
     fmt: Literal["md", "html", "pdf", "original"],
 ):
     """返回讲题稿文件（md/html/pdf）"""
-    return _material.get_study_file(
-        material_id,
-        fmt,
-        connect_fn=connect,
-        study_data_dir=STUDY_DATA_DIR,
-        resolve_under_fn=resolve_under,
-        file_response_type=FileResponse,
-        path_security_error_type=PathSecurityError,
-        path_type=Path,
-    )
+    try:
+        return _material.get_study_file(
+            material_id,
+            fmt,
+            connect_fn=connect,
+            study_data_dir=STUDY_DATA_DIR,
+            resolve_under_fn=resolve_under,
+            file_response_type=FileResponse,
+            path_security_error_type=PathSecurityError,
+            path_type=Path,
+        )
+    except _material.InvalidStudyFilePathError:
+        raise HTTPException(status_code=422, detail="非法文件路径") from None
+    except _material.StudyFileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/upload-image")
@@ -211,7 +240,6 @@ def upload_image(
     grade: str = Form(""),
 ):
     """上传题目图片 → OCR → 创建学习资料"""
-    ocr_image_fn = _ocr_image_path
     try:
         return _intake.upload_image(
             file,
@@ -222,20 +250,23 @@ def upload_image(
             max_bytes_for_kind_fn=max_bytes_for_kind,
             stream_upload_to_temp_fn=stream_upload_to_temp,
             validate_file_fn=validate_file,
-            ocr_image_fn=ocr_image_fn,
+            ocr_image_fn=_ocr_image_path,
             create_material_fn=create_material,
+            request_factory=StudyCreateRequest,
             file_kind_type=FileKind,
         )
-    finally:
-        if not callable(_ocr_image_path):
-            globals()["_ocr_image_path"] = _ocr_image_path_adapter
+    except _intake.InvalidFileTypeError:
+        raise HTTPException(
+            status_code=422, detail="文件内容与扩展名不匹配或文件已损坏"
+        ) from None
+    except _intake.EmptyOcrResultError:
+        raise HTTPException(
+            status_code=400, detail="OCR 未提取到文字，请确认图片清晰"
+        ) from None
 
 
 def _ocr_image_path(path: Path) -> str:
     return _intake._ocr_image_path(path, ocr_page_fn=pdf_ocr.ocr_page)
-
-
-_ocr_image_path_adapter = _ocr_image_path
 
 
 @router.get("/mistakes/list")
@@ -245,14 +276,19 @@ def list_mistakes(
     page_size: int = Query(50, ge=1, le=MAX_PAGE_SIZE),
 ):
     """列出错题（is_correct = 0）"""
-    return _material.list_mistakes(
-        subject,
-        page,
-        page_size,
-        connect_fn=connect,
-        init_db_fn=init_db,
-        json_module=json,
-    )
+    try:
+        return _material.list_mistakes(
+            subject,
+            page,
+            page_size,
+            connect_fn=connect,
+            init_db_fn=init_db,
+            json_module=json,
+        )
+    except _material.PaginationOffsetError:
+        raise HTTPException(
+            status_code=422, detail="Pagination offset is too large"
+        ) from None
 
 
 @router.get("/stats")
@@ -264,6 +300,9 @@ def get_stats():
 @router.get("/{material_id}")
 def get_material(material_id: SafeIdentifier):
     """获取学习资料完整详情（含孩子版/家长版/格式）"""
-    return _material.get_material(
-        material_id, connect_fn=connect, init_db_fn=init_db, json_module=json
-    )
+    try:
+        return _material.get_material(
+            material_id, connect_fn=connect, init_db_fn=init_db, json_module=json
+        )
+    except _material.MaterialNotFoundError:
+        raise HTTPException(status_code=404, detail="资料不存在") from None

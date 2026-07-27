@@ -4,11 +4,33 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import HTTPException
-
 from .security.constraints import MAX_OFFSET
 
 logger = logging.getLogger("zhiji_backend.routes.study_routes")
+
+
+class PaginationOffsetError(ValueError):
+    pass
+
+
+class MaterialNotFoundError(LookupError):
+    pass
+
+
+class MaterialGenerationError(RuntimeError):
+    pass
+
+
+class MistakeReviewError(RuntimeError):
+    pass
+
+
+class StudyFileNotFoundError(FileNotFoundError):
+    pass
+
+
+class InvalidStudyFilePathError(ValueError):
+    pass
 
 
 def list_materials(
@@ -37,7 +59,7 @@ def list_materials(
     where = " AND ".join(conditions) if conditions else "1=1"
     offset = (page - 1) * page_size
     if offset > MAX_OFFSET:
-        raise HTTPException(status_code=422, detail="Pagination offset is too large")
+        raise PaginationOffsetError
 
     with connect_fn() as conn:
         total = conn.execute(
@@ -67,7 +89,7 @@ def get_material(material_id, *, connect_fn, init_db_fn, json_module):
             "SELECT * FROM study_materials WHERE id = ?", (material_id,)
         ).fetchone()
     if not row:
-        raise HTTPException(status_code=404, detail="资料不存在")
+        raise MaterialNotFoundError
 
     result = dict(row)
     for field in ("formats_json", "mistake_tags", "tags_json", "lessons_json"):
@@ -153,7 +175,7 @@ def generate_material(
             (material_id,),
         ).fetchone()
     if not row:
-        raise HTTPException(status_code=404, detail="资料不存在")
+        raise MaterialNotFoundError
     try:
         return generate_lecture_notes_fn(
             material_id=material_id,
@@ -164,7 +186,7 @@ def generate_material(
         )
     except Exception as exc:
         logger.exception("生成讲题稿失败: %s", material_id)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise MaterialGenerationError(str(exc)) from exc
 
 
 def review_mistake(
@@ -184,7 +206,7 @@ def review_mistake(
             "SELECT raw_content FROM study_materials WHERE id = ?", (material_id,)
         ).fetchone()
     if not row:
-        raise HTTPException(status_code=404, detail="资料不存在")
+        raise MaterialNotFoundError
     try:
         result = normalize_review_result_fn(
             generate_mistake_review_fn(
@@ -210,7 +232,7 @@ def review_mistake(
         return result
     except Exception as exc:
         logger.exception("错题复盘失败: %s", material_id)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        raise MistakeReviewError(str(exc)) from exc
 
 
 def get_study_file(
@@ -227,7 +249,7 @@ def get_study_file(
     try:
         material_dir = resolve_under_fn(study_data_dir, material_id, expected="dir")
     except path_security_error_type:
-        raise HTTPException(status_code=404, detail="资料文件不存在") from None
+        raise StudyFileNotFoundError("资料文件不存在") from None
     file_map = {
         "md": "讲题稿版.md",
         "html": "讲题稿打印版.html",
@@ -240,25 +262,25 @@ def get_study_file(
                 "SELECT raw_content FROM study_materials WHERE id = ?", (material_id,)
             ).fetchone()
         if not row or not row["raw_content"]:
-            raise HTTPException(status_code=404, detail="原始文件不存在")
+            raise StudyFileNotFoundError("原始文件不存在")
         stored = path_type(row["raw_content"])
         if (
             stored.is_absolute()
             or not stored.parts
             or stored.parts[0] != study_data_dir.name
         ):
-            raise HTTPException(status_code=422, detail="非法文件路径")
+            raise InvalidStudyFilePathError
         try:
             original = resolve_under_fn(
                 study_data_dir, *stored.parts[1:], expected="file"
             )
         except path_security_error_type:
-            raise HTTPException(status_code=404, detail="原始文件已丢失") from None
+            raise StudyFileNotFoundError("原始文件已丢失") from None
         return file_response_type(original)
     try:
         path = resolve_under_fn(material_dir, file_map[fmt], expected="file")
     except path_security_error_type:
-        raise HTTPException(status_code=404, detail="文件尚未生成") from None
+        raise StudyFileNotFoundError("文件尚未生成") from None
     return file_response_type(path)
 
 
@@ -272,7 +294,7 @@ def list_mistakes(subject, page, page_size, *, connect_fn, init_db_fn, json_modu
     where = " AND ".join(conditions)
     offset = (page - 1) * page_size
     if offset > MAX_OFFSET:
-        raise HTTPException(status_code=422, detail="Pagination offset is too large")
+        raise PaginationOffsetError
 
     with connect_fn() as conn:
         total = conn.execute(

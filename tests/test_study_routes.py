@@ -54,6 +54,24 @@ def test_static_study_routes_reach_their_declared_endpoints(monkeypatch):
         assert response.json() == {"endpoint": endpoint}
 
 
+def test_study_route_maps_material_service_errors(monkeypatch):
+    def missing(*args, **kwargs):
+        raise study_routes._material.MaterialNotFoundError
+
+    def generation_failed(*args, **kwargs):
+        raise study_routes._material.MaterialGenerationError("model unavailable")
+
+    monkeypatch.setattr(study_routes._material, "get_material", missing)
+    response = client.get("/api/study/missing")
+    assert response.status_code == 404
+    assert response.json() == {"detail": "资料不存在"}
+
+    monkeypatch.setattr(study_routes._material, "generate_material", generation_failed)
+    response = client.post("/api/study/study-1/generate", json={})
+    assert response.status_code == 500
+    assert response.json() == {"detail": "model unavailable"}
+
+
 def test_normalize_review_result_sets_persisted_review_fields():
     assert _normalize_review_result(
         {
