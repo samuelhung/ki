@@ -334,7 +334,7 @@ def process_ingest(
                 log.warning(_SUMMARY_NONE_LOG, event_id)
         except Exception as exc:
             error = (
-                log.name,
+                deps["module_name"],
                 event_id,
                 type(exc).__name__,
                 deps["classify_task_error_fn"](exc),
@@ -380,7 +380,7 @@ def process_ingest(
                 event_id,
             )
         error = (
-            log.name,
+            deps["module_name"],
             event_id,
             type(exc).__name__,
             deps["classify_task_error_fn"](exc),

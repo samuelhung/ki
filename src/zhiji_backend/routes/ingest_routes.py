@@ -298,5 +298,6 @@ def _process_ingest(event_id: str, ingest_type: str, content, topic: str, title:
             "sanitize_task_error_fn": sanitize_task_error,
             "classify_task_error_fn": classify_task_error,
             "logger": logger,
+            "module_name": __name__,
         },
     )

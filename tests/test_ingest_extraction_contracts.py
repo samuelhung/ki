@@ -939,6 +939,7 @@ def test_planned_extraction_uses_call_time_forwarding(
             "sanitize_task_error_fn",
             "classify_task_error_fn",
             "logger",
+            "module_name",
         }
     else:
         assert calls == [(args, kwargs)]

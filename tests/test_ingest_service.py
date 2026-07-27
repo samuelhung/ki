@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import logging
 from pathlib import Path
 
 import pytest
@@ -112,6 +113,7 @@ def test_route_helper_facades_resolve_service_functions_at_call_time(
                 "sanitize_task_error_fn": ingest_routes.sanitize_task_error,
                 "classify_task_error_fn": ingest_routes.classify_task_error,
                 "logger": ingest_routes.logger,
+                "module_name": ingest_routes.__name__,
             }
         },
     )
@@ -188,5 +190,95 @@ def test_route_facades_forward_monkeypatched_dependencies(
             "sanitize_task_error_fn": replacements["sanitize_task_error"],
             "classify_task_error_fn": replacements["classify_task_error"],
             "logger": replacements["logger"],
+            "module_name": ingest_routes.__name__,
         }
     }
+
+
+class _Connection:
+    def __init__(self):
+        self.executions = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return None
+
+    def execute(self, statement, values):
+        self.executions.append((statement, values))
+
+
+class _NameLessLogger:
+    def __init__(self):
+        self.errors = []
+
+    def error(self, *args, **kwargs):
+        self.errors.append((args, kwargs))
+
+
+def test_process_error_log_preserves_facade_module_and_original_exception(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    logger = _NameLessLogger()
+    connection = _Connection()
+    monkeypatch.setattr(ingest_routes, "logger", logger)
+    monkeypatch.setattr(ingest_routes, "connect", lambda: connection)
+
+    with pytest.raises(ValueError, match="Unknown ingest type: unsupported"):
+        ingest_routes._process_ingest(
+            "evt-contract", "unsupported", "body", "topic", "Title"
+        )
+
+    assert logger.errors == [
+        (
+            (
+                _service()._ERROR_LOG,
+                "zhiji_backend.routes.ingest_routes",
+                "evt-contract",
+                "ValueError",
+                "unsupported_input",
+            ),
+            {},
+        )
+    ]
+    assert connection.executions[-1][1] == (
+        "不支持的输入格式。",
+        "evt-contract",
+    )
+
+
+def test_degraded_log_uses_facade_module_not_injected_logger_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
+    source = tmp_path / "source.txt"
+    source.write_text("body", encoding="utf-8")
+    connection = _Connection()
+    different_logger = logging.getLogger("different.ingest.logger")
+    monkeypatch.setattr(ingest_routes, "logger", different_logger)
+    monkeypatch.setattr(ingest_routes, "connect", lambda: connection)
+    monkeypatch.setattr(ingest_routes, "TRANSCRIPTS_DIR", tmp_path / "transcripts")
+    monkeypatch.setattr(ingest_routes, "SUMMARIES_DIR", tmp_path / "summaries")
+    monkeypatch.setattr(ingest_routes, "DOCUMENTS_DIR", tmp_path / "documents")
+    monkeypatch.setattr(
+        "zhiji_backend.summarizer.summarize_transcript",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("offline")),
+    )
+    monkeypatch.setattr(
+        "zhiji_backend.classifier.classify_event", lambda _event_id: None
+    )
+
+    with caplog.at_level(logging.WARNING, logger=different_logger.name):
+        ingest_routes._process_ingest(
+            "evt-contract", "document", source, "topic", "Title"
+        )
+
+    [record] = [
+        record for record in caplog.records if record.msg == _service()._DEGRADED_LOG
+    ]
+    assert record.args == (
+        "zhiji_backend.routes.ingest_routes",
+        "evt-contract",
+        "RuntimeError",
+        "task_failed",
+    )
