@@ -66,8 +66,7 @@ export default function EventDetailPage({ embedded = false, eventId, onEventChan
   const [contemplateLinking, setContemplateLinking] = useState(false);
   const [linkedQuestions, setLinkedQuestions] = useState<any[]>([]);
   const [linkedQuestionsLoading, setLinkedQuestionsLoading] = useState(false);
-  const authenticatedMediaUrl = useAuthenticatedMediaUrl(toMediaPath(detail?.video_path));
-  const mediaUrl = detail?.video_url ? backendUrl(detail.video_url) : authenticatedMediaUrl;
+  const authenticatedMediaUrl = useAuthenticatedMediaUrl(toMediaPath(detail?.video_path)); const mediaUrl = detail?.video_url ? backendUrl(detail.video_url) : authenticatedMediaUrl;
 
   useEffect(() => {
     if (!id) return;

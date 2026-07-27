@@ -200,11 +200,8 @@ def is_loopback_host(host: str | None) -> bool:
 
 
 def is_protected_path(path: str) -> bool:
-    return (
-        path.startswith("/api")
-        or path.startswith("/ingest")
-        or path.startswith("/media")
-        or path.startswith("/releases")
+    return path.startswith("/api") or path.startswith("/ingest") or path.startswith(
+        ("/media", "/releases")
     )
 
 

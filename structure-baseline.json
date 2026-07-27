@@ -12,7 +12,7 @@
     "src/zhiji_backend/briefing.py": 490,
     "src/zhiji_backend/collector.py": 475,
     "src/zhiji_backend/ingest/douyin.py": 541,
-    "src/zhiji_backend/routes/event_routes.py": 513,
+    "src/zhiji_backend/routes/event_routes.py": 505,
     "src/zhiji_backend/routes/ingest_routes.py": 736,
     "src/zhiji_backend/routes/study_routes.py": 532,
     "src/zhiji_backend/series_service.py": 499,
