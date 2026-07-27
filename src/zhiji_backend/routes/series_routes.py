@@ -1,12 +1,14 @@
 """Series endpoints — CRUD, discovery, AI intro/summary/paper, member management."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from .. import (
     series_discovery_service,
     series_expansion_service,
     series_generation_service,
+    series_mutation_service,
+    series_query_service,
     series_service,
     series_topic_discovery_service,
 )
@@ -81,7 +83,7 @@ def _call_ai_chat(
 @router.get("/series")
 def list_series(include_candidates: bool = False):
     """List all series with member event titles. Excludes candidates by default."""
-    return series_service.list_series(
+    return series_query_service.list_series(
         include_candidates, connect_fn=connect, init_db_fn=init_db
     )
 
@@ -93,7 +95,12 @@ def list_candidates():
     Includes dedup information: flags candidates whose names are similar to
     other candidates or published series.
     """
-    return series_service.list_candidates(connect_fn=connect, init_db_fn=init_db)
+    return series_query_service.list_candidates(
+        connect_fn=connect,
+        init_db_fn=init_db,
+        name_similarity_fn=series_service.name_similarity,
+        member_overlap_score_fn=series_service.member_overlap_score,
+    )
 
 
 @router.post("/series/discover")
@@ -202,23 +209,34 @@ def create_series(data: SeriesCreateRequest):
 
     If a candidate with the same name exists, upgrades it to 'published' (upsert).
     """
-    return series_service.create_series(data, connect_fn=connect, init_db_fn=init_db)
+    try:
+        return series_mutation_service.create_series(
+            data, connect_fn=connect, init_db_fn=init_db
+        )
+    except series_mutation_service.SeriesMutationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from None
 
 
 @router.delete("/series/{series_id}")
 def delete_series(series_id: SafeIdentifier):
     """Delete a series."""
-    return series_service.delete_series(
-        series_id, connect_fn=connect, init_db_fn=init_db
-    )
+    try:
+        return series_mutation_service.delete_series(
+            series_id, connect_fn=connect, init_db_fn=init_db
+        )
+    except series_mutation_service.SeriesMutationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from None
 
 
 @router.put("/series/{series_id}")
 def update_series(series_id: SafeIdentifier, data: dict):
     """Update series metadata (name, description, status)."""
-    return series_service.update_series(
-        series_id, data, connect_fn=connect, init_db_fn=init_db
-    )
+    try:
+        return series_mutation_service.update_series(
+            series_id, data, connect_fn=connect, init_db_fn=init_db
+        )
+    except series_mutation_service.SeriesMutationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from None
 
 
 @router.post("/series/merge")
@@ -230,7 +248,15 @@ def merge_series(data: SeriesMergeRequest):
     - Deletes the source candidate
     - Returns updated target
     """
-    return series_service.merge_series(data, connect_fn=connect, init_db_fn=init_db)
+    try:
+        return series_mutation_service.merge_series(
+            data,
+            connect_fn=connect,
+            init_db_fn=init_db,
+            datetime_cls=series_service.datetime,
+        )
+    except series_mutation_service.SeriesMutationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from None
 
 
 # ══════════════════════════════════════════════════
@@ -241,9 +267,12 @@ def merge_series(data: SeriesMergeRequest):
 @router.get("/series/{series_id}")
 def get_series_detail(series_id: SafeIdentifier):
     """Return full series detail: metadata + enriched member events."""
-    return series_service.get_series_detail(
-        series_id, connect_fn=connect, init_db_fn=init_db
-    )
+    try:
+        return series_query_service.get_series_detail(
+            series_id, connect_fn=connect, init_db_fn=init_db
+        )
+    except series_query_service.SeriesQueryError as exc:
+        raise HTTPException(status_code=404, detail=exc.detail) from None
 
 
 # ══════════════════════════════════════════════════
@@ -285,22 +314,31 @@ def generate_series_paper(series_id: SafeIdentifier):
 @router.put("/series/{series_id}/sort")
 def reorder_series(series_id: SafeIdentifier, data: SeriesOrderRequest):
     """Update member order via drag-and-drop."""
-    return series_service.reorder_series(
-        series_id, data, connect_fn=connect, init_db_fn=init_db
-    )
+    try:
+        return series_mutation_service.reorder_series(
+            series_id, data, connect_fn=connect, init_db_fn=init_db
+        )
+    except series_mutation_service.SeriesMutationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from None
 
 
 @router.get("/series/{series_id}/suggestions")
 def get_series_suggestions(series_id: SafeIdentifier):
     """Get pending member suggestions for a series."""
-    return series_service.get_series_suggestions(
-        series_id, connect_fn=connect, init_db_fn=init_db
-    )
+    try:
+        return series_query_service.get_series_suggestions(
+            series_id, connect_fn=connect, init_db_fn=init_db
+        )
+    except series_query_service.SeriesQueryError as exc:
+        raise HTTPException(status_code=404, detail=exc.detail) from None
 
 
 @router.post("/series/{series_id}/members")
 def add_series_members(series_id: SafeIdentifier, data: SeriesMembersRequest):
     """Add one or more event_ids to a series (non-destructive append)."""
-    return series_service.add_series_members(
-        series_id, data, connect_fn=connect, init_db_fn=init_db
-    )
+    try:
+        return series_mutation_service.add_series_members(
+            series_id, data, connect_fn=connect, init_db_fn=init_db
+        )
+    except series_mutation_service.SeriesMutationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from None
