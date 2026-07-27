@@ -517,14 +517,37 @@ def test_briefing_generation_locks_prompts_ai_args_sql_order_and_response(
         "module": "briefing",
         "task": "briefing_quick",
     }
-    sql_order = [entry[1] for entry in trace if isinstance(entry, tuple)]
-    assert sql_order == [
-        "SELECT id, source_id, title, title_cn, raw_summary, summary_cn, topic, url, importance, created_at FROM events WHERE status = 'new' AND title_cn IS NOT NULL AND source_id NOT IN ('douyin', 'user-upload') ORDER BY created_at DESC, importance DESC LIMIT ?",
-        "INSERT INTO briefings (id, type, topics_json, events_used) VALUES (?, ?, ?, ?)",
-        "SELECT id, title_cn, summary_cn, ai_summary FROM events WHERE id IN (?)",
-        "SELECT id, question FROM brainstorm_questions WHERE status = 'open' ORDER BY created_at DESC LIMIT 40",
-        "SELECT question_id, event_id, relevance FROM brainstorm_contemplate_cache WHERE event_id IN (?)",
-        "INSERT OR REPLACE INTO brainstorm_contemplate_cache (question_id, event_id, relevance, reason) VALUES (?, ?, ?, ?)",
+    sql_trace = [(entry[1], entry[2]) for entry in trace if isinstance(entry, tuple)]
+    assert sql_trace == [
+        (
+            "SELECT id, source_id, title, title_cn, raw_summary, summary_cn, topic, url, importance, created_at FROM events WHERE status = 'new' AND title_cn IS NOT NULL AND source_id NOT IN ('douyin', 'user-upload') ORDER BY created_at DESC, importance DESC LIMIT ?",
+            (7,),
+        ),
+        (
+            "INSERT INTO briefings (id, type, topics_json, events_used) VALUES (?, ?, ?, ?)",
+            (
+                "briefing-1234567890ab",
+                briefing_type,
+                '[{"topic": "world", "events": [{"event_id": "event-1", "created_at": "2026-07-20 08:00:00"}]}]',
+                1,
+            ),
+        ),
+        (
+            "SELECT id, title_cn, summary_cn, ai_summary FROM events WHERE id IN (?)",
+            ["event-1"],
+        ),
+        (
+            "SELECT id, question FROM brainstorm_questions WHERE status = 'open' ORDER BY created_at DESC LIMIT 40",
+            (),
+        ),
+        (
+            "SELECT question_id, event_id, relevance FROM brainstorm_contemplate_cache WHERE event_id IN (?)",
+            ["event-1"],
+        ),
+        (
+            "INSERT OR REPLACE INTO brainstorm_contemplate_cache (question_id, event_id, relevance, reason) VALUES (?, ?, ?, ?)",
+            ("question-1", "event-1", "low", ""),
+        ),
     ]
 
 
@@ -681,10 +704,21 @@ def test_study_review_locks_pipeline_then_sql_transaction_and_response(
     ]
 
 
-def test_series_merge_locks_sql_order_transaction_and_exact_response() -> None:
+def test_series_merge_locks_sql_order_transaction_and_exact_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     trace: list[Any] = []
     source = {"id": "source", "name": "Source", "member_ids": '["b", "c"]'}
     target = {"id": "target", "name": "Target", "member_ids": '["a", "b"]'}
+
+    class FixedDateTime:
+        @classmethod
+        def now(cls):
+            return cls()
+
+        def strftime(self, format_string):
+            assert format_string == "%Y-%m-%d %H:%M:%S"
+            return "2026-07-27 12:34:56"
 
     class Connection:
         def execute(self, sql, params=()):
@@ -699,6 +733,8 @@ def test_series_merge_locks_sql_order_transaction_and_exact_response() -> None:
         trace.append("enter")
         yield Connection()
         trace.append("exit")
+
+    monkeypatch.setattr(series_service, "datetime", FixedDateTime)
 
     result = series_service.merge_series(
         SimpleNamespace(source_id="source", target_id="target"),
@@ -717,15 +753,19 @@ def test_series_merge_locks_sql_order_transaction_and_exact_response() -> None:
             "total_members": 3,
         },
     }
-    assert [entry[0] for entry in trace if isinstance(entry, tuple)] == [
-        "SELECT * FROM series WHERE id = ?",
-        "SELECT * FROM series WHERE id = ?",
-        "UPDATE series SET member_ids = ?, updated_at = ? WHERE id = ?",
-        "DELETE FROM series WHERE id = ?",
-        "DELETE FROM series_scan_cache WHERE series_id = ?",
+    assert trace == [
+        "init_db",
+        "enter",
+        ("SELECT * FROM series WHERE id = ?", ("source",)),
+        ("SELECT * FROM series WHERE id = ?", ("target",)),
+        (
+            "UPDATE series SET member_ids = ?, updated_at = ? WHERE id = ?",
+            ('["a", "b", "c"]', "2026-07-27 12:34:56", "target"),
+        ),
+        ("DELETE FROM series WHERE id = ?", ("source",)),
+        ("DELETE FROM series_scan_cache WHERE series_id = ?", ("target",)),
+        "exit",
     ]
-    assert trace[0:2] == ["init_db", "enter"]
-    assert trace[-1] == "exit"
 
 
 @dataclass(frozen=True)
