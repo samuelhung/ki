@@ -1,12 +1,18 @@
 import asyncio
 import email.utils
 import os
+import time
+from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 import pytest
 from fastapi.testclient import TestClient
 
 from zhiji_backend import main
 from zhiji_backend.main import app
+from zhiji_backend.media_capability import (
+    MEDIA_URL_TTL_SECONDS,
+    create_video_url,
+)
 from zhiji_backend.security.artifacts import (
     PinnedFileResponse,
     _single_range,
@@ -17,6 +23,98 @@ from zhiji_backend.security.artifacts import (
 def _assert_fd_closed(fd: int) -> None:
     with pytest.raises(OSError):
         os.fstat(fd)
+
+
+def _replace_signed_query(url: str, **updates: str) -> str:
+    parts = urlsplit(url)
+    query = {key: values[0] for key, values in parse_qs(parts.query).items()}
+    query.update(updates)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+
+
+def test_signed_video_pinned_fd_range_and_head(tmp_path, monkeypatch):
+    ingest_root = tmp_path / "ingest"
+    videos = ingest_root / "videos"
+    videos.mkdir(parents=True)
+    (videos / "evt-1.mp4").write_bytes(b"0123456789")
+    token = "secret-token"
+    url = create_video_url("evt-1.mp4", api_token=token)
+    assert url is not None
+    captured_fds = []
+    real_open = main.open_regular_under
+
+    def capture_open(root, *parts):
+        opened = real_open(root, *parts)
+        captured_fds.append(opened.fd)
+        return opened
+
+    monkeypatch.setattr(main, "INGEST_ROOT", ingest_root)
+    monkeypatch.setattr(main, "_api_token", lambda: token)
+    monkeypatch.setattr(main, "open_regular_under", capture_open)
+    client = TestClient(app, client=("10.8.0.2", 50000))
+
+    full = client.get(url)
+    partial = client.get(url, headers={"Range": "bytes=2-5"})
+    head = client.head(url)
+
+    assert (full.status_code, full.content) == (200, b"0123456789")
+    assert (partial.status_code, partial.content) == (206, b"2345")
+    assert partial.headers["content-range"] == "bytes 2-5/10"
+    assert partial.headers["accept-ranges"] == "bytes"
+    assert partial.headers["content-type"] == "video/mp4"
+    assert head.status_code == 200
+    assert head.content == b""
+    assert head.headers["content-length"] == "10"
+    assert len(captured_fds) == 3
+    for fd in captured_fds:
+        _assert_fd_closed(fd)
+
+
+def test_signed_video_rejects_tampering_expiry_and_unavailable_files(tmp_path, monkeypatch):
+    ingest_root = tmp_path / "ingest"
+    videos = ingest_root / "videos"
+    videos.mkdir(parents=True)
+    (videos / "evt-1.mp4").write_bytes(b"inside-video")
+    outside = tmp_path / "outside.mp4"
+    outside.write_bytes(b"outside-secret")
+    (videos / "linked.mp4").symlink_to(outside)
+    token = "secret-token"
+    now = int(time.time())
+    valid_url = create_video_url("evt-1.mp4", api_token=token, now=now)
+    linked_url = create_video_url("linked.mp4", api_token=token, now=now)
+    missing_url = create_video_url("missing.mp4", api_token=token, now=now)
+    expired_url = create_video_url(
+        "evt-1.mp4",
+        api_token=token,
+        now=now - MEDIA_URL_TTL_SECONDS - 1,
+    )
+    assert valid_url and linked_url and missing_url and expired_url
+    parts = urlsplit(valid_url)
+    invalid_urls = [
+        valid_url.replace("evt-1.mp4", "evt-2.mp4", 1),
+        _replace_signed_query(valid_url, expires=str(now + 1)),
+        _replace_signed_query(valid_url, signature="0" * 64),
+        valid_url.replace("evt-1.mp4", "evt-1.pdf", 1),
+        missing_url,
+        expired_url,
+        linked_url,
+        urlunsplit((parts.scheme, parts.netloc, "/media/videos/..%2Foutside.mp4", parts.query, "")),
+    ]
+
+    monkeypatch.setattr(main, "INGEST_ROOT", ingest_root)
+    monkeypatch.setattr(main, "_api_token", lambda: token)
+    client = TestClient(app, client=("10.8.0.2", 50000))
+
+    for url in invalid_urls:
+        response = client.get(url)
+        assert response.status_code == 404
+        assert b"inside-video" not in response.content
+        assert b"outside-secret" not in response.content
+
+    monkeypatch.setattr(main, "_api_token", lambda: "")
+    response = client.get(valid_url)
+    assert response.status_code == 404
+    assert b"inside-video" not in response.content
 
 
 def test_ingest_artifact_symlink_swap_after_open_never_serves_external_bytes(

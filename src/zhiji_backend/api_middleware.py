@@ -49,7 +49,7 @@ def _build_facade_policy(
     loopback_host: Callable[[str | None], bool],
 ) -> Callable[[str, str | None], bool]:
     def policy(path: str, client_host: str | None) -> bool:
-        if path == "/api/health" or not protected_path(path):
+        if path == "/api/health" or path.startswith("/media/") or not protected_path(path):
             return False
         return not loopback_host(client_host)
 
@@ -200,13 +200,16 @@ def is_loopback_host(host: str | None) -> bool:
 
 
 def is_protected_path(path: str) -> bool:
-    return path.startswith("/api") or path.startswith("/ingest") or path.startswith(
-        "/releases"
+    return (
+        path.startswith("/api")
+        or path.startswith("/ingest")
+        or path.startswith("/media")
+        or path.startswith("/releases")
     )
 
 
 def requires_token_for_request(path: str, client_host: str | None) -> bool:
-    if path == "/api/health" or not is_protected_path(path):
+    if path == "/api/health" or path.startswith("/media/") or not is_protected_path(path):
         return False
     return not is_loopback_host(client_host)
 
