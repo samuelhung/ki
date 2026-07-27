@@ -163,7 +163,7 @@ def test_backend_build_requirements_are_hash_locked_to_uv_lock() -> None:
 
     for package, version in (
         ("packaging", "26.2"),
-        ("setuptools", "80.10.2"),
+        ("setuptools", "83.0.0"),
         ("wheel", "0.47.0"),
     ):
         assert f"{package}=={version}" in build_lock
