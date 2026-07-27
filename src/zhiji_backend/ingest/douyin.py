@@ -34,7 +34,7 @@ _DOWNLOAD_VIDEO_IMPLEMENTATION = douyin_download.download_video
 class _PinnedResponse(remote_transport._PinnedResponse):
     def __init__(self, response, pool) -> None:
         super().__init__(response, pool)
-        self._requests = requests
+        self._requests_provider = lambda: requests
 
 
 def create_pinned_connection(scheme: str, ip: str, port: int, hostname: str):

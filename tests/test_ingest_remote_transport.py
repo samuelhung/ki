@@ -124,9 +124,8 @@ def test_douyin_pinned_response_uses_facade_http_error_at_call_time(monkeypatch)
 
     requests_module = MagicMock(HTTPError=FacadeHTTPError)
     response = MagicMock(status=503, headers={})
-    monkeypatch.setattr(douyin, "requests", requests_module)
-
     pinned = douyin._PinnedResponse(response, MagicMock())
+    monkeypatch.setattr(douyin, "requests", requests_module)
 
     with pytest.raises(FacadeHTTPError, match="HTTP 503"):
         pinned.raise_for_status()
