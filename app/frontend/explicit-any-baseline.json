@@ -19,6 +19,5 @@
   "src/pages/GlobalDockEventsOverlay.tsx": 1,
   "src/pages/GlobalDockQuestionOverlay.tsx": 1,
   "src/pages/GlobalDockSourcesOverlay.tsx": 4,
-  "src/pages/GlobalDockTaskOverlay.tsx": 1,
-  "src/pages/Ingest.tsx": 5
+  "src/pages/GlobalDockTaskOverlay.tsx": 1
 }

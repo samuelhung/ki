@@ -14,6 +14,8 @@ const dockAccessOverlay = readFileSync(new URL('../../pages/GlobalDockAccessOver
 const dockQueueOverlay = readFileSync(new URL('../../pages/GlobalDockQueueOverlay.tsx', import.meta.url), 'utf8');
 const preview = readFileSync(new URL('../../pages/LegacyIngestShellPreview.tsx', import.meta.url), 'utf8');
 const ingest = readFileSync(new URL('../../pages/Ingest.tsx', import.meta.url), 'utf8');
+const ingestWorkspace = readFileSync(new URL('../cinematic-ingest/IngestWorkspaceContent.tsx', import.meta.url), 'utf8');
+const ingestEvents = readFileSync(new URL('../cinematic-ingest/useIngestEvents.ts', import.meta.url), 'utf8');
 const libraryPage = readFileSync(new URL('../../pages/CinematicLibrary.tsx', import.meta.url), 'utf8');
 const gooey = readFileSync(new URL('./GooeyNav.tsx', import.meta.url), 'utf8');
 const shellCss = readFileSync(new URL('../../pages/DualNavigationDemo.css', import.meta.url), 'utf8');
@@ -169,14 +171,14 @@ test('retained douyin modal preserves the parent textarea sizing contract', () =
 });
 
 test('ingest contains only the shell workspace and portal search, with no legacy standalone composition', () => {
-  assert.doesNotMatch(ingest, /ModuleHeroTabs|WANXIANG_TABS|legacy-ingest-categories|legacy-ingest-list-head/);
-  assert.match(ingest, /EmbeddedIngestWorkspace/);
-  assert.match(ingest, /createPortal\(embeddedSearch, searchPortalTarget\)/);
+  assert.doesNotMatch(`${ingest}\n${ingestWorkspace}`, /ModuleHeroTabs|WANXIANG_TABS|legacy-ingest-categories|legacy-ingest-list-head/);
+  assert.match(ingestWorkspace, /EmbeddedIngestWorkspace/);
+  assert.match(ingestWorkspace, /createPortal\(searchAccessory, searchPortalTarget\)/);
   assert.match(ingest, /legacy-ingest-root is-shell-embedded cinematic-ingest/);
 });
 
 test('embedded event rows remain in the extracted unframed list', () => {
-  assert.match(ingest, /<EmbeddedIngestList/);
+  assert.match(ingestWorkspace, /<EmbeddedIngestList/);
   assert.match(embeddedList, /className="ki-ingest-event-list"/);
   assert.match(embeddedList, /<EmbeddedIngestRow/);
   assert.match(embeddedRow, /className="ki-ingest-list-row"/);
@@ -184,9 +186,9 @@ test('embedded event rows remain in the extracted unframed list', () => {
 });
 
 test('formal ingest composes a split list orbit and reusable detail workspace', () => {
-  assert.match(ingest, /import \{ ContentDetailPanel \}/);
+  assert.match(ingestWorkspace, /import \{ ContentDetailPanel \}/);
   assert.match(ingest, /useIngestDetailActions/);
-  assert.match(ingest, /EmbeddedIngestWorkspace/);
+  assert.match(ingestWorkspace, /EmbeddedIngestWorkspace/);
   assert.match(embeddedWorkspace, /ki-ingest-split-stage/);
   assert.match(embeddedWorkspace, /ki-ingest-list-pane/);
   assert.match(embeddedWorkspace, /ki-ingest-detail-pane/);
@@ -197,7 +199,7 @@ test('formal ingest composes a split list orbit and reusable detail workspace', 
   assert.match(embeddedConfig, /Radio/);
   assert.doesNotMatch(embeddedConfig, /Zap|briefing|即时快报/);
   assert.match(ingest, /activeEventId/);
-  assert.match(ingest, /setActiveEventId\(eventId\)/);
+  assert.match(ingestEvents, /setActiveEventId\(eventId\)/);
   assert.match(shellCss, /\.ki-ingest-split-stage\s*\{[^}]*grid-template-columns:/s);
   assert.match(shellCss, /\.ki-ingest-detail-pane \.ingest-detail-reader\s*\{[^}]*position:\s*relative !important/s);
   assert.match(shellCss, /\.ki-ingest-topic-orbit/);
@@ -297,8 +299,8 @@ test('ingest shell promotes brand and search while keeping the stage transparent
   assert.match(shell, /<TextType[\s\S]*className="dual-nav-demo__brand-tagline"[\s\S]*text="其神乎 见微知著"/);
   assert.match(shell, /id="ki-shell-top-accessory"/);
   assert.doesNotMatch(shell, /NAV \/ 01|PRIMARY/);
-  assert.match(ingest, /createPortal\(embeddedSearch, searchPortalTarget\)/);
-  assert.doesNotMatch(ingest, /<small>\{historyTab === 'briefing'/);
+  assert.match(ingestWorkspace, /createPortal\(searchAccessory, searchPortalTarget\)/);
+  assert.doesNotMatch(`${ingest}\n${ingestWorkspace}\n${ingestEvents}`, /<small>\{historyTab === 'briefing'/);
   assert.match(shellCss, /\.ki-ingest-list-search\s*\{[^}]*grid-template-columns:\s*18px minmax\(0, 1fr\)/s);
   assert.doesNotMatch(shellCss, /\.ki-ingest-list-search\s*\{[^}]*grid-template-columns:[^;}]*auto/s);
   assert.match(shellCss, /\.dual-nav-demo__brand-title\s*\{[^}]*font-family:\s*"Songti SC"[^}]*font-style:\s*italic[^}]*font-weight:\s*900/s);
@@ -385,10 +387,10 @@ test('embedded ingest memoizes stable list detail and workspace render boundarie
   assert.match(embeddedWorkspace, /export const EmbeddedIngestWorkspace = memo/);
   assert.match(ingest, /const handleEmbeddedSummarize = useCallback/);
   assert.match(ingest, /const handleEmbeddedSearchChange = useCallback/);
-  assert.match(ingest, /const embeddedList = useMemo/);
-  assert.match(ingest, /const embeddedSearch = useMemo/);
-  assert.match(ingest, /const embeddedDetail = useMemo/);
-  assert.match(ingest, /const embeddedStage = useMemo/);
+  assert.match(ingestWorkspace, /const list = useMemo/);
+  assert.match(ingestWorkspace, /const searchAccessory = useMemo/);
+  assert.match(ingestWorkspace, /const detail = useMemo/);
+  assert.match(ingestWorkspace, /<EmbeddedIngestWorkspace/);
 });
 
 test('content ingest keeps attached video visible above every detail tab', () => {

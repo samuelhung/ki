@@ -5,7 +5,6 @@ import ts from 'typescript';
 import {
   assertForwardedCallbacks,
   assertNamedImports,
-  assertRequestCoordinatorBehavior,
   combinedSource,
   loadRequestCoordinatorFactory,
   objectArrayValues,
@@ -20,6 +19,77 @@ const implementation = combinedSource(modules);
 const pageModule = modules.find((module) => module.name === 'Ingest.tsx');
 assert.ok(pageModule);
 const page = pageModule.source;
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+async function assertIngestRequestCoordinatorBehavior(createRequestCoordinator) {
+  const commits = [];
+  const errors = [];
+  const coordinator = createRequestCoordinator({
+    onCommit: (value) => commits.push(value),
+    onError: (error) => errors.push(error),
+  });
+  for (const method of ['start', 'run', 'isCurrent', 'abort']) {
+    assert.equal(typeof coordinator[method], 'function', `request coordinator must expose ${method}()`);
+  }
+  assert.equal('mutateAndRefresh' in coordinator, false);
+
+  const stale = deferred();
+  const staleOwner = coordinator.start();
+  const staleRun = coordinator.run({ owner: staleOwner, request: () => stale.promise });
+  const currentOwner = coordinator.start();
+  assert.equal(staleOwner.signal.aborted, true);
+  await coordinator.run({ owner: currentOwner, request: async () => ({ id: 'current' }) });
+  stale.resolve({ id: 'stale' });
+  await staleRun;
+  assert.deepEqual(commits, [{ id: 'current' }]);
+
+  const failure = new Error('request failed');
+  const errorOwner = coordinator.start();
+  await coordinator.run({ owner: errorOwner, request: async () => { throw failure; } });
+  assert.deepEqual(errors, [failure]);
+
+  const abortedOwner = coordinator.start();
+  const abortedRun = coordinator.run({
+    owner: abortedOwner,
+    request: (signal) => new Promise((resolve, reject) => {
+      assert.equal(signal, abortedOwner.signal);
+      signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+    }),
+  });
+  coordinator.abort();
+  await abortedRun;
+  assert.equal(coordinator.isCurrent(abortedOwner), false);
+  assert.deepEqual(errors, [failure]);
+}
+
+function assertCoordinatorUsedByHook(hookModule) {
+  const hookDeclaration = hookModule.sourceFile.statements.find((statement) => (
+    ts.isFunctionDeclaration(statement) && statement.name?.text === 'useIngestEvents'
+  ));
+  assert.ok(hookDeclaration);
+  const calls = [];
+  function visit(node) {
+    if (ts.isCallExpression(node)) calls.push(node.expression.getText(hookModule.sourceFile));
+    ts.forEachChild(node, visit);
+  }
+  visit(hookDeclaration);
+  for (const expected of [
+    'createRequestCoordinator',
+    'eventRequestCoordinator.start',
+    'eventRequestCoordinator.run',
+    'eventRequestCoordinator.isCurrent',
+    'eventRequestCoordinator.abort',
+  ]) assert.ok(calls.includes(expected), `useIngestEvents must call ${expected}`);
+}
 
 test('ingest detail tabs can move while preserving exact definitions and order', () => {
   assert.deepEqual(objectArrayValues(modules, 'DETAIL_TABS'), [
@@ -45,14 +115,23 @@ test('ingest endpoints preserve list mutation upload and status polling contract
 });
 
 test('ingest lifecycle source preserves cancellation stale suppression refreshes and errors', () => {
-  assert.match(implementation, /eventRequestAbortRef\.current\?\.abort\(\)/);
-  assert.match(implementation, /signal: requestController\.signal/);
-  assert.match(implementation, /isLatestRequest\(requestSequence, eventRequestSequenceRef\.current\)/);
+  assert.match(implementation, /eventRequestCoordinator\.start\(\)/);
+  assert.match(implementation, /eventRequestCoordinator\.run\(/);
+  assert.match(implementation, /eventRequestCoordinator\.isCurrent\(owner\)/);
+  assert.match(implementation, /eventRequestCoordinator\.abort\(\)/);
   assert.match(implementation, /error\?\.name !== 'AbortError'/);
   assert.match(implementation, /statusRequestLifecycleRef\.current\.isCurrent\(sequence\)/);
   assert.match(implementation, /statusRequestLifecycleRef\.current\.abort\(\)/);
-  assert.match(implementation, /await loadEvents\(\)/);
+  assert.match(implementation, /await loadEventsRef\.current\(\)/);
   assert.match(implementation, /setEventsError\(error\.message \|\| '加载事件列表失败'\)/);
+});
+
+test('ingest list queries are committed callback inputs instead of render-phase refs', () => {
+  const hook = readFileSync(hookUrl, 'utf8');
+  assert.doesNotMatch(hook, /listQueryRef/);
+  assert.match(hook, /const topicFilter = [^\n]*historyTab/);
+  assert.match(hook, /const searchParam = debouncedSearch/);
+  assert.match(hook, /\}, \[debouncedSearch, eventRequestCoordinator, historyTab\]\);/);
 });
 
 test('ingest labels css hooks and embedded composition can move together', () => {
@@ -91,7 +170,8 @@ test('ingest extraction forwards callbacks and exports its real request coordina
   assert.ok(hookModule);
   assertNamedImports(hookModule, '../ingest/requestLifecycle', ['RequestLifecycle', 'abortableDelay']);
   assertNamedImports(hookModule, '../ingest/ingestRequestPolicy', ['isLatestRequest']);
-  await assertRequestCoordinatorBehavior(loadRequestCoordinatorFactory(hookModule));
+  await assertIngestRequestCoordinatorBehavior(loadRequestCoordinatorFactory(hookModule));
+  assertCoordinatorUsedByHook(hookModule);
 
   assert.ok(existsSync(workspaceUrl), 'Task 5.6 must add IngestWorkspaceContent.tsx');
   assert.match(page, /useIngestEvents\(/);
