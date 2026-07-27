@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from zhiji_backend import series_mutation_service, series_service
+from zhiji_backend.routes import series_routes
 
 
 @pytest.fixture
@@ -77,6 +78,33 @@ def test_facade_create_uses_call_time_datetime_and_uuid(
     with sqlite3.connect(database) as conn:
         created = conn.execute(
             "SELECT updated_at FROM series WHERE id = 'series-1234567890ab'"
+        ).fetchone()
+    assert created == ("2026-07-27 12:34:56",)
+
+
+def test_route_create_uses_call_time_datetime_and_uuid(
+    series_store, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database, connect_fn = series_store
+    monkeypatch.setattr(series_routes, "connect", connect_fn)
+    monkeypatch.setattr(series_routes, "init_db", lambda: None)
+    monkeypatch.setattr(series_service, "datetime", FixedDateTime)
+    monkeypatch.setattr(
+        series_service,
+        "uuid",
+        SimpleNamespace(uuid4=lambda: SimpleNamespace(hex="abcdef1234567890")),
+    )
+
+    result = series_routes.create_series(
+        series_routes.SeriesCreateRequest(
+            name="From route", member_ids=["a", "b"], description=""
+        )
+    )
+
+    assert result == {"id": "series-abcdef123456", "name": "From route"}
+    with sqlite3.connect(database) as conn:
+        created = conn.execute(
+            "SELECT updated_at FROM series WHERE id = 'series-abcdef123456'"
         ).fetchone()
     assert created == ("2026-07-27 12:34:56",)
 

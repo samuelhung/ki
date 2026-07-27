@@ -1420,9 +1420,11 @@ def _series_mutation_forwarding(module, monkeypatch) -> None:
     sentinel_connect = object()
     sentinel_init = object()
     sentinel_datetime = object()
+    sentinel_uuid = object()
     monkeypatch.setattr(series_routes, "connect", sentinel_connect)
     monkeypatch.setattr(series_routes, "init_db", sentinel_init)
     monkeypatch.setattr(series_service, "datetime", sentinel_datetime)
+    monkeypatch.setattr(series_service, "uuid", SimpleNamespace(uuid4=sentinel_uuid))
     create_request = series_routes.SeriesCreateRequest(
         name="Series", member_ids=["a", "b"], description=""
     )
@@ -1435,6 +1437,8 @@ def _series_mutation_forwarding(module, monkeypatch) -> None:
         expected_kwargs={
             "connect_fn": sentinel_connect,
             "init_db_fn": sentinel_init,
+            "datetime_cls": sentinel_datetime,
+            "uuid_fn": sentinel_uuid,
         },
     )
     _stub_and_assert(

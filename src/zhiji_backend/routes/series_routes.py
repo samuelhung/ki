@@ -211,7 +211,11 @@ def create_series(data: SeriesCreateRequest):
     """
     try:
         return series_mutation_service.create_series(
-            data, connect_fn=connect, init_db_fn=init_db
+            data,
+            connect_fn=connect,
+            init_db_fn=init_db,
+            datetime_cls=series_service.datetime,
+            uuid_fn=series_service.uuid.uuid4,
         )
     except series_mutation_service.SeriesMutationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from None
