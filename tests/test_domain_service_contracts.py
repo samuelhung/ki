@@ -18,7 +18,12 @@ from fastapi.routing import APIRoute
 from zhiji_backend import briefing, series_service
 from zhiji_backend.main import app
 from zhiji_backend.models import CollectRequest
-from zhiji_backend.routes import event_routes, study_routes
+from zhiji_backend.routes import (
+    briefing_routes,
+    event_routes,
+    series_routes,
+    study_routes,
+)
 
 BRIEFING_PUBLIC_SIGNATURES = {
     "generate_briefing": "(briefing_type: 'str' = 'quick', limit: 'int' = 80) -> 'dict[str, Any]'",
@@ -27,19 +32,204 @@ BRIEFING_PUBLIC_SIGNATURES = {
     "get_briefing": "(briefing_id: 'str') -> 'dict[str, Any] | None'",
 }
 
-SERIES_PUBLIC_PARAMETERS = {
-    "name_similarity": ("a", "b"),
-    "member_overlap_score": ("ids_a", "ids_b"),
-    "list_series": ("include_candidates", "connect_fn", "init_db_fn"),
-    "list_candidates": ("connect_fn", "init_db_fn"),
-    "create_series": ("data", "connect_fn", "init_db_fn"),
-    "delete_series": ("series_id", "connect_fn", "init_db_fn"),
-    "update_series": ("series_id", "data", "connect_fn", "init_db_fn"),
-    "merge_series": ("data", "connect_fn", "init_db_fn"),
-    "get_series_detail": ("series_id", "connect_fn", "init_db_fn"),
-    "reorder_series": ("series_id", "data", "connect_fn", "init_db_fn"),
-    "get_series_suggestions": ("series_id", "connect_fn", "init_db_fn"),
-    "add_series_members": ("series_id", "data", "connect_fn", "init_db_fn"),
+NO_DEFAULT = inspect.Parameter.empty
+POSITIONAL = inspect.Parameter.POSITIONAL_OR_KEYWORD
+KEYWORD_ONLY = inspect.Parameter.KEYWORD_ONLY
+
+SERIES_PUBLIC_SIGNATURES = {
+    "name_similarity": (
+        (("a", POSITIONAL, NO_DEFAULT, str), ("b", POSITIONAL, NO_DEFAULT, str)),
+        float,
+    ),
+    "member_overlap_score": (
+        (
+            ("ids_a", POSITIONAL, NO_DEFAULT, series_service.IdentifierList),
+            ("ids_b", POSITIONAL, NO_DEFAULT, series_service.IdentifierList),
+        ),
+        float,
+    ),
+    "list_series": (
+        (
+            ("include_candidates", POSITIONAL, False, bool),
+            (
+                "connect_fn",
+                KEYWORD_ONLY,
+                series_service.connect,
+                series_service.ConnectFn,
+            ),
+            (
+                "init_db_fn",
+                KEYWORD_ONLY,
+                series_service.init_db,
+                series_service.InitDbFn,
+            ),
+        ),
+        dict[str, Any],
+    ),
+    "list_candidates": (
+        (
+            (
+                "connect_fn",
+                KEYWORD_ONLY,
+                series_service.connect,
+                series_service.ConnectFn,
+            ),
+            (
+                "init_db_fn",
+                KEYWORD_ONLY,
+                series_service.init_db,
+                series_service.InitDbFn,
+            ),
+        ),
+        dict[str, Any],
+    ),
+    "create_series": (
+        (
+            ("data", POSITIONAL, NO_DEFAULT, series_service.SeriesCreateData),
+            (
+                "connect_fn",
+                KEYWORD_ONLY,
+                series_service.connect,
+                series_service.ConnectFn,
+            ),
+            (
+                "init_db_fn",
+                KEYWORD_ONLY,
+                series_service.init_db,
+                series_service.InitDbFn,
+            ),
+        ),
+        dict[str, Any],
+    ),
+    "delete_series": (
+        (
+            ("series_id", POSITIONAL, NO_DEFAULT, series_service.Identifier),
+            (
+                "connect_fn",
+                KEYWORD_ONLY,
+                series_service.connect,
+                series_service.ConnectFn,
+            ),
+            (
+                "init_db_fn",
+                KEYWORD_ONLY,
+                series_service.init_db,
+                series_service.InitDbFn,
+            ),
+        ),
+        dict[str, Any],
+    ),
+    "update_series": (
+        (
+            ("series_id", POSITIONAL, NO_DEFAULT, series_service.Identifier),
+            ("data", POSITIONAL, NO_DEFAULT, dict[str, Any]),
+            (
+                "connect_fn",
+                KEYWORD_ONLY,
+                series_service.connect,
+                series_service.ConnectFn,
+            ),
+            (
+                "init_db_fn",
+                KEYWORD_ONLY,
+                series_service.init_db,
+                series_service.InitDbFn,
+            ),
+        ),
+        dict[str, Any],
+    ),
+    "merge_series": (
+        (
+            ("data", POSITIONAL, NO_DEFAULT, series_service.SeriesMergeData),
+            (
+                "connect_fn",
+                KEYWORD_ONLY,
+                series_service.connect,
+                series_service.ConnectFn,
+            ),
+            (
+                "init_db_fn",
+                KEYWORD_ONLY,
+                series_service.init_db,
+                series_service.InitDbFn,
+            ),
+        ),
+        dict[str, Any],
+    ),
+    "get_series_detail": (
+        (
+            ("series_id", POSITIONAL, NO_DEFAULT, series_service.Identifier),
+            (
+                "connect_fn",
+                KEYWORD_ONLY,
+                series_service.connect,
+                series_service.ConnectFn,
+            ),
+            (
+                "init_db_fn",
+                KEYWORD_ONLY,
+                series_service.init_db,
+                series_service.InitDbFn,
+            ),
+        ),
+        dict[str, Any],
+    ),
+    "reorder_series": (
+        (
+            ("series_id", POSITIONAL, NO_DEFAULT, series_service.Identifier),
+            ("data", POSITIONAL, NO_DEFAULT, series_service.SeriesOrderData),
+            (
+                "connect_fn",
+                KEYWORD_ONLY,
+                series_service.connect,
+                series_service.ConnectFn,
+            ),
+            (
+                "init_db_fn",
+                KEYWORD_ONLY,
+                series_service.init_db,
+                series_service.InitDbFn,
+            ),
+        ),
+        dict[str, Any],
+    ),
+    "get_series_suggestions": (
+        (
+            ("series_id", POSITIONAL, NO_DEFAULT, series_service.Identifier),
+            (
+                "connect_fn",
+                KEYWORD_ONLY,
+                series_service.connect,
+                series_service.ConnectFn,
+            ),
+            (
+                "init_db_fn",
+                KEYWORD_ONLY,
+                series_service.init_db,
+                series_service.InitDbFn,
+            ),
+        ),
+        dict[str, Any],
+    ),
+    "add_series_members": (
+        (
+            ("series_id", POSITIONAL, NO_DEFAULT, series_service.Identifier),
+            ("data", POSITIONAL, NO_DEFAULT, series_service.SeriesMembersData),
+            (
+                "connect_fn",
+                KEYWORD_ONLY,
+                series_service.connect,
+                series_service.ConnectFn,
+            ),
+            (
+                "init_db_fn",
+                KEYWORD_ONLY,
+                series_service.init_db,
+                series_service.InitDbFn,
+            ),
+        ),
+        dict[str, Any],
+    ),
 }
 
 EVENT_ROUTES = [
@@ -81,6 +271,15 @@ def _route_contract(router) -> list[tuple[int, str, set[str], str]]:
     ]
 
 
+@pytest.fixture
+def restore_openapi_schema():
+    previous_schema = app.openapi_schema
+    try:
+        yield
+    finally:
+        app.openapi_schema = previous_schema
+
+
 def test_briefing_and_series_public_contracts_are_exact() -> None:
     briefing_functions = {
         name: value
@@ -100,28 +299,29 @@ def test_briefing_and_series_public_contracts_are_exact() -> None:
         for name, value in vars(series_service).items()
         if inspect.isfunction(value) and value.__module__ == series_service.__name__
     }
-    assert set(series_functions) == set(SERIES_PUBLIC_PARAMETERS)
-    for name, expected_parameters in SERIES_PUBLIC_PARAMETERS.items():
+    assert set(series_functions) == set(SERIES_PUBLIC_SIGNATURES)
+    for name, (
+        expected_parameters,
+        expected_return,
+    ) in SERIES_PUBLIC_SIGNATURES.items():
         function = series_functions[name]
         signature = inspect.signature(function)
-        assert tuple(signature.parameters) == expected_parameters
-        assert get_type_hints(function)["return"] in {
-            float,
-            dict[str, Any],
-        }
-        if "connect_fn" in signature.parameters:
-            assert (
-                signature.parameters["connect_fn"].kind
-                is inspect.Parameter.KEYWORD_ONLY
-            )
-            assert signature.parameters["connect_fn"].default is series_service.connect
-            assert signature.parameters["init_db_fn"].default is series_service.init_db
+        hints = get_type_hints(function)
+        actual_parameters = tuple(
+            (parameter.name, parameter.kind, parameter.default, hints[parameter.name])
+            for parameter in signature.parameters.values()
+        )
+        assert actual_parameters == expected_parameters
+        assert hints["return"] == expected_return
 
 
-def test_event_and_study_route_order_and_openapi_operation_ids_are_exact() -> None:
+def test_event_and_study_route_order_and_openapi_operation_ids_are_exact(
+    restore_openapi_schema,
+) -> None:
     assert _route_contract(event_routes.router) == EVENT_ROUTES
     assert _route_contract(study_routes.router) == STUDY_ROUTES
 
+    app.openapi_schema = None
     schema = app.openapi()
     expected_operations = EVENT_ROUTES + STUDY_ROUTES
     for _, path, methods, endpoint_name in expected_operations:
@@ -154,27 +354,87 @@ class _Cursor:
         return self._rows
 
 
-def test_briefing_generation_locks_prompt_hash_sql_order_and_response(
+BRIEFING_SYSTEM_PROMPT_PREFIX = (
+    "你是一个专业的新闻编辑。根据提供的新闻事件列表，生成一份结构化的中文新闻概览。\n\n"
+    "要求：\n"
+    "1. 按 topic 分组，每组写一个概述段落（2-4句话），概括该主题的整体趋势和关键发展\n"
+    "2. 每组下列出重要事件的要点，每条事件给出 event_id、title_cn（直接用原文）、highlight（一句话亮点）\n"
+    "3. 输出严格的 JSON 格式，结构如下：\n"
+    '  {"topics": [{"topic": "...", "topic_label": "中文标签", "summary": "中文概述", '
+    '"events": [{"event_id": "...", "title_cn": "...", "highlight": "中文亮点", "source_name": "..."}]}]}\n'
+    "4. topic_label 使用中文标签\n"
+    "5. 每个 topic 最多选 6 条最重要的事件\n"
+)
+BRIEFING_SYSTEM_PROMPT_SUFFIX = (
+    "7. highlight 控制在 30 字以内，必须使用中文\n8. summary 必须使用中文，不得出现英文"
+)
+BRIEFING_PROMPTS = {
+    "quick": {
+        "system": BRIEFING_SYSTEM_PROMPT_PREFIX
+        + "6. 风格简洁快速，适合即时快报\n"
+        + BRIEFING_SYSTEM_PROMPT_SUFFIX,
+        "user": "请根据以下新闻事件生成即时快报：\n\n- [event-1] NPR | 事件\n  摘要: 摘要",
+        "system_hash": "4e3c3e2a2309ad2c9181fcc242a0f568d9d2cbb32db7ce4b32565b9b4d3fa9c0",
+        "user_hash": "f66459a4233a500ce65570482fae03d51780522184414d48ef80507cb91088a1",
+        "task": "briefing_quick",
+    },
+    "daily": {
+        "system": BRIEFING_SYSTEM_PROMPT_PREFIX
+        + "6. 风格深度分析，适合每日新闻日报，可以加入趋势解读\n"
+        + BRIEFING_SYSTEM_PROMPT_SUFFIX,
+        "user": "请根据以下新闻事件生成每日深度日报：\n\n- [event-1] NPR | 事件\n  摘要: 摘要",
+        "system_hash": "61e90abad5e8b9527a534ebeb737de0e8181cb82a4766bb766f1b3fe3081d206",
+        "user_hash": "ffd98a88ea3a69bb1c0c489f2056c111d06aa6fb292e26dbc5bf54376e2b8d64",
+        "task": "briefing_daily",
+    },
+}
+BATCH_CONTEMPLATE_SYSTEM_PROMPT = (
+    "你是一个内容匹配助手。以下是一组新闻事件和一组研究问题。\n"
+    "对每个事件-问题组合，判断该事件能否帮助回答该问题：\n"
+    "- high: 事件直接涉及该问题主题，可作为核心素材\n"
+    "- medium: 事件部分相关或可提供背景参考\n"
+    "- low: 完全无关（跳过不输出）\n"
+    "只输出 JSON 数组，严格按以下格式，不要其他内容：\n"
+    '[{"event_index": 0, "question_index": 3, "relevance": "high", "reason": "直接相关"}, ...]\n'
+    "只输出 high 或 medium 的项，low 的跳过。reason 用中文，10字以内。"
+)
+BATCH_CONTEMPLATE_USER_PROMPT = (
+    "新闻事件：\n[事件0] 事件\n  摘要\n\n研究问题：\n[问题0] 为什么"
+)
+
+
+@pytest.mark.parametrize("briefing_type", ["quick", "daily"])
+def test_briefing_generation_locks_prompts_ai_args_sql_order_and_response(
+    briefing_type: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     trace: list[Any] = []
-    captured: dict[str, Any] = {}
-    events = [
-        {
-            "id": "event-1",
-            "source_id": "npr",
-            "title": "Event",
-            "title_cn": "事件",
-            "summary_cn": "摘要",
-            "topic": "world",
-            "created_at": "2026-07-20 08:00:00",
-        }
-    ]
+    chat_calls: list[tuple[list[dict[str, str]], dict[str, Any]]] = []
+    event = {
+        "id": "event-1",
+        "source_id": "npr",
+        "title": "Event",
+        "title_cn": "事件",
+        "raw_summary": None,
+        "summary_cn": "摘要",
+        "ai_summary": None,
+        "topic": "world",
+        "url": "https://example.com/event-1",
+        "importance": 3,
+        "created_at": "2026-07-20 08:00:00",
+    }
 
     class Connection:
         def execute(self, sql, params=()):
-            trace.append(("execute", " ".join(sql.split()), params))
-            return _Cursor()
+            normalized = " ".join(sql.split())
+            trace.append(("execute", normalized, params))
+            if "FROM events WHERE status = 'new'" in normalized:
+                return _Cursor(rows=[event])
+            if "FROM events WHERE id IN" in normalized:
+                return _Cursor(rows=[event])
+            if "FROM brainstorm_questions" in normalized:
+                return _Cursor(rows=[{"id": "question-1", "question": "为什么"}])
+            return _Cursor(rows=[])
 
     @contextmanager
     def connect_fn():
@@ -182,73 +442,89 @@ def test_briefing_generation_locks_prompt_hash_sql_order_and_response(
         yield Connection()
         trace.append("exit")
 
-    def call_ai(**kwargs):
-        trace.append("ai")
-        captured.update(kwargs)
-        return json.dumps(
-            {"topics": [{"topic": "world", "events": [{"event_id": "event-1"}]}]}
-        )
+    def chat_fn(messages, **kwargs):
+        chat_calls.append((messages, kwargs))
+        if len(chat_calls) == 1:
+            return json.dumps(
+                {"topics": [{"topic": "world", "events": [{"event_id": "event-1"}]}]}
+            )
+        return "[]"
 
-    monkeypatch.setattr(briefing, "_fetch_translated_events", lambda limit: events)
-    monkeypatch.setattr(briefing, "_call_ai", call_ai)
     monkeypatch.setattr(briefing, "init_db", lambda: trace.append("init_db"))
     monkeypatch.setattr(briefing, "connect", connect_fn)
-    monkeypatch.setattr(
-        briefing,
-        "_batch_contemplate_briefing_events",
-        lambda topics: trace.append(("contemplate", topics)),
-    )
+    monkeypatch.setattr(briefing, "chat", chat_fn)
     monkeypatch.setattr(
         briefing,
         "uuid",
         SimpleNamespace(uuid4=lambda: SimpleNamespace(hex="1234567890abcdef")),
     )
 
-    result = briefing.generate_briefing("quick", 7)
+    result = briefing.generate_briefing(briefing_type, 7)
 
     assert result == {
         "id": "briefing-1234567890ab",
-        "type": "quick",
+        "type": briefing_type,
         "topics": [
             {
                 "topic": "world",
                 "events": [
-                    {
-                        "event_id": "event-1",
-                        "created_at": "2026-07-20 08:00:00",
-                    }
+                    {"event_id": "event-1", "created_at": "2026-07-20 08:00:00"}
                 ],
             }
         ],
         "events_used": 1,
     }
-    assert hashlib.sha256(captured["system_prompt"].encode()).hexdigest() == (
-        "4e3c3e2a2309ad2c9181fcc242a0f568d9d2cbb32db7ce4b32565b9b4d3fa9c0"
+    assert len(chat_calls) == 2
+    generation_messages, generation_args = chat_calls[0]
+    expected = BRIEFING_PROMPTS[briefing_type]
+    assert generation_messages == [
+        {"role": "system", "content": expected["system"]},
+        {"role": "user", "content": expected["user"]},
+    ]
+    assert (
+        hashlib.sha256(generation_messages[0]["content"].encode()).hexdigest()
+        == expected["system_hash"]
     )
-    assert hashlib.sha256(captured["user_prompt"].encode()).hexdigest() == (
-        "f66459a4233a500ce65570482fae03d51780522184414d48ef80507cb91088a1"
+    assert (
+        hashlib.sha256(generation_messages[1]["content"].encode()).hexdigest()
+        == expected["user_hash"]
     )
-    assert {key: value for key, value in captured.items() if "prompt" not in key} == {
+    assert generation_args == {
+        "temperature": 0.5,
         "max_tokens": 4096,
+        "response_format": {"type": "json_object"},
         "timeout": 120,
+        "module": "briefing",
+        "task": expected["task"],
+    }
+
+    contemplate_messages, contemplate_args = chat_calls[1]
+    assert contemplate_messages == [
+        {"role": "system", "content": BATCH_CONTEMPLATE_SYSTEM_PROMPT},
+        {"role": "user", "content": BATCH_CONTEMPLATE_USER_PROMPT},
+    ]
+    assert hashlib.sha256(contemplate_messages[0]["content"].encode()).hexdigest() == (
+        "e18fe371280d0a887bd46f80807c2aa23d1eda4f832ede523810d68aee8d0b9e"
+    )
+    assert hashlib.sha256(contemplate_messages[1]["content"].encode()).hexdigest() == (
+        "3ef3677a2c4af3033ffcc2a242e2cfc99f7eabbfe359248b76440991bfd18b6f"
+    )
+    assert contemplate_args == {
+        "temperature": 0.5,
+        "max_tokens": 4096,
+        "response_format": {"type": "json_object"},
+        "timeout": 180,
+        "module": "briefing",
         "task": "briefing_quick",
     }
-    assert trace == [
-        "ai",
-        "init_db",
-        "enter",
-        (
-            "execute",
-            "INSERT INTO briefings (id, type, topics_json, events_used) VALUES (?, ?, ?, ?)",
-            (
-                "briefing-1234567890ab",
-                "quick",
-                '[{"topic": "world", "events": [{"event_id": "event-1", "created_at": "2026-07-20 08:00:00"}]}]',
-                1,
-            ),
-        ),
-        "exit",
-        ("contemplate", result["topics"]),
+    sql_order = [entry[1] for entry in trace if isinstance(entry, tuple)]
+    assert sql_order == [
+        "SELECT id, source_id, title, title_cn, raw_summary, summary_cn, topic, url, importance, created_at FROM events WHERE status = 'new' AND title_cn IS NOT NULL AND source_id NOT IN ('douyin', 'user-upload') ORDER BY created_at DESC, importance DESC LIMIT ?",
+        "INSERT INTO briefings (id, type, topics_json, events_used) VALUES (?, ?, ?, ?)",
+        "SELECT id, title_cn, summary_cn, ai_summary FROM events WHERE id IN (?)",
+        "SELECT id, question FROM brainstorm_questions WHERE status = 'open' ORDER BY created_at DESC LIMIT 40",
+        "SELECT question_id, event_id, relevance FROM brainstorm_contemplate_cache WHERE event_id IN (?)",
+        "INSERT OR REPLACE INTO brainstorm_contemplate_cache (question_id, event_id, relevance, reason) VALUES (?, ?, ?, ?)",
     ]
 
 
@@ -466,7 +742,7 @@ def _stub_and_assert(
     legacy_call: Callable[[], Any],
     *,
     expected_args: tuple[Any, ...] = (),
-    seam_values: tuple[Any, ...] = (),
+    expected_kwargs: dict[str, Any] | None = None,
 ) -> None:
     sentinel = object()
     calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
@@ -480,36 +756,53 @@ def _stub_and_assert(
     assert len(calls) == 1
     args, kwargs = calls[0]
     assert args == expected_args
-    for seam in seam_values:
-        assert seam in kwargs.values()
+    assert kwargs == (expected_kwargs or {})
 
 
 def _briefing_repository_forwarding(module, monkeypatch) -> None:
     sentinel_connect = object()
     sentinel_init = object()
+    sentinel_parse = object()
+    sentinel_enrich = object()
     monkeypatch.setattr(briefing, "connect", sentinel_connect)
     monkeypatch.setattr(briefing, "init_db", sentinel_init)
+    monkeypatch.setattr(briefing, "_parse_topics_json", sentinel_parse)
+    monkeypatch.setattr(briefing, "_enrich_briefing_relevance", sentinel_enrich)
+    repository_dependencies = {
+        "connect_fn": sentinel_connect,
+        "init_db_fn": sentinel_init,
+    }
     _stub_and_assert(
         module,
         monkeypatch,
         "list_briefings",
-        lambda: briefing.list_briefings(7, 3),
+        lambda: briefing_routes.get_briefing_history(7, 3),
         expected_args=(7, 3),
-        seam_values=(sentinel_connect, sentinel_init),
+        expected_kwargs=repository_dependencies,
     )
     _stub_and_assert(
         module,
         monkeypatch,
         "latest_briefing",
-        lambda: briefing.latest_briefing("daily"),
+        lambda: briefing_routes.get_latest_briefing("daily"),
         expected_args=("daily",),
+        expected_kwargs={
+            **repository_dependencies,
+            "parse_topics_json_fn": sentinel_parse,
+            "enrich_relevance_fn": sentinel_enrich,
+        },
     )
     _stub_and_assert(
         module,
         monkeypatch,
         "get_briefing",
-        lambda: briefing.get_briefing("briefing-1"),
+        lambda: briefing_routes.get_briefing_detail("briefing-1"),
         expected_args=("briefing-1",),
+        expected_kwargs={
+            **repository_dependencies,
+            "parse_topics_json_fn": sentinel_parse,
+            "enrich_relevance_fn": sentinel_enrich,
+        },
     )
 
 
@@ -517,22 +810,55 @@ def _briefing_generation_forwarding(module, monkeypatch) -> None:
     sentinel_connect = object()
     sentinel_init = object()
     sentinel_chat = object()
+    sentinel_fetch = object()
+    sentinel_build = object()
+    sentinel_parse = object()
+    sentinel_batch = object()
+    sentinel_uuid = object()
     monkeypatch.setattr(briefing, "connect", sentinel_connect)
     monkeypatch.setattr(briefing, "init_db", sentinel_init)
     monkeypatch.setattr(briefing, "chat", sentinel_chat)
+    monkeypatch.setattr(briefing, "_fetch_translated_events", sentinel_fetch)
+    monkeypatch.setattr(briefing, "_build_events_text", sentinel_build)
+    monkeypatch.setattr(briefing, "_parse_generated_topics", sentinel_parse)
+    monkeypatch.setattr(briefing, "_batch_contemplate_briefing_events", sentinel_batch)
+    monkeypatch.setattr(briefing, "uuid", SimpleNamespace(uuid4=sentinel_uuid))
     _stub_and_assert(
         module,
         monkeypatch,
         "generate_briefing",
         lambda: briefing.generate_briefing("daily", 9),
         expected_args=("daily", 9),
-        seam_values=(sentinel_connect, sentinel_init, sentinel_chat, briefing.logger),
+        expected_kwargs={
+            "connect_fn": sentinel_connect,
+            "init_db_fn": sentinel_init,
+            "chat_fn": sentinel_chat,
+            "fetch_events_fn": sentinel_fetch,
+            "build_events_text_fn": sentinel_build,
+            "parse_generated_topics_fn": sentinel_parse,
+            "batch_contemplate_fn": sentinel_batch,
+            "uuid_fn": sentinel_uuid,
+            "json_module": briefing.json,
+            "logger": briefing.logger,
+        },
     )
 
 
 def _event_query_forwarding(module, monkeypatch) -> None:
     sentinel_connect = object()
+    sentinel_parse_ids = object()
+    sentinel_add_video = object()
+    sentinel_ingest_root = object()
     monkeypatch.setattr(event_routes, "connect", sentinel_connect)
+    monkeypatch.setattr(
+        event_routes, "parse_bounded_identifier_csv", sentinel_parse_ids
+    )
+    monkeypatch.setattr(event_routes, "add_video_url", sentinel_add_video)
+    monkeypatch.setattr(
+        importlib.import_module("zhiji_backend.paths"),
+        "INGEST_ROOT",
+        sentinel_ingest_root,
+    )
     _stub_and_assert(
         module,
         monkeypatch,
@@ -541,12 +867,17 @@ def _event_query_forwarding(module, monkeypatch) -> None:
             "world", "new", "npr", "article", "term", 2, 3, 1
         ),
         expected_args=("world", "new", "npr", "article", "term", 2, 3, 1),
+        expected_kwargs={
+            "connect_fn": sentinel_connect,
+            "parse_bounded_identifier_csv_fn": sentinel_parse_ids,
+        },
     )
     _stub_and_assert(
         module,
         monkeypatch,
         "event_topic_counts",
         event_routes.event_topic_counts,
+        expected_kwargs={"connect_fn": sentinel_connect},
     )
     _stub_and_assert(
         module,
@@ -554,7 +885,11 @@ def _event_query_forwarding(module, monkeypatch) -> None:
         "get_event",
         lambda: event_routes.get_event("event-1"),
         expected_args=("event-1",),
-        seam_values=(sentinel_connect,),
+        expected_kwargs={
+            "connect_fn": sentinel_connect,
+            "add_video_url_fn": sentinel_add_video,
+            "ingest_root": sentinel_ingest_root,
+        },
     )
     _stub_and_assert(
         module,
@@ -562,21 +897,39 @@ def _event_query_forwarding(module, monkeypatch) -> None:
         "similar_events",
         lambda: event_routes.similar_events("event-1", 4),
         expected_args=("event-1", 4),
+        expected_kwargs={"connect_fn": sentinel_connect},
     )
 
 
 def _event_mutation_forwarding(module, monkeypatch) -> None:
     sentinel_connect = object()
     sentinel_unlink = object()
+    sentinel_seed = object()
+    sentinel_collect = object()
+    sentinel_fetch = object()
+    sentinel_ingest_root = object()
     monkeypatch.setattr(event_routes, "connect", sentinel_connect)
     monkeypatch.setattr(event_routes, "safe_unlink", sentinel_unlink)
+    monkeypatch.setattr(event_routes, "seed_default_sources", sentinel_seed)
+    monkeypatch.setattr(event_routes, "collect_once", sentinel_collect)
+    monkeypatch.setattr(event_routes, "fetch_url", sentinel_fetch)
+    monkeypatch.setattr(
+        importlib.import_module("zhiji_backend.paths"),
+        "INGEST_ROOT",
+        sentinel_ingest_root,
+    )
+    deletion_dependencies = {
+        "connect_fn": sentinel_connect,
+        "safe_unlink_fn": sentinel_unlink,
+        "ingest_root": sentinel_ingest_root,
+    }
     _stub_and_assert(
         module,
         monkeypatch,
         "delete_event",
         lambda: event_routes.delete_event("event-1"),
         expected_args=("event-1",),
-        seam_values=(sentinel_connect, sentinel_unlink),
+        expected_kwargs=deletion_dependencies,
     )
     batch_request = event_routes.EventBatchRequest(event_ids=["event-1"])
     _stub_and_assert(
@@ -585,6 +938,7 @@ def _event_mutation_forwarding(module, monkeypatch) -> None:
         "batch_delete_events",
         lambda: event_routes.batch_delete_events(batch_request),
         expected_args=(batch_request,),
+        expected_kwargs=deletion_dependencies,
     )
     collect_request = CollectRequest(source_ids=["npr"])
     _stub_and_assert(
@@ -593,14 +947,37 @@ def _event_mutation_forwarding(module, monkeypatch) -> None:
         "collect",
         lambda: event_routes.collect(collect_request),
         expected_args=(collect_request,),
+        expected_kwargs={
+            "seed_default_sources_fn": sentinel_seed,
+            "collect_once_fn": sentinel_collect,
+            "fetch_url_fn": sentinel_fetch,
+        },
     )
 
 
 def _event_ai_forwarding(module, monkeypatch) -> None:
     sentinel_connect = object()
     sentinel_tagger = object()
+    sentinel_summarize = object()
+    sentinel_resolve = object()
+    sentinel_parse_ids = object()
+    sentinel_classify_batch = object()
+    sentinel_classify_event = object()
+    sentinel_ingest_root = object()
     monkeypatch.setattr(event_routes, "connect", sentinel_connect)
     monkeypatch.setattr(event_routes, "tag_event", sentinel_tagger)
+    monkeypatch.setattr(event_routes, "summarize_transcript", sentinel_summarize)
+    monkeypatch.setattr(event_routes, "resolve_under", sentinel_resolve)
+    monkeypatch.setattr(
+        event_routes, "parse_bounded_identifier_csv", sentinel_parse_ids
+    )
+    monkeypatch.setattr(event_routes, "classify_batch", sentinel_classify_batch)
+    monkeypatch.setattr(event_routes, "classify_event", sentinel_classify_event)
+    monkeypatch.setattr(
+        importlib.import_module("zhiji_backend.paths"),
+        "INGEST_ROOT",
+        sentinel_ingest_root,
+    )
     background_tasks = BackgroundTasks()
     _stub_and_assert(
         module,
@@ -608,6 +985,13 @@ def _event_ai_forwarding(module, monkeypatch) -> None:
         "summarize_event",
         lambda: event_routes.summarize_event("event-1", background_tasks, True),
         expected_args=("event-1", background_tasks, True),
+        expected_kwargs={
+            "connect_fn": sentinel_connect,
+            "summarize_transcript_fn": sentinel_summarize,
+            "resolve_under_fn": sentinel_resolve,
+            "ingest_root": sentinel_ingest_root,
+            "logger": event_routes.logger,
+        },
     )
     _stub_and_assert(
         module,
@@ -615,7 +999,11 @@ def _event_ai_forwarding(module, monkeypatch) -> None:
         "tag_single_event",
         lambda: event_routes.tag_single_event("event-1"),
         expected_args=("event-1",),
-        seam_values=(sentinel_connect, sentinel_tagger),
+        expected_kwargs={
+            "connect_fn": sentinel_connect,
+            "tag_event_fn": sentinel_tagger,
+            "json_module": event_routes.json,
+        },
     )
     tag_request = event_routes.TagRequest(limit=7)
     _stub_and_assert(
@@ -624,6 +1012,11 @@ def _event_ai_forwarding(module, monkeypatch) -> None:
         "tag_batch",
         lambda: event_routes.tag_batch(tag_request),
         expected_args=(tag_request,),
+        expected_kwargs={
+            "connect_fn": sentinel_connect,
+            "tag_event_fn": sentinel_tagger,
+            "json_module": event_routes.json,
+        },
     )
     _stub_and_assert(
         module,
@@ -631,6 +1024,10 @@ def _event_ai_forwarding(module, monkeypatch) -> None:
         "batch_classify",
         lambda: event_routes.batch_classify("npr,npr", 7),
         expected_args=("npr,npr", 7),
+        expected_kwargs={
+            "classify_batch_fn": sentinel_classify_batch,
+            "parse_bounded_identifier_csv_fn": sentinel_parse_ids,
+        },
     )
     _stub_and_assert(
         module,
@@ -638,14 +1035,28 @@ def _event_ai_forwarding(module, monkeypatch) -> None:
         "classify_single",
         lambda: event_routes.classify_single("event-1"),
         expected_args=("event-1",),
+        expected_kwargs={"classify_event_fn": sentinel_classify_event},
     )
 
 
 def _study_material_forwarding(module, monkeypatch) -> None:
     sentinel_connect = object()
     sentinel_init = object()
+    sentinel_uuid = object()
+    sentinel_generate = object()
+    sentinel_review = object()
+    sentinel_resolve = object()
     monkeypatch.setattr(study_routes, "connect", sentinel_connect)
     monkeypatch.setattr(study_routes, "init_db", sentinel_init)
+    monkeypatch.setattr(study_routes, "uuid", SimpleNamespace(uuid4=sentinel_uuid))
+    monkeypatch.setattr(study_routes, "resolve_under", sentinel_resolve)
+    pipeline = importlib.import_module("zhiji_backend.study.pipeline")
+    monkeypatch.setattr(pipeline, "generate_lecture_notes", sentinel_generate)
+    monkeypatch.setattr(pipeline, "generate_mistake_review", sentinel_review)
+    database_dependencies = {
+        "connect_fn": sentinel_connect,
+        "init_db_fn": sentinel_init,
+    }
     request = study_routes.StudyCreateRequest(subject="语文", study_type="阅读")
     _stub_and_assert(
         module,
@@ -653,6 +1064,7 @@ def _study_material_forwarding(module, monkeypatch) -> None:
         "list_materials",
         lambda: study_routes.list_materials("语文", "阅读", "draft", 2, 10),
         expected_args=("语文", "阅读", "draft", 2, 10),
+        expected_kwargs=database_dependencies,
     )
     _stub_and_assert(
         module,
@@ -660,6 +1072,10 @@ def _study_material_forwarding(module, monkeypatch) -> None:
         "get_material",
         lambda: study_routes.get_material("study-1"),
         expected_args=("study-1",),
+        expected_kwargs={
+            **database_dependencies,
+            "json_module": study_routes.json,
+        },
     )
     _stub_and_assert(
         module,
@@ -667,7 +1083,10 @@ def _study_material_forwarding(module, monkeypatch) -> None:
         "create_material",
         lambda: study_routes.create_material(request),
         expected_args=(request,),
-        seam_values=(sentinel_connect, sentinel_init),
+        expected_kwargs={
+            **database_dependencies,
+            "uuid_fn": sentinel_uuid,
+        },
     )
     update_request = study_routes.StudyUpdateRequest(title="新标题")
     _stub_and_assert(
@@ -676,6 +1095,7 @@ def _study_material_forwarding(module, monkeypatch) -> None:
         "update_material",
         lambda: study_routes.update_material("study-1", update_request),
         expected_args=("study-1", update_request),
+        expected_kwargs=database_dependencies,
     )
     _stub_and_assert(
         module,
@@ -683,6 +1103,7 @@ def _study_material_forwarding(module, monkeypatch) -> None:
         "delete_material",
         lambda: study_routes.delete_material("study-1"),
         expected_args=("study-1",),
+        expected_kwargs=database_dependencies,
     )
     generate_request = study_routes.GenerateRequest(extra_instructions="更简洁")
     _stub_and_assert(
@@ -691,6 +1112,11 @@ def _study_material_forwarding(module, monkeypatch) -> None:
         "generate_material",
         lambda: study_routes.generate_material("study-1", generate_request),
         expected_args=("study-1", generate_request),
+        expected_kwargs={
+            **database_dependencies,
+            "generate_lecture_notes_fn": sentinel_generate,
+            "logger": study_routes.logger,
+        },
     )
     review_request = study_routes.MistakeReviewRequest(
         correct_answer="正确", child_answer="错误"
@@ -701,6 +1127,13 @@ def _study_material_forwarding(module, monkeypatch) -> None:
         "review_mistake",
         lambda: study_routes.review_mistake("study-1", review_request),
         expected_args=("study-1", review_request),
+        expected_kwargs={
+            **database_dependencies,
+            "generate_mistake_review_fn": sentinel_review,
+            "normalize_review_result_fn": study_routes._normalize_review_result,
+            "json_module": study_routes.json,
+            "logger": study_routes.logger,
+        },
     )
     _stub_and_assert(
         module,
@@ -708,6 +1141,14 @@ def _study_material_forwarding(module, monkeypatch) -> None:
         "get_study_file",
         lambda: study_routes.get_study_file("study-1", "md"),
         expected_args=("study-1", "md"),
+        expected_kwargs={
+            "connect_fn": sentinel_connect,
+            "study_data_dir": study_routes.STUDY_DATA_DIR,
+            "resolve_under_fn": sentinel_resolve,
+            "file_response_type": study_routes.FileResponse,
+            "path_security_error_type": study_routes.PathSecurityError,
+            "path_type": study_routes.Path,
+        },
     )
     _stub_and_assert(
         module,
@@ -715,20 +1156,46 @@ def _study_material_forwarding(module, monkeypatch) -> None:
         "list_mistakes",
         lambda: study_routes.list_mistakes("语文", 2, 10),
         expected_args=("语文", 2, 10),
+        expected_kwargs={
+            **database_dependencies,
+            "json_module": study_routes.json,
+        },
     )
     _stub_and_assert(
         module,
         monkeypatch,
         "get_stats",
         study_routes.get_stats,
+        expected_kwargs=database_dependencies,
     )
 
 
 def _study_intake_forwarding(module, monkeypatch) -> None:
     sentinel_stream = object()
     sentinel_validate = object()
+    sentinel_kind = object()
+    sentinel_max_bytes = object()
+    sentinel_resolve = object()
+    sentinel_connect = object()
+    sentinel_init = object()
+    sentinel_uuid = object()
+    sentinel_process_pdf = object()
+    sentinel_ocr_page = object()
+    sentinel_ocr_image = object()
+    sentinel_create = object()
     monkeypatch.setattr(study_routes, "stream_upload_to_temp", sentinel_stream)
     monkeypatch.setattr(study_routes, "validate_file", sentinel_validate)
+    monkeypatch.setattr(study_routes, "kind_for_filename", sentinel_kind)
+    monkeypatch.setattr(study_routes, "max_bytes_for_kind", sentinel_max_bytes)
+    monkeypatch.setattr(study_routes, "resolve_under", sentinel_resolve)
+    monkeypatch.setattr(study_routes, "connect", sentinel_connect)
+    monkeypatch.setattr(study_routes, "init_db", sentinel_init)
+    monkeypatch.setattr(study_routes, "uuid", SimpleNamespace(uuid4=sentinel_uuid))
+    monkeypatch.setattr(study_routes, "_ocr_image_path", sentinel_ocr_image)
+    monkeypatch.setattr(study_routes, "create_material", sentinel_create)
+    pdf_ocr = importlib.import_module("zhiji_backend.ingest.pdf_ocr")
+    monkeypatch.setattr(pdf_ocr, "process_pdf", sentinel_process_pdf)
+    monkeypatch.setattr(pdf_ocr, "ocr_page", sentinel_ocr_page)
     upload = object()
     _stub_and_assert(
         module,
@@ -738,7 +1205,21 @@ def _study_intake_forwarding(module, monkeypatch) -> None:
             upload, "练习", "语文", "阅读", "三年级", "标题"
         ),
         expected_args=(upload, "练习", "语文", "阅读", "三年级", "标题"),
-        seam_values=(sentinel_stream, sentinel_validate),
+        expected_kwargs={
+            "kind_for_filename_fn": sentinel_kind,
+            "max_bytes_for_kind_fn": sentinel_max_bytes,
+            "stream_upload_to_temp_fn": sentinel_stream,
+            "validate_file_fn": sentinel_validate,
+            "resolve_under_fn": sentinel_resolve,
+            "connect_fn": sentinel_connect,
+            "init_db_fn": sentinel_init,
+            "uuid_fn": sentinel_uuid,
+            "process_pdf_fn": sentinel_process_pdf,
+            "ocr_page_fn": sentinel_ocr_page,
+            "study_data_dir": study_routes.STUDY_DATA_DIR,
+            "ocr_pdf_max_bytes": study_routes.OCR_PDF_MAX_BYTES,
+            "file_kind_type": study_routes.FileKind,
+        },
     )
     _stub_and_assert(
         module,
@@ -746,6 +1227,15 @@ def _study_intake_forwarding(module, monkeypatch) -> None:
         "upload_image",
         lambda: study_routes.upload_image(upload, "语文", "阅读", "三年级"),
         expected_args=(upload, "语文", "阅读", "三年级"),
+        expected_kwargs={
+            "kind_for_filename_fn": sentinel_kind,
+            "max_bytes_for_kind_fn": sentinel_max_bytes,
+            "stream_upload_to_temp_fn": sentinel_stream,
+            "validate_file_fn": sentinel_validate,
+            "ocr_image_fn": sentinel_ocr_image,
+            "create_material_fn": sentinel_create,
+            "file_kind_type": study_routes.FileKind,
+        },
     )
     path = Path("image.jpg")
     _stub_and_assert(
@@ -754,12 +1244,15 @@ def _study_intake_forwarding(module, monkeypatch) -> None:
         "_ocr_image_path",
         lambda: study_routes._ocr_image_path(path),
         expected_args=(path,),
+        expected_kwargs={"ocr_page_fn": sentinel_ocr_page},
     )
 
 
 def _series_query_forwarding(module, monkeypatch) -> None:
     sentinel_connect = object()
     sentinel_init = object()
+    monkeypatch.setattr(series_routes, "connect", sentinel_connect)
+    monkeypatch.setattr(series_routes, "init_db", sentinel_init)
     _stub_and_assert(
         module,
         monkeypatch,
@@ -778,121 +1271,128 @@ def _series_query_forwarding(module, monkeypatch) -> None:
         module,
         monkeypatch,
         "list_series",
-        lambda: series_service.list_series(
-            True, connect_fn=sentinel_connect, init_db_fn=sentinel_init
-        ),
+        lambda: series_routes.list_series(True),
         expected_args=(True,),
-        seam_values=(sentinel_connect, sentinel_init),
+        expected_kwargs={
+            "connect_fn": sentinel_connect,
+            "init_db_fn": sentinel_init,
+        },
     )
     _stub_and_assert(
         module,
         monkeypatch,
         "list_candidates",
-        lambda: series_service.list_candidates(
-            connect_fn=sentinel_connect, init_db_fn=sentinel_init
-        ),
-        seam_values=(sentinel_connect, sentinel_init),
+        series_routes.list_candidates,
+        expected_kwargs={
+            "connect_fn": sentinel_connect,
+            "init_db_fn": sentinel_init,
+            "name_similarity_fn": series_service.name_similarity,
+            "member_overlap_score_fn": series_service.member_overlap_score,
+        },
     )
     _stub_and_assert(
         module,
         monkeypatch,
         "get_series_detail",
-        lambda: series_service.get_series_detail(
-            "series-1", connect_fn=sentinel_connect, init_db_fn=sentinel_init
-        ),
+        lambda: series_routes.get_series_detail("series-1"),
         expected_args=("series-1",),
-        seam_values=(sentinel_connect, sentinel_init),
+        expected_kwargs={
+            "connect_fn": sentinel_connect,
+            "init_db_fn": sentinel_init,
+        },
     )
     _stub_and_assert(
         module,
         monkeypatch,
         "get_series_suggestions",
-        lambda: series_service.get_series_suggestions(
-            "series-1", connect_fn=sentinel_connect, init_db_fn=sentinel_init
-        ),
+        lambda: series_routes.get_series_suggestions("series-1"),
         expected_args=("series-1",),
-        seam_values=(sentinel_connect, sentinel_init),
+        expected_kwargs={
+            "connect_fn": sentinel_connect,
+            "init_db_fn": sentinel_init,
+        },
     )
 
 
 def _series_mutation_forwarding(module, monkeypatch) -> None:
     sentinel_connect = object()
     sentinel_init = object()
-    create_request = SimpleNamespace(
+    monkeypatch.setattr(series_routes, "connect", sentinel_connect)
+    monkeypatch.setattr(series_routes, "init_db", sentinel_init)
+    create_request = series_routes.SeriesCreateRequest(
         name="Series", member_ids=["a", "b"], description=""
     )
     _stub_and_assert(
         module,
         monkeypatch,
         "create_series",
-        lambda: series_service.create_series(
-            create_request, connect_fn=sentinel_connect, init_db_fn=sentinel_init
-        ),
+        lambda: series_routes.create_series(create_request),
         expected_args=(create_request,),
-        seam_values=(sentinel_connect, sentinel_init),
+        expected_kwargs={
+            "connect_fn": sentinel_connect,
+            "init_db_fn": sentinel_init,
+        },
     )
     _stub_and_assert(
         module,
         monkeypatch,
         "delete_series",
-        lambda: series_service.delete_series(
-            "series-1", connect_fn=sentinel_connect, init_db_fn=sentinel_init
-        ),
+        lambda: series_routes.delete_series("series-1"),
         expected_args=("series-1",),
-        seam_values=(sentinel_connect, sentinel_init),
+        expected_kwargs={
+            "connect_fn": sentinel_connect,
+            "init_db_fn": sentinel_init,
+        },
     )
     update_data = {"name": "New"}
     _stub_and_assert(
         module,
         monkeypatch,
         "update_series",
-        lambda: series_service.update_series(
-            "series-1",
-            update_data,
-            connect_fn=sentinel_connect,
-            init_db_fn=sentinel_init,
-        ),
+        lambda: series_routes.update_series("series-1", update_data),
         expected_args=("series-1", update_data),
-        seam_values=(sentinel_connect, sentinel_init),
+        expected_kwargs={
+            "connect_fn": sentinel_connect,
+            "init_db_fn": sentinel_init,
+        },
     )
-    merge_request = SimpleNamespace(source_id="source", target_id="target")
+    merge_request = series_routes.SeriesMergeRequest(
+        source_id="source", target_id="target"
+    )
     _stub_and_assert(
         module,
         monkeypatch,
         "merge_series",
-        lambda: series_service.merge_series(
-            merge_request, connect_fn=sentinel_connect, init_db_fn=sentinel_init
-        ),
+        lambda: series_routes.merge_series(merge_request),
         expected_args=(merge_request,),
-        seam_values=(sentinel_connect, sentinel_init),
+        expected_kwargs={
+            "connect_fn": sentinel_connect,
+            "init_db_fn": sentinel_init,
+        },
     )
-    order_request = SimpleNamespace(member_ids=["b", "a"])
+    order_request = series_routes.SeriesOrderRequest(member_ids=["b", "a"])
     _stub_and_assert(
         module,
         monkeypatch,
         "reorder_series",
-        lambda: series_service.reorder_series(
-            "series-1",
-            order_request,
-            connect_fn=sentinel_connect,
-            init_db_fn=sentinel_init,
-        ),
+        lambda: series_routes.reorder_series("series-1", order_request),
         expected_args=("series-1", order_request),
-        seam_values=(sentinel_connect, sentinel_init),
+        expected_kwargs={
+            "connect_fn": sentinel_connect,
+            "init_db_fn": sentinel_init,
+        },
     )
-    members_request = SimpleNamespace(event_ids=["event-1"])
+    members_request = series_routes.SeriesMembersRequest(event_ids=["event-1"])
     _stub_and_assert(
         module,
         monkeypatch,
         "add_series_members",
-        lambda: series_service.add_series_members(
-            "series-1",
-            members_request,
-            connect_fn=sentinel_connect,
-            init_db_fn=sentinel_init,
-        ),
+        lambda: series_routes.add_series_members("series-1", members_request),
         expected_args=("series-1", members_request),
-        seam_values=(sentinel_connect, sentinel_init),
+        expected_kwargs={
+            "connect_fn": sentinel_connect,
+            "init_db_fn": sentinel_init,
+        },
     )
 
 
