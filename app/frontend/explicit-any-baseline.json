@@ -4,7 +4,6 @@
   "src/components/cinematic-system/useSystemConfig.ts": 2,
   "src/components/cinematic-system/useSystemConnection.ts": 1,
   "src/components/cinematic-system/useSystemHealth.ts": 1,
-  "src/pages/BrainstormDetailPage.tsx": 7,
   "src/pages/CinematicBrainstorm.tsx": 1,
   "src/pages/CinematicBriefings.tsx": 3,
   "src/pages/CinematicIndustryChains.tsx": 9,
