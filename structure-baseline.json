@@ -10,25 +10,12 @@
     "app/frontend/src/pages/SeriesDetail.tsx": 882,
     "app/frontend/src/pages/StudyDetail.tsx": 554,
     "src/zhiji_backend/briefing.py": 490,
-    "src/zhiji_backend/collector.py": 475,
-    "src/zhiji_backend/ingest/douyin.py": 541,
     "src/zhiji_backend/routes/event_routes.py": 505,
-    "src/zhiji_backend/routes/ingest_routes.py": 736,
     "src/zhiji_backend/routes/study_routes.py": 532,
-    "src/zhiji_backend/series_service.py": 499,
-    "src/zhiji_backend/task_queue.py": 963
+    "src/zhiji_backend/series_service.py": 499
   },
   "ruff_per_file_ignores": {
     "scripts/backfill_overviews.py": [
-      "E402"
-    ],
-    "src/zhiji_backend/collector.py": [
-      "E402"
-    ],
-    "src/zhiji_backend/routes/ingest_routes.py": [
-      "E402"
-    ],
-    "src/zhiji_backend/task_queue.py": [
       "E402"
     ],
     "tests/*.py": [
