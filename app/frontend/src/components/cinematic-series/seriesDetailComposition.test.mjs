@@ -114,3 +114,93 @@ test('series extraction forwards callbacks and exports its real request coordina
   assert.match(page, /useSeriesDetail\(/);
   assert.match(hook, /isCurrent|sequence/);
 });
+
+test('series id changes reset mutation ui and only committed effects switch selected owners', () => {
+  const hook = readFileSync(hookUrl, 'utf8');
+  const ownerFactory = loadPureDeclarations(modules, ['createSelectedSeriesOwner']);
+  const owners = ownerFactory.createSelectedSeriesOwner();
+  const staleSeriesA = owners.select('series-a');
+
+  owners.invalidate(staleSeriesA);
+  const seriesB = owners.select('series-b');
+  owners.invalidate(seriesB);
+  const currentSeriesA = owners.select('series-a');
+
+  assert.equal(owners.isCurrent(staleSeriesA), false, 'returning to an id must not revive its stale owner');
+  assert.equal(owners.isCurrent(currentSeriesA), true, 'the latest selected owner must remain current');
+
+  const hookStart = hook.indexOf('export function useSeriesDetail');
+  const layoutEffectStart = hook.indexOf('useLayoutEffect(', hookStart);
+  assert.notEqual(layoutEffectStart, -1, 'selected owner changes must use a committed layout effect');
+  assert.doesNotMatch(hook.slice(hookStart, layoutEffectStart), /selectedSeriesOwner\.select\(/, 'render must not switch the selected owner');
+  const ownerEffect = hook.slice(layoutEffectStart, hook.indexOf('\n  useEffect(', layoutEffectStart));
+  assert.match(ownerEffect, /selectedSeriesOwner\.select\(id\)/);
+  assert.match(ownerEffect, /return \(\) => selectedSeriesOwner\.invalidate\(owner\)/);
+
+  const idEffect = hook.match(/useEffect\(\(\) => \{([\s\S]*?)\n  \}, \[id, embedded\]\);/)?.[1] || '';
+  for (const reset of [
+    "setLoadError('')",
+    "setOperationError('')",
+    'setIntroGenerating(false)',
+    'setSummaryGenerating(false)',
+    'setPaperGenerating(false)',
+    'setDeleting(false)',
+    'setConfirmDelete(false)',
+    'setBatchAdding(false)',
+    'setShowProgress(false)',
+    "setProgressStage('adding')",
+    'setRefreshing(false)',
+    'setShowSuggestions(false)',
+    'setSelectedIds([])',
+  ]) {
+    assert.ok(idEffect.includes(reset), `selected-id effect must reset ${reset}`);
+  }
+});
+
+test('series status polling stays single-flight and schedules only after settle', async () => {
+  const hook = readFileSync(hookUrl, 'utf8');
+  const pollerFactory = loadPureDeclarations(modules, ['createSingleFlightPoller']);
+  let resolveSlowRequest;
+  const slowRequest = new Promise((resolve) => { resolveSlowRequest = resolve; });
+  const scheduled = [];
+  const cancelled = [];
+  let pollCalls = 0;
+  let timerId = 0;
+  const poller = pollerFactory.createSingleFlightPoller({
+    poll: async () => { pollCalls += 1; await slowRequest; },
+    schedule: (callback, delay) => {
+      const timer = { id: ++timerId, callback, delay };
+      scheduled.push(timer);
+      return timer;
+    },
+    cancel: (timer) => cancelled.push(timer.id),
+  });
+
+  poller.start();
+  assert.equal(scheduled.length, 1);
+  assert.equal(scheduled[0].delay, 2000);
+  scheduled.shift().callback();
+  await Promise.resolve();
+  assert.equal(pollCalls, 1);
+  assert.equal(poller.isInFlight(), true);
+
+  poller.wake();
+  assert.equal(pollCalls, 1, 'a visibility wake must not replace a slow in-flight request');
+  assert.equal(scheduled.length, 0, 'the next tick must wait for the current request to settle');
+
+  resolveSlowRequest();
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(poller.isInFlight(), false);
+  assert.equal(scheduled.length, 1, 'settling the request must schedule exactly one next tick');
+
+  const pendingTimer = scheduled[0];
+  poller.stop();
+  assert.deepEqual(cancelled, [pendingTimer.id]);
+  pendingTimer.callback();
+  await Promise.resolve();
+  assert.equal(pollCalls, 1, 'stopping the poller must suppress pending ticks');
+  assert.doesNotMatch(hook, /setInterval\(poll, 2000\)/);
+  assert.match(hook, /poller\.stop\(\)/);
+  assert.match(hook, /lifecycle\.abort\(\)/);
+});
