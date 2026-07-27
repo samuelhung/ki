@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import json
 import sqlite3
+import stat
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -320,6 +321,9 @@ def test_textbook_intake_moves_original_and_preserves_insert_shape(
 
     saved = study_root / "material-1/raw/original.pdf"
     assert saved.exists()
+    assert stat.S_IMODE(saved.stat().st_mode) == 0o600
+    assert not temp_file.exists()
+    assert list(saved.parent.glob(".*.tmp")) == []
     assert result == {
         "material_id": "material-1",
         "text": "",
@@ -415,6 +419,66 @@ def test_textbook_intake_never_overwrites_or_deletes_existing_destination(
     assert not temp_file.exists()
     assert existing.read_bytes() == b"keep"
     assert raw_dir.exists()
+
+
+def test_textbook_atomic_publish_does_not_clobber_target_created_at_link(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = importlib.import_module("zhiji_backend.study_intake_service")
+    study_root = tmp_path / "study"
+    study_root.mkdir()
+    temp_file = tmp_path / "upload.pdf"
+    temp_file.write_bytes(b"ours")
+    destination = study_root / "material-1/raw/original.pdf"
+
+    def link_after_foreign_file_appears(staging, dest):
+        assert Path(dest) == destination
+        destination.write_bytes(b"foreign")
+        service.os.link(staging, dest)
+
+    monkeypatch.setattr(
+        service, "_link_staging_no_clobber", link_after_foreign_file_appears
+    )
+
+    with pytest.raises(FileExistsError):
+        _textbook_upload(
+            service,
+            temp_file=temp_file,
+            study_root=study_root,
+        )
+
+    assert destination.read_bytes() == b"foreign"
+    assert not temp_file.exists()
+    assert list(destination.parent.glob(".*.tmp")) == []
+
+
+def test_textbook_database_failure_does_not_delete_replaced_destination(
+    tmp_path: Path,
+) -> None:
+    service = importlib.import_module("zhiji_backend.study_intake_service")
+    study_root = tmp_path / "study"
+    study_root.mkdir()
+    temp_file = tmp_path / "upload.pdf"
+    temp_file.write_bytes(b"ours")
+    destination = study_root / "material-1/raw/original.pdf"
+
+    def replace_destination_then_fail():
+        assert destination.read_bytes() == b"ours"
+        destination.unlink()
+        destination.write_bytes(b"foreign")
+        raise RuntimeError("init failed after replacement")
+
+    with pytest.raises(RuntimeError, match="init failed after replacement"):
+        _textbook_upload(
+            service,
+            temp_file=temp_file,
+            study_root=study_root,
+            init_db_fn=replace_destination_then_fail,
+        )
+
+    assert destination.read_bytes() == b"foreign"
+    assert not temp_file.exists()
+    assert list(destination.parent.glob(".*.tmp")) == []
 
 
 @pytest.mark.parametrize("failure", ["connect", "insert"])

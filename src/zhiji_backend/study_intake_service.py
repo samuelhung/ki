@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import base64
 import logging
+import os
+import shutil
+import tempfile
 from pathlib import Path
 
 logger = logging.getLogger("zhiji_backend.routes.study_routes")
@@ -49,6 +52,49 @@ def _remove_file(path: Path | None) -> None:
         path.unlink(missing_ok=True)
     except OSError:
         pass
+
+
+def _file_identity(path: Path) -> tuple[int, int]:
+    stat_result = path.lstat()
+    return stat_result.st_dev, stat_result.st_ino
+
+
+def _remove_file_if_identity_matches(
+    path: Path | None, identity: tuple[int, int] | None
+) -> None:
+    if path is None or identity is None:
+        return
+    try:
+        if _file_identity(path) != identity:
+            return
+        path.unlink()
+    except OSError:
+        pass
+
+
+def _link_staging_no_clobber(staging: Path, destination: Path) -> None:
+    os.link(staging, destination)
+
+
+def _publish_no_clobber(source: Path, destination: Path) -> tuple[int, int]:
+    descriptor, staging_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent
+    )
+    staging = Path(staging_name)
+    try:
+        with os.fdopen(descriptor, "wb") as output:
+            descriptor = -1
+            with source.open("rb") as input_file:
+                shutil.copyfileobj(input_file, output)
+            output.flush()
+            os.fsync(output.fileno())
+        identity = _file_identity(staging)
+        _link_staging_no_clobber(staging, destination)
+        return identity
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        _remove_file(staging)
 
 
 def upload_and_ocr(
@@ -98,7 +144,7 @@ def upload_and_ocr(
         dest = None
         material_dir_owned = False
         raw_dir_owned = False
-        dest_owned = False
+        published_identity = None
         succeeded = False
         try:
             material_dir = resolve_under_fn(
@@ -110,10 +156,7 @@ def upload_and_ocr(
             raw_dir_owned = _create_directory(raw_dir)
             raw_dir = resolve_under_fn(material_dir, "raw", expected="dir")
             dest = resolve_under_fn(raw_dir, f"original{ext}", must_exist=False)
-            if dest.exists():
-                raise FileExistsError(dest)
-            dest_owned = True
-            tmp_path.replace(dest)
+            published_identity = _publish_no_clobber(tmp_path, dest)
 
             init_db_fn()
             with connect_fn() as conn:
@@ -141,10 +184,9 @@ def upload_and_ocr(
             succeeded = True
             return result
         finally:
+            _remove_file(tmp_path)
             if not succeeded:
-                _remove_file(tmp_path)
-                if dest_owned:
-                    _remove_file(dest)
+                _remove_file_if_identity_matches(dest, published_identity)
                 _remove_owned_directory(raw_dir, owned=raw_dir_owned)
                 _remove_owned_directory(material_dir, owned=material_dir_owned)
 
