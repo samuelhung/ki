@@ -196,8 +196,9 @@ test('the standard cinematic npm and CI path covers every completed detail compo
   for (const file of [
     'src/components/cinematic-brainstorm/brainstormDetailComposition.test.mjs',
     'src/components/cinematic-series/seriesDetailComposition.test.mjs',
+    'src/components/cinematic-study/studyDetailComposition.test.mjs',
     'src/components/cinematic-ingest/eventDetailComposition.test.mjs',
   ]) assert.match(script, new RegExp(file.replaceAll('/', '\\/')));
-  assert.doesNotMatch(script, /studyDetailComposition|ingestPageComposition/);
+  assert.doesNotMatch(script, /ingestPageComposition/);
   assert.match(checkScript, /npm run test:cinematic-scene/);
 });
