@@ -1097,6 +1097,17 @@
   filter: drop-shadow(0 0 18px rgba(207, 158, 255, 0.08)) !important;
 }
 
+.cinematic-ingest .ingest-detail-video {
+  width: 100% !important;
+  max-height: clamp(150px, 22vh, 240px) !important;
+  flex: 0 0 auto !important;
+  margin: 2px 0 8px !important;
+  aspect-ratio: 16 / 9;
+  border: 1px solid rgba(167, 139, 250, 0.22);
+  background: #000;
+  object-fit: contain;
+}
+
 .cinematic-ingest .ingest-detail-reader header span,
 .cinematic-ingest .ingest-detail-reader header small {
   color: rgba(207, 158, 255, 0.82) !important;

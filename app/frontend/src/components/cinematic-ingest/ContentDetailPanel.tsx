@@ -1,5 +1,6 @@
 import React, { memo } from 'react';
 import { Link2, Loader2 } from 'lucide-react';
+import { backendUrl } from '../../api';
 import { renderMarkdown } from '../MarkdownRenderer';
 import { formatTimeBeijing, sourceLabel, statusLabel } from '../../utils';
 import type { ChainHint, ContemplateSuggestion, DetailTab, EventItem, LinkedQuestion } from './ingestTypes';
@@ -61,6 +62,7 @@ function ContentDetailPanelComponent({
   onSyncHints: () => void;
 }) {
   const item = detail || fallback;
+  const mediaUrl = detail?.video_url ? backendUrl(detail.video_url) : '';
 
   function renderBody() {
     const bodyText = detail?.summary_cn || detail?.raw_summary;
@@ -203,6 +205,11 @@ function ContentDetailPanelComponent({
         <h2>{item?.title_cn || item?.title || ingestCopy.detail.titleFallback}</h2>
         {item && <small>{formatTimeBeijing(item.created_at)} · {item.topic || 'uncategorized'}</small>}
       </header>
+      {mediaUrl && (
+        <video controls playsInline preload="metadata" className="ingest-detail-video" src={mediaUrl}>
+          当前浏览器不支持视频播放。
+        </video>
+      )}
       {detailTabs}
       <div className="detail-scroll-shell">
         <div className="detail-scroll">

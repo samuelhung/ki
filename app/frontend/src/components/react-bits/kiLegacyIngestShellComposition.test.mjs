@@ -33,6 +33,7 @@ const embeddedTabs = readFileSync(new URL('../ingest/EmbeddedIngestTopicTabs.tsx
 const embeddedRow = readFileSync(new URL('../ingest/EmbeddedIngestRow.tsx', import.meta.url), 'utf8');
 const embeddedConfig = readFileSync(new URL('../ingest/embeddedIngestConfig.ts', import.meta.url), 'utf8');
 const ingestTypes = readFileSync(new URL('../cinematic-ingest/ingestTypes.ts', import.meta.url), 'utf8');
+const ingestOverrides = readFileSync(new URL('../cinematic-ingest/cinematic-ingest-final-overrides.css', import.meta.url), 'utf8');
 
 function readProductionTsx(directory) {
   return readdirSync(directory, { withFileTypes: true })
@@ -388,6 +389,15 @@ test('embedded ingest memoizes stable list detail and workspace render boundarie
   assert.match(ingest, /const embeddedSearch = useMemo/);
   assert.match(ingest, /const embeddedDetail = useMemo/);
   assert.match(ingest, /const embeddedStage = useMemo/);
+});
+
+test('content ingest keeps attached video visible above every detail tab', () => {
+  assert.match(ingestTypes, /video_path\?: string;\s+video_url\?: string;/);
+  assert.match(contentDetail, /import \{ backendUrl \} from '\.\.\/\.\.\/api';/);
+  assert.match(contentDetail, /const mediaUrl = detail\?\.video_url \? backendUrl\(detail\.video_url\) : '';/);
+  assert.match(contentDetail, /<\/header>\s*\{mediaUrl && \(\s*<video controls playsInline preload="metadata" className="ingest-detail-video" src=\{mediaUrl\}>[\s\S]*?<\/video>\s*\)\}\s*\{detailTabs\}/);
+  assert.doesNotMatch(contentDetail, /\bvideo_path\b|createObjectURL|response\.blob\(\)/);
+  assert.match(ingestOverrides, /\.cinematic-ingest \.ingest-detail-video\s*\{[^}]*width:\s*100%\s*!important;[^}]*max-height:\s*clamp\([^;]+\)\s*!important;[^}]*object-fit:\s*contain;/s);
 });
 
 test('embedded ingest expands its useful workspace at compact and large reference sizes', () => {

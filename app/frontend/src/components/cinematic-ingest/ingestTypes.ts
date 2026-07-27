@@ -18,6 +18,7 @@ export interface EventItem {
   transcript_path?: string;
   summary_path?: string;
   video_path?: string;
+  video_url?: string;
   audio_path?: string;
   document_path?: string;
   associated_questions?: AssociatedQuestion[];
