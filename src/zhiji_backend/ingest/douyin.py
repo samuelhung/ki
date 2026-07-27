@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import re
 from collections.abc import Callable
@@ -21,7 +22,6 @@ MOBILE_UA = (
 MAX_VIDEO_REDIRECTS = 5
 
 _RemoteTarget = remote_transport._RemoteTarget
-_PinnedResponse = remote_transport._PinnedResponse
 _PinnedConnection = remote_transport._PinnedConnection
 _REDIRECT_STATUSES = remote_transport._REDIRECT_STATUSES
 
@@ -29,6 +29,12 @@ _CREATE_PINNED_CONNECTION_IMPLEMENTATION = remote_transport.create_pinned_connec
 _SAFE_GET_IMPLEMENTATION = remote_transport._safe_get
 _DOWNLOAD_WHOLE_IMPLEMENTATION = douyin_download._download_whole
 _DOWNLOAD_VIDEO_IMPLEMENTATION = douyin_download.download_video
+
+
+class _PinnedResponse(remote_transport._PinnedResponse):
+    def __init__(self, response, pool) -> None:
+        super().__init__(response, pool)
+        self._requests = requests
 
 
 def create_pinned_connection(scheme: str, ip: str, port: int, hostname: str):
@@ -265,13 +271,10 @@ def _download_whole(
     )
 
 
-_DEFAULT_MAX_BYTES = REMOTE_VIDEO_MAX_BYTES
-_DEFAULT_RESOLVER = _resolve_host
-_DEFAULT_MAX_REDIRECTS = MAX_VIDEO_REDIRECTS
-_DEFAULT_CONNECTION_FACTORY = create_pinned_connection
+_OMITTED = object()
 
 
-def download_video(
+def _download_video_signature(
     url: str,
     dest: Path,
     session: requests.Session | None = None,
@@ -281,19 +284,31 @@ def download_video(
     max_redirects: int = MAX_VIDEO_REDIRECTS,
     connection_factory=create_pinned_connection,
 ) -> Path:
+    raise AssertionError("signature template is not callable")
+
+
+_DOWNLOAD_VIDEO_SIGNATURE = inspect.signature(_download_video_signature)
+
+
+def download_video(
+    url: str,
+    dest: Path,
+    session: requests.Session | None = None,
+    *,
+    max_bytes: int = _OMITTED,
+    resolver: Callable[[str, int], list[str]] = _OMITTED,
+    max_redirects: int = _OMITTED,
+    connection_factory=_OMITTED,
+) -> Path:
     implementation = douyin_download.download_video
-    effective_max_bytes = (
-        REMOTE_VIDEO_MAX_BYTES if max_bytes == _DEFAULT_MAX_BYTES else max_bytes
-    )
-    effective_resolver = _resolve_host if resolver is _DEFAULT_RESOLVER else resolver
+    effective_max_bytes = REMOTE_VIDEO_MAX_BYTES if max_bytes is _OMITTED else max_bytes
+    effective_resolver = _resolve_host if resolver is _OMITTED else resolver
     effective_max_redirects = (
-        MAX_VIDEO_REDIRECTS
-        if max_redirects == _DEFAULT_MAX_REDIRECTS
-        else max_redirects
+        MAX_VIDEO_REDIRECTS if max_redirects is _OMITTED else max_redirects
     )
     effective_connection_factory = (
         create_pinned_connection
-        if connection_factory is _DEFAULT_CONNECTION_FACTORY
+        if connection_factory is _OMITTED
         else connection_factory
     )
     forwarded = {
@@ -314,3 +329,6 @@ def download_video(
         download_whole_fn=_download_whole,
         declared_size_fn=_declared_size,
     )
+
+
+download_video.__signature__ = _DOWNLOAD_VIDEO_SIGNATURE

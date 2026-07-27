@@ -31,13 +31,14 @@ class _PinnedResponse:
     def __init__(self, response, pool) -> None:
         self._response = response
         self._pool = pool
+        self._requests = requests
         self.status_code = response.status
         self.headers = response.headers
         self._closed = False
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
-            raise requests.HTTPError(f"HTTP {self.status_code}")
+            raise self._requests.HTTPError(f"HTTP {self.status_code}")
 
     def iter_content(self, chunk_size: int):
         try:

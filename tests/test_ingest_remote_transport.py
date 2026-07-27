@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import ssl
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -9,7 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 import requests
 
-from zhiji_backend.ingest import douyin, remote_transport
+from zhiji_backend.ingest import douyin, douyin_download, remote_transport
 
 
 class Response:
@@ -117,6 +118,20 @@ def test_douyin_pinned_connection_uses_facade_response_wrapper_at_call_time(
     assert connection.get("/video.mp4", headers={}, timeout=(1, 2)) is wrapped
 
 
+def test_douyin_pinned_response_uses_facade_http_error_at_call_time(monkeypatch):
+    class FacadeHTTPError(Exception):
+        pass
+
+    requests_module = MagicMock(HTTPError=FacadeHTTPError)
+    response = MagicMock(status=503, headers={})
+    monkeypatch.setattr(douyin, "requests", requests_module)
+
+    pinned = douyin._PinnedResponse(response, MagicMock())
+
+    with pytest.raises(FacadeHTTPError, match="HTTP 503"):
+        pinned.raise_for_status()
+
+
 def test_douyin_download_uses_facade_defaults_and_helpers_at_call_time(
     tmp_path: Path, monkeypatch
 ):
@@ -163,6 +178,51 @@ def test_douyin_download_uses_facade_defaults_and_helpers_at_call_time(
         )
     ]
     safe_get.assert_not_called()
+
+
+def test_douyin_download_distinguishes_omitted_and_explicit_constant_defaults(
+    tmp_path: Path, monkeypatch
+):
+    signature = inspect.signature(douyin.download_video)
+    parameters = signature.parameters
+    original_max_bytes = parameters["max_bytes"].default
+    original_max_redirects = parameters["max_redirects"].default
+
+    assert list(parameters) == [
+        "url",
+        "dest",
+        "session",
+        "max_bytes",
+        "resolver",
+        "max_redirects",
+        "connection_factory",
+    ]
+    assert parameters["session"].default is None
+    assert parameters["resolver"].default is douyin._resolve_host
+    assert parameters["connection_factory"].default is douyin.create_pinned_connection
+
+    calls = []
+
+    def download_stub(*args, **kwargs):
+        calls.append((args, kwargs))
+        return args[1]
+
+    monkeypatch.setattr(douyin_download, "download_video", download_stub)
+    monkeypatch.setattr(douyin, "REMOTE_VIDEO_MAX_BYTES", 123)
+    monkeypatch.setattr(douyin, "MAX_VIDEO_REDIRECTS", 4)
+
+    douyin.download_video("https://video.example/omitted.mp4", tmp_path / "omitted")
+    douyin.download_video(
+        "https://video.example/explicit.mp4",
+        tmp_path / "explicit",
+        max_bytes=original_max_bytes,
+        max_redirects=original_max_redirects,
+    )
+
+    assert calls[0][1]["max_bytes"] == 123
+    assert calls[0][1]["max_redirects"] == 4
+    assert calls[1][1]["max_bytes"] == original_max_bytes
+    assert calls[1][1]["max_redirects"] == original_max_redirects
 
 
 def test_douyin_safe_get_uses_facade_requests_at_call_time(monkeypatch):
