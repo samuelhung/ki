@@ -121,8 +121,8 @@ def parse_generated_topics(
         raise RuntimeError(f"AI generated invalid JSON: {exc}") from exc
 
 
-def _build_quick_prompts(events_text: str) -> tuple[str, str]:
-    system_prompt = (
+def _build_system_prompt(is_quick: bool) -> str:
+    return (
         "你是一个专业的新闻编辑。根据提供的新闻事件列表，生成一份结构化的中文新闻概览。\n\n"
         "要求：\n"
         "1. 按 topic 分组，每组写一个概述段落（2-4句话），概括该主题的整体趋势和关键发展\n"
@@ -132,31 +132,14 @@ def _build_quick_prompts(events_text: str) -> tuple[str, str]:
         '"events": [{"event_id": "...", "title_cn": "...", "highlight": "中文亮点", "source_name": "..."}]}]}\n'
         "4. topic_label 使用中文标签\n"
         "5. 每个 topic 最多选 6 条最重要的事件\n"
-        "6. 风格简洁快速，适合即时快报\n"
-        "7. highlight 控制在 30 字以内，必须使用中文\n"
+        + (
+            "6. 风格简洁快速，适合即时快报\n"
+            if is_quick
+            else "6. 风格深度分析，适合每日新闻日报，可以加入趋势解读\n"
+        )
+        + "7. highlight 控制在 30 字以内，必须使用中文\n"
         "8. summary 必须使用中文，不得出现英文"
     )
-    user_prompt = "请根据以下新闻事件生成即时快报：\n\n{events_text}"
-    return system_prompt, user_prompt.replace("{events_text}", events_text)
-
-
-def _build_daily_prompts(events_text: str) -> tuple[str, str]:
-    system_prompt = (
-        "你是一个专业的新闻编辑。根据提供的新闻事件列表，生成一份结构化的中文新闻概览。\n\n"
-        "要求：\n"
-        "1. 按 topic 分组，每组写一个概述段落（2-4句话），概括该主题的整体趋势和关键发展\n"
-        "2. 每组下列出重要事件的要点，每条事件给出 event_id、title_cn（直接用原文）、highlight（一句话亮点）\n"
-        "3. 输出严格的 JSON 格式，结构如下：\n"
-        '  {"topics": [{"topic": "...", "topic_label": "中文标签", "summary": "中文概述", '
-        '"events": [{"event_id": "...", "title_cn": "...", "highlight": "中文亮点", "source_name": "..."}]}]}\n'
-        "4. topic_label 使用中文标签\n"
-        "5. 每个 topic 最多选 6 条最重要的事件\n"
-        "6. 风格深度分析，适合每日新闻日报，可以加入趋势解读\n"
-        "7. highlight 控制在 30 字以内，必须使用中文\n"
-        "8. summary 必须使用中文，不得出现英文"
-    )
-    user_prompt = "请根据以下新闻事件生成每日深度日报：\n\n{events_text}"
-    return system_prompt, user_prompt.replace("{events_text}", events_text)
 
 
 def generate_briefing(
@@ -175,11 +158,7 @@ def generate_briefing(
 
     events_text = build_events_text_fn(events)
     is_quick = briefing_type == "quick"
-    system_prompt, _ = (
-        _build_quick_prompts(events_text)
-        if is_quick
-        else _build_daily_prompts(events_text)
-    )
+    system_prompt = _build_system_prompt(is_quick)
     user_prompt = f"请根据以下新闻事件生成{'即时快报' if is_quick else '每日深度日报'}：\n\n{events_text}"
     raw = call_ai_fn(
         system_prompt=system_prompt,

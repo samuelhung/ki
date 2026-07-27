@@ -33,6 +33,25 @@ def _repository():
     return importlib.import_module("zhiji_backend.briefing_repository")
 
 
+def test_system_prompt_builder_is_shared_and_preserves_exact_prompt_bytes():
+    service = _generation_service()
+
+    assert hasattr(service, "_build_system_prompt")
+    quick_prompt = service._build_system_prompt(True)
+    daily_prompt = service._build_system_prompt(False)
+
+    assert isinstance(quick_prompt, str)
+    assert isinstance(daily_prompt, str)
+    assert hashlib.sha256(quick_prompt.encode()).hexdigest() == (
+        "4e3c3e2a2309ad2c9181fcc242a0f568d9d2cbb32db7ce4b32565b9b4d3fa9c0"
+    )
+    assert hashlib.sha256(daily_prompt.encode()).hexdigest() == (
+        "61e90abad5e8b9527a534ebeb737de0e8181cb82a4766bb766f1b3fe3081d206"
+    )
+    assert not hasattr(service, "_build_quick_prompts")
+    assert not hasattr(service, "_build_daily_prompts")
+
+
 def test_generate_briefing_rejects_empty_event_selection_before_ai_or_persistence():
     service = _generation_service()
 
