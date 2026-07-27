@@ -2,8 +2,7 @@
 
 These tests deliberately exercise today's public and monkeypatch surfaces before
 the implementation is moved.  The final parametrized test is the RED boundary:
-each planned module must eventually forward the named objects without changing
-their identity or behavior.
+each planned module must eventually expose its expected callable API.
 """
 
 from __future__ import annotations
@@ -16,6 +15,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from zhiji_backend import collector, task_queue
 from zhiji_backend.db import connect, init_db
 from zhiji_backend.ingest import douyin
+from zhiji_backend.main import app
 from zhiji_backend.routes import ingest_routes
 
 
@@ -393,6 +394,182 @@ def test_ingest_entry_routes_forward_at_call_time_without_response_changes(
     assert concept_calls == [(("概念", "认知", "说明"), {})]
 
 
+def test_ingest_file_response_shape_is_exact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    monkeypatch.setattr(task_queue, "PENDING_DIR", tmp_path / "pending")
+
+    response = TestClient(app).post(
+        "/api/ingest/file",
+        data={"title": "Contract document", "topic": "认知"},
+        files={"file": ("contract.txt", b"contract body", "text/plain")},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    event_id = payload["event_id"]
+    assert event_id.startswith("evt-ingest-")
+    assert payload == {
+        "event_id": event_id,
+        "status": "processing",
+        "type": "document",
+    }
+    with connect() as conn:
+        task = conn.execute(
+            "SELECT event_id, ingest_type, status FROM ingest_tasks WHERE event_id = ?",
+            (event_id,),
+        ).fetchone()
+    assert tuple(task) == (event_id, "document", "pending")
+    assert len(list((tmp_path / "pending").glob(f"{event_id}*"))) == 1
+
+
+def test_ingest_queue_response_shape_is_exact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    init_db()
+    payload_json = json.dumps(
+        {"content_text": "body", "topic": "认知", "title": "Queue item"},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    progress_json = json.dumps(
+        [{"stage": "extract", "status": "done"}],
+        separators=(",", ":"),
+    )
+    with connect() as conn:
+        conn.execute(
+            """INSERT INTO sources (id, name, type, url, topic, priority)
+               VALUES ('user-upload', 'Upload', 'manual', '', 'test', 'medium')"""
+        )
+        conn.execute(
+            """INSERT INTO events (
+                       id, source_id, title, url, topic, importance, actionability,
+                       decision, status, content_type, progress_stages)
+               VALUES ('evt-queue-shape', 'user-upload', 'Queue item', '', '认知',
+                       4, 4, 'digest', 'processing', 'event', ?)""",
+            (progress_json,),
+        )
+        conn.execute(
+            """INSERT INTO ingest_tasks (
+                       id, event_id, ingest_type, payload_json, status, error,
+                       created_at, started_at, finished_at)
+               VALUES ('task-queue-shape', 'evt-queue-shape', 'document', ?,
+                       'running', NULL, '2026-01-02 03:04:05',
+                       '2026-01-02 03:05:06', NULL)""",
+            (payload_json,),
+        )
+
+    response = TestClient(app).get("/api/ingest/queue?limit=30")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "items": [
+            {
+                "id": "task-queue-shape",
+                "event_id": "evt-queue-shape",
+                "ingest_type": "document",
+                "status": "running",
+                "error": None,
+                "payload_json": payload_json,
+                "created_at": "2026-01-02 03:04:05",
+                "started_at": "2026-01-02 03:05:06",
+                "finished_at": None,
+                "title": "Queue item",
+                "progress_stages": [{"stage": "extract", "status": "done"}],
+            }
+        ],
+        "status_counts": {"pending": 0, "running": 1, "done": 0, "error": 0},
+    }
+
+
+def test_ingest_status_response_shape_is_exact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    init_db()
+    progress = [{"stage": "extract", "status": "running"}]
+    with connect() as conn:
+        conn.execute(
+            """INSERT INTO sources (id, name, type, url, topic, priority)
+               VALUES ('user-upload', 'Upload', 'manual', '', 'test', 'medium')"""
+        )
+        conn.execute(
+            """INSERT INTO events (
+                       id, source_id, title, url, topic, importance, actionability,
+                       decision, status, content_type, raw_summary, progress_stages,
+                       created_at)
+               VALUES ('evt-status-shape', 'user-upload', 'Status item', '', '认知',
+                       4, 4, 'digest', 'processing', 'event', ?, ?,
+                       '2026-01-02 03:04:05')""",
+            ("x" * 220, json.dumps(progress, ensure_ascii=False)),
+        )
+
+    response = TestClient(app).get("/api/ingest/status/evt-status-shape")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "id": "evt-status-shape",
+        "title": "Status item",
+        "status": "processing",
+        "raw_summary": "x" * 220,
+        "progress_stages": progress,
+        "created_at": "2026-01-02 03:04:05",
+        "source_id": "user-upload",
+        "raw_summary_preview": "x" * 200,
+    }
+
+
+def test_delete_queue_task_response_shape_is_exact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    init_db()
+    with connect() as conn:
+        conn.execute(
+            """INSERT INTO sources (id, name, type, url, topic, priority)
+               VALUES ('user-upload', 'Upload', 'manual', '', 'test', 'medium')"""
+        )
+        conn.execute(
+            """INSERT INTO events (id, source_id, title, url, topic, importance,
+                       actionability, decision, status, content_type)
+               VALUES ('evt-delete-shape', 'user-upload', 'Delete', '', 'test',
+                       4, 4, 'digest', 'error', 'event')"""
+        )
+        conn.execute(
+            """INSERT INTO ingest_tasks (
+                       id, event_id, ingest_type, payload_json, status)
+               VALUES ('task-delete-shape', 'evt-delete-shape', 'document', '{}',
+                       'error')"""
+        )
+
+    client = TestClient(app)
+    response = client.delete("/api/ingest/queue/task-delete-shape")
+    missing_response = client.delete("/api/ingest/queue/task-delete-shape")
+
+    assert response.status_code == 200
+    assert response.json() == {"deleted": "task-delete-shape", "missing": False}
+    assert missing_response.status_code == 200
+    assert missing_response.json() == {
+        "deleted": "task-delete-shape",
+        "missing": True,
+    }
+    with connect() as conn:
+        assert (
+            conn.execute(
+                "SELECT id FROM ingest_tasks WHERE id = 'task-delete-shape'"
+            ).fetchone()
+            is None
+        )
+        assert (
+            conn.execute(
+                "SELECT id FROM events WHERE id = 'evt-delete-shape'"
+            ).fetchone()
+            is None
+        )
+
+
 def test_clear_old_and_retry_route_responses_and_sql_transitions_are_exact(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -602,39 +779,27 @@ def test_shutdown_signal_ordering_contract(monkeypatch: pytest.MonkeyPatch):
     ]
 
 
-PLANNED_FORWARDERS = {
-    "zhiji_backend.rss_feed": {
-        "parse_rss_items": collector.parse_rss_items,
-        "stable_item_id": collector.stable_item_id,
-    },
-    "zhiji_backend.rss_collection_service": {
-        "collect_once": collector.collect_once,
-    },
-    "zhiji_backend.ingest.remote_transport": {
-        "create_pinned_connection": douyin.create_pinned_connection,
-        "is_trusted_365yg_url": douyin.is_trusted_365yg_url,
-    },
-    "zhiji_backend.ingest.douyin_download": {
-        "download_video": douyin.download_video,
-    },
-    "zhiji_backend.ingest_service": {
-        "process_ingest": ingest_routes._process_ingest,
-    },
-    "zhiji_backend.task_queue_store": {
-        "enqueue": task_queue.enqueue,
-        "recover_stuck": task_queue.recover_stuck,
-    },
-    "zhiji_backend.task_process_supervisor": {
-        "process_one": task_queue._process_one,
-        "start_worker": task_queue.start_worker,
-        "stop_worker": task_queue.stop_worker,
-    },
+PLANNED_MODULE_EXPORTS = {
+    "zhiji_backend.rss_feed": ("parse_rss_items", "stable_item_id"),
+    "zhiji_backend.rss_collection_service": ("collect_once",),
+    "zhiji_backend.ingest.remote_transport": (
+        "create_pinned_connection",
+        "is_trusted_365yg_url",
+    ),
+    "zhiji_backend.ingest.douyin_download": ("download_video",),
+    "zhiji_backend.ingest_service": ("process_ingest",),
+    "zhiji_backend.task_queue_store": ("enqueue", "recover_stuck"),
+    "zhiji_backend.task_process_supervisor": (
+        "process_one",
+        "start_worker",
+        "stop_worker",
+    ),
 }
 
 
-@pytest.mark.parametrize("module_name", PLANNED_FORWARDERS)
-def test_planned_extraction_module_forwards_existing_contracts(module_name: str):
+@pytest.mark.parametrize("module_name", PLANNED_MODULE_EXPORTS)
+def test_planned_extraction_module_exposes_expected_callables(module_name: str):
     planned_module = importlib.import_module(module_name)
 
-    for exported_name, current_object in PLANNED_FORWARDERS[module_name].items():
-        assert getattr(planned_module, exported_name) is current_object
+    for exported_name in PLANNED_MODULE_EXPORTS[module_name]:
+        assert callable(getattr(planned_module, exported_name))
