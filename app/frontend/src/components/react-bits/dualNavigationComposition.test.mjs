@@ -20,6 +20,8 @@ const dockOverviewOverlayUrl = new URL('../../pages/GlobalDockOverviewOverlay.ts
 const dockWorkspaceFrameUrl = new URL('../../pages/GlobalDockWorkspaceFrame.tsx', import.meta.url);
 const cinematicEventDetailUrl = new URL('../../pages/CinematicEventDetail.tsx', import.meta.url);
 const eventDetailPageUrl = new URL('../../pages/EventDetailPage.tsx', import.meta.url);
+const eventDetailHeaderUrl = new URL('../cinematic-ingest/EventDetailHeader.tsx', import.meta.url);
+const eventDetailBodyUrl = new URL('../cinematic-ingest/EventDetailBody.tsx', import.meta.url);
 const knowledgeGraphUrl = new URL('../../pages/KnowledgeGraph.tsx', import.meta.url);
 const industryFlowUrl = new URL('../../pages/IndustryFlow.tsx', import.meta.url);
 const digestUrl = new URL('../../pages/Digest.tsx', import.meta.url);
@@ -208,6 +210,8 @@ test('standalone event detail uses the cinematic shell and preserves the legacy 
   assert.equal(existsSync(cinematicEventDetailUrl), true);
   const cinematicEventDetail = readFileSync(cinematicEventDetailUrl, 'utf8');
   const eventDetailPage = readFileSync(eventDetailPageUrl, 'utf8');
+  const eventDetailImplementation = [eventDetailPageUrl, eventDetailHeaderUrl, eventDetailBodyUrl]
+    .map((url) => readFileSync(url, 'utf8')).join('\n');
   assert.match(app, /const CinematicEventDetail = lazy/);
   assert.match(app, /path="events\/:id" element=\{<CinematicEventDetail \/>\}/);
   assert.match(cinematicEventDetail, /<CinematicTemplatePage/);
@@ -218,7 +222,7 @@ test('standalone event detail uses the cinematic shell and preserves the legacy 
   assert.match(app, /location\.pathname\.startsWith\('\/events\/'\)/);
   assert.match(curtain, /pathname\.startsWith\('\/events\/'\)/);
   for (const feature of ['转写原文', 'AI 总结', '关联问题', '产业分析', '添加待办']) {
-    assert.match(eventDetailPage, new RegExp(feature));
+    assert.match(eventDetailImplementation, new RegExp(feature));
   }
 });
 

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
+import ts from 'typescript';
 import {
   assertExportedObjectType,
   assertForwardedCallbacks,
@@ -16,6 +17,8 @@ const pageUrl = new URL('../../pages/EventDetailPage.tsx', import.meta.url);
 const hookUrl = new URL('./useEventDetail.ts', import.meta.url);
 const headerUrl = new URL('./EventDetailHeader.tsx', import.meta.url);
 const bodyUrl = new URL('./EventDetailBody.tsx', import.meta.url);
+const packageJson = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));
+const checkScript = readFileSync(new URL('../../../../../scripts/check.sh', import.meta.url), 'utf8');
 const modules = readSourceModules([pageUrl, hookUrl, headerUrl, bodyUrl]);
 const implementation = combinedSource(modules);
 const pageModule = modules.find((module) => module.name === 'EventDetailPage.tsx');
@@ -71,7 +74,7 @@ test('event requests preserve endpoints methods refreshes and errors', () => {
   assert.match(implementation, /apiFetch\(`\$\{API_BASE\}\/\$\{id\}`/);
   assert.match(implementation, /apiFetch\(`\$\{API_BASE\}\/\$\{eventId\}\/summarize\?force=true`, \{ method: 'POST' \}\)/);
   assert.match(implementation, /apiFetch\(`\/api\/brainstorm\/event\/\$\{detail\.id\}\/linked-questions`/);
-  assert.match(implementation, /apiFetch\('\/api\/chains\/suggestions\/count'\)/);
+  assert.match(implementation, /apiFetch\('\/api\/chains\/suggestions\/count'/);
   for (const endpoint of ['/api/brainstorm/contemplate', '/api/brainstorm/answer', '/api/chains/analyze', '/api/chains/hints/sync']) {
     assert.match(implementation, new RegExp(`apiFetch\\('${endpoint.replaceAll('/', '\\/')}'[\\s\\S]{0,100}method: 'POST'`));
   }
@@ -105,4 +108,96 @@ test('event extraction forwards callbacks and exports its real request coordinat
   assert.match(hook, /signal/);
   assert.match(hook, /isCurrent|sequence/);
   assert.doesNotMatch(hook, /onEventChange/);
+});
+
+test('event selection owners stay monotonic while reads and writes use their required signals', () => {
+  const { createSelectedEventOwner } = loadPureDeclarations(modules, ['createSelectedEventOwner']);
+  const owners = createSelectedEventOwner();
+  const staleEventA = owners.select('event-a');
+  owners.invalidate(staleEventA);
+  const eventB = owners.select('event-b');
+  owners.invalidate(eventB);
+  const currentEventA = owners.select('event-a');
+  assert.equal(owners.isCurrent(staleEventA), false);
+  assert.equal(owners.isCurrent(currentEventA), true);
+
+  const hookModule = modules.find((module) => module.name === 'useEventDetail.ts');
+  assert.ok(hookModule);
+  const postCalls = [];
+  const suggestionCountCalls = [];
+  function visit(node) {
+    if (ts.isCallExpression(node) && node.expression.getText(hookModule.sourceFile) === 'apiFetch') {
+      if (node.arguments[0]?.getText(hookModule.sourceFile) === "'/api/chains/suggestions/count'") {
+        suggestionCountCalls.push(node);
+      }
+      const options = node.arguments[1];
+      if (options && ts.isObjectLiteralExpression(options)) {
+        const method = options.properties.find((property) => (
+          ts.isPropertyAssignment(property) && property.name.getText(hookModule.sourceFile) === 'method'
+        ));
+        if (method && ts.isPropertyAssignment(method) && method.initializer.getText(hookModule.sourceFile) === "'POST'") {
+          postCalls.push(options);
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(hookModule.sourceFile);
+  assert.equal(postCalls.length, 5);
+  for (const options of postCalls) {
+    assert.equal(options.properties.some((property) => property.name?.getText(hookModule.sourceFile) === 'signal'), false);
+  }
+  assert.equal(suggestionCountCalls.length, 2);
+  for (const call of suggestionCountCalls) {
+    const options = call.arguments[1];
+    assert.ok(options && ts.isObjectLiteralExpression(options));
+    const signal = options.properties.find((property) => (
+      ts.isPropertyAssignment(property) && property.name.getText(hookModule.sourceFile) === 'signal'
+    ));
+    assert.ok(signal && ts.isPropertyAssignment(signal));
+    assert.equal(signal.initializer.getText(hookModule.sourceFile), 'owner.signal');
+  }
+});
+
+test('event action loading remains authoritative across an A-B-A selection cycle', () => {
+  const { createActiveActionRegistry, activeActionState } = loadPureDeclarations(
+    modules,
+    ['createActiveActionRegistry', 'activeActionState'],
+  );
+  const actions = createActiveActionRegistry();
+  const tokens = [
+    actions.begin('summarize', 'event-a'),
+    actions.begin('contemplate', 'event-a'),
+    actions.begin('chain', 'event-a'),
+    actions.begin('sync', 'event-a'),
+  ];
+  assert.deepEqual(activeActionState(actions, 'event-a'), {
+    summarizingId: 'event-a', contemplating: true, contemplateLinking: false, chainLoading: true, syncingHints: true,
+  });
+  assert.deepEqual(activeActionState(actions, 'event-b'), {
+    summarizingId: null, contemplating: false, contemplateLinking: false, chainLoading: false, syncingHints: false,
+  });
+  assert.equal(actions.begin('summarize', 'event-a'), null, 'the restored loading state must match the duplicate-action guard');
+  assert.deepEqual(activeActionState(actions, 'event-a'), {
+    summarizingId: 'event-a', contemplating: true, contemplateLinking: false, chainLoading: true, syncingHints: true,
+  });
+  tokens.forEach((token) => actions.end(token));
+  assert.equal(activeActionState(actions, 'event-a').summarizingId, null);
+  const hook = readFileSync(hookUrl, 'utf8');
+  assert.match(hook, /useSyncExternalStore\(activeActions\.subscribe, activeActions\.getSnapshot, activeActions\.getSnapshot\)/);
+  assert.match(hook, /activeActionState\(activeActions, id\)/);
+  for (const staleSetter of ['setSummarizingId', 'setContemplating', 'setContemplateLinking', 'setChainLoading', 'setSyncingHints']) {
+    assert.doesNotMatch(hook, new RegExp(staleSetter));
+  }
+});
+
+test('the standard cinematic npm and CI path covers every completed detail composition', () => {
+  const script = packageJson.scripts['test:cinematic-scene'];
+  for (const file of [
+    'src/components/cinematic-brainstorm/brainstormDetailComposition.test.mjs',
+    'src/components/cinematic-series/seriesDetailComposition.test.mjs',
+    'src/components/cinematic-ingest/eventDetailComposition.test.mjs',
+  ]) assert.match(script, new RegExp(file.replaceAll('/', '\\/')));
+  assert.doesNotMatch(script, /studyDetailComposition|ingestPageComposition/);
+  assert.match(checkScript, /npm run test:cinematic-scene/);
 });

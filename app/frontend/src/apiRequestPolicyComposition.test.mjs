@@ -13,7 +13,9 @@ const mediaTransportUrl = new URL('./mediaTransport.ts', import.meta.url);
 const mediaTransport = existsSync(mediaTransportUrl) ? readFileSync(mediaTransportUrl, 'utf8') : '';
 const mediaWorkerUrl = new URL('../public/ki-media-sw.js', import.meta.url);
 const mediaWorker = existsSync(mediaWorkerUrl) ? readFileSync(mediaWorkerUrl, 'utf8') : '';
-const eventDetail = readFileSync(new URL('./pages/EventDetailPage.tsx', import.meta.url), 'utf8');
+const eventDetailPage = readFileSync(new URL('./pages/EventDetailPage.tsx', import.meta.url), 'utf8');
+const eventDetailHook = readFileSync(new URL('./components/cinematic-ingest/useEventDetail.ts', import.meta.url), 'utf8');
+const eventDetail = `${eventDetailPage}\n${eventDetailHook}`;
 const systemConnection = readFileSync(new URL('./components/cinematic-system/useSystemConnection.ts', import.meta.url), 'utf8');
 const dockAccess = readFileSync(new URL('./pages/GlobalDockAccessOverlay.tsx', import.meta.url), 'utf8');
 const ingest = readFileSync(new URL('./pages/Ingest.tsx', import.meta.url), 'utf8');
@@ -64,7 +66,7 @@ test('protected ingest media uses the streaming service-worker route in every na
 
 test('event video playback prefers a signed capability and retains the streaming fallback', () => {
   assert.match(eventDetail, /video_url\?: string/);
-  assert.match(eventDetail, /import \{ apiFetch, backendUrl \} from '\.\.\/api'/);
+  assert.match(eventDetail, /import \{ apiFetch, backendUrl \} from '\.\.\/\.\.\/api'/);
   assert.match(eventDetail, /const authenticatedMediaUrl = useAuthenticatedMediaUrl\(toMediaPath\(detail\?\.video_path\)\)/);
   assert.match(eventDetail, /const mediaUrl = detail\?\.video_url \? backendUrl\(detail\.video_url\) : authenticatedMediaUrl/);
   assert.doesNotMatch(eventDetail, /createObjectURL|response\.blob\(|[?&](?:token|api_key)=/i);
