@@ -147,6 +147,17 @@ def test_supply_chain_tools_and_dependabot_are_configured() -> None:
     assert "vulnerability-exceptions.yml" in workflow
 
 
+def test_dependabot_groups_react_runtime_updates() -> None:
+    dependabot = yaml.safe_load((ROOT / ".github" / "dependabot.yml").read_text(encoding="utf-8"))
+    npm_update = next(
+        update
+        for update in dependabot["updates"]
+        if update["package-ecosystem"] == "npm" and update["directory"] == "/app/frontend"
+    )
+
+    assert npm_update["groups"]["react-runtime"]["patterns"] == ["react", "react-dom"]
+
+
 def test_cocoapods_updates_are_checked_weekly_with_locked_tools() -> None:
     workflow_path = ROOT / ".github" / "workflows" / "cocoapods-outdated.yml"
     assert workflow_path.is_file()
