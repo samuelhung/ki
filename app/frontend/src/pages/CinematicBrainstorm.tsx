@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { Brain, Coins, Globe, Lightbulb, Loader2, RefreshCw, Search, Telescope, Trash2 } from 'lucide-react';
+import { Brain, Coins, Globe, Loader2, RefreshCw, Search, Telescope, Trash2 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { apiFetch } from '../api';
 import {
@@ -18,7 +18,6 @@ import '../components/cinematic-brainstorm/cinematic-brainstorm.css';
 const LegacyBrainstormDetail = lazy(() => import('./BrainstormDetailPage'));
 
 const TOPICS = [
-  { key: '全部', icon: Lightbulb, accent: 'gold' },
   { key: '格局', icon: Globe, accent: 'blue' },
   { key: '财富', icon: Coins, accent: 'gold' },
   { key: '认知', icon: Brain, accent: 'violet' },
@@ -36,7 +35,7 @@ export default function CinematicBrainstorm() {
   const { id: routeId = '' } = useParams<{ id?: string }>();
   const [items, setItems] = useState<BrainstormQuestion[]>([]);
   const [selectedId, setSelectedId] = useState(routeId);
-  const [topic, setTopic] = useState<TopicKey>('全部');
+  const [topic, setTopic] = useState<TopicKey>('格局');
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
