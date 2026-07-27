@@ -105,13 +105,14 @@ class _TextExtractor(HTMLParser):
             self.parts.append(text)
 
 
-def extract_text(html: str, max_chars: int = 5000) -> str:
+def extract_text(html: str, max_chars: int = 5000, *, logger_obj=None) -> str:
     """Extract readable text from HTML while removing common boilerplate."""
+    log = logger_obj or logger
     parser = _TextExtractor()
     try:
         parser.feed(html)
     except Exception as exc:
-        logger.warning("HTMLParser extraction failed: %s", exc)
+        log.warning("HTMLParser extraction failed: %s", exc)
     raw = re.sub(r"\n{3,}", "\n\n", "\n".join(parser.parts))
     filtered = [
         line
@@ -131,7 +132,8 @@ def strip_html(value: str | None) -> str:
     return re.sub(r"\s+", " ", unescape(without_tags)).strip()
 
 
-def parse_datetime(value: str | None) -> str | None:
+def parse_datetime(value: str | None, *, logger_obj=None) -> str | None:
+    log = logger_obj or logger
     if not value or not (text := value.strip()):
         return None
     try:
@@ -140,14 +142,14 @@ def parse_datetime(value: str | None) -> str | None:
             dt = dt.replace(tzinfo=UTC)
         return dt.astimezone(UTC).isoformat()
     except Exception:
-        logger.debug("parsedate_to_datetime failed for %r, trying fromisoformat", text)
+        log.debug("parsedate_to_datetime failed for %r, trying fromisoformat", text)
     try:
         dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=UTC)
         return dt.astimezone(UTC).isoformat()
     except Exception:
-        logger.debug("fromisoformat failed for %r, returning raw text", text)
+        log.debug("fromisoformat failed for %r, returning raw text", text)
         return text
 
 

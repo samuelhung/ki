@@ -22,7 +22,7 @@ _PARSE_RSS_ITEMS_IMPLEMENTATION = rss_feed.parse_rss_items
 
 
 def get_data_dir() -> Path:
-    return rss_collection_service.get_data_dir()
+    return rss_collection_service.get_data_dir(default_data_dir=DEFAULT_DATA_DIR)
 
 
 def fetch_url(url: str) -> str:
@@ -31,12 +31,12 @@ def fetch_url(url: str) -> str:
 
 def fetch_article_text(url: str, max_chars: int = 5000) -> str | None:
     return rss_collection_service.fetch_article_text(
-        url, max_chars=max_chars, extract_text_fn=_extract_text
+        url, max_chars=max_chars, extract_text_fn=_extract_text, logger_obj=logger
     )
 
 
 def _extract_text(html: str, max_chars: int = 5000) -> str:
-    return rss_feed.extract_text(html, max_chars=max_chars)
+    return rss_feed.extract_text(html, max_chars=max_chars, logger_obj=logger)
 
 
 def strip_html(value: str | None) -> str:
@@ -44,7 +44,7 @@ def strip_html(value: str | None) -> str:
 
 
 def parse_datetime(value: str | None) -> str | None:
-    return rss_feed.parse_datetime(value)
+    return rss_feed.parse_datetime(value, logger_obj=logger)
 
 
 def child_text(element: ET.Element, names: Iterable[str]) -> str | None:
@@ -85,7 +85,10 @@ def load_watermark(source_id: str) -> set[str] | None:
 
 def save_watermark(source_id: str, seen_ids: Iterable[str]) -> None:
     rss_collection_service.save_watermark(
-        source_id, seen_ids, watermark_path_fn=watermark_path
+        source_id,
+        seen_ids,
+        watermark_path_fn=watermark_path,
+        max_ids=MAX_WATERMARK_IDS,
     )
 
 

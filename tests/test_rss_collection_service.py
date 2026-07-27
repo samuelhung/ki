@@ -337,3 +337,59 @@ def test_collector_duplicate_check_uses_patched_title_similarity(monkeypatch):
 
     assert collector._is_duplicate_title("new", ["existing"], threshold=0.75) is True
     assert calls == [("new", "existing")]
+
+
+def test_collector_default_data_dir_patch_flows_to_downstream_writes(
+    tmp_path, monkeypatch
+):
+    custom_data = tmp_path / "custom-data"
+    unpatched_data = tmp_path / "unpatched-data"
+    monkeypatch.delenv("KI_DATA_DIR", raising=False)
+    monkeypatch.setattr(rss_collection_service, "DEFAULT_DATA_DIR", unpatched_data)
+    monkeypatch.setattr(collector, "DEFAULT_DATA_DIR", custom_data)
+
+    assert collector.get_data_dir() == custom_data
+    collector.save_watermark("source-a", ["seen"])
+    collector.append_event_jsonl({"id": "event-a"})
+
+    assert (custom_data / "state/rss-source-a.json").exists()
+    assert len(list((custom_data / "events").glob("*.jsonl"))) == 1
+    assert not unpatched_data.exists()
+
+
+def test_collector_watermark_limit_patch_bounds_saved_ids(tmp_path, monkeypatch):
+    monkeypatch.setenv("KI_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(collector, "MAX_WATERMARK_IDS", 2)
+
+    collector.save_watermark("source-a", ["first", "second", "third"])
+
+    payload = json.loads(collector.watermark_path("source-a").read_text())
+    assert payload["seen_ids"] == ["first", "second"]
+
+
+def test_collector_logger_patch_flows_to_parser_and_collection_logging(monkeypatch):
+    calls: list[tuple[str, tuple[object, ...]]] = []
+
+    class Logger:
+        def debug(self, message, *args):
+            calls.append((message, args))
+
+        def warning(self, message, *args):
+            calls.append((message, args))
+
+    monkeypatch.setattr(collector, "logger", Logger())
+    collector.parse_rss_items(
+        """<rss><channel><item><title>Title</title><link>https://x</link>
+        <pubDate>invalid-date</pubDate></item></channel></rss>"""
+    )
+
+    def fail_fetch(*_args, **_kwargs):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(rss_collection_service.urllib.request, "urlopen", fail_fetch)
+    assert collector.fetch_article_text("https://example.com/a") is None
+
+    messages = [message for message, _args in calls]
+    assert "parsedate_to_datetime failed for %r, trying fromisoformat" in messages
+    assert "fromisoformat failed for %r, returning raw text" in messages
+    assert "Failed to fetch article from %s: %s" in messages

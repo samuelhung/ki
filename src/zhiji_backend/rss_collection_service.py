@@ -41,10 +41,10 @@ class SourceDependencies:
     append_event_jsonl: Callable[[dict[str, object]], None]
 
 
-def get_data_dir() -> Path:
+def get_data_dir(*, default_data_dir=None) -> Path:
     if configured := os.getenv("KI_DATA_DIR"):
         return Path(configured).expanduser().resolve()
-    return DEFAULT_DATA_DIR
+    return default_data_dir or DEFAULT_DATA_DIR
 
 
 def fetch_url(url: str) -> str:
@@ -57,8 +57,9 @@ def fetch_url(url: str) -> str:
 
 
 def fetch_article_text(
-    url: str, max_chars: int = 5000, *, extract_text_fn=None
+    url: str, max_chars: int = 5000, *, extract_text_fn=None, logger_obj=None
 ) -> str | None:
+    log = logger_obj or logger
     if not url or "news.google.com" in url:
         return None
     try:
@@ -69,7 +70,7 @@ def fetch_article_text(
             charset = response.headers.get_content_charset() or "utf-8"
             html = response.read().decode(charset, errors="replace")
     except Exception as exc:
-        logger.debug("Failed to fetch article from %s: %s", url, exc)
+        log.debug("Failed to fetch article from %s: %s", url, exc)
         return None
     try:
         import trafilatura
@@ -87,7 +88,7 @@ def fetch_article_text(
                 text = text[:max_chars].rsplit("\n", 1)[0]
             return text.strip()
     except Exception as exc:
-        logger.debug("trafilatura extraction failed for %s: %s", url, exc)
+        log.debug("trafilatura extraction failed for %s: %s", url, exc)
     return (extract_text_fn or rss_feed.extract_text)(html, max_chars=max_chars)
 
 
@@ -103,11 +104,12 @@ def load_watermark(source_id: str, *, watermark_path_fn=None) -> set[str] | None
 
 
 def save_watermark(
-    source_id: str, seen_ids: Iterable[str], *, watermark_path_fn=None
+    source_id: str, seen_ids: Iterable[str], *, watermark_path_fn=None, max_ids=None
 ) -> None:
     path = (watermark_path_fn or watermark_path)(source_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    bounded = list(dict.fromkeys(seen_ids))[:MAX_WATERMARK_IDS]
+    limit = MAX_WATERMARK_IDS if max_ids is None else max_ids
+    bounded = list(dict.fromkeys(seen_ids))[:limit]
     payload = {
         "source_id": source_id,
         "seen_ids": bounded,
