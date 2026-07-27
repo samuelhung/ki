@@ -127,9 +127,8 @@ def summarize_event(
     from ..paths import INGEST_ROOT as ingest_root
 
     try:
-        return _ai.summarize_event(
+        response, summary_task = _ai.summarize_event(
             event_id,
-            background_tasks,
             force,
             connect_fn=connect,
             summarize_transcript_fn=summarize_transcript,
@@ -137,6 +136,9 @@ def summarize_event(
             ingest_root=ingest_root,
             logger=logger,
         )
+        if summary_task is not None:
+            background_tasks.add_task(summary_task)
+        return response
     except _ai.EventNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Event not found") from exc
     except _ai.EventHasNoTranscriptError as exc:

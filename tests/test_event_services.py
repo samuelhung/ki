@@ -270,16 +270,12 @@ def test_summarize_event_preserves_background_workflow_and_logger(
         yield Connection(current)
         trace.append(("exit", current))
 
-    tasks = []
-    background_tasks = SimpleNamespace(add_task=lambda task: tasks.append(task))
-
     def resolve_under_fn(root, *parts, **kwargs):
         trace.append(("resolve", root, parts, kwargs))
         return root.joinpath(*parts)
 
-    result = service.summarize_event(
+    response, summary_task = service.summarize_event(
         "event-1",
-        background_tasks,
         True,
         connect_fn=connect_fn,
         summarize_transcript_fn=lambda transcript, **kwargs: {
@@ -290,9 +286,13 @@ def test_summarize_event_preserves_background_workflow_and_logger(
         ingest_root=tmp_path,
         logger=service.logger,
     )
-    assert result == {"event_id": "event-1", "status": "processing", "cached": False}
-    assert len(tasks) == 1
-    tasks[0]()
+    assert response == {
+        "event_id": "event-1",
+        "status": "processing",
+        "cached": False,
+    }
+    assert callable(summary_task)
+    summary_task()
 
     sql = [entry for entry in trace if isinstance(entry, tuple) and entry[0] == "sql"]
     assert sql == [

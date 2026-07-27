@@ -1054,20 +1054,37 @@ def _event_ai_forwarding(module, monkeypatch) -> None:
         sentinel_ingest_root,
     )
     background_tasks = BackgroundTasks()
-    _stub_and_assert(
-        module,
-        monkeypatch,
-        "summarize_event",
-        lambda: event_routes.summarize_event("event-1", background_tasks, True),
-        expected_args=("event-1", background_tasks, True),
-        expected_kwargs={
-            "connect_fn": sentinel_connect,
-            "summarize_transcript_fn": sentinel_summarize,
-            "resolve_under_fn": sentinel_resolve,
-            "ingest_root": sentinel_ingest_root,
-            "logger": event_routes.logger,
-        },
-    )
+
+    def summary_task():
+        return None
+
+    summary_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+
+    def summarize_replacement(*args, **kwargs):
+        summary_calls.append((args, kwargs))
+        return {"status": "processing"}, summary_task
+
+    monkeypatch.setattr(module, "summarize_event", summarize_replacement)
+    assert event_routes.summarize_event("event-1", background_tasks, True) == {
+        "status": "processing"
+    }
+    assert summary_calls == [
+        (
+            ("event-1", True),
+            {
+                "connect_fn": sentinel_connect,
+                "summarize_transcript_fn": sentinel_summarize,
+                "resolve_under_fn": sentinel_resolve,
+                "ingest_root": sentinel_ingest_root,
+                "logger": event_routes.logger,
+            },
+        )
+    ]
+    assert len(background_tasks.tasks) == 1
+    scheduled = background_tasks.tasks[0]
+    assert scheduled.func is summary_task
+    assert scheduled.args == ()
+    assert scheduled.kwargs == {}
     _stub_and_assert(
         module,
         monkeypatch,

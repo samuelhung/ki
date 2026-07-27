@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from typing import Protocol
 
 logger = logging.getLogger("zhiji_backend.routes.event_routes")
@@ -26,7 +27,6 @@ class TagData(Protocol):
 
 def summarize_event(
     event_id: str,
-    background_tasks,
     force: bool,
     *,
     connect_fn,
@@ -34,7 +34,7 @@ def summarize_event(
     resolve_under_fn,
     ingest_root,
     logger,
-) -> dict[str, object]:
+) -> tuple[dict[str, object], Callable[[], None] | None]:
     with connect_fn() as conn:
         row = conn.execute(
             "SELECT id, title, raw_summary, ai_summary FROM events WHERE id = ?",
@@ -49,7 +49,10 @@ def summarize_event(
     if not transcript.strip():
         raise EventHasNoTranscriptError
     if row["ai_summary"] and not force:
-        return {"event_id": event_id, "summary": row["ai_summary"], "cached": True}
+        return (
+            {"event_id": event_id, "summary": row["ai_summary"], "cached": True},
+            None,
+        )
     if force and row["ai_summary"]:
         with connect_fn() as conn:
             conn.execute(
@@ -92,8 +95,10 @@ def summarize_event(
         except Exception as exc:
             logger.exception("Background summary failed for %s: %s", event_id, exc)
 
-    background_tasks.add_task(_run_summary)
-    return {"event_id": event_id, "status": "processing", "cached": False}
+    return (
+        {"event_id": event_id, "status": "processing", "cached": False},
+        _run_summary,
+    )
 
 
 def tag_single_event(
