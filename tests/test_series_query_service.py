@@ -6,8 +6,10 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+from fastapi import HTTPException
 
-from zhiji_backend import series_query_service
+from zhiji_backend import series_query_service, series_service
+from zhiji_backend.routes import series_routes
 
 
 @pytest.fixture
@@ -168,3 +170,50 @@ def test_get_series_suggestions_ignores_invalid_json_and_preserves_db_order(
             "created_at": "2026-07-27 12:00:00",
         },
     ]
+
+
+@pytest.mark.parametrize(
+    "query_fn",
+    [
+        pytest.param(series_query_service.get_series_detail, id="detail"),
+        pytest.param(series_query_service.get_series_suggestions, id="suggestions"),
+    ],
+)
+def test_series_queries_reject_missing_series(series_store, query_fn) -> None:
+    _, connect_fn = series_store
+
+    with pytest.raises(series_query_service.SeriesQueryError) as error:
+        query_fn("missing", connect_fn=connect_fn, init_db_fn=lambda: None)
+
+    assert error.value.detail == "专题不存在"
+
+
+@pytest.mark.parametrize(
+    "route_fn",
+    [
+        pytest.param(series_routes.get_series_detail, id="detail"),
+        pytest.param(series_routes.get_series_suggestions, id="suggestions"),
+    ],
+)
+def test_query_routes_map_missing_series_to_http_exception(
+    series_store, monkeypatch: pytest.MonkeyPatch, route_fn
+) -> None:
+    _, connect_fn = series_store
+    monkeypatch.setattr(series_routes, "connect", connect_fn)
+    monkeypatch.setattr(series_routes, "init_db", lambda: None)
+
+    with pytest.raises(HTTPException) as error:
+        route_fn("missing")
+
+    assert (error.value.status_code, error.value.detail) == (404, "专题不存在")
+
+
+def test_facade_detail_preserves_public_http_exception(series_store) -> None:
+    _, connect_fn = series_store
+
+    with pytest.raises(HTTPException) as error:
+        series_service.get_series_detail(
+            "missing", connect_fn=connect_fn, init_db_fn=lambda: None
+        )
+
+    assert (error.value.status_code, error.value.detail) == (404, "专题不存在")
