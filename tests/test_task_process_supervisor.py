@@ -97,3 +97,92 @@ def test_stop_process_tree_escalates_from_terminate_to_kill(monkeypatch):
 
     assert result == (-signal.SIGKILL, True)
     assert calls == [signal.SIGTERM, signal.SIGKILL]
+
+
+def test_stop_worker_forwards_signal_observe_and_wait_seams_at_call_time(
+    monkeypatch,
+):
+    process = object()
+    calls = []
+    monkeypatch.setattr(task_queue, "_active_process", process)
+    monkeypatch.setattr(task_queue, "_active_task_id", "task-forward-stop")
+    monkeypatch.setattr(task_queue, "_active_process_group_id", 4242)
+    monkeypatch.setattr(task_queue, "_worker", None)
+    monkeypatch.setattr(task_queue, "_process_group_exists", lambda *_: False)
+
+    def observe(proc, task_id, phase):
+        calls.append(("observe", proc, task_id, phase))
+        return None
+
+    def send(proc, group_id, sig, operation, task_id):
+        calls.append(("signal", proc, group_id, sig, operation, task_id))
+        return True, False
+
+    def wait(proc, group_id, task_id, timeout):
+        calls.append(("wait", proc, group_id, task_id, timeout))
+        return -signal.SIGTERM, True
+
+    monkeypatch.setattr(task_queue, "_observe_process_returncode", observe)
+    monkeypatch.setattr(task_queue, "_signal_ingest_process", send)
+    monkeypatch.setattr(task_queue, "_wait_for_process_tree_exit", wait)
+
+    assert task_queue.stop_worker() is True
+    assert [call[0] for call in calls] == ["observe", "signal", "observe", "wait"]
+
+
+def test_process_one_forwards_release_and_restore_seams_at_call_time(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    init_db()
+    _insert_task()
+    monkeypatch.setattr(
+        task_queue.subprocess, "Popen", lambda *args, **kwargs: _SuccessfulProcess()
+    )
+    monkeypatch.setattr(task_queue, "_shutdown_flag", threading.Event())
+    released = []
+    restored = []
+    monkeypatch.setattr(
+        task_queue,
+        "_release_active_process",
+        lambda task_id, proc: released.append((task_id, proc)) or True,
+    )
+    monkeypatch.setattr(
+        task_queue, "_restore_shutdown_interrupted_task", restored.append
+    )
+
+    task_queue._process_one("task-success")
+
+    assert [task_id for task_id, _proc in released] == ["task-success", "task-success"]
+    assert restored == ["task-success"]
+
+
+def test_signal_failure_forwards_to_legacy_logging_seam(monkeypatch):
+    class Process:
+        def terminate(self):
+            raise OSError("cannot terminate")
+
+    calls = []
+    monkeypatch.setattr(task_queue.os, "name", "not-posix")
+    monkeypatch.setattr(
+        task_queue,
+        "_log_shutdown_operation_failure",
+        lambda task_id, operation, **kwargs: calls.append((task_id, operation, kwargs)),
+    )
+
+    assert task_queue._signal_ingest_process(
+        Process(), None, signal.SIGTERM, "terminate", "task-log"
+    ) == (False, True)
+    assert calls == [("task-log", "terminate", {})]
+
+
+def test_legacy_shutdown_operation_logger_preserves_message(caplog):
+    with caplog.at_level("WARNING"):
+        try:
+            raise OSError("stop failed")
+        except OSError:
+            task_queue._log_shutdown_operation_failure("task-log", "terminate")
+
+    assert (
+        "Failed to stop ingest child for task task-log during terminate" in caplog.text
+    )

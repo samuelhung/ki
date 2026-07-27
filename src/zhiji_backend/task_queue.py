@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import logging
 import os as os
+import shutil as shutil
 import signal
+import sqlite3 as sqlite3
 import subprocess as subprocess
 import sys as sys
 import threading
+import time as time
+import uuid as uuid
+from pathlib import Path as Path
 
 from .db import connect as connect
 from .db import init_db as init_db
@@ -15,6 +20,7 @@ from .paths import INGEST_ROOT
 from .security.constraints import safe_identifier as safe_identifier
 from .security.paths import PathSecurityError as PathSecurityError
 from .security.paths import resolve_under as resolve_under
+from .security.paths import safe_unlink_under as safe_unlink_under
 from .security.redaction import classify_task_error as classify_task_error
 from .security.redaction import sanitize_task_error as sanitize_task_error
 
@@ -55,7 +61,9 @@ def _supervisor():
 
 
 def _safe_pending_unlink(path_value: str) -> None:
-    _store().safe_pending_unlink(path_value, PENDING_DIR, logger)
+    _store().safe_pending_unlink(
+        path_value, PENDING_DIR, logger, Path, safe_unlink_under
+    )
 
 
 def _compensate_failed_enqueue(event_id: str, task_id: str) -> None:
@@ -90,6 +98,18 @@ def _observe_process_returncode(
     return _supervisor().observe_returncode(proc, task_id, phase)
 
 
+def _log_shutdown_operation_failure(
+    task_id: str, operation: str, *, level: int = logging.WARNING
+) -> None:
+    logger.log(
+        level,
+        "Failed to stop ingest child for task %s during %s",
+        task_id,
+        operation,
+        exc_info=True,
+    )
+
+
 def _resolve_shutdown_interruption(task_id: str, proc: subprocess.Popen[str]) -> None:
     _supervisor().resolve_shutdown_interruption(task_id, proc)
 
@@ -120,7 +140,12 @@ def _signal_ingest_process(
     task_id: str,
 ) -> tuple[bool, bool]:
     return _supervisor().signal_process(
-        proc, process_group_id, sig, fallback_operation, task_id
+        proc,
+        process_group_id,
+        sig,
+        fallback_operation,
+        task_id,
+        _log_shutdown_operation_failure,
     )
 
 
@@ -135,7 +160,12 @@ def _wait_for_process_tree_exit(
     timeout: float,
 ) -> tuple[int | None, bool]:
     return _supervisor().wait_for_process_tree_exit(
-        proc, process_group_id, task_id, timeout
+        proc,
+        process_group_id,
+        task_id,
+        timeout,
+        _observe_process_returncode,
+        _process_group_exists,
     )
 
 

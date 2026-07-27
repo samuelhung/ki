@@ -3,13 +3,6 @@
 from __future__ import annotations
 
 import json
-import shutil
-import sqlite3
-import time
-import uuid
-from pathlib import Path
-
-from .security.paths import safe_unlink_under
 
 
 def _facade():
@@ -18,9 +11,11 @@ def _facade():
     return task_queue
 
 
-def safe_pending_unlink(path_value: str, pending_dir: Path, logger) -> None:
+def safe_pending_unlink(
+    path_value: str, pending_dir, logger, path_fn, safe_unlink_fn
+) -> None:
     try:
-        safe_unlink_under(pending_dir, Path(path_value).expanduser())
+        safe_unlink_fn(pending_dir, path_fn(path_value).expanduser())
     except Exception:
         logger.warning("Refusing to delete unsafe pending file", exc_info=True)
 
@@ -46,17 +41,17 @@ def compensate_failed_enqueue(event_id: str, task_id: str, connect_fn, logger) -
 def enqueue(event_id: str, ingest_type: str, content, topic: str, title: str) -> str:
     """Persist an ingest task using the facade's call-time dependencies."""
     q = _facade()
-    task_id = f"task-{uuid.uuid4().hex[:12]}"
-    persistent: Path | None = None
+    task_id = f"task-{q.uuid.uuid4().hex[:12]}"
+    persistent = None
     try:
         q.safe_identifier(event_id)
         q.init_db()
-        if isinstance(content, Path):
+        if isinstance(content, q.Path):
             q.PENDING_DIR.mkdir(parents=True, exist_ok=True)
             persistent = q.resolve_under(
                 q.PENDING_DIR, f"{event_id}{content.suffix}", must_exist=False
             )
-            shutil.copy2(content, persistent)
+            q.shutil.copy2(content, persistent)
             payload = {"content_path": str(persistent), "topic": topic, "title": title}
         else:
             payload = {"content_text": str(content), "topic": topic, "title": title}
@@ -74,8 +69,8 @@ def enqueue(event_id: str, ingest_type: str, content, topic: str, title: str) ->
     except Exception:
         q.logger.exception("Failed to enqueue task for event %s", event_id)
         if persistent is not None:
-            safe_pending_unlink(str(persistent), q.PENDING_DIR, q.logger)
-        compensate_failed_enqueue(event_id, task_id, q.connect, q.logger)
+            q._safe_pending_unlink(str(persistent))
+        q._compensate_failed_enqueue(event_id, task_id)
         raise q.EnqueueError("任务无法加入处理队列") from None
     q.logger.info("Enqueued task %s for event %s (%s)", task_id, event_id, ingest_type)
     return task_id
@@ -92,8 +87,8 @@ def recover_stuck() -> int:
     for attempt in range(1, 4):
         conn = None
         try:
-            conn = sqlite3.connect(str(db_path))
-            conn.row_factory = sqlite3.Row
+            conn = q.sqlite3.connect(str(db_path))
+            conn.row_factory = q.sqlite3.Row
             conn.execute("PRAGMA busy_timeout=15000")
             conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             cur = conn.execute(
@@ -122,7 +117,7 @@ def recover_stuck() -> int:
                 exc,
                 wait,
             )
-            time.sleep(wait)
+            q.time.sleep(wait)
     q.logger.error("recover_stuck failed after 3 attempts: %s", last_err)
     return 0
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import errno
 import json
-import logging
 import signal
 import time
 from pathlib import Path
@@ -35,16 +34,6 @@ def observe_returncode(proc, task_id: str, phase: str) -> int | None:
             return proc.returncode
         except Exception:
             return None
-
-
-def _operation_failure(task_id: str, operation: str, level=logging.WARNING) -> None:
-    _facade().logger.log(
-        level,
-        "Failed to stop ingest child for task %s during %s",
-        task_id,
-        operation,
-        exc_info=True,
-    )
 
 
 def process_group_exists(process_group_id: int | None, task_id: str) -> bool:
@@ -78,7 +67,9 @@ def process_group_exists(process_group_id: int | None, task_id: str) -> bool:
         return True
 
 
-def signal_process(proc, process_group_id, sig, fallback_operation, task_id):
+def signal_process(
+    proc, process_group_id, sig, fallback_operation, task_id, log_failure_fn
+):
     q = _facade()
     if q.os.name == "posix" and process_group_id is not None:
         try:
@@ -91,7 +82,7 @@ def signal_process(proc, process_group_id, sig, fallback_operation, task_id):
                     q.os.killpg(process_group_id, sig)
                     return True, False
                 except Exception:
-                    _operation_failure(task_id, f"process-group {fallback_operation}")
+                    log_failure_fn(task_id, f"process-group {fallback_operation}")
             else:
                 q.logger.error(
                     "Refusing to signal server process group for ingest task %s",
@@ -101,18 +92,23 @@ def signal_process(proc, process_group_id, sig, fallback_operation, task_id):
         getattr(proc, fallback_operation)()
         return True, True
     except Exception:
-        _operation_failure(task_id, fallback_operation)
+        log_failure_fn(task_id, fallback_operation)
         return False, True
 
 
 def wait_for_process_tree_exit(
-    proc, process_group_id: int | None, task_id: str, timeout: float
+    proc,
+    process_group_id: int | None,
+    task_id: str,
+    timeout: float,
+    observe_fn,
+    group_exists_fn,
 ) -> tuple[int | None, bool]:
     q = _facade()
     deadline = time.monotonic() + max(0.0, timeout)
-    returncode = observe_returncode(proc, task_id, "process-tree wait")
+    returncode = observe_fn(proc, task_id, "process-tree wait")
     while True:
-        group_gone = not process_group_exists(process_group_id, task_id)
+        group_gone = not group_exists_fn(process_group_id, task_id)
         if returncode is not None and group_gone:
             return returncode, True
         remaining = deadline - time.monotonic()
@@ -124,13 +120,13 @@ def wait_for_process_tree_exit(
             except q.subprocess.TimeoutExpired:
                 pass
             except Exception:
-                _operation_failure(task_id, "process-tree wait")
-                returncode = observe_returncode(
+                q._log_shutdown_operation_failure(task_id, "process-tree wait")
+                returncode = observe_fn(
                     proc, task_id, "after process-tree wait failure"
                 )
                 return returncode, (
                     returncode is not None
-                    and not process_group_exists(process_group_id, task_id)
+                    and not group_exists_fn(process_group_id, task_id)
                 )
         else:
             time.sleep(min(0.05, remaining))
@@ -197,8 +193,8 @@ def select_active_for_shutdown():
         group_id = q._active_process_group_id
         if proc is None or task_id is None:
             return None, None, None
-        leader_alive = observe_returncode(proc, task_id, "selection") is None
-        group_alive = process_group_exists(group_id, task_id)
+        leader_alive = q._observe_process_returncode(proc, task_id, "selection") is None
+        group_alive = q._process_group_exists(group_id, task_id)
         if leader_alive:
             q._shutdown_interrupted = (task_id, proc)
             q._shutdown_signals_sent.clear()
@@ -218,28 +214,29 @@ def resolve_shutdown_interruption(task_id: str, proc) -> None:
 
 
 def stop_process_tree(task_id: str, proc, process_group_id, timeout: float):
-    sent, fallback = signal_process(
+    q = _facade()
+    sent, fallback = q._signal_ingest_process(
         proc, process_group_id, signal.SIGTERM, "terminate", task_id
     )
     if sent:
-        code = observe_returncode(proc, task_id, "after terminate")
+        code = q._observe_process_returncode(proc, task_id, "after terminate")
         _record_signal(task_id, proc, signal.SIGTERM, fallback, code)
-        code, quiesced = wait_for_process_tree_exit(
+        code, quiesced = q._wait_for_process_tree_exit(
             proc, process_group_id, task_id, timeout
         )
     else:
-        code = observe_returncode(proc, task_id, "after failed terminate")
-        quiesced = code is not None and not process_group_exists(
+        code = q._observe_process_returncode(proc, task_id, "after failed terminate")
+        quiesced = code is not None and not q._process_group_exists(
             process_group_id, task_id
         )
     if not quiesced:
-        sent, fallback = signal_process(
+        sent, fallback = q._signal_ingest_process(
             proc, process_group_id, signal.SIGKILL, "kill", task_id
         )
         if sent:
-            code = observe_returncode(proc, task_id, "after kill")
+            code = q._observe_process_returncode(proc, task_id, "after kill")
             _record_signal(task_id, proc, signal.SIGKILL, fallback, code)
-        code, quiesced = wait_for_process_tree_exit(
+        code, quiesced = q._wait_for_process_tree_exit(
             proc, process_group_id, task_id, timeout
         )
     return code, quiesced
@@ -283,28 +280,28 @@ def _log_task_error(task_id: str, error_class: str, raw_error) -> None:
 
 def _handle_timeout(task_id, event_id, proc, group_id) -> bool:
     q = _facade()
-    signal_process(proc, group_id, signal.SIGTERM, "terminate", task_id)
+    q._signal_ingest_process(proc, group_id, signal.SIGTERM, "terminate", task_id)
     try:
         proc.communicate(timeout=10)
     except q.subprocess.TimeoutExpired:
-        signal_process(proc, group_id, signal.SIGKILL, "kill", task_id)
+        q._signal_ingest_process(proc, group_id, signal.SIGKILL, "kill", task_id)
         try:
             proc.communicate(timeout=q._SHUTDOWN_TERMINATE_TIMEOUT_SECONDS)
         except q.subprocess.TimeoutExpired:
             q.logger.error("Task %s child did not exit after timeout kill", task_id)
-        _, quiesced = wait_for_process_tree_exit(
+        _, quiesced = q._wait_for_process_tree_exit(
             proc, group_id, task_id, q._SHUTDOWN_TERMINATE_TIMEOUT_SECONDS
         )
     else:
-        if process_group_exists(group_id, task_id):
-            signal_process(proc, group_id, signal.SIGKILL, "kill", task_id)
-            _, quiesced = wait_for_process_tree_exit(
+        if q._process_group_exists(group_id, task_id):
+            q._signal_ingest_process(proc, group_id, signal.SIGKILL, "kill", task_id)
+            _, quiesced = q._wait_for_process_tree_exit(
                 proc, group_id, task_id, q._SHUTDOWN_TERMINATE_TIMEOUT_SECONDS
             )
         else:
             quiesced = True
-    if release_active_process(task_id, proc):
-        store.restore_shutdown_interrupted_task(task_id, q.connect)
+    if q._release_active_process(task_id, proc):
+        q._restore_shutdown_interrupted_task(task_id)
         return True
     if not quiesced:
         raw = "内部超时：采集进程组在 SIGKILL 后仍未退出，已阻止自动重试"
@@ -359,7 +356,7 @@ def process_one(task_id: str) -> None:
     store.mark_running(task_id, q.connect)
     proc, group_id = _spawn(task_id)
     if proc is None:
-        store.restore_shutdown_interrupted_task(task_id, q.connect)
+        q._restore_shutdown_interrupted_task(task_id)
         return
     interrupted = False
     try:
@@ -368,9 +365,9 @@ def process_one(task_id: str) -> None:
         except q.subprocess.TimeoutExpired:
             _handle_timeout(task_id, event_id, proc, group_id)
             return
-        interrupted = release_active_process(task_id, proc)
+        interrupted = q._release_active_process(task_id, proc)
         if interrupted:
-            store.restore_shutdown_interrupted_task(task_id, q.connect)
+            q._restore_shutdown_interrupted_task(task_id)
             return
         if proc.returncode != 0:
             raw = stderr or stdout or f"ingest child exited with {proc.returncode}"
@@ -383,7 +380,7 @@ def process_one(task_id: str) -> None:
         q.logger.info("Task %s completed for event %s", task_id, event_id)
     finally:
         owns_shutdown = q._shutdown_interrupted == (task_id, proc)
-        interrupted = release_active_process(task_id, proc) or interrupted
+        interrupted = q._release_active_process(task_id, proc) or interrupted
         if owns_shutdown:
             clear_shutdown_interrupted(task_id, proc)
     return POST_PROCESS, event_id
