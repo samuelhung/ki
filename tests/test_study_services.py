@@ -322,6 +322,8 @@ def test_textbook_intake_moves_original_and_preserves_insert_shape(
     saved = study_root / "material-1/raw/original.pdf"
     assert saved.exists()
     assert stat.S_IMODE(saved.stat().st_mode) == 0o600
+    assert stat.S_IMODE(saved.parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(saved.parent.parent.stat().st_mode) == 0o700
     assert not temp_file.exists()
     assert list(saved.parent.glob(".*.tmp")) == []
     assert result == {
@@ -341,6 +343,74 @@ def test_textbook_intake_moves_original_and_preserves_insert_shape(
         "教材标题",
         "study/material-1/raw/original.pdf",
     )
+
+
+def test_textbook_success_fsyncs_created_directories_and_published_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = importlib.import_module("zhiji_backend.study_intake_service")
+    study_root = tmp_path / "study"
+    study_root.mkdir()
+    temp_file = tmp_path / "upload.pdf"
+    temp_file.write_bytes(b"pdf")
+    synced = []
+
+    class Connection:
+        def execute(self, sql, params=()):
+            return None
+
+    @contextmanager
+    def connect_fn():
+        yield Connection()
+
+    monkeypatch.setattr(
+        service, "_fsync_directory", lambda path: synced.append(Path(path))
+    )
+
+    _textbook_upload(
+        service,
+        temp_file=temp_file,
+        study_root=study_root,
+        connect_fn=connect_fn,
+    )
+
+    material_dir = study_root / "material-1"
+    raw_dir = material_dir / "raw"
+    assert synced == [study_root, material_dir, raw_dir]
+
+
+def test_textbook_rollback_fsyncs_file_and_owned_directory_removals(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = importlib.import_module("zhiji_backend.study_intake_service")
+    study_root = tmp_path / "study"
+    study_root.mkdir()
+    temp_file = tmp_path / "upload.pdf"
+    temp_file.write_bytes(b"pdf")
+    synced = []
+
+    monkeypatch.setattr(
+        service, "_fsync_directory", lambda path: synced.append(Path(path))
+    )
+
+    with pytest.raises(RuntimeError, match="database failed"):
+        _textbook_upload(
+            service,
+            temp_file=temp_file,
+            study_root=study_root,
+            init_db_fn=lambda: (_ for _ in ()).throw(RuntimeError("database failed")),
+        )
+
+    material_dir = study_root / "material-1"
+    raw_dir = material_dir / "raw"
+    assert synced == [
+        study_root,
+        material_dir,
+        raw_dir,
+        raw_dir,
+        material_dir,
+        study_root,
+    ]
 
 
 def test_textbook_intake_cleans_temp_and_owned_dirs_when_resolve_fails_before_replace(

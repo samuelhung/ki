@@ -30,10 +30,26 @@ class EmptyOcrResultError(ValueError):
 
 def _create_directory(path: Path, *, parents: bool = False) -> bool:
     try:
-        path.mkdir(parents=parents)
+        path.mkdir(mode=0o700, parents=parents)
     except FileExistsError:
         return False
     return True
+
+
+def _fsync_directory(path: Path) -> None:
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    descriptor = os.open(path, flags)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _fsync_directory_best_effort(path: Path) -> None:
+    try:
+        _fsync_directory(path)
+    except OSError:
+        pass
 
 
 def _remove_owned_directory(path: Path | None, *, owned: bool) -> None:
@@ -42,7 +58,8 @@ def _remove_owned_directory(path: Path | None, *, owned: bool) -> None:
     try:
         path.rmdir()
     except OSError:
-        pass
+        return
+    _fsync_directory_best_effort(path.parent)
 
 
 def _remove_file(path: Path | None) -> None:
@@ -69,7 +86,8 @@ def _remove_file_if_identity_matches(
             return
         path.unlink()
     except OSError:
-        pass
+        return
+    _fsync_directory_best_effort(path.parent)
 
 
 def _link_staging_no_clobber(staging: Path, destination: Path) -> None:
@@ -81,6 +99,7 @@ def _publish_no_clobber(source: Path, destination: Path) -> tuple[int, int]:
         prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent
     )
     staging = Path(staging_name)
+    published_identity = None
     try:
         with os.fdopen(descriptor, "wb") as output:
             descriptor = -1
@@ -90,11 +109,17 @@ def _publish_no_clobber(source: Path, destination: Path) -> tuple[int, int]:
             os.fsync(output.fileno())
         identity = _file_identity(staging)
         _link_staging_no_clobber(staging, destination)
+        published_identity = identity
+        staging.unlink()
+        _fsync_directory(destination.parent)
         return identity
+    except BaseException:
+        _remove_file(staging)
+        _remove_file_if_identity_matches(destination, published_identity)
+        raise
     finally:
         if descriptor >= 0:
             os.close(descriptor)
-        _remove_file(staging)
 
 
 def upload_and_ocr(
@@ -151,9 +176,15 @@ def upload_and_ocr(
                 study_data_dir, material_id, must_exist=False
             )
             material_dir_owned = _create_directory(material_dir, parents=True)
+            if material_dir_owned:
+                material_dir.chmod(0o700)
+                _fsync_directory(material_dir.parent)
             material_dir = resolve_under_fn(study_data_dir, material_id, expected="dir")
             raw_dir = resolve_under_fn(material_dir, "raw", must_exist=False)
             raw_dir_owned = _create_directory(raw_dir)
+            if raw_dir_owned:
+                raw_dir.chmod(0o700)
+                _fsync_directory(raw_dir.parent)
             raw_dir = resolve_under_fn(material_dir, "raw", expected="dir")
             dest = resolve_under_fn(raw_dir, f"original{ext}", must_exist=False)
             published_identity = _publish_no_clobber(tmp_path, dest)
