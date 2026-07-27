@@ -56,7 +56,9 @@ def fetch_url(url: str) -> str:
         return response.read().decode(charset, errors="replace")
 
 
-def fetch_article_text(url: str, max_chars: int = 5000) -> str | None:
+def fetch_article_text(
+    url: str, max_chars: int = 5000, *, extract_text_fn=None
+) -> str | None:
     if not url or "news.google.com" in url:
         return None
     try:
@@ -86,22 +88,24 @@ def fetch_article_text(url: str, max_chars: int = 5000) -> str | None:
             return text.strip()
     except Exception as exc:
         logger.debug("trafilatura extraction failed for %s: %s", url, exc)
-    return rss_feed.extract_text(html, max_chars=max_chars)
+    return (extract_text_fn or rss_feed.extract_text)(html, max_chars=max_chars)
 
 
-def watermark_path(source_id: str) -> Path:
-    return get_data_dir() / "state" / f"rss-{source_id}.json"
+def watermark_path(source_id: str, *, data_dir_fn=None) -> Path:
+    return (data_dir_fn or get_data_dir)() / "state" / f"rss-{source_id}.json"
 
 
-def load_watermark(source_id: str) -> set[str] | None:
-    path = watermark_path(source_id)
+def load_watermark(source_id: str, *, watermark_path_fn=None) -> set[str] | None:
+    path = (watermark_path_fn or watermark_path)(source_id)
     if not path.exists():
         return None
     return set(json.loads(path.read_text()).get("seen_ids", []))
 
 
-def save_watermark(source_id: str, seen_ids: Iterable[str]) -> None:
-    path = watermark_path(source_id)
+def save_watermark(
+    source_id: str, seen_ids: Iterable[str], *, watermark_path_fn=None
+) -> None:
+    path = (watermark_path_fn or watermark_path)(source_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     bounded = list(dict.fromkeys(seen_ids))[:MAX_WATERMARK_IDS]
     payload = {
@@ -119,8 +123,8 @@ def event_id(source_id: str, external_id: str) -> str:
     return f"evt-{digest}"
 
 
-def append_event_jsonl(event: dict[str, object]) -> None:
-    events_dir = get_data_dir() / "events"
+def append_event_jsonl(event: dict[str, object], *, data_dir_fn=None) -> None:
+    events_dir = (data_dir_fn or get_data_dir)() / "events"
     events_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).date().isoformat()
     with (events_dir / f"{stamp}.jsonl").open("a", encoding="utf-8") as handle:
@@ -180,10 +184,15 @@ def title_similarity(a: str, b: str) -> float:
 
 
 def is_duplicate_title(
-    new_title: str, existing_titles: list[str], threshold: float = 0.75
+    new_title: str,
+    existing_titles: list[str],
+    threshold: float = 0.75,
+    *,
+    similarity_fn=None,
 ) -> bool:
     return any(
-        title_similarity(new_title, title) >= threshold for title in existing_titles
+        (similarity_fn or title_similarity)(new_title, title) >= threshold
+        for title in existing_titles
     )
 
 

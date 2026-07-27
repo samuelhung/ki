@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 import threading
 import time
+from types import SimpleNamespace
 
 from zhiji_backend import collector, db, rss_collection_service
 from zhiji_backend.db import connect, init_db
@@ -254,3 +256,84 @@ def test_collect_once_preserves_mixed_error_completion_order(monkeypatch):
         {"source_id": "returned", "error": "returned error"},
         {"source_id": "raised", "error": "raised error"},
     ]
+
+
+def test_collector_fetch_article_uses_patched_fallback_extractor(monkeypatch):
+    class Response:
+        headers = SimpleNamespace(get_content_charset=lambda: "utf-8")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b"<p>fallback body</p>"
+
+    calls: list[tuple[str, int]] = []
+    monkeypatch.setattr(
+        rss_collection_service.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: Response(),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "trafilatura",
+        SimpleNamespace(extract=lambda *_args, **_kwargs: None),
+    )
+    monkeypatch.setattr(
+        collector,
+        "_extract_text",
+        lambda html, max_chars=5000: calls.append((html, max_chars)) or "patched",
+    )
+
+    assert collector.fetch_article_text("https://example.com/a", max_chars=123) == (
+        "patched"
+    )
+    assert calls == [("<p>fallback body</p>", 123)]
+
+
+def test_collector_watermark_helpers_preserve_legacy_path_monkeypatches(
+    tmp_path, monkeypatch
+):
+    custom_data = tmp_path / "custom-data"
+    monkeypatch.setenv("KI_DATA_DIR", str(tmp_path / "unpatched-data"))
+    monkeypatch.setattr(collector, "get_data_dir", lambda: custom_data)
+
+    assert collector.watermark_path("source-a") == (
+        custom_data / "state/rss-source-a.json"
+    )
+
+    custom_watermark = tmp_path / "custom-watermark.json"
+    monkeypatch.setattr(
+        collector, "watermark_path", lambda _source_id: custom_watermark
+    )
+    collector.save_watermark("source-a", ["saved"])
+    assert json.loads(custom_watermark.read_text())["seen_ids"] == ["saved"]
+
+    custom_watermark.write_text(json.dumps({"seen_ids": ["loaded"]}))
+    assert collector.load_watermark("source-a") == {"loaded"}
+
+
+def test_collector_jsonl_append_uses_patched_data_directory(tmp_path, monkeypatch):
+    custom_data = tmp_path / "custom-data"
+    monkeypatch.setenv("KI_DATA_DIR", str(tmp_path / "unpatched-data"))
+    monkeypatch.setattr(collector, "get_data_dir", lambda: custom_data)
+
+    collector.append_event_jsonl({"id": "event-a"})
+
+    [jsonl_path] = (custom_data / "events").glob("*.jsonl")
+    assert json.loads(jsonl_path.read_text()) == {"id": "event-a"}
+
+
+def test_collector_duplicate_check_uses_patched_title_similarity(monkeypatch):
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        collector,
+        "_title_similarity",
+        lambda left, right: calls.append((left, right)) or 0.8,
+    )
+
+    assert collector._is_duplicate_title("new", ["existing"], threshold=0.75) is True
+    assert calls == [("new", "existing")]

@@ -30,7 +30,9 @@ def fetch_url(url: str) -> str:
 
 
 def fetch_article_text(url: str, max_chars: int = 5000) -> str | None:
-    return rss_collection_service.fetch_article_text(url, max_chars=max_chars)
+    return rss_collection_service.fetch_article_text(
+        url, max_chars=max_chars, extract_text_fn=_extract_text
+    )
 
 
 def _extract_text(html: str, max_chars: int = 5000) -> str:
@@ -72,15 +74,19 @@ def parse_rss_items(feed_text: str) -> list[dict[str, str | None]]:
 
 
 def watermark_path(source_id: str) -> Path:
-    return rss_collection_service.watermark_path(source_id)
+    return rss_collection_service.watermark_path(source_id, data_dir_fn=get_data_dir)
 
 
 def load_watermark(source_id: str) -> set[str] | None:
-    return rss_collection_service.load_watermark(source_id)
+    return rss_collection_service.load_watermark(
+        source_id, watermark_path_fn=watermark_path
+    )
 
 
 def save_watermark(source_id: str, seen_ids: Iterable[str]) -> None:
-    rss_collection_service.save_watermark(source_id, seen_ids)
+    rss_collection_service.save_watermark(
+        source_id, seen_ids, watermark_path_fn=watermark_path
+    )
 
 
 def event_id(source_id: str, external_id: str) -> str:
@@ -88,7 +94,7 @@ def event_id(source_id: str, external_id: str) -> str:
 
 
 def append_event_jsonl(event: dict[str, object]) -> None:
-    rss_collection_service.append_event_jsonl(event)
+    rss_collection_service.append_event_jsonl(event, data_dir_fn=get_data_dir)
 
 
 def insert_event(conn: sqlite3.Connection, event: dict[str, object]) -> bool:
@@ -113,7 +119,7 @@ def _is_duplicate_title(
     new_title: str, existing_titles: list[str], threshold: float = 0.75
 ) -> bool:
     return rss_collection_service.is_duplicate_title(
-        new_title, existing_titles, threshold
+        new_title, existing_titles, threshold, similarity_fn=_title_similarity
     )
 
 
