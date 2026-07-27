@@ -62,6 +62,14 @@ test('protected ingest media uses the streaming service-worker route in every na
   assert.doesNotMatch(eventDetail, /[?&](?:token|api_key)=/i);
 });
 
+test('event video playback prefers a signed capability and retains the streaming fallback', () => {
+  assert.match(eventDetail, /video_url\?: string/);
+  assert.match(eventDetail, /import \{ apiFetch, backendUrl \} from '\.\.\/api'/);
+  assert.match(eventDetail, /const authenticatedMediaUrl = useAuthenticatedMediaUrl\(toMediaPath\(detail\?\.video_path\)\)/);
+  assert.match(eventDetail, /const mediaUrl = detail\?\.video_url \? backendUrl\(detail\.video_url\) : authenticatedMediaUrl/);
+  assert.doesNotMatch(eventDetail, /createObjectURL|response\.blob\(|[?&](?:token|api_key)=/i);
+});
+
 test('connection setters notify the media transport and the app owns a cleaned-up synchronizer', () => {
   assert.match(api, /notifyMediaTransportConnectionChanged\(\)/);
   assert.match(mediaHook, /addEventListener\(MEDIA_CONNECTION_CHANGE_EVENT/);

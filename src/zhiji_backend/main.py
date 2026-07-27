@@ -16,6 +16,7 @@ from fastapi.middleware import cors as _cors
 from . import __version__, runtime_bootstrap
 from . import api_middleware as _api_middleware_runtime
 from . import credential_store as _credential_store
+from . import media_capability as _media_capability
 from . import paths as _paths
 from .security import artifacts as _artifacts
 from .security import constraints as _constraints
@@ -255,6 +256,14 @@ async def serve_ingest_artifact(kind: str, filename: str):
     )
 
 
+async def serve_signed_video(filename: str, expires: str, signature: str):
+    return await static_delivery.serve_signed_video(
+        filename, expires, signature, ingest_root=INGEST_ROOT, api_token=_api_token,
+        verify_video_capability=_media_capability.verify_video_capability,
+        open_regular_under=open_regular_under, pinned_file_response=PinnedFileResponse,
+        artifact_open_error=ArtifactOpenError,
+        http_exception=HTTPException,
+    )
 async def serve_release(filename: str):
     return await static_delivery.serve_release(
         filename,
@@ -323,6 +332,7 @@ def _add_routes(
     application.api_route(
         "/ingest/{kind}/{filename:path}", methods=["GET", "HEAD"]
     )(serve_ingest_artifact)
+    application.api_route("/media/videos/{filename}", methods=["GET", "HEAD"])(serve_signed_video)
     RELEASES_DIR.mkdir(parents=True, exist_ok=True)
     application.api_route("/releases/{filename:path}", methods=["GET", "HEAD"])(
         serve_release

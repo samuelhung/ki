@@ -68,7 +68,7 @@ export async function apiFetch(input: RequestInfo | URL, init?: ApiRequestInit):
 export function backendUrl(path: string): string {
   if (!path) return path;
   if (/^[a-z][a-z0-9+.-]*:/i.test(path)) return path;
-  if (path.startsWith('/api/') || path.startsWith('/ingest/') || path.startsWith('/releases/')) {
+  if (path.startsWith('/api/') || path.startsWith('/ingest/') || path.startsWith('/media/') || path.startsWith('/releases/')) {
     return getBackendUrl() + path;
   }
   return path;

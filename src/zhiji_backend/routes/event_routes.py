@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -11,6 +10,7 @@ from pydantic import BaseModel, Field
 from ..classifier import classify_batch, classify_event
 from ..collector import collect_once, fetch_url
 from ..db import connect, seed_default_sources
+from ..event_media import add_video_url, safe_unlink
 from ..models import CollectRequest
 from ..security.constraints import (
     MAX_OFFSET,
@@ -19,21 +19,12 @@ from ..security.constraints import (
     SafeIdentifierList,
     parse_bounded_identifier_csv,
 )
-from ..security.paths import resolve_under, safe_unlink_under
+from ..security.paths import resolve_under
 from ..summarizer import summarize_transcript
 from ..tagger import tag_event
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-
-def _safe_unlink(path_value: str | None, root: Path) -> None:
-    if not path_value:
-        return
-    try:
-        safe_unlink_under(root, Path(path_value).expanduser())
-    except Exception:
-        logger.warning("Refusing to delete unsafe ingest artifact", exc_info=True)
 
 
 @router.get("/api/events")
@@ -193,6 +184,7 @@ def get_event(event_id: SafeIdentifier) -> dict[str, object]:
     # Add ingest file paths
     from ..paths import INGEST_ROOT as _ir
     ingest_root = _ir
+    add_video_url(result, ingest_root)
     result["transcript_path"] = str(ingest_root / "transcripts" / f"{event_id}.md")
     result["summary_path"] = str(ingest_root / "summaries" / f"{event_id}.md")
     # Add associated brainstorm questions
@@ -223,13 +215,13 @@ def delete_event(event_id: SafeIdentifier) -> dict[str, object]:
     # Clean up ingest files
     from ..paths import INGEST_ROOT as _ir
     ingest_root = _ir
-    _safe_unlink(str(ingest_root / "transcripts" / f"{event_id}.md"), ingest_root)
-    _safe_unlink(str(ingest_root / "summaries" / f"{event_id}.md"), ingest_root)
+    safe_unlink(str(ingest_root / "transcripts" / f"{event_id}.md"), ingest_root)
+    safe_unlink(str(ingest_root / "summaries" / f"{event_id}.md"), ingest_root)
 
     for path_col in ("video_path", "audio_path", "document_path"):
         p = row[path_col]
         if p:
-            _safe_unlink(str(p), ingest_root)
+            safe_unlink(str(p), ingest_root)
 
     with connect() as conn:
         conn.execute("DELETE FROM events WHERE id = ?", (event_id,))
@@ -253,12 +245,12 @@ def batch_delete_events(payload: EventBatchRequest) -> dict[str, object]:
             row = conn.execute("SELECT id, video_path, audio_path, document_path FROM events WHERE id = ?", (eid,)).fetchone()
         if row is None:
             continue
-        _safe_unlink(str(ingest_root / "transcripts" / f"{eid}.md"), ingest_root)
-        _safe_unlink(str(ingest_root / "summaries" / f"{eid}.md"), ingest_root)
+        safe_unlink(str(ingest_root / "transcripts" / f"{eid}.md"), ingest_root)
+        safe_unlink(str(ingest_root / "summaries" / f"{eid}.md"), ingest_root)
         for path_col in ("video_path", "audio_path", "document_path"):
             p = row[path_col]
             if p:
-                _safe_unlink(str(p), ingest_root)
+                safe_unlink(str(p), ingest_root)
         with connect() as conn:
             conn.execute("DELETE FROM events WHERE id = ?", (eid,))
         deleted += 1

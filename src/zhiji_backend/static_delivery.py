@@ -48,6 +48,37 @@ async def serve_ingest_artifact(
         raise
 
 
+async def serve_signed_video(
+    filename: str,
+    expires: str,
+    signature: str,
+    *,
+    ingest_root: Any,
+    api_token: Callable[[], str],
+    verify_video_capability: Callable[..., bool],
+    open_regular_under: Callable[..., Any],
+    pinned_file_response: Callable[..., Any],
+    artifact_open_error: type[BaseException],
+    http_exception: type[HTTPException],
+):
+    if not verify_video_capability(
+        filename,
+        expires=expires,
+        signature=signature,
+        api_token=api_token(),
+    ):
+        raise http_exception(status_code=404, detail="Not Found")
+    try:
+        opened = open_regular_under(ingest_root, "videos", filename)
+    except artifact_open_error:
+        raise http_exception(status_code=404, detail="Not Found") from None
+    try:
+        return pinned_file_response(opened, filename=filename)
+    except BaseException:
+        opened.close()
+        raise
+
+
 async def serve_release(
     filename: str,
     *,

@@ -66,6 +66,7 @@ PUBLIC_EXPORTS = {
             "seed_default_sources",
             "serve_ingest_artifact",
             "serve_release",
+            "serve_signed_video",
             "spa_fallback",
             "start_usage_writer",
             "start_worker",
@@ -119,6 +120,7 @@ PUBLIC_SIGNATURES = {
         "retired_digest_endpoint": "()",
         "serve_ingest_artifact": "(kind: 'str', filename: 'str')",
         "serve_release": "(filename: 'str')",
+        "serve_signed_video": "(filename: 'str', expires: 'str', signature: 'str')",
         "ensure_migrations": "(db_path: 'Path') -> 'None'",
         "get_db_path": "() -> 'Path'",
         "load_config": "(*, persist_normalization: 'bool' = True) -> 'dict[str, Any]'",
@@ -176,6 +178,12 @@ EXPECTED_ROUTE_ORDER = [
         "/ingest/{kind}/{filename:path}",
         ("GET", "HEAD"),
         "serve_ingest_artifact",
+    ),
+    (
+        "APIRoute",
+        "/media/videos/{filename}",
+        ("GET", "HEAD"),
+        "serve_signed_video",
     ),
     ("APIRoute", "/releases/{filename:path}", ("GET", "HEAD"), "serve_release"),
 ]
@@ -301,6 +309,8 @@ EXPECTED_OPENAPI_OPERATIONS = [
     ("/api/chains/merge", "post", "merge_chains_api_chains_merge_post"),
     ("/ingest/{kind}/{filename}", "get", "serve_ingest_artifact_ingest__kind___filename__get"),
     ("/ingest/{kind}/{filename}", "head", "serve_ingest_artifact_ingest__kind___filename__get"),
+    ("/media/videos/{filename}", "get", "serve_signed_video_media_videos__filename__get"),
+    ("/media/videos/{filename}", "head", "serve_signed_video_media_videos__filename__get"),
     ("/releases/{filename}", "get", "serve_release_releases__filename__get"),
     ("/releases/{filename}", "head", "serve_release_releases__filename__get"),
 ]
@@ -659,6 +669,8 @@ def test_static_delivery_forwarding_contract(monkeypatch) -> None:
         "HTTPException": object(),
         "JSONResponse": object(),
         "Path": object(),
+        "_api_token": object(),
+        "verify_video_capability": object(),
     }
 
     async def record(name: str, *args, **kwargs):
@@ -680,12 +692,21 @@ def test_static_delivery_forwarding_contract(monkeypatch) -> None:
         "serve_release",
         lambda *args, **kwargs: record("serve_release", *args, **kwargs),
     )
+    monkeypatch.setattr(
+        module,
+        "serve_signed_video",
+        lambda *args, **kwargs: record("serve_signed_video", *args, **kwargs),
+    )
     for name, dependency in dependencies.items():
+        if name == "verify_video_capability":
+            monkeypatch.setattr(main._media_capability, name, dependency)
+            continue
         monkeypatch.setattr(main, name, dependency)
 
     async def exercise() -> None:
         assert await main.retired_digest_endpoint() is result_sentinel
         assert await main.serve_ingest_artifact("videos", "event.mp4") is result_sentinel
+        assert await main.serve_signed_video("event.mp4", "123", "abc") is result_sentinel
         assert await main.serve_release("zhiji.dmg") is result_sentinel
 
     asyncio.run(exercise())
@@ -703,6 +724,19 @@ def test_static_delivery_forwarding_contract(monkeypatch) -> None:
                 "public_ingest_artifacts": dependencies["PUBLIC_INGEST_ARTIFACTS"],
                 "ingest_root": dependencies["INGEST_ROOT"],
                 "safe_identifier": dependencies["safe_identifier"],
+                "open_regular_under": dependencies["open_regular_under"],
+                "pinned_file_response": dependencies["PinnedFileResponse"],
+                "artifact_open_error": dependencies["ArtifactOpenError"],
+                "http_exception": dependencies["HTTPException"],
+            },
+        ),
+        (
+            "serve_signed_video",
+            ("event.mp4", "123", "abc"),
+            {
+                "ingest_root": dependencies["INGEST_ROOT"],
+                "api_token": dependencies["_api_token"],
+                "verify_video_capability": dependencies["verify_video_capability"],
                 "open_regular_under": dependencies["open_regular_under"],
                 "pinned_file_response": dependencies["PinnedFileResponse"],
                 "artifact_open_error": dependencies["ArtifactOpenError"],
