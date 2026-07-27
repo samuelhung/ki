@@ -397,7 +397,7 @@ test('content ingest keeps attached video visible above every detail tab', () =>
   assert.match(contentDetail, /const mediaUrl = detail\?\.video_url \? backendUrl\(detail\.video_url\) : '';/);
   assert.match(contentDetail, /<\/header>\s*\{mediaUrl && \(\s*<video controls playsInline preload="metadata" className="ingest-detail-video" src=\{mediaUrl\}>[\s\S]*?<\/video>\s*\)\}\s*\{detailTabs\}/);
   assert.doesNotMatch(contentDetail, /\bvideo_path\b|createObjectURL|response\.blob\(\)/);
-  assert.match(ingestOverrides, /\.cinematic-ingest \.ingest-detail-video\s*\{[^}]*width:\s*100%\s*!important;[^}]*max-height:\s*clamp\([^;]+\)\s*!important;[^}]*object-fit:\s*contain;/s);
+  assert.match(ingestOverrides, /\.cinematic-ingest \.ingest-detail-video\s*\{[^}]*width:\s*100%\s*!important;[^}]*max-height:\s*clamp\([^;]+\)\s*!important;[^}]*flex:\s*0 0 auto\s*!important;[^}]*aspect-ratio:\s*16 \/ 9;[^}]*background:\s*#000;[^}]*object-fit:\s*contain;/s);
 });
 
 test('embedded ingest expands its useful workspace at compact and large reference sizes', () => {
