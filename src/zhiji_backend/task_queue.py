@@ -91,10 +91,6 @@ def _release_active_process(task_id: str, proc: subprocess.Popen[str]) -> bool:
 
 
 def _clear_shutdown_interrupted(task_id: str, proc: subprocess.Popen[str]) -> None:
-    _clear_shutdown_interrupted_task(task_id, proc)
-
-
-def _clear_shutdown_interrupted_task(task_id: str, proc: subprocess.Popen[str]) -> None:
     _supervisor().clear_shutdown_interrupted(task_id, proc)
 
 

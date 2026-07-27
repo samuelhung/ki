@@ -376,5 +376,5 @@ def process_one(task_id: str) -> None:
         owns_shutdown = q._shutdown_interrupted == (task_id, proc)
         interrupted = q._release_active_process(task_id, proc) or interrupted
         if owns_shutdown:
-            q._clear_shutdown_interrupted_task(task_id, proc)
+            q._clear_shutdown_interrupted(task_id, proc)
     return POST_PROCESS, event_id

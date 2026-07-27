@@ -224,7 +224,7 @@ def test_process_one_forwards_clear_shutdown_hook_at_call_time(tmp_path, monkeyp
     cleared = []
     monkeypatch.setattr(
         task_queue,
-        "_clear_shutdown_interrupted_task",
+        "_clear_shutdown_interrupted",
         lambda *args: cleared.append(args),
     )
 
