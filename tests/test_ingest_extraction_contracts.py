@@ -779,27 +779,154 @@ def test_shutdown_signal_ordering_contract(monkeypatch: pytest.MonkeyPatch):
     ]
 
 
-PLANNED_MODULE_EXPORTS = {
-    "zhiji_backend.rss_feed": ("parse_rss_items", "stable_item_id"),
-    "zhiji_backend.rss_collection_service": ("collect_once",),
-    "zhiji_backend.ingest.remote_transport": (
+FORWARDING_CASES = (
+    pytest.param(
+        "zhiji_backend.rss_feed",
+        "parse_rss_items",
+        collector.parse_rss_items,
+        "parse-rss",
+        id="rss-feed-parse",
+    ),
+    pytest.param(
+        "zhiji_backend.rss_feed",
+        "stable_item_id",
+        collector.stable_item_id,
+        "stable-item-id",
+        id="rss-feed-stable-id",
+    ),
+    pytest.param(
+        "zhiji_backend.rss_collection_service",
+        "collect_once",
+        collector.collect_once,
+        "collect-once",
+        id="rss-collection-service",
+    ),
+    pytest.param(
+        "zhiji_backend.ingest.remote_transport",
         "create_pinned_connection",
+        douyin.create_pinned_connection,
+        "pinned-connection",
+        id="remote-transport-connection",
+    ),
+    pytest.param(
+        "zhiji_backend.ingest.remote_transport",
         "is_trusted_365yg_url",
+        douyin.is_trusted_365yg_url,
+        "trusted-url",
+        id="remote-transport-trust",
     ),
-    "zhiji_backend.ingest.douyin_download": ("download_video",),
-    "zhiji_backend.ingest_service": ("process_ingest",),
-    "zhiji_backend.task_queue_store": ("enqueue", "recover_stuck"),
-    "zhiji_backend.task_process_supervisor": (
+    pytest.param(
+        "zhiji_backend.ingest.douyin_download",
+        "download_video",
+        douyin.download_video,
+        "download-video",
+        id="douyin-download",
+    ),
+    pytest.param(
+        "zhiji_backend.ingest_service",
+        "process_ingest",
+        ingest_routes._process_ingest,
+        "process-ingest",
+        id="ingest-service",
+    ),
+    pytest.param(
+        "zhiji_backend.task_queue_store",
+        "enqueue",
+        task_queue.enqueue,
+        "enqueue",
+        id="task-queue-store-enqueue",
+    ),
+    pytest.param(
+        "zhiji_backend.task_queue_store",
+        "recover_stuck",
+        task_queue.recover_stuck,
+        "recover-stuck",
+        id="task-queue-store-recover",
+    ),
+    pytest.param(
+        "zhiji_backend.task_process_supervisor",
         "process_one",
-        "start_worker",
-        "stop_worker",
+        task_queue._process_one,
+        "process-one",
+        id="task-process-supervisor",
     ),
-}
+)
 
 
-@pytest.mark.parametrize("module_name", PLANNED_MODULE_EXPORTS)
-def test_planned_extraction_module_exposes_expected_callables(module_name: str):
+def _forwarding_arguments(case: str, tmp_path: Path):
+    def fetcher(_url):
+        return "<rss />"
+
+    def resolver(_host, _port):
+        raise AssertionError("legacy downloader executed")
+
+    connection_factory = object()
+    session = object()
+    cases = {
+        "parse-rss": (("<rss />",), {}),
+        "stable-item-id": (
+            ("Title", "https://example.com/item", "2026-05-21T08:00:00+00:00"),
+            {},
+        ),
+        "collect-once": ((["source-a"],), {"fetcher": fetcher}),
+        "pinned-connection": (
+            ("https", "93.184.216.34", 443, "video.example.com"),
+            {},
+        ),
+        "trusted-url": (("https://v3.365yg.com/video",), {}),
+        "download-video": (
+            ("https://video.example.com/video.mp4", tmp_path / "video.mp4"),
+            {
+                "session": session,
+                "max_bytes": 123,
+                "resolver": resolver,
+                "max_redirects": 2,
+                "connection_factory": connection_factory,
+            },
+        ),
+        "process-ingest": (
+            ("evt-contract", "contract-type", "body", "认知", "Title"),
+            {},
+        ),
+        "enqueue": (
+            ("evt-contract", "document", "body", "认知", "Title"),
+            {},
+        ),
+        "recover-stuck": ((), {}),
+        "process-one": (("task-contract",), {}),
+    }
+    return cases[case]
+
+
+@pytest.mark.parametrize(
+    ("module_name", "exported_name", "legacy_facade", "case"),
+    FORWARDING_CASES,
+)
+def test_planned_extraction_uses_call_time_forwarding(
+    module_name: str,
+    exported_name: str,
+    legacy_facade,
+    case: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
     planned_module = importlib.import_module(module_name)
 
-    for exported_name in PLANNED_MODULE_EXPORTS[module_name]:
-        assert callable(getattr(planned_module, exported_name))
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
+    monkeypatch.setenv("KI_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(task_queue, "PENDING_DIR", tmp_path / "pending")
+    init_db()
+    calls = []
+    sentinel = object()
+
+    def replacement(*args, **kwargs):
+        calls.append((args, kwargs))
+        return sentinel
+
+    monkeypatch.setattr(planned_module, exported_name, replacement)
+    args, kwargs = _forwarding_arguments(case, tmp_path)
+
+    result = legacy_facade(*args, **kwargs)
+
+    assert result is sentinel
+    assert calls == [(args, kwargs)]
