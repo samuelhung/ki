@@ -8,16 +8,20 @@ from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from .. import api_middleware
 from ..classifier import classify_batch, classify_event
 from ..collector import collect_once, fetch_url
 from ..db import connect, seed_default_sources
+from ..media_capability import create_video_url
 from ..models import CollectRequest
+from ..security.artifacts import ArtifactOpenError, open_regular_under
 from ..security.constraints import (
     MAX_OFFSET,
     MAX_PAGE_SIZE,
     SafeIdentifier,
     SafeIdentifierList,
     parse_bounded_identifier_csv,
+    safe_identifier,
 )
 from ..security.paths import resolve_under, safe_unlink_under
 from ..summarizer import summarize_transcript
@@ -25,6 +29,21 @@ from ..tagger import tag_event
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _video_url(
+    video_path: object, *, ingest_root: Path, api_token: str
+) -> str | None:
+    if not isinstance(video_path, str) or not video_path or not api_token:
+        return None
+    filename = Path(video_path).name
+    try:
+        safe_identifier(filename)
+        opened = open_regular_under(ingest_root, "videos", filename)
+    except (ArtifactOpenError, ValueError):
+        return None
+    opened.close()
+    return create_video_url(filename, api_token=api_token)
 
 
 def _safe_unlink(path_value: str | None, root: Path) -> None:
@@ -193,6 +212,13 @@ def get_event(event_id: SafeIdentifier) -> dict[str, object]:
     # Add ingest file paths
     from ..paths import INGEST_ROOT as _ir
     ingest_root = _ir
+    video_url = _video_url(
+        result.get("video_path"),
+        ingest_root=ingest_root,
+        api_token=api_middleware.api_token(),
+    )
+    if video_url:
+        result["video_url"] = video_url
     result["transcript_path"] = str(ingest_root / "transcripts" / f"{event_id}.md")
     result["summary_path"] = str(ingest_root / "summaries" / f"{event_id}.md")
     # Add associated brainstorm questions
