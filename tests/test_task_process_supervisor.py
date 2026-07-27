@@ -335,3 +335,118 @@ def test_stop_process_tree_resolves_signals_from_facade(monkeypatch):
         "task-signal", object(), 4242, 1
     ) == (-202, True)
     assert sent == [101, 202]
+
+
+def test_concurrent_stop_worker_has_one_signal_owner(monkeypatch):
+    class Process:
+        returncode = None
+
+    process = Process()
+    owner_started = threading.Event()
+    follower_waiting = threading.Event()
+    release_owner = threading.Event()
+    signals = []
+    results = []
+    monkeypatch.setattr(task_queue, "_active_process", process)
+    monkeypatch.setattr(task_queue, "_active_task_id", "task-concurrent-stop")
+    monkeypatch.setattr(task_queue, "_active_process_group_id", 4242)
+    monkeypatch.setattr(task_queue, "_shutdown_interrupted", None)
+    monkeypatch.setattr(task_queue, "_shutdown_signals_sent", set())
+    monkeypatch.setattr(task_queue, "_shutdown_signal_delivery_confirmed", False)
+    monkeypatch.setattr(task_queue, "_worker", None)
+    monkeypatch.setattr(task_queue, "_process_group_exists", lambda *_: False)
+    monkeypatch.setattr(
+        task_queue, "_observe_process_returncode", lambda *_: process.returncode
+    )
+
+    def send(*_args):
+        signals.append("term")
+        owner_started.set()
+        return True, False
+
+    def wait(*_args):
+        assert release_owner.wait(timeout=1)
+        process.returncode = -signal.SIGTERM
+        return process.returncode, True
+
+    original_wait = task_process_supervisor.wait_for_shutdown_owner
+
+    def wait_for_owner(*args):
+        follower_waiting.set()
+        return original_wait(*args)
+
+    monkeypatch.setattr(task_queue, "_signal_ingest_process", send)
+    monkeypatch.setattr(task_queue, "_wait_for_process_tree_exit", wait)
+    monkeypatch.setattr(
+        task_process_supervisor, "wait_for_shutdown_owner", wait_for_owner
+    )
+
+    owner = threading.Thread(target=lambda: results.append(task_queue.stop_worker()))
+    follower = threading.Thread(target=lambda: results.append(task_queue.stop_worker()))
+    owner.start()
+    assert owner_started.wait(timeout=1)
+    follower.start()
+    assert follower_waiting.wait(timeout=1)
+    assert signals == ["term"]
+    release_owner.set()
+    owner.join(timeout=1)
+    follower.join(timeout=1)
+
+    assert not owner.is_alive()
+    assert not follower.is_alive()
+    assert sorted(results) == [True, True]
+    assert signals == ["term"]
+
+
+def test_completed_owner_prevents_second_signal_to_reused_process_group(monkeypatch):
+    class Process:
+        returncode = 0
+
+    process = Process()
+    signals = []
+    monkeypatch.setattr(task_queue, "_active_process", process)
+    monkeypatch.setattr(task_queue, "_active_task_id", "task-reused-pgid")
+    monkeypatch.setattr(task_queue, "_active_process_group_id", 5252)
+    monkeypatch.setattr(task_queue, "_shutdown_interrupted", None)
+    monkeypatch.setattr(task_queue, "_worker", None)
+    monkeypatch.setattr(task_queue, "_observe_process_returncode", lambda *_: 0)
+    monkeypatch.setattr(task_queue, "_process_group_exists", lambda *_: True)
+    monkeypatch.setattr(
+        task_queue,
+        "_signal_ingest_process",
+        lambda *_args: signals.append("signal") or (True, False),
+    )
+    monkeypatch.setattr(task_queue, "_wait_for_process_tree_exit", lambda *_: (0, True))
+
+    assert task_queue.stop_worker() is True
+    assert task_queue.stop_worker() is True
+    assert signals == ["signal"]
+
+
+def test_final_nonquiescent_check_uses_facade_group_hook(monkeypatch):
+    process = object()
+    facade_checks = []
+    supervisor = task_queue._supervisor()
+    monkeypatch.setattr(
+        supervisor,
+        "select_active_for_shutdown",
+        lambda: (process, "task-nonquiescent", 6262, True),
+    )
+    monkeypatch.setattr(supervisor, "stop_process_tree", lambda *_: (None, False))
+    monkeypatch.setattr(supervisor, "complete_shutdown_claim", lambda *_: None)
+    monkeypatch.setattr(task_queue, "_matches_shutdown_causation", lambda *_: False)
+    monkeypatch.setattr(task_queue, "_resolve_shutdown_interruption", lambda *_: None)
+    monkeypatch.setattr(task_queue, "_worker", None)
+    monkeypatch.setattr(
+        task_queue,
+        "_process_group_exists",
+        lambda group_id, task_id: facade_checks.append((group_id, task_id)) or True,
+    )
+    monkeypatch.setattr(
+        supervisor,
+        "process_group_exists",
+        lambda *_: (_ for _ in ()).throw(AssertionError("bypassed facade")),
+    )
+
+    assert task_queue.stop_worker() is False
+    assert facade_checks == [(6262, "task-nonquiescent")]

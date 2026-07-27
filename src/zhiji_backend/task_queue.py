@@ -289,15 +289,33 @@ def stop_worker() -> bool:
     """Stop the worker and its exact active child, returning quiescence status."""
     _shutdown_flag.set()
     supervisor = _supervisor()
-    proc, task_id, group_id = supervisor.select_active_for_shutdown()
+    proc, task_id, group_id, owns_claim = supervisor.select_active_for_shutdown()
     process_tree_quiesced = True
     verified_interruption = False
     if proc is not None:
-        returncode, process_tree_quiesced = supervisor.stop_process_tree(
-            task_id, proc, group_id, _SHUTDOWN_TERMINATE_TIMEOUT_SECONDS
-        )
-        verified_interruption = _matches_shutdown_causation(task_id, proc, returncode)
-        _resolve_shutdown_interruption(task_id, proc)
+        if owns_claim:
+            returncode = None
+            process_tree_quiesced = False
+            try:
+                returncode, process_tree_quiesced = supervisor.stop_process_tree(
+                    task_id, proc, group_id, _SHUTDOWN_TERMINATE_TIMEOUT_SECONDS
+                )
+                verified_interruption = _matches_shutdown_causation(
+                    task_id, proc, returncode
+                )
+                _resolve_shutdown_interruption(task_id, proc)
+            finally:
+                supervisor.complete_shutdown_claim(
+                    task_id,
+                    proc,
+                    group_id,
+                    returncode,
+                    process_tree_quiesced,
+                )
+        else:
+            returncode, process_tree_quiesced = supervisor.wait_for_shutdown_owner(
+                task_id, proc, group_id, _SHUTDOWN_TERMINATE_TIMEOUT_SECONDS
+            )
 
     worker = _worker
     if _worker_is_alive(worker):
@@ -333,7 +351,7 @@ def stop_worker() -> bool:
                 _SHUTDOWN_JOIN_TIMEOUT_SECONDS,
             )
     if not process_tree_quiesced:
-        if supervisor.process_group_exists(group_id, task_id or "none"):
+        if _process_group_exists(group_id, task_id or "none"):
             logger.error(
                 "Ingest process group still exists after SIGKILL task=%s pgid=%s",
                 task_id or "none",

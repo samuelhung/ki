@@ -3,6 +3,15 @@
 from __future__ import annotations
 
 from . import task_queue_store as store
+from .task_shutdown_coordination import (
+    complete_shutdown_claim as complete_shutdown_claim,
+)
+from .task_shutdown_coordination import (
+    select_active_for_shutdown as select_active_for_shutdown,
+)
+from .task_shutdown_coordination import (
+    wait_for_shutdown_owner as wait_for_shutdown_owner,
+)
 
 POST_PROCESS = object()
 
@@ -178,26 +187,6 @@ def clear_shutdown_interrupted(task_id: str, proc) -> None:
             q._shutdown_signal_delivery_confirmed = False
             q._shutdown_fallback_causation = False
             q._shutdown_signal_resolved.clear()
-
-
-def select_active_for_shutdown():
-    q = _facade()
-    with q._active_process_lock:
-        proc, task_id = q._active_process, q._active_task_id
-        group_id = q._active_process_group_id
-        if proc is None or task_id is None:
-            return None, None, None
-        leader_alive = q._observe_process_returncode(proc, task_id, "selection") is None
-        group_alive = q._process_group_exists(group_id, task_id)
-        if leader_alive:
-            q._shutdown_interrupted = (task_id, proc)
-            q._shutdown_signals_sent.clear()
-            q._shutdown_signal_delivery_confirmed = False
-            q._shutdown_fallback_causation = False
-            q._shutdown_signal_resolved.clear()
-        elif not group_alive:
-            return None, None, None
-        return proc, task_id, group_id
 
 
 def resolve_shutdown_interruption(task_id: str, proc) -> None:
