@@ -826,6 +826,7 @@
   overflow: hidden;
   contain: layout paint;
   perspective: 1000px;
+  pointer-events: none;
 }
 
 .dual-nav-demo__gallery::before {
@@ -904,6 +905,7 @@
   padding: 0 18px 12px;
   align-items: center;
   gap: 2px;
+  pointer-events: auto;
   transform: translateX(-50%);
 }
 
