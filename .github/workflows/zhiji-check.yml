@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  COCOAPODS_VERSION: '1.16.2'
+  COCOAPODS_VERSION: '1.17.0'
   BUNDLE_GEMFILE: ${{ github.workspace }}/desktop/Gemfile
   BUNDLE_FROZEN: 'true'
 
@@ -33,7 +33,7 @@ jobs:
         with:
           version: '0.11.31'
           enable-cache: true
-      - uses: subosito/flutter-action@fd55f4c5af5b953cc57a2be44cb082c8f6635e8e # v2.21.0
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: '3.44.2'
           channel: stable
@@ -85,7 +85,7 @@ jobs:
         with:
           version: '0.11.31'
           enable-cache: true
-      - uses: subosito/flutter-action@fd55f4c5af5b953cc57a2be44cb082c8f6635e8e # v2.21.0
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: '3.44.2'
           channel: stable
@@ -138,7 +138,7 @@ jobs:
           uv run --frozen python scripts/vulnerability_gate.py \
             "$RUNNER_TEMP/osv-report.json" \
             .github/security/vulnerability-exceptions.yml
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: source-and-lock-cyclonedx-sboms
           path: |

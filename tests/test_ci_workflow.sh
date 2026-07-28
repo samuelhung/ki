@@ -12,7 +12,7 @@ fi
 grep -Fq 'PYTHONPATH=src uv run --frozen python -m pytest -q' .github/workflows/zhiji-check.yml
 grep -Fq 'npm run test:cinematic-scene' scripts/check.sh
 grep -Fq 'npm run test:cinematic-ingest' scripts/check.sh
-grep -Eq 'subosito/flutter-action@[0-9a-f]{40} # v2\.21\.0' .github/workflows/zhiji-check.yml
+grep -Eq 'subosito/flutter-action@[0-9a-f]{40} # v2\.23\.0' .github/workflows/zhiji-check.yml
 grep -Fq "flutter-version: '3.44.2'" .github/workflows/zhiji-check.yml
 grep -Fq 'persist-credentials: false' .github/workflows/zhiji-check.yml
 grep -Fq 'uv sync --frozen --group dev' .github/workflows/zhiji-check.yml

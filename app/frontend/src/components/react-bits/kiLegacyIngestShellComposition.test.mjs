@@ -324,6 +324,11 @@ test('formal ingest visual QA waits for the split workspace instead of retired c
   assert.match(qaCore, /key: 'ingest',[\s\S]*markers: \['ki-shell-legacy-ingest', 'ki-ingest-split-stage', 'ingest-detail-reader', 'dual-nav-action-menu'\]/);
 });
 
+test('the transparent dock gallery does not block the last ingest row at compact widths', () => {
+  assert.match(shellCss, /\.dual-nav-demo__gallery\s*\{[^}]*pointer-events:\s*none/s);
+  assert.match(shellCss, /\.dual-nav-action-menu\.is-dock\s*\{[^}]*pointer-events:\s*auto/s);
+});
+
 test('homepage visual QA waits for the hero reveal before taking its screenshot', () => {
   assert.match(qaCore, /key: 'today',[\s\S]*screenshotSettleMs: 1800/);
   assert.match(qaCore, /const readyMs = Math\.round\(performance\.now\(\) - startedAt\);[\s\S]*if \(page\.screenshotSettleMs\) await wait\(page\.screenshotSettleMs\);[\s\S]*Page\.captureScreenshot/);

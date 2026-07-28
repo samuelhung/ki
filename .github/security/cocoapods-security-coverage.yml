@@ -5,9 +5,3 @@ pods:
   Sparkle:
     coverage: osv
     purl: pkg:swift/github.com/sparkle-project/Sparkle@{version}
-  tray_manager:
-    coverage: pub
-    package: tray_manager
-  window_manager:
-    coverage: pub
-    package: window_manager
