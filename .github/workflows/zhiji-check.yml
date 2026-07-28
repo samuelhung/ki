@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  COCOAPODS_VERSION: '1.16.2'
+  COCOAPODS_VERSION: '1.17.0'
   BUNDLE_GEMFILE: ${{ github.workspace }}/desktop/Gemfile
   BUNDLE_FROZEN: 'true'
 
