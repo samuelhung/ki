@@ -23,6 +23,26 @@ macOS 知几.app
 - 自动更新使用 Sparkle 2：appcast 走 `raw.githubusercontent.com`，DMG 只走 GitHub Release 全量包。
 - 发布物只保留全量 DMG：不再使用特权 Helper、bsdiff、manifest.json、install_helper.sh，也不再把 Sparkle 下载入口指向内网后端。旧安装可先运行 `scripts/remove_legacy_helper.sh --check`，再使用 `sudo scripts/remove_legacy_helper.sh --remove` 清理。
 
+## 当前状态
+
+- 工程门禁、运行健壮性、安全与发布、结构清理四轮治理已经完成，系统进入稳定观察与日常维护阶段。
+- 当前后端/Web 生产部署为 `2.0.0+100`，来源提交为 `67b448aa600a80d9f49a617e87242c730fef8ba4`，访问地址为 `http://10.8.0.105:9120`。
+- 当前受保护的回滚版本为 `2.0.0+99`，本次部署前数据库备份为 `deploy-20260728-075323.sqlite`。
+- 上述后端/Web 部署号与桌面端发布构建号相互独立；桌面端版本仍以 `desktop/pubspec.yaml` 和下方 2.0 版本契约为准。
+
+### 结构基线
+
+以下 4 个既有前端文件暂缓继续拆分，本轮不再提交结构拆分 PR：
+
+| 文件 | 当前行数 | 主要职责 |
+|---|---:|---|
+| `app/frontend/src/components/cinematic-chains/ChainDetailView.tsx` | 438 | 产业链详情展示、份额分组、节点采集与详情交互 |
+| `app/frontend/src/components/cinematic/cinematicSceneRuntime.ts` | 478 | Three.js 电影化场景的创建、渲染、质量调节、缓存与资源释放 |
+| `app/frontend/src/components/react-bits/KiMagicBento.tsx` | 520 | Magic Bento 卡片、聚光、粒子、倾斜与磁吸交互运行时 |
+| `app/frontend/src/pages/CinematicIndustryChains.tsx` | 521 | 产业链工作区的数据加载、筛选、审核、合并与页面编排 |
+
+`structure-baseline.json` 固定记录这些例外。结构门禁继续阻止它们增长，并禁止新增超过 400 行的生产文件；后续只有在明确业务需求或维护风险出现时再单独评估拆分。
+
 ## 核心模块
 
 - 今日知几：每日总览入口，聚合指标、热力图、AI 运转状态和最近内容。
