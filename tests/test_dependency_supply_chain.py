@@ -82,20 +82,35 @@ def test_desktop_dependency_inputs_are_locked_without_android_target() -> None:
     workflow = (ROOT / ".github" / "workflows" / "zhiji-check.yml").read_text(encoding="utf-8")
     metadata = (ROOT / "desktop" / ".metadata").read_text(encoding="utf-8")
     gitignore = (ROOT / "desktop" / ".gitignore").read_text(encoding="utf-8")
+    pubspec = yaml.safe_load((ROOT / "desktop" / "pubspec.yaml").read_text(encoding="utf-8"))
+    pubspec_lock = yaml.safe_load((ROOT / "desktop" / "pubspec.lock").read_text(encoding="utf-8"))
+    pod_security_coverage = yaml.safe_load(
+        (ROOT / ".github" / "security" / "cocoapods-security-coverage.yml").read_text(encoding="utf-8")
+    )
+    gemfile = (ROOT / "desktop" / "Gemfile").read_text(encoding="utf-8")
+    gemfile_lock = (ROOT / "desktop" / "Gemfile.lock").read_text(encoding="utf-8")
+    podfile_lock = (ROOT / "desktop" / "macos" / "Podfile.lock").read_text(encoding="utf-8")
 
     assert not (ROOT / "desktop" / "android").exists()
     assert "platform: android" not in metadata
     assert "/android/" not in gitignore
     assert "flutter pub get --enforce-lockfile" in workflow
     assert "load Gem.bin_path(\"cocoapods\", \"pod\")" in workflow
-    assert "COCOAPODS_VERSION: '1.16.2'" in workflow
+    assert "COCOAPODS_VERSION: '1.17.0'" in workflow
     assert "BUNDLE_FROZEN: 'true'" in workflow
     assert "ruby-version: '3.1.6'" in workflow
     assert "bundle check" in workflow
     assert "RUBYOPT: -rlogger" not in workflow
-    assert (ROOT / "desktop" / "pubspec.lock").is_file()
-    assert (ROOT / "desktop" / "Gemfile.lock").is_file()
-    assert (ROOT / "desktop" / "macos" / "Podfile.lock").is_file()
+    assert pubspec["dependencies"]["tray_manager"] == "^0.5.3"
+    assert pubspec["dependencies"]["window_manager"] == "^0.5.2"
+    assert pubspec_lock["packages"]["tray_manager"]["version"] == "0.5.3"
+    assert pubspec_lock["packages"]["window_manager"]["version"] == "0.5.2"
+    assert 'gem "cocoapods", "1.17.0"' in gemfile
+    assert "cocoapods (= 1.17.0)" in gemfile_lock
+    assert "COCOAPODS: 1.17.0" in podfile_lock
+    assert "tray_manager" not in podfile_lock
+    assert "window_manager" not in podfile_lock
+    assert set(pod_security_coverage["pods"]) == {"FlutterMacOS", "Sparkle"}
 
 
 def test_android_vulnerability_exceptions_are_absent() -> None:

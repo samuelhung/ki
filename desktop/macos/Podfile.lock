@@ -1,16 +1,10 @@
 PODS:
   - FlutterMacOS (1.0.0)
   - Sparkle (2.9.3)
-  - tray_manager (0.0.1):
-    - FlutterMacOS
-  - window_manager (0.2.0):
-    - FlutterMacOS
 
 DEPENDENCIES:
   - FlutterMacOS (from `Flutter/ephemeral`)
   - Sparkle (~> 2.0)
-  - tray_manager (from `Flutter/ephemeral/.symlinks/plugins/tray_manager/macos`)
-  - window_manager (from `Flutter/ephemeral/.symlinks/plugins/window_manager/macos`)
 
 SPEC REPOS:
   trunk:
@@ -19,17 +13,11 @@ SPEC REPOS:
 EXTERNAL SOURCES:
   FlutterMacOS:
     :path: Flutter/ephemeral
-  tray_manager:
-    :path: Flutter/ephemeral/.symlinks/plugins/tray_manager/macos
-  window_manager:
-    :path: Flutter/ephemeral/.symlinks/plugins/window_manager/macos
 
 SPEC CHECKSUMS:
   FlutterMacOS: d0db08ddef1a9af05a5ec4b724367152bb0500b1
   Sparkle: 39dbdf28637f6056fbf5ee6494bdbfae54f49f41
-  tray_manager: 9064e219c56d75c476e46b9a21182087930baf90
-  window_manager: 3a1844359a6295ab1e47659b1a777e36773cd6e8
 
 PODFILE CHECKSUM: edd9fd3647b2de367b0dd22a84b06d514640ad61
 
-COCOAPODS: 1.16.2
+COCOAPODS: 1.17.0
