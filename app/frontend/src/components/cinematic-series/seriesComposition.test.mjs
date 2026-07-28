@@ -5,7 +5,12 @@ import { readFileSync } from 'node:fs';
 const app = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8');
 const curtain = readFileSync(new URL('../../CurtainContext.tsx', import.meta.url), 'utf8');
 const page = readFileSync(new URL('../../pages/CinematicSeries.tsx', import.meta.url), 'utf8');
-const detail = readFileSync(new URL('../../pages/SeriesDetail.tsx', import.meta.url), 'utf8');
+const detail = [
+  '../../pages/SeriesDetail.tsx',
+  './useSeriesDetail.ts',
+  './SeriesSummaryPanel.tsx',
+  './SeriesMemberPanel.tsx',
+].map((path) => readFileSync(new URL(path, import.meta.url), 'utf8')).join('\n');
 const viteConfig = readFileSync(new URL('../../../vite.config.ts', import.meta.url), 'utf8');
 const packageJson = readFileSync(new URL('../../../package.json', import.meta.url), 'utf8');
 const css = `${readFileSync(new URL('./cinematic-series.css', import.meta.url), 'utf8')}\n${readFileSync(new URL('./cinematic-series-detail.css', import.meta.url), 'utf8')}`;

@@ -2,14 +2,15 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-const ingest = readFileSync(new URL('../../pages/Ingest.tsx', import.meta.url), 'utf8');
+const ingest = readFileSync(new URL('../cinematic-ingest/useIngestEvents.ts', import.meta.url), 'utf8');
 
 test('event search is debounced and only the latest response commits', () => {
   assert.match(ingest, /useDebouncedValue\(search, 250\)/);
-  assert.match(ingest, /eventRequestSequenceRef/);
-  assert.match(ingest, /eventRequestAbortRef\.current\?\.abort\(\)/);
-  assert.match(ingest, /signal: requestController\.signal/);
-  assert.match(ingest, /isLatestRequest/);
+  assert.doesNotMatch(ingest, /listQueryRef/);
+  assert.match(ingest, /eventRequestCoordinator\.start\(\)/);
+  assert.match(ingest, /eventRequestCoordinator\.run\(/);
+  assert.match(ingest, /\{ signal \}/);
+  assert.match(ingest, /\[debouncedSearch, eventRequestCoordinator, historyTab\]/);
 });
 
 test('embedded list requests do not retain standalone statistics or pagination fetches', () => {
@@ -21,7 +22,7 @@ test('retained ingest request families abort stale work and clean up on unmount'
   assert.match(ingest, /statusRequestLifecycleRef/);
   assert.match(ingest, /abortableDelay\(2000, signal\)/);
   assert.match(ingest, /statusRequestLifecycleRef\.current\.abort\(\)/);
-  assert.match(ingest, /eventRequestAbortRef\.current\?\.abort\(\)/);
+  assert.match(ingest, /eventRequestCoordinator\.abort\(\)/);
   assert.doesNotMatch(ingest, /briefingRequestLifecycleRef|\/api\/briefing\/latest/);
 });
 

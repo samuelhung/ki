@@ -17,12 +17,20 @@ export function getStudyStats(items) {
   };
 }
 
+export function evictStudyItems(items, removedId) {
+  return (Array.isArray(items) ? items : []).filter((item) => item.id !== removedId);
+}
+
 export function removeStudyItem(items, removedId) {
   const list = Array.isArray(items) ? items : [];
   const index = list.findIndex((item) => item.id === removedId);
-  const nextItems = list.filter((item) => item.id !== removedId);
+  const nextItems = evictStudyItems(list, removedId);
   const nextIndex = Math.min(Math.max(index, 0), nextItems.length - 1);
   return { items: nextItems, selectedId: nextItems[nextIndex]?.id || '' };
+}
+
+export function resolveStudyDeletionSelection(items, removedId) {
+  return removeStudyItem(items, removedId).selectedId;
 }
 
 export function buildStudyCreatePayload(form = {}) {

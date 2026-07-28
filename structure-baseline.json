@@ -3,12 +3,7 @@
     "app/frontend/src/components/cinematic-chains/ChainDetailView.tsx": 438,
     "app/frontend/src/components/cinematic/cinematicSceneRuntime.ts": 478,
     "app/frontend/src/components/react-bits/KiMagicBento.tsx": 520,
-    "app/frontend/src/pages/BrainstormDetailPage.tsx": 841,
-    "app/frontend/src/pages/CinematicIndustryChains.tsx": 521,
-    "app/frontend/src/pages/EventDetailPage.tsx": 565,
-    "app/frontend/src/pages/Ingest.tsx": 503,
-    "app/frontend/src/pages/SeriesDetail.tsx": 882,
-    "app/frontend/src/pages/StudyDetail.tsx": 554
+    "app/frontend/src/pages/CinematicIndustryChains.tsx": 521
   },
   "ruff_per_file_ignores": {
     "scripts/backfill_overviews.py": [
