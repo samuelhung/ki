@@ -234,12 +234,39 @@ export function useEventDetail({ id, onDetailChange }: UseEventDetailOptions) {
     detailCoordinator.abort(); summarizeCoordinator.abort(); linkedCoordinator.abort(); linkCoordinator.abort();
   }, [detailCoordinator, summarizeCoordinator, linkedCoordinator, linkCoordinator]);
 
+  const refreshDetail = async () => {
+    if (!id) return null;
+    const owner = detailCoordinator.start(id);
+    return detailCoordinator.run({
+      owner,
+      selectedId: id,
+      request: async (signal) => {
+        const response = await apiFetch(`${API_BASE}/${id}`, { signal });
+        if (!response.ok) throw new Error('刷新内容失败');
+        return response.json() as Promise<EventDetailResponse>;
+      },
+    });
+  };
+
   async function handleSummarize(eventId: string) {
     const actionKey = activeActions.begin('summarize', eventId);
     if (!actionKey) return;
     const selection = selectedOwner.capture();
     const owner = summarizeCoordinator.start(eventId);
+    const previousSummary = detail?.id === eventId ? detail.ai_summary || '' : '';
+    let waitForFreshLineage = false;
     try {
+      try {
+        const transcriptResponse = await apiFetch(`${API_BASE}/${eventId}/transcript`, {
+          signal: owner.signal,
+        });
+        if (transcriptResponse.ok) {
+          const snapshot = await transcriptResponse.json() as { summary_stale?: boolean };
+          waitForFreshLineage = snapshot.summary_stale === true;
+        }
+      } catch (reason) {
+        if (isAbortError(reason)) throw reason;
+      }
       const refreshed = await summarizeCoordinator.mutateAndRefresh({
         owner, selectedId: eventId,
         mutate: async () => {
@@ -253,7 +280,17 @@ export function useEventDetail({ id, onDetailChange }: UseEventDetailOptions) {
             const response = await apiFetch(`${API_BASE}/${eventId}`, { signal });
             if (!response.ok) break;
             const data = await response.json() as EventDetailResponse;
-            if (data.ai_summary) return data;
+            if (!data.ai_summary) continue;
+            if (!waitForFreshLineage && data.ai_summary !== previousSummary) return data;
+            if (waitForFreshLineage) {
+              const transcriptResponse = await apiFetch(`${API_BASE}/${eventId}/transcript`, {
+                signal,
+              });
+              if (transcriptResponse.ok) {
+                const snapshot = await transcriptResponse.json() as { summary_stale?: boolean };
+                if (snapshot.summary_stale === false) return data;
+              }
+            }
           }
           return null;
         },
@@ -391,6 +428,6 @@ export function useEventDetail({ id, onDetailChange }: UseEventDetailOptions) {
     detail, loading, tab, setTab, mediaUrl, summarizingId, contemplating, contemplateError, contemplateResults,
     contemplateSelected, contemplateLinking, linkedQuestions, linkedQuestionsLoading, chainAnalysis, chainLoading,
     chainError, chainHints, syncingHints, syncResult, chainSuggestionsCount, handleSummarize, handleContemplate,
-    handleContemplateLink, handleChainAnalyze, handleSyncHints, toggleQuestion,
+    handleContemplateLink, handleChainAnalyze, handleSyncHints, toggleQuestion, refreshDetail,
   };
 }

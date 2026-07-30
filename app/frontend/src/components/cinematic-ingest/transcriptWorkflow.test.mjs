@@ -14,11 +14,15 @@ const {
   createSegmentGuard,
   createTranscriptApi,
   createTranscriptSelectionOwner,
+  isTranscriptAbortError,
+  segmentationPollDelay,
 } = loadPureDeclarations(hookModules, [
   'conflictMessage',
   'createSegmentGuard',
   'createTranscriptApi',
   'createTranscriptSelectionOwner',
+  'isTranscriptAbortError',
+  'segmentationPollDelay',
 ]);
 
 test('transcript API client emits exact event-scoped requests', async () => {
@@ -81,11 +85,34 @@ test('409 maps to refresh-required copy and hook resets dialog state on event ch
   assert.deepEqual(conflictMessage(500), {
     message: '操作失败，请稍后重试', refreshRequired: false,
   });
+  assert.deepEqual(conflictMessage(410), {
+    message: '分段结果已过期，请重新生成', refreshRequired: false,
+  });
 
   const source = readFileSync(new URL('./useTranscriptWorkflow.ts', import.meta.url), 'utf8');
   assert.match(source, /setEditorOpen\(false\)/);
   assert.match(source, /setComparisonOpen\(false\)/);
   assert.match(source, /setHistoryOpen\(false\)/);
   assert.match(source, /pollLifecycle\.current\.abort\(\)/);
-  assert.match(source, /abortableDelay\(1000, owner\.signal\)/);
+  assert.match(source, /abortableDelay\(delay, owner\.signal\)/);
+});
+
+test('cancelled requests and strict segmentation deadlines cannot leak across events', () => {
+  assert.equal(isTranscriptAbortError(new DOMException('cancelled', 'AbortError')), true);
+  assert.equal(isTranscriptAbortError({ name: 'AbortError', kind: 'cancelled' }), true);
+  assert.equal(isTranscriptAbortError({ name: 'ApiRequestError', kind: 'timeout' }), false);
+  assert.equal(segmentationPollDelay(1_000, 2_000), 1_000);
+  assert.equal(segmentationPollDelay(1_950, 2_000), 50);
+  assert.equal(segmentationPollDelay(2_000, 2_000), 0);
+
+  const source = readFileSync(new URL('./useTranscriptWorkflow.ts', import.meta.url), 'utf8');
+  for (const reset of ['setSaving(false)', 'setSegmenting(false)', 'setConfirming(false)', 'setHistoryLoading(false)', 'setRestoring(false)']) {
+    assert.match(source, new RegExp(reset.replace(/[()]/g, '\\$&')));
+  }
+  const closeComparison = source.match(/const closeComparison[\s\S]*?\}, \[[^\]]*\]\);/)?.[0] || '';
+  assert.match(closeComparison, /pollLifecycle\.current\.abort/);
+  assert.doesNotMatch(closeComparison, /segmentGuard\.current\.end/);
+  assert.equal(source.match(/segmentGuard\.current\.end/g)?.length, 1, 'only the active run may release its guard');
+  assert.match(source, /selectionOwner\.current\.isCurrent\(selection\)[\s\S]{0,100}setRequestError\(reason\)/);
+  assert.match(source, /abortableDelay\(delay, owner\.signal\)/);
 });

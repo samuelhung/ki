@@ -102,9 +102,27 @@ export function createSegmentGuard() {
 }
 
 export function conflictMessage(status: number) {
+  if (status === 410) {
+    return { message: '分段结果已过期，请重新生成', refreshRequired: false };
+  }
   return status === 409
     ? { message: '原文已更新，请刷新后重试', refreshRequired: true }
     : { message: '操作失败，请稍后重试', refreshRequired: false };
+}
+
+export function isTranscriptAbortError(reason: unknown) {
+  if (reason instanceof DOMException && reason.name === 'AbortError') return true;
+  return Boolean(
+    reason
+    && typeof reason === 'object'
+    && 'name' in reason
+    && reason.name === 'AbortError'
+    && (!('kind' in reason) || reason.kind === 'cancelled'),
+  );
+}
+
+export function segmentationPollDelay(now: number, expiresAt: number) {
+  return Math.max(0, Math.min(1000, expiresAt - now));
 }
 
 interface UseTranscriptWorkflowOptions {
@@ -121,6 +139,7 @@ export function useTranscriptWorkflow({
   const loadLifecycle = useRef(new RequestLifecycle());
   const pollLifecycle = useRef(new RequestLifecycle());
   const segmentGuard = useRef(createSegmentGuard());
+  const segmentRun = useRef(0);
   const callbackRef = useRef(onTranscriptActivated);
   callbackRef.current = onTranscriptActivated;
 
@@ -131,16 +150,18 @@ export function useTranscriptWorkflow({
   const [saving, setSaving] = useState(false);
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const [segmenting, setSegmenting] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [task, setTask] = useState<SegmentationTaskSnapshot | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [selectedRevision, setSelectedRevision] = useState<TranscriptRevisionMeta | null>(null);
   const [revisionContent, setRevisionContent] = useState('');
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [error, setError] = useState('');
   const [refreshRequired, setRefreshRequired] = useState(false);
 
   const setRequestError = useCallback((reason: unknown) => {
-    if (reason instanceof DOMException && reason.name === 'AbortError') return;
+    if (isTranscriptAbortError(reason)) return;
     const status = typeof reason === 'object' && reason && 'status' in reason
       ? Number(reason.status) : 0;
     const mapped = conflictMessage(status);
@@ -164,9 +185,11 @@ export function useTranscriptWorkflow({
         || !loadLifecycle.current.isCurrent(owner.sequence)
       ) return null;
       setTranscript(snapshot);
+      setError('');
+      setRefreshRequired(false);
       return snapshot;
     } catch (reason) {
-      setRequestError(reason);
+      if (selectionOwner.current.isCurrent(selection)) setRequestError(reason);
       return null;
     }
   }, [api, eventId, setRequestError]);
@@ -181,9 +204,14 @@ export function useTranscriptWorkflow({
     setComparisonOpen(false);
     setHistoryOpen(false);
     setEditorText('');
+    setSaving(false);
     setTask(null);
+    setSegmenting(false);
+    setConfirming(false);
     setSelectedRevision(null);
     setRevisionContent('');
+    setHistoryLoading(false);
+    setRestoring(false);
     setError('');
     setRefreshRequired(false);
     if (!eventId) return undefined;
@@ -193,13 +221,17 @@ export function useTranscriptWorkflow({
         selectionOwner.current.isCurrent(selection)
         && loadLifecycle.current.isCurrent(owner.sequence)
       ) setTranscript(snapshot);
-    }).catch(setRequestError).finally(() => {
+    }).catch((reason) => {
+      if (
+        selectionOwner.current.isCurrent(selection)
+        && loadLifecycle.current.isCurrent(owner.sequence)
+      ) setRequestError(reason);
+    }).finally(() => {
       if (selectionOwner.current.isCurrent(selection)) setLoading(false);
     });
     return () => {
       loadLifecycle.current.abort();
       pollLifecycle.current.abort();
-      segmentGuard.current.end(eventId);
     };
   }, [api, eventId, setRequestError]);
 
@@ -222,9 +254,9 @@ export function useTranscriptWorkflow({
       await commitActivation(snapshot);
       setEditorOpen(false);
     } catch (reason) {
-      setRequestError(reason);
+      if (selectionOwner.current.isCurrent(selection)) setRequestError(reason);
     } finally {
-      setSaving(false);
+      if (selectionOwner.current.isCurrent(selection)) setSaving(false);
     }
   }, [api, commitActivation, editorText, eventId, saving, setRequestError, transcript]);
 
@@ -236,52 +268,74 @@ export function useTranscriptWorkflow({
     setTask(null);
     setError('');
     const selection = selectionOwner.current.capture();
+    const run = segmentRun.current + 1;
+    segmentRun.current = run;
+    let deadlineTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
     try {
       const started = await api.startSegmentation(
         eventId, transcript.active_revision.id,
       );
-      if (!selectionOwner.current.isCurrent(selection)) return;
+      if (!selectionOwner.current.isCurrent(selection) || segmentRun.current !== run) return;
       setTask(started);
       const owner = pollLifecycle.current.start();
       const expiresAt = Date.now() + 30 * 60 * 1000;
-      while (Date.now() < expiresAt) {
-        await abortableDelay(1000, owner.signal);
+      deadlineTimer = globalThis.setTimeout(() => {
+        if (pollLifecycle.current.isCurrent(owner.sequence)) pollLifecycle.current.abort();
+      }, Math.max(0, expiresAt - Date.now()));
+      while (true) {
+        const delay = segmentationPollDelay(Date.now(), expiresAt);
+        if (delay === 0) {
+          setError('分段结果已过期，请重新生成');
+          return;
+        }
+        await abortableDelay(delay, owner.signal);
+        if (Date.now() >= expiresAt) {
+          setError('分段结果已过期，请重新生成');
+          return;
+        }
         const current = await api.loadTask(eventId, started.id, owner.signal);
         if (
           !selectionOwner.current.isCurrent(selection)
+          || segmentRun.current !== run
           || !pollLifecycle.current.isCurrent(owner.sequence)
         ) return;
         setTask(current);
         if (current.status !== 'processing') return;
       }
-      setError('分段结果已过期，请重新生成');
     } catch (reason) {
-      setRequestError(reason);
+      if (
+        selectionOwner.current.isCurrent(selection)
+        && segmentRun.current === run
+      ) setRequestError(reason);
     } finally {
+      if (deadlineTimer !== undefined) globalThis.clearTimeout(deadlineTimer);
       segmentGuard.current.end(eventId);
       if (selectionOwner.current.isCurrent(selection)) setSegmenting(false);
     }
   }, [api, eventId, setRequestError, transcript]);
 
   const closeComparison = useCallback(() => {
+    segmentRun.current += 1;
     pollLifecycle.current.abort();
-    if (eventId) segmentGuard.current.end(eventId);
     setSegmenting(false);
     setComparisonOpen(false);
-  }, [eventId]);
+  }, []);
 
   const confirmSegmentation = useCallback(async () => {
-    if (!eventId || !task || task.status !== 'ready') return;
+    if (!eventId || !task || task.status !== 'ready' || confirming) return;
     const selection = selectionOwner.current.capture();
+    setConfirming(true);
     try {
       const snapshot = await api.confirmSegmentation(eventId, task.id);
       if (!selectionOwner.current.isCurrent(selection)) return;
       await commitActivation(snapshot);
       setComparisonOpen(false);
     } catch (reason) {
-      setRequestError(reason);
+      if (selectionOwner.current.isCurrent(selection)) setRequestError(reason);
+    } finally {
+      if (selectionOwner.current.isCurrent(selection)) setConfirming(false);
     }
-  }, [api, commitActivation, eventId, setRequestError, task]);
+  }, [api, commitActivation, confirming, eventId, setRequestError, task]);
 
   const openHistory = useCallback(() => {
     setHistoryOpen(true);
@@ -291,22 +345,27 @@ export function useTranscriptWorkflow({
 
   const loadRevision = useCallback(async (revision: TranscriptRevisionMeta) => {
     if (!eventId) return;
+    const selection = selectionOwner.current.capture();
     const owner = loadLifecycle.current.start();
     setHistoryLoading(true);
     setSelectedRevision(revision);
     try {
       const loaded = await api.loadRevision(eventId, revision.id, owner.signal);
-      if (loadLifecycle.current.isCurrent(owner.sequence)) setRevisionContent(loaded.content);
+      if (
+        selectionOwner.current.isCurrent(selection)
+        && loadLifecycle.current.isCurrent(owner.sequence)
+      ) setRevisionContent(loaded.content);
     } catch (reason) {
-      setRequestError(reason);
+      if (selectionOwner.current.isCurrent(selection)) setRequestError(reason);
     } finally {
       if (loadLifecycle.current.isCurrent(owner.sequence)) setHistoryLoading(false);
     }
   }, [api, eventId, setRequestError]);
 
   const restoreRevision = useCallback(async () => {
-    if (!eventId || !transcript || !selectedRevision) return;
+    if (!eventId || !transcript || !selectedRevision || restoring) return;
     const selection = selectionOwner.current.capture();
+    setRestoring(true);
     try {
       const snapshot = await api.restoreRevision(
         eventId, selectedRevision.id, transcript.active_revision.id,
@@ -315,9 +374,11 @@ export function useTranscriptWorkflow({
       await commitActivation(snapshot);
       setHistoryOpen(false);
     } catch (reason) {
-      setRequestError(reason);
+      if (selectionOwner.current.isCurrent(selection)) setRequestError(reason);
+    } finally {
+      if (selectionOwner.current.isCurrent(selection)) setRestoring(false);
     }
-  }, [api, commitActivation, eventId, selectedRevision, setRequestError, transcript]);
+  }, [api, commitActivation, eventId, restoring, selectedRevision, setRequestError, transcript]);
 
   return {
     transcript,
@@ -332,12 +393,14 @@ export function useTranscriptWorkflow({
     setComparisonOpen,
     closeComparison,
     segmenting,
+    confirming,
     task,
     historyOpen,
     setHistoryOpen,
     selectedRevision,
     revisionContent,
     historyLoading,
+    restoring,
     error,
     refreshRequired,
     refreshTranscript,

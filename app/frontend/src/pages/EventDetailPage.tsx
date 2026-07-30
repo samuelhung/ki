@@ -3,7 +3,12 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { EventDetailBody } from '../components/cinematic-ingest/EventDetailBody';
 import { EventDetailHeader } from '../components/cinematic-ingest/EventDetailHeader';
+import { TranscriptActions } from '../components/cinematic-ingest/TranscriptActions';
+import { TranscriptComparisonDialog } from '../components/cinematic-ingest/TranscriptComparisonDialog';
+import { TranscriptEditorDialog } from '../components/cinematic-ingest/TranscriptEditorDialog';
+import { TranscriptRevisionDialog } from '../components/cinematic-ingest/TranscriptRevisionDialog';
 import { useEventDetail } from '../components/cinematic-ingest/useEventDetail';
+import { useTranscriptWorkflow } from '../components/cinematic-ingest/useTranscriptWorkflow';
 
 export interface EventDetailData {
   id: string; source_id: string; title: string; title_cn?: string;
@@ -87,10 +92,19 @@ export default function EventDetailPage({ embedded = false, eventId, onEventChan
     detail, loading, tab, setTab, mediaUrl, summarizingId, contemplating,
     contemplateError, contemplateResults, contemplateSelected, contemplateLinking,
     linkedQuestions, linkedQuestionsLoading, chainAnalysis, chainLoading, chainError,
-    chainHints, syncingHints, syncResult, chainSuggestionsCount, handleSummarize,
+    chainHints, syncingHints, syncResult, chainSuggestionsCount, handleSummarize: summarizeEvent,
     handleContemplate, handleContemplateLink, handleChainAnalyze, handleSyncHints,
-    toggleQuestion,
+    toggleQuestion, refreshDetail,
   } = useEventDetail({ id, onDetailChange: handleDetailChange });
+  const transcriptWorkflow = useTranscriptWorkflow({
+    eventId: id,
+    onTranscriptActivated: async () => { await refreshDetail(); },
+  });
+
+  async function handleSummarize(targetEventId: string) {
+    await summarizeEvent(targetEventId);
+    await transcriptWorkflow.refreshTranscript();
+  }
 
   if (loading) {
     return (
@@ -124,6 +138,18 @@ export default function EventDetailPage({ embedded = false, eventId, onEventChan
           mediaUrl={mediaUrl}
           summarizingId={summarizingId}
           contemplating={contemplating}
+          tab={tab}
+          transcriptActions={<TranscriptActions
+            transcript={transcriptWorkflow.transcript}
+            loading={transcriptWorkflow.loading}
+            segmenting={transcriptWorkflow.segmenting}
+            error={transcriptWorkflow.error}
+            refreshRequired={transcriptWorkflow.refreshRequired}
+            onEdit={transcriptWorkflow.openEditor}
+            onSegment={transcriptWorkflow.startSegmentation}
+            onHistory={transcriptWorkflow.openHistory}
+            onRefresh={transcriptWorkflow.refreshTranscript}
+          />}
           onSummarize={handleSummarize}
           onContemplate={handleContemplate}
           onAddTask={() => navigate(`/tasks?source=content&source_id=${id}&source_label=来自内容：${detail.title || ''}`)}
@@ -146,6 +172,8 @@ export default function EventDetailPage({ embedded = false, eventId, onEventChan
           syncingHints={syncingHints}
           syncResult={syncResult}
           chainSuggestionsCount={chainSuggestionsCount}
+          transcriptContent={transcriptWorkflow.transcript?.content}
+          summaryStale={transcriptWorkflow.transcript?.summary_stale || false}
           onTabChange={setTab}
           onSummarize={handleSummarize}
           onContemplate={handleContemplate}
@@ -153,6 +181,38 @@ export default function EventDetailPage({ embedded = false, eventId, onEventChan
           onChainAnalyze={handleChainAnalyze}
           onSyncHints={handleSyncHints}
           onToggleQuestion={toggleQuestion}
+        />
+        <TranscriptEditorDialog
+          open={transcriptWorkflow.editorOpen}
+          value={transcriptWorkflow.editorText}
+          originalValue={transcriptWorkflow.transcript?.content || ''}
+          saving={transcriptWorkflow.saving}
+          error={transcriptWorkflow.error}
+          onChange={transcriptWorkflow.setEditorText}
+          onSave={transcriptWorkflow.saveManual}
+          onClose={() => transcriptWorkflow.setEditorOpen(false)}
+        />
+        <TranscriptComparisonDialog
+          open={transcriptWorkflow.comparisonOpen}
+          source={transcriptWorkflow.transcript?.content || ''}
+          task={transcriptWorkflow.task}
+          confirming={transcriptWorkflow.confirming}
+          error={transcriptWorkflow.error}
+          onClose={transcriptWorkflow.closeComparison}
+          onRegenerate={transcriptWorkflow.startSegmentation}
+          onConfirm={transcriptWorkflow.confirmSegmentation}
+        />
+        <TranscriptRevisionDialog
+          open={transcriptWorkflow.historyOpen}
+          transcript={transcriptWorkflow.transcript}
+          selectedRevision={transcriptWorkflow.selectedRevision}
+          revisionContent={transcriptWorkflow.revisionContent}
+          loading={transcriptWorkflow.historyLoading}
+          restoring={transcriptWorkflow.restoring}
+          error={transcriptWorkflow.error}
+          onSelect={transcriptWorkflow.loadRevision}
+          onRestore={transcriptWorkflow.restoreRevision}
+          onClose={() => transcriptWorkflow.setHistoryOpen(false)}
         />
       </div>
     </div>

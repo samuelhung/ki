@@ -17,9 +17,22 @@ const pageUrl = new URL('../../pages/EventDetailPage.tsx', import.meta.url);
 const hookUrl = new URL('./useEventDetail.ts', import.meta.url);
 const headerUrl = new URL('./EventDetailHeader.tsx', import.meta.url);
 const bodyUrl = new URL('./EventDetailBody.tsx', import.meta.url);
+const transcriptActionsUrl = new URL('./TranscriptActions.tsx', import.meta.url);
+const transcriptEditorUrl = new URL('./TranscriptEditorDialog.tsx', import.meta.url);
+const transcriptComparisonUrl = new URL('./TranscriptComparisonDialog.tsx', import.meta.url);
+const transcriptRevisionUrl = new URL('./TranscriptRevisionDialog.tsx', import.meta.url);
 const packageJson = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));
 const checkScript = readFileSync(new URL('../../../../../scripts/check.sh', import.meta.url), 'utf8');
-const modules = readSourceModules([pageUrl, hookUrl, headerUrl, bodyUrl]);
+const modules = readSourceModules([
+  pageUrl,
+  hookUrl,
+  headerUrl,
+  bodyUrl,
+  transcriptActionsUrl,
+  transcriptEditorUrl,
+  transcriptComparisonUrl,
+  transcriptRevisionUrl,
+]);
 const implementation = combinedSource(modules);
 const pageModule = modules.find((module) => module.name === 'EventDetailPage.tsx');
 assert.ok(pageModule);
@@ -189,6 +202,41 @@ test('event action loading remains authoritative across an A-B-A selection cycle
   for (const staleSetter of ['setSummarizingId', 'setContemplating', 'setContemplateLinking', 'setChainLoading', 'setSyncingHints']) {
     assert.doesNotMatch(hook, new RegExp(staleSetter));
   }
+});
+
+test('transcript correction UI keeps actions in the title row and preserves review gates', () => {
+  for (const url of [
+    transcriptActionsUrl,
+    transcriptEditorUrl,
+    transcriptComparisonUrl,
+    transcriptRevisionUrl,
+  ]) assert.ok(existsSync(url), `${url.pathname.split('/').at(-1)} must exist`);
+
+  for (const label of [
+    '人工修正',
+    'AI 语义分段',
+    '修订记录',
+    '保存人工修正版',
+    '人工修正版',
+    'AI 分段预览',
+    '重新生成',
+    '确认使用',
+    '原文已更新，可重新生成 AI 总结',
+  ]) assert.match(implementation, new RegExp(label));
+
+  const header = readFileSync(headerUrl, 'utf8');
+  const actions = readFileSync(transcriptActionsUrl, 'utf8');
+  const editor = readFileSync(transcriptEditorUrl, 'utf8');
+  const comparison = readFileSync(transcriptComparisonUrl, 'utf8');
+  assert.match(header, /tab === 'body'/);
+  assert.match(header, /transcript-title-row[\s\S]*<h1[\s\S]*transcriptActions/);
+  assert.match(header, /flex-wrap/);
+  assert.match(header, /justify-between/);
+  assert.match(actions, /disabled=\{!transcript\?\.can_segment/);
+  assert.match(actions, /ml-auto/);
+  assert.match(editor, /beforeunload|unsaved|未保存/);
+  assert.match(comparison, /alignTranscriptGaps/);
+  assert.match(comparison, /completed_chunks/);
 });
 
 test('the standard cinematic npm and CI path covers every completed detail composition', () => {
