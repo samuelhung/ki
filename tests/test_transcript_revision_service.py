@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import FrozenInstanceError
 from pathlib import Path
+from threading import Barrier, Event, Lock
 
 import pytest
 
@@ -72,6 +75,68 @@ def test_list_revisions_lazily_initializes_historical_event(transcript_db):
     assert len(revisions) == 1
     assert revisions[0].kind == "original"
     assert revisions[0].content == "原始文本ABC123🙂"
+
+
+def test_lazy_initialization_is_idempotent_under_concurrent_first_reads(transcript_db):
+    connect_fn, _ = transcript_db
+    barrier = Barrier(2)
+    winner_done = Event()
+    rank_lock = Lock()
+    next_rank = 0
+
+    class SynchronizedConnection:
+        def __init__(self, conn, rank: int):
+            self._conn = conn
+            self._rank = rank
+            self._synchronized = False
+
+        def execute(self, sql, parameters=()):
+            cursor = self._conn.execute(sql, parameters)
+            if (
+                self._rank < 2
+                and not self._synchronized
+                and "FROM transcript_revision_state" in sql
+            ):
+                self._synchronized = True
+                barrier.wait(timeout=2)
+                if self._rank == 1:
+                    assert winner_done.wait(timeout=2)
+            return cursor
+
+    @contextmanager
+    def synchronized_connect():
+        nonlocal next_rank
+        with rank_lock:
+            rank = next_rank
+            next_rank += 1
+        proxy = None
+        try:
+            with connect_fn() as conn:
+                proxy = SynchronizedConnection(conn, rank)
+                yield proxy
+        finally:
+            if proxy is not None and rank == 0:
+                winner_done.set()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        states = list(
+            executor.map(
+                lambda _: service.ensure_initialized(
+                    "evt-1", connect_fn=synchronized_connect
+                ),
+                range(2),
+            )
+        )
+
+    assert states[0].original_revision_id == states[1].original_revision_id
+    assert states[0].active_revision_id == states[1].active_revision_id
+    with connect_fn() as conn:
+        assert (
+            conn.execute(
+                "SELECT COUNT(*) FROM transcript_revisions WHERE event_id = 'evt-1'"
+            ).fetchone()[0]
+            == 1
+        )
 
 
 def test_lazy_initialization_respects_explicit_empty_content(transcript_db):
@@ -409,6 +474,9 @@ def test_revision_markers_require_event_owned_revision(transcript_db):
         original.active_revision_id,
         connect_fn=connect_fn,
     )
+
+    assert manual.artifact_synced is False
+    assert manual.state.artifact_revision_id != manual.state.active_revision_id
 
     service.mark_summary_revision(
         "evt-1", manual.state.active_revision_id, connect_fn=connect_fn

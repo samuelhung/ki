@@ -127,45 +127,54 @@ def ensure_initialized(
     summary_published: bool | None = None,
 ) -> TranscriptState:
     safe_identifier(event_id)
-    with connect_fn() as conn:
-        state = _load_state(conn, event_id)
+    try:
+        with connect_fn() as conn:
+            state = _load_state(conn, event_id)
+            if state is not None:
+                return state
+            event = conn.execute(
+                "SELECT raw_summary, ai_summary FROM events WHERE id = ?", (event_id,)
+            ).fetchone()
+            if event is None:
+                raise EventNotFoundError(event_id)
+            content = (
+                (event["raw_summary"] or "")
+                if initial_content is None
+                else initial_content
+            )
+            revision_id = f"tr-{uuid.uuid4().hex}"
+            conn.execute(
+                """INSERT INTO transcript_revisions
+                   (id, event_id, kind, content) VALUES (?, ?, 'original', ?)""",
+                (revision_id, event_id, content),
+            )
+            has_summary = (
+                bool(event["ai_summary"])
+                if summary_published is None
+                else summary_published
+            )
+            conn.execute(
+                """INSERT INTO transcript_revision_state
+                   (event_id, original_revision_id, active_revision_id,
+                    artifact_revision_id, summary_revision_id)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    event_id,
+                    revision_id,
+                    revision_id,
+                    revision_id if artifact_published else None,
+                    revision_id if has_summary else None,
+                ),
+            )
+            state = _load_state(conn, event_id)
+            assert state is not None
+            return state
+    except sqlite3.IntegrityError:
+        with connect_fn() as conn:
+            state = _load_state(conn, event_id)
         if state is not None:
             return state
-        event = conn.execute(
-            "SELECT raw_summary, ai_summary FROM events WHERE id = ?", (event_id,)
-        ).fetchone()
-        if event is None:
-            raise EventNotFoundError(event_id)
-        content = (
-            (event["raw_summary"] or "") if initial_content is None else initial_content
-        )
-        revision_id = f"tr-{uuid.uuid4().hex}"
-        conn.execute(
-            """INSERT INTO transcript_revisions
-               (id, event_id, kind, content) VALUES (?, ?, 'original', ?)""",
-            (revision_id, event_id, content),
-        )
-        has_summary = (
-            bool(event["ai_summary"])
-            if summary_published is None
-            else summary_published
-        )
-        conn.execute(
-            """INSERT INTO transcript_revision_state
-               (event_id, original_revision_id, active_revision_id,
-                artifact_revision_id, summary_revision_id)
-               VALUES (?, ?, ?, ?, ?)""",
-            (
-                event_id,
-                revision_id,
-                revision_id,
-                revision_id if artifact_published else None,
-                revision_id if has_summary else None,
-            ),
-        )
-        state = _load_state(conn, event_id)
-        assert state is not None
-        return state
+        raise
 
 
 def get_transcript(
@@ -302,8 +311,10 @@ def _activate(
         )
         state = _load_state(conn, event_id)
         assert state is not None
-    synced = transcripts_dir is None or _publish_and_mark(
-        state, connect_fn=connect_fn, transcripts_dir=transcripts_dir
+    synced = transcripts_dir is not None and _publish_and_mark(
+        state,
+        connect_fn=connect_fn,
+        transcripts_dir=transcripts_dir,
     )
     return ActivationResult(state=state, artifact_synced=synced)
 
