@@ -20,7 +20,7 @@
     "test:media-transport": "node --experimental-strip-types --test src/mediaTransport.test.mjs"
   },
   "dependencies": {
-    "@tailwindcss/vite": "4.3.0",
+    "@tailwindcss/vite": "4.3.3",
     "@vitejs/plugin-react": "6.0.4",
     "framer-motion": "12.42.2",
     "gsap": "3.15.0",
