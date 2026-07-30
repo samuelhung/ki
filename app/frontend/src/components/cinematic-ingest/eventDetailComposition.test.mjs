@@ -17,6 +17,7 @@ const pageUrl = new URL('../../pages/EventDetailPage.tsx', import.meta.url);
 const hookUrl = new URL('./useEventDetail.ts', import.meta.url);
 const headerUrl = new URL('./EventDetailHeader.tsx', import.meta.url);
 const bodyUrl = new URL('./EventDetailBody.tsx', import.meta.url);
+const runtimeUrl = new URL('./eventDetailRuntime.ts', import.meta.url);
 const transcriptActionsUrl = new URL('./TranscriptActions.tsx', import.meta.url);
 const transcriptEditorUrl = new URL('./TranscriptEditorDialog.tsx', import.meta.url);
 const transcriptComparisonUrl = new URL('./TranscriptComparisonDialog.tsx', import.meta.url);
@@ -28,6 +29,7 @@ const modules = readSourceModules([
   hookUrl,
   headerUrl,
   bodyUrl,
+  runtimeUrl,
   transcriptActionsUrl,
   transcriptEditorUrl,
   transcriptComparisonUrl,

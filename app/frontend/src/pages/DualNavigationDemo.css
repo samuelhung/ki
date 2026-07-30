@@ -803,6 +803,16 @@
 }
 
 @media (max-width: 760px) {
+  .legacy-ingest-root.is-content-ingest.is-shell-embedded .ki-ingest-split-stage {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(150px, 34%) minmax(0, 1fr);
+    row-gap: 12px;
+    column-gap: 0;
+  }
+
+  .legacy-ingest-root.is-content-ingest.is-shell-embedded .ki-ingest-list-pane,
+  .legacy-ingest-root.is-content-ingest.is-shell-embedded .ki-ingest-detail-pane { padding: 0; }
+
   .legacy-ingest-root.is-shell-embedded.cinematic-ingest .ki-ingest-topic-orbit {
     width: 100% !important;
     margin-right: 0 !important;

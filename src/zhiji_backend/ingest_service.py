@@ -12,6 +12,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from . import transcript_revision_service
+from .ingest_file_types import FILE_TYPE_MAP as FILE_TYPE_MAP
+from .ingest_file_types import detect_ingest_type as detect_ingest_type
+from .ingest_transcript_lineage import initialize_ingest_transcript
 
 _CONCEPT_SYSTEM_PROMPT = "你是严谨的知识整理助手，为概念提供结构化、准确的解释。回答简洁专业，避免冗长。如有参考文档，必须基于原文摘录依据，不可凭空发挥。"
 _CONCEPT_FORMAT = "请按以下格式输出（使用 Markdown）：\n\n## 核心定义\n（一到两句话厘清概念）\n\n## 关键机制/原理\n1. ...\n2. ...\n\n{evidence}## 适用范围/前提假设\n\n## 关联概念\n- 概念A\n- 概念B"
@@ -26,25 +29,8 @@ _EVENT_SQL = "INSERT INTO events (id, source_id, title, url, topic, importance, 
 _CONCEPT_SQL = "INSERT INTO events (id, source_id, title, url, topic, importance, actionability, decision, status, content_type, ai_summary, created_at) VALUES (?, 'user-concept', ?, '', ?, 4, 4, 'digest', 'completed', 'concept', ?, ?)"
 _UPDATE_EVENT_SQL = "UPDATE events SET raw_summary = ?, ai_summary = COALESCE(?, ai_summary), overview = COALESCE(?, overview), status = 'completed', last_error = NULL, video_path = ?, audio_path = ?, document_path = ?, video_md5 = COALESCE(?, video_md5), title = CASE WHEN title = '待处理' OR title = '' THEN ? ELSE title END WHERE id = ?"
 
-FILE_TYPE_MAP = {
-    "document": {".md", ".txt", ".markdown", ".json", ".csv", ".log", ".pdf", ".epub"},
-    "audio_file": {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wma"},
-    "video_file": {".mp4", ".mov", ".avi", ".mkv", ".webm", ".mts", ".ts", ".flv"},
-}
-
-
 def _execute(conn, statement, *values):
     return conn.execute(statement, values)
-
-
-def detect_ingest_type(filename, *, file_type_map=FILE_TYPE_MAP):
-    if not filename:
-        return None
-    suffix = Path(filename).suffix.lower()
-    return next(
-        (kind for kind, extensions in file_type_map.items() if suffix in extensions),
-        None,
-    )
 
 
 def md5_file(path):
@@ -362,26 +348,14 @@ def process_ingest(
             values += [video_path, audio_path_col, document_path_col]
             values += [video_md5, title or "待处理", event_id]
             _execute(conn, _UPDATE_EVENT_SQL, *values)
-        transcript_state = transcript_revision_service.ensure_initialized(
+        initialize_ingest_transcript(
             event_id,
-            connect_fn=deps["connect_fn"],
-            initial_content=text,
-            summary_published=False,
-        )
-        artifact_marked = transcript_revision_service.mark_artifact_revision(
-            event_id,
-            transcript_state.active_revision_id,
+            text,
+            has_summary=bool(ai_summary),
+            transcript_service=transcript_revision_service,
             connect_fn=deps["connect_fn"],
             transcripts_dir=deps["transcripts_dir"],
         )
-        if not artifact_marked:
-            raise RuntimeError("transcript artifact publication was not verified")
-        if ai_summary:
-            transcript_revision_service.mark_summary_revision(
-                event_id,
-                transcript_state.active_revision_id,
-                connect_fn=deps["connect_fn"],
-            )
         if ingest_type == "douyin_share":
             _advance(stages, 7, event_id, progress)
         try:

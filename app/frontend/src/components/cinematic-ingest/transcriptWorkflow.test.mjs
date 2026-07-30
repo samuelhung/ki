@@ -8,7 +8,8 @@ import {
 } from '../detailPageContractTestUtils.mjs';
 
 const hookUrl = new URL('./useTranscriptWorkflow.ts', import.meta.url);
-const hookModules = readSourceModules([hookUrl]);
+const runtimeUrl = new URL('./transcriptWorkflowRuntime.ts', import.meta.url);
+const hookModules = readSourceModules([hookUrl, runtimeUrl]);
 const {
   conflictMessage,
   createSegmentGuard,
@@ -89,7 +90,7 @@ test('409 maps to refresh-required copy and hook resets dialog state on event ch
     message: '分段结果已过期，请重新生成', refreshRequired: false,
   });
 
-  const source = readFileSync(new URL('./useTranscriptWorkflow.ts', import.meta.url), 'utf8');
+  const source = readFileSync(hookUrl, 'utf8');
   assert.match(source, /setEditorOpen\(false\)/);
   assert.match(source, /setComparisonOpen\(false\)/);
   assert.match(source, /setHistoryOpen\(false\)/);
@@ -105,7 +106,7 @@ test('cancelled requests and strict segmentation deadlines cannot leak across ev
   assert.equal(segmentationPollDelay(1_950, 2_000), 50);
   assert.equal(segmentationPollDelay(2_000, 2_000), 0);
 
-  const source = readFileSync(new URL('./useTranscriptWorkflow.ts', import.meta.url), 'utf8');
+  const source = readFileSync(hookUrl, 'utf8');
   for (const reset of ['setSaving(false)', 'setSegmenting(false)', 'setConfirming(false)', 'setHistoryLoading(false)', 'setRestoring(false)']) {
     assert.match(source, new RegExp(reset.replace(/[()]/g, '\\$&')));
   }

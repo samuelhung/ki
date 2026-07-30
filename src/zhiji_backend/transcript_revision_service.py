@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
-import os
 import sqlite3
-import unicodedata
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
 from .security.constraints import safe_identifier
 from .security.paths import PathSecurityError, resolve_under
+from .transcript_artifact_service import publish_transcript_artifact
+from .transcript_validation import (
+    BodyCharacterMismatchError as BodyCharacterMismatchError,
+)
+from .transcript_validation import assert_same_body
+from .transcript_validation import body_sequence as body_sequence
 
 
 class EventNotFoundError(LookupError):
@@ -22,10 +26,6 @@ class RevisionNotFoundError(LookupError):
 
 
 class RevisionConflictError(RuntimeError):
-    pass
-
-
-class BodyCharacterMismatchError(ValueError):
     pass
 
 
@@ -64,19 +64,6 @@ class TranscriptState:
 class ActivationResult:
     state: TranscriptState
     artifact_synced: bool
-
-
-def body_sequence(value: str) -> str:
-    return "".join(
-        char
-        for char in value
-        if not char.isspace() and not unicodedata.category(char).startswith("P")
-    )
-
-
-def assert_same_body(source: str, candidate: str) -> None:
-    if body_sequence(source) != body_sequence(candidate):
-        raise BodyCharacterMismatchError("AI result changed transcript body characters")
 
 
 def _revision(row) -> TranscriptRevision:
@@ -220,23 +207,6 @@ def list_revisions(event_id: str, *, connect_fn) -> list[TranscriptRevision]:
             (event_id,),
         ).fetchall()
     return [_revision(row) for row in rows]
-
-
-def publish_transcript_artifact(
-    event_id: str, content: str, *, transcripts_dir: Path
-) -> None:
-    safe_identifier(event_id)
-    transcripts_dir.mkdir(parents=True, exist_ok=True)
-    target = resolve_under(transcripts_dir, f"{event_id}.md", must_exist=False)
-    stage = resolve_under(
-        transcripts_dir, f".{event_id}.{uuid.uuid4().hex}.tmp", must_exist=False
-    )
-    try:
-        stage.write_text(content, encoding="utf-8")
-        os.replace(stage, target)
-    finally:
-        if stage.exists():
-            stage.unlink()
 
 
 def _publish_and_mark(
