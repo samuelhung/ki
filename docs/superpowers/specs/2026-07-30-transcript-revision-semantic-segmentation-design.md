@@ -37,6 +37,7 @@ Add a `transcript_revision_state` table with one row per initialized event:
 - `event_id`: primary key.
 - `original_revision_id`: immutable first revision.
 - `active_revision_id`: revision represented by `events.raw_summary`.
+- `artifact_revision_id`: revision currently published to the transcript Markdown artifact, or null when synchronization is pending.
 - `summary_revision_id`: revision from which the current AI summary was generated, or null when no summary exists.
 - `updated_at`: UTC update time.
 
@@ -64,6 +65,7 @@ Deleting an event deletes its revision history through the existing event-deleti
 Add event-scoped transcript endpoints:
 
 - `GET /api/events/{event_id}/transcript`: return active content, active revision metadata, whether manual segmentation is allowed, summary staleness, and revision history metadata.
+- `GET /api/events/{event_id}/transcript/revisions/{revision_id}`: return the complete read-only content for one revision owned by the event.
 - `PUT /api/events/{event_id}/transcript/manual`: accept complete edited content and `base_revision_id`; create and activate a manual revision.
 - `POST /api/events/{event_id}/transcript/segment`: accept `base_revision_id`; start semantic segmentation and return a task identifier.
 - `GET /api/events/{event_id}/transcript/segment/{task_id}`: return processing state, failure details, or a validated preview with its base revision.
@@ -144,7 +146,7 @@ The user may invoke the existing forced-summary action. While regeneration is ru
 
 The database is the source of truth for the active revision. Revision creation, active-state update, and `events.raw_summary` update occur in one SQLite transaction after the base revision is rechecked.
 
-The Markdown transcript is a compatibility artifact. Update it with a temporary file and atomic replacement after validating the target path. If artifact publication fails, report the failure, retain enough information to retry synchronization, and do not report the operation as fully successful. Detail reads continue to use the database source of truth, preventing a stale artifact from replacing the accepted revision.
+The Markdown transcript is a compatibility artifact. Update it with a temporary file and atomic replacement after validating the target path. Record `artifact_revision_id` only after publication succeeds. If publication fails, keep the accepted database revision, return a pending-synchronization status rather than full success, and retry publication on the next transcript read or mutation. Detail reads continue to use the database source of truth, preventing a stale artifact from replacing the accepted revision.
 
 AI timeout, empty output, invalid output, task expiry, version conflict, or network failure never changes the active revision. UI errors are actionable and do not expose provider credentials or transcript contents in logs.
 
