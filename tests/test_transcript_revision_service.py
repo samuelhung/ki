@@ -147,6 +147,15 @@ def test_lazy_initialization_respects_explicit_empty_content(transcript_db):
     )
 
     assert state.active_content == ""
+    assert state.summary_revision_id is None
+    assert state.summary_stale is True
+    with connect_fn() as conn:
+        assert (
+            conn.execute(
+                "SELECT raw_summary FROM events WHERE id = 'evt-1'"
+            ).fetchone()[0]
+            == ""
+        )
 
 
 def test_public_revision_values_are_immutable(transcript_db):
@@ -466,7 +475,7 @@ def test_late_stale_publish_invalidates_artifact_marker_and_read_repairs(transcr
 
 
 def test_revision_markers_require_event_owned_revision(transcript_db):
-    connect_fn, _ = transcript_db
+    connect_fn, transcripts_dir = transcript_db
     original = service.ensure_initialized("evt-1", connect_fn=connect_fn)
     manual = service.save_manual(
         "evt-1",
@@ -481,8 +490,13 @@ def test_revision_markers_require_event_owned_revision(transcript_db):
     service.mark_summary_revision(
         "evt-1", manual.state.active_revision_id, connect_fn=connect_fn
     )
-    service.mark_artifact_revision(
-        "evt-1", original.active_revision_id, connect_fn=connect_fn
+    transcripts_dir.mkdir(parents=True)
+    (transcripts_dir / "evt-1.md").write_text(original.active_content, encoding="utf-8")
+    assert service.mark_artifact_revision(
+        "evt-1",
+        original.active_revision_id,
+        connect_fn=connect_fn,
+        transcripts_dir=transcripts_dir,
     )
     marked = service.get_transcript("evt-1", connect_fn=connect_fn)
 
@@ -503,8 +517,42 @@ def test_revision_markers_require_event_owned_revision(transcript_db):
         )
     with pytest.raises(service.RevisionNotFoundError):
         service.mark_artifact_revision(
-            "evt-1", foreign.active_revision_id, connect_fn=connect_fn
+            "evt-1",
+            foreign.active_revision_id,
+            connect_fn=connect_fn,
+            transcripts_dir=transcripts_dir,
         )
+
+
+def test_artifact_marker_requires_matching_published_content(transcript_db):
+    connect_fn, transcripts_dir = transcript_db
+    original = service.ensure_initialized("evt-1", connect_fn=connect_fn)
+
+    assert (
+        service.mark_artifact_revision(
+            "evt-1",
+            original.active_revision_id,
+            connect_fn=connect_fn,
+            transcripts_dir=transcripts_dir,
+        )
+        is False
+    )
+
+    transcripts_dir.mkdir(parents=True)
+    (transcripts_dir / "evt-1.md").write_text("陈旧正文", encoding="utf-8")
+    assert (
+        service.mark_artifact_revision(
+            "evt-1",
+            original.active_revision_id,
+            connect_fn=connect_fn,
+            transcripts_dir=transcripts_dir,
+        )
+        is False
+    )
+    assert (
+        service.get_transcript("evt-1", connect_fn=connect_fn).artifact_revision_id
+        is None
+    )
 
 
 def test_unknown_event_and_foreign_revision_are_rejected(transcript_db):

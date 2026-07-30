@@ -137,11 +137,9 @@ def ensure_initialized(
             ).fetchone()
             if event is None:
                 raise EventNotFoundError(event_id)
-            content = (
-                (event["raw_summary"] or "")
-                if initial_content is None
-                else initial_content
-            )
+            legacy_content = event["raw_summary"] or ""
+            content = legacy_content if initial_content is None else initial_content
+            content_changed = initial_content is not None and content != legacy_content
             revision_id = f"tr-{uuid.uuid4().hex}"
             conn.execute(
                 """INSERT INTO transcript_revisions
@@ -149,10 +147,15 @@ def ensure_initialized(
                 (revision_id, event_id, content),
             )
             has_summary = (
-                bool(event["ai_summary"])
+                bool(event["ai_summary"]) and not content_changed
                 if summary_published is None
                 else summary_published
             )
+            if initial_content is not None:
+                conn.execute(
+                    "UPDATE events SET raw_summary = ? WHERE id = ?",
+                    (content, event_id),
+                )
             conn.execute(
                 """INSERT INTO transcript_revision_state
                    (event_id, original_revision_id, active_revision_id,
@@ -392,11 +395,24 @@ def mark_summary_revision(event_id: str, revision_id: str, *, connect_fn) -> Non
         )
 
 
-def mark_artifact_revision(event_id: str, revision_id: str, *, connect_fn) -> None:
-    get_revision(event_id, revision_id, connect_fn=connect_fn)
+def mark_artifact_revision(
+    event_id: str,
+    revision_id: str,
+    *,
+    connect_fn,
+    transcripts_dir: Path,
+) -> bool:
+    revision = get_revision(event_id, revision_id, connect_fn=connect_fn)
+    try:
+        target = resolve_under(transcripts_dir, f"{event_id}.md", must_exist=True)
+        if target.read_text(encoding="utf-8") != revision.content:
+            return False
+    except (OSError, PathSecurityError):
+        return False
     with connect_fn() as conn:
-        conn.execute(
+        updated = conn.execute(
             """UPDATE transcript_revision_state SET artifact_revision_id = ?,
                updated_at = CURRENT_TIMESTAMP WHERE event_id = ?""",
             (revision_id, event_id),
         )
+    return updated.rowcount == 1
