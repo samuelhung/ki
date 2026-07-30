@@ -11,6 +11,8 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+from . import transcript_revision_service
+
 _CONCEPT_SYSTEM_PROMPT = "你是严谨的知识整理助手，为概念提供结构化、准确的解释。回答简洁专业，避免冗长。如有参考文档，必须基于原文摘录依据，不可凭空发挥。"
 _CONCEPT_FORMAT = "请按以下格式输出（使用 Markdown）：\n\n## 核心定义\n（一到两句话厘清概念）\n\n## 关键机制/原理\n1. ...\n2. ...\n\n{evidence}## 适用范围/前提假设\n\n## 关联概念\n- 概念A\n- 概念B"
 _CONCEPT_EVIDENCE = "## 原文依据\n（从下方参考文档中摘录与该概念直接相关的原文段落。要求：\n- 每条引用独立成段，末尾标注 [文档N]\n- 引用原文关键句，而非自行概括\n- 若无直接相关原文，标注「参考文档中未直接涉及」）\n\n"
@@ -360,6 +362,26 @@ def process_ingest(
             values += [video_path, audio_path_col, document_path_col]
             values += [video_md5, title or "待处理", event_id]
             _execute(conn, _UPDATE_EVENT_SQL, *values)
+        transcript_state = transcript_revision_service.ensure_initialized(
+            event_id,
+            connect_fn=deps["connect_fn"],
+            initial_content=text,
+            summary_published=False,
+        )
+        artifact_marked = transcript_revision_service.mark_artifact_revision(
+            event_id,
+            transcript_state.active_revision_id,
+            connect_fn=deps["connect_fn"],
+            transcripts_dir=deps["transcripts_dir"],
+        )
+        if not artifact_marked:
+            raise RuntimeError("transcript artifact publication was not verified")
+        if ai_summary:
+            transcript_revision_service.mark_summary_revision(
+                event_id,
+                transcript_state.active_revision_id,
+                connect_fn=deps["connect_fn"],
+            )
         if ingest_type == "douyin_share":
             _advance(stages, 7, event_id, progress)
         try:
