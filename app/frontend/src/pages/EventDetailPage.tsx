@@ -15,6 +15,36 @@ export interface EventDetailData {
   associated_questions?: any[];
 }
 
+export type TranscriptRevisionKind = 'original' | 'manual' | 'segmented' | 'restored';
+
+export interface TranscriptRevisionMeta {
+  id: string;
+  kind: TranscriptRevisionKind;
+  parent_revision_id?: string;
+  source_revision_id?: string;
+  created_at: string;
+}
+
+export interface TranscriptSnapshot {
+  event_id: string;
+  content: string;
+  active_revision: TranscriptRevisionMeta;
+  revisions: TranscriptRevisionMeta[];
+  can_segment: boolean;
+  summary_stale: boolean;
+  artifact_synced: boolean;
+}
+
+export interface SegmentationTaskSnapshot {
+  id: string;
+  status: 'processing' | 'ready' | 'failed' | 'confirmed';
+  base_revision_id: string;
+  completed_chunks: number;
+  total_chunks: number;
+  preview?: string;
+  error_code?: string;
+}
+
 export interface EventLinkedQuestion {
   id: any;
   question: any;
