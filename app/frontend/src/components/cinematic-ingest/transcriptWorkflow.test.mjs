@@ -79,7 +79,7 @@ test('duplicate segmentation is blocked until the active request ends', () => {
   assert.equal(guard.begin('event-a'), true);
 });
 
-test('409 maps to refresh-required copy and hook resets dialog state on event change', () => {
+test('409 maps to refresh-required copy and hook resets the unified workspace on event change', () => {
   assert.deepEqual(conflictMessage(409), {
     message: '原文已更新，请刷新后重试', refreshRequired: true,
   });
@@ -91,11 +91,40 @@ test('409 maps to refresh-required copy and hook resets dialog state on event ch
   });
 
   const source = readFileSync(hookUrl, 'utf8');
-  assert.match(source, /setEditorOpen\(false\)/);
-  assert.match(source, /setComparisonOpen\(false\)/);
-  assert.match(source, /setHistoryOpen\(false\)/);
+  assert.match(source, /setWorkspaceOpen\(false\)/);
+  assert.match(source, /setWorkspaceTab\('manual'\)/);
+  assert.doesNotMatch(source, /setEditorOpen|setComparisonOpen|setHistoryOpen/);
   assert.match(source, /pollLifecycle\.current\.abort\(\)/);
   assert.match(source, /abortableDelay\(delay, owner\.signal\)/);
+});
+
+test('manual save activates the revision before moving to segmentation without starting it', () => {
+  const source = readFileSync(hookUrl, 'utf8');
+  const saveManual = source.match(/const saveManual = useCallback\(async \(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
+
+  assert.match(saveManual, /await commitActivation\(snapshot\)/);
+  assert.match(saveManual, /setWorkspaceTab\('segment'\)/);
+  assert.ok(
+    saveManual.indexOf('await commitActivation(snapshot)') < saveManual.indexOf("setWorkspaceTab('segment')"),
+    'manual activation must finish before the workspace advances to segmentation',
+  );
+  assert.doesNotMatch(saveManual, /startSegmentation/);
+});
+
+test('segmentation confirmation updates the task without closing the workspace', () => {
+  const source = readFileSync(hookUrl, 'utf8');
+  const confirmSegmentation = source.match(/const confirmSegmentation = useCallback\(async \(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
+
+  assert.match(confirmSegmentation, /setTask\(\(current\)/);
+  assert.doesNotMatch(confirmSegmentation, /setWorkspaceOpen\(false\)/);
+});
+
+test('restoring a revision keeps the workspace open on history', () => {
+  const source = readFileSync(hookUrl, 'utf8');
+  const restoreRevision = source.match(/const restoreRevision = useCallback\(async \(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
+
+  assert.match(restoreRevision, /setWorkspaceTab\('history'\)/);
+  assert.doesNotMatch(restoreRevision, /setWorkspaceOpen\(false\)/);
 });
 
 test('cancelled requests and strict segmentation deadlines cannot leak across events', () => {
@@ -110,9 +139,9 @@ test('cancelled requests and strict segmentation deadlines cannot leak across ev
   for (const reset of ['setSaving(false)', 'setSegmenting(false)', 'setConfirming(false)', 'setHistoryLoading(false)', 'setRestoring(false)']) {
     assert.match(source, new RegExp(reset.replace(/[()]/g, '\\$&')));
   }
-  const closeComparison = source.match(/const closeComparison[\s\S]*?\}, \[[^\]]*\]\);/)?.[0] || '';
-  assert.match(closeComparison, /pollLifecycle\.current\.abort/);
-  assert.doesNotMatch(closeComparison, /segmentGuard\.current\.end/);
+  const closeWorkspace = source.match(/const closeWorkspace[\s\S]*?\}, \[[^\]]*\]\);/)?.[0] || '';
+  assert.match(closeWorkspace, /pollLifecycle\.current\.abort/);
+  assert.doesNotMatch(closeWorkspace, /segmentGuard\.current\.end/);
   assert.equal(source.match(/segmentGuard\.current\.end/g)?.length, 1, 'only the active run may release its guard');
   assert.match(source, /selectionOwner\.current\.isCurrent\(selection\)[\s\S]{0,100}setRequestError\(reason\)/);
   assert.match(source, /abortableDelay\(delay, owner\.signal\)/);

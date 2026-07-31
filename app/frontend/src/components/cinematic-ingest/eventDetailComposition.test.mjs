@@ -19,9 +19,12 @@ const headerUrl = new URL('./EventDetailHeader.tsx', import.meta.url);
 const bodyUrl = new URL('./EventDetailBody.tsx', import.meta.url);
 const runtimeUrl = new URL('./eventDetailRuntime.ts', import.meta.url);
 const transcriptActionsUrl = new URL('./TranscriptActions.tsx', import.meta.url);
-const transcriptEditorUrl = new URL('./TranscriptEditorDialog.tsx', import.meta.url);
-const transcriptComparisonUrl = new URL('./TranscriptComparisonDialog.tsx', import.meta.url);
-const transcriptRevisionUrl = new URL('./TranscriptRevisionDialog.tsx', import.meta.url);
+const transcriptDialogFrameUrl = new URL('./TranscriptDialogFrame.tsx', import.meta.url);
+const transcriptWorkspaceUrl = new URL('./TranscriptWorkspaceDialog.tsx', import.meta.url);
+const transcriptEditorPanelUrl = new URL('./TranscriptEditorPanel.tsx', import.meta.url);
+const transcriptComparisonPanelUrl = new URL('./TranscriptComparisonPanel.tsx', import.meta.url);
+const transcriptRevisionPanelUrl = new URL('./TranscriptRevisionPanel.tsx', import.meta.url);
+const dualNavigationCss = readFileSync(new URL('../../pages/DualNavigationDemo.css', import.meta.url), 'utf8');
 const packageJson = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));
 const checkScript = readFileSync(new URL('../../../../../scripts/check.sh', import.meta.url), 'utf8');
 const modules = readSourceModules([
@@ -31,9 +34,6 @@ const modules = readSourceModules([
   bodyUrl,
   runtimeUrl,
   transcriptActionsUrl,
-  transcriptEditorUrl,
-  transcriptComparisonUrl,
-  transcriptRevisionUrl,
 ]);
 const implementation = combinedSource(modules);
 const pageModule = modules.find((module) => module.name === 'EventDetailPage.tsx');
@@ -206,39 +206,71 @@ test('event action loading remains authoritative across an A-B-A selection cycle
   }
 });
 
-test('transcript correction UI keeps actions in the title row and preserves review gates', () => {
+test('transcript correction UI opens one workspace from the title row', () => {
   for (const url of [
     transcriptActionsUrl,
-    transcriptEditorUrl,
-    transcriptComparisonUrl,
-    transcriptRevisionUrl,
+    transcriptWorkspaceUrl,
+    transcriptEditorPanelUrl,
+    transcriptComparisonPanelUrl,
+    transcriptRevisionPanelUrl,
   ]) assert.ok(existsSync(url), `${url.pathname.split('/').at(-1)} must exist`);
-
-  for (const label of [
-    '人工修正',
-    'AI 语义分段',
-    '修订记录',
-    '保存人工修正版',
-    '人工修正版',
-    'AI 分段预览',
-    '重新生成',
-    '确认使用',
-    '原文已更新，可重新生成 AI 总结',
-  ]) assert.match(implementation, new RegExp(label));
 
   const header = readFileSync(headerUrl, 'utf8');
   const actions = readFileSync(transcriptActionsUrl, 'utf8');
-  const editor = readFileSync(transcriptEditorUrl, 'utf8');
-  const comparison = readFileSync(transcriptComparisonUrl, 'utf8');
   assert.match(header, /tab === 'body'/);
   assert.match(header, /transcript-title-row[\s\S]*<h1[\s\S]*transcriptActions/);
   assert.match(header, /flex-wrap/);
   assert.match(header, /justify-between/);
-  assert.match(actions, /disabled=\{!transcript\?\.can_segment/);
+  assert.match(actions, />转写处理</);
+  assert.doesNotMatch(actions, />人工修正</);
+  assert.doesNotMatch(actions, />AI 语义分段</);
+  assert.doesNotMatch(actions, /aria-label="修订记录"/);
   assert.match(actions, /ml-auto/);
-  assert.match(editor, /beforeunload|unsaved|未保存/);
-  assert.match(comparison, /alignTranscriptGaps/);
-  assert.match(comparison, /completed_chunks/);
+  assert.match(page, /<TranscriptWorkspaceDialog/);
+  assert.doesNotMatch(page, /<TranscriptEditorDialog/);
+  assert.doesNotMatch(page, /<TranscriptComparisonDialog/);
+  assert.doesNotMatch(page, /<TranscriptRevisionDialog/);
+});
+
+test('one transcript workspace owns the global Dock frame and composes all panels', () => {
+  for (const url of [
+    transcriptWorkspaceUrl,
+    transcriptEditorPanelUrl,
+    transcriptComparisonPanelUrl,
+    transcriptRevisionPanelUrl,
+  ]) assert.ok(existsSync(url), `${url.pathname.split('/').at(-1)} must exist`);
+  assert.ok(existsSync(transcriptDialogFrameUrl));
+
+  const frameModule = readSourceModules([transcriptDialogFrameUrl])[0];
+  assert.ok(frameModule);
+  const frame = frameModule.source;
+  const workspace = readFileSync(transcriptWorkspaceUrl, 'utf8');
+  const panels = [
+    readFileSync(transcriptEditorPanelUrl, 'utf8'),
+    readFileSync(transcriptComparisonPanelUrl, 'utf8'),
+    readFileSync(transcriptRevisionPanelUrl, 'utf8'),
+  ];
+
+  assertNamedImports(frameModule, 'react-dom', ['createPortal']);
+  assert.match(frame, /import '\.\.\/\.\.\/pages\/GlobalDockWorkspaceFrame\.css';/);
+  assert.match(frame, /document\.querySelector<HTMLElement>\('\.dual-nav-demo'\) \|\| document\.body/);
+  assert.match(frame, /dual-nav-action-backdrop global-dock-backdrop global-dock-workspace-backdrop transcript-dialog-backdrop/);
+  assert.match(frame, /global-dock-workspace-stage is-wide transcript-dialog-stage/);
+  assert.match(frame, /KiMagicBentoFrame/);
+  assert.match(frame, /global-dock-workspace-dialog/);
+  assert.match(frame, /createPortal\([\s\S]*dialog[\s\S]*portalHost\)/);
+  for (const label of ['转写处理', '人工修正', 'AI 语义分段', '修订记录']) {
+    assert.match(workspace, new RegExp(label));
+  }
+  for (const component of ['TranscriptDialogFrame', 'TranscriptEditorPanel', 'TranscriptComparisonPanel', 'TranscriptRevisionPanel']) {
+    assert.match(workspace, new RegExp(component));
+  }
+  assert.equal(workspace.match(/<TranscriptDialogFrame/g)?.length, 1);
+  for (const panel of panels) {
+    assert.doesNotMatch(panel, /createPortal/);
+    assert.doesNotMatch(panel, /TranscriptDialogFrame/);
+  }
+  assert.doesNotMatch(dualNavigationCss, /\.transcript-editor-dialog textarea\s*\{/);
 });
 
 test('the standard cinematic npm and CI path covers every completed detail composition', () => {
