@@ -111,6 +111,17 @@ test('manual save activates the revision before moving to segmentation without s
   assert.doesNotMatch(saveManual, /startSegmentation/);
 });
 
+test('unsaved manual edits cannot silently cross into segmentation or history', () => {
+  const source = readFileSync(hookUrl, 'utf8');
+  const changeWorkspaceTab = source.match(/const changeWorkspaceTab = useCallback\([\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
+  const startSegmentation = source.match(/const startSegmentation = useCallback\(async \(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
+
+  assert.match(changeWorkspaceTab, /editorText !== transcript\.content/);
+  assert.match(changeWorkspaceTab, /window\.confirm\('有未保存的人工修正，确认放弃并切换吗？'\)/);
+  assert.match(changeWorkspaceTab, /setEditorText\(transcript\.content\)/);
+  assert.match(startSegmentation, /editorText !== transcript\.content/);
+});
+
 test('segmentation confirmation updates the task without closing the workspace', () => {
   const source = readFileSync(hookUrl, 'utf8');
   const confirmSegmentation = source.match(/const confirmSegmentation = useCallback\(async \(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
@@ -141,6 +152,7 @@ test('cancelled requests and strict segmentation deadlines cannot leak across ev
     assert.match(source, new RegExp(reset.replace(/[()]/g, '\\$&')));
   }
   const closeWorkspace = source.match(/const closeWorkspace[\s\S]*?\}, \[[^\]]*\]\);/)?.[0] || '';
+  assert.match(closeWorkspace, /saving \|\| segmenting \|\| confirming \|\| restoring/);
   assert.match(closeWorkspace, /pollLifecycle\.current\.abort/);
   assert.doesNotMatch(closeWorkspace, /segmentGuard\.current\.end/);
   assert.equal(source.match(/segmentGuard\.current\.end/g)?.length, 1, 'only the active run may release its guard');

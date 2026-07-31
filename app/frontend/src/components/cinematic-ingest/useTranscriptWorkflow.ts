@@ -134,7 +134,7 @@ export function useTranscriptWorkflow({
   }, [transcript]);
 
   const closeWorkspace = useCallback(() => {
-    if (saving || confirming || restoring) return;
+    if (saving || segmenting || confirming || restoring) return;
     if (
       editorText !== (transcript?.content || '')
       && !window.confirm('有未保存的人工修正，确认放弃吗？')
@@ -143,7 +143,19 @@ export function useTranscriptWorkflow({
     pollLifecycle.current.abort();
     setSegmenting(false);
     setWorkspaceOpen(false);
-  }, [confirming, editorText, restoring, saving, transcript?.content]);
+  }, [confirming, editorText, restoring, saving, segmenting, transcript?.content]);
+
+  const changeWorkspaceTab = useCallback((nextTab: TranscriptWorkspaceTab) => {
+    if (!transcript || nextTab === workspaceTab) return;
+    if (
+      nextTab !== 'manual'
+      && editorText !== transcript.content
+      && !window.confirm('有未保存的人工修正，确认放弃并切换吗？')
+    ) return;
+    if (editorText !== transcript.content) setEditorText(transcript.content);
+    setWorkspaceTab(nextTab);
+    setError('');
+  }, [editorText, transcript, workspaceTab]);
 
   const saveManual = useCallback(async () => {
     if (!eventId || !transcript || saving) return;
@@ -167,6 +179,7 @@ export function useTranscriptWorkflow({
 
   const startSegmentation = useCallback(async () => {
     if (!eventId || !transcript || !transcript.can_segment) return;
+    if (editorText !== transcript.content) return;
     if (!segmentGuard.current.begin(eventId)) return;
     setWorkspaceTab('segment');
     setSegmenting(true);
@@ -217,7 +230,7 @@ export function useTranscriptWorkflow({
       segmentGuard.current.end(eventId);
       if (selectionOwner.current.isCurrent(selection)) setSegmenting(false);
     }
-  }, [api, eventId, setRequestError, transcript]);
+  }, [api, editorText, eventId, setRequestError, transcript]);
 
   const confirmSegmentation = useCallback(async () => {
     if (!eventId || !task || task.status !== 'ready' || confirming) return;
@@ -286,7 +299,7 @@ export function useTranscriptWorkflow({
     loading,
     workspaceOpen,
     workspaceTab,
-    setWorkspaceTab,
+    setWorkspaceTab: changeWorkspaceTab,
     editorText,
     setEditorText,
     editorDirty: Boolean(transcript && editorText !== transcript.content),

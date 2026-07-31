@@ -70,7 +70,7 @@ export function TranscriptWorkspaceDialog(props: TranscriptWorkspaceDialogProps)
     description="先完成人工校正，再进行语义分段；所有版本均可回看。"
     icon={FilePenLine}
     dialogClassName="transcript-workspace-dialog"
-    closeDisabled={saving || confirming || restoring}
+    closeDisabled={saving || props.segmenting || confirming || restoring}
     onClose={onClose}
     navigation={<nav className="transcript-workspace-tabs" aria-label="转写处理阶段">
       {TABS.map((item) => {

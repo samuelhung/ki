@@ -1329,6 +1329,6 @@
   .transcript-workspace-footer { align-items: flex-end; flex-direction: column; }
   .transcript-workspace-footer > div { width: 100%; flex-wrap: wrap; }
   .transcript-comparison-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: repeat(2, minmax(0, 1fr)); }
-  .transcript-revision-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(140px, 32vh) minmax(180px, 1fr); }
+  .transcript-revision-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 38%) minmax(0, 1fr); }
   .transcript-revision-layout > nav { border-right: 0; border-bottom: 1px solid rgba(255, 255, 255, .08); }
 }

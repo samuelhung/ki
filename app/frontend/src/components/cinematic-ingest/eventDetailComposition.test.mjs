@@ -265,6 +265,7 @@ test('one transcript workspace owns the global Dock frame and composes all panel
   for (const component of ['TranscriptDialogFrame', 'TranscriptEditorPanel', 'TranscriptComparisonPanel', 'TranscriptRevisionPanel']) {
     assert.match(workspace, new RegExp(component));
   }
+  assert.match(workspace, /closeDisabled=\{saving \|\| props\.segmenting \|\| confirming \|\| restoring\}/);
   assert.equal(workspace.match(/<TranscriptDialogFrame/g)?.length, 1);
   for (const panel of panels) {
     assert.doesNotMatch(panel, /createPortal/);
@@ -279,6 +280,7 @@ test('one transcript workspace owns the global Dock frame and composes all panel
   assert.match(dualNavigationCss, /\.transcript-comparison-pane[\s\S]*overflow:\s*auto/);
   assert.match(dualNavigationCss, /@media \(max-width: 760px\)[\s\S]*\.global-dock-workspace-dialog\.transcript-workspace-dialog\s*\{[^}]*grid-template-rows:\s*auto 58px minmax\(0, 1fr\)/);
   assert.match(dualNavigationCss, /@media \(max-width: 760px\)[\s\S]*\.transcript-workspace-tabs/);
+  assert.match(dualNavigationCss, /@media \(max-width: 760px\)[\s\S]*\.transcript-revision-layout\s*\{[^}]*grid-template-rows:\s*minmax\(0, 38%\) minmax\(0, 1fr\)/);
 });
 
 test('the standard cinematic npm and CI path covers every completed detail composition', () => {
