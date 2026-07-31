@@ -67,6 +67,8 @@ def test_schema_sql_is_immutable_and_repeated_initialization_is_idempotent(
     assert {
         "sources",
         "events",
+        "transcript_revisions",
+        "transcript_revision_state",
         "events_fts",
         "brainstorm_questions",
         "brainstorm_event_links",
@@ -84,6 +86,8 @@ def test_schema_sql_is_immutable_and_repeated_initialization_is_idempotent(
     } <= tables
     assert {
         "idx_events_translation_status",
+        "idx_transcript_revisions_event_created",
+        "idx_transcript_revisions_parent",
         "idx_brainstorm_messages_question",
         "idx_study_created",
     } <= indexes
@@ -92,6 +96,66 @@ def test_schema_sql_is_immutable_and_repeated_initialization_is_idempotent(
         "trg_events_fts_delete",
         "trg_events_fts_update",
     }
+
+
+def test_transcript_revision_schema_is_append_only_and_event_scoped(
+    tmp_path, monkeypatch
+) -> None:
+    _db_schema, _db_migrations = _db_modules()
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "transcript-revisions.sqlite"))
+
+    db.init_db()
+
+    with db.connect() as conn:
+        assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+        assert [
+            row[1] for row in conn.execute("PRAGMA table_info(transcript_revisions)")
+        ] == [
+            "id",
+            "event_id",
+            "parent_revision_id",
+            "source_revision_id",
+            "kind",
+            "content",
+            "created_at",
+        ]
+        assert [
+            row[1]
+            for row in conn.execute("PRAGMA table_info(transcript_revision_state)")
+        ] == [
+            "event_id",
+            "original_revision_id",
+            "active_revision_id",
+            "artifact_revision_id",
+            "summary_revision_id",
+            "updated_at",
+        ]
+
+        conn.execute(
+            "INSERT INTO sources (id, name, type, url) VALUES (?, ?, ?, ?)",
+            ("source-1", "Source", "rss", "https://example.com"),
+        )
+        conn.execute(
+            "INSERT INTO events (id, source_id, title, url) VALUES (?, ?, ?, ?)",
+            ("event-1", "source-1", "Event", "https://example.com/event"),
+        )
+        conn.execute(
+            "INSERT INTO transcript_revisions "
+            "(id, event_id, kind, content) VALUES (?, ?, ?, ?)",
+            ("revision-1", "event-1", "original", "Transcript"),
+        )
+        conn.execute(
+            "INSERT INTO transcript_revision_state "
+            "(event_id, original_revision_id, active_revision_id) VALUES (?, ?, ?)",
+            ("event-1", "revision-1", "revision-1"),
+        )
+        conn.execute("DELETE FROM events WHERE id = ?", ("event-1",))
+
+        assert conn.execute("SELECT COUNT(*) FROM transcript_revisions").fetchone()[0] == 0
+        assert (
+            conn.execute("SELECT COUNT(*) FROM transcript_revision_state").fetchone()[0]
+            == 0
+        )
 
 
 def test_fresh_database_preserves_readable_exact_ddl_and_catalog_order(

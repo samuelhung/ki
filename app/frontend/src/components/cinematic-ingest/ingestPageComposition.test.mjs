@@ -14,7 +14,9 @@ import {
 const pageUrl = new URL('../../pages/Ingest.tsx', import.meta.url);
 const hookUrl = new URL('./useIngestEvents.ts', import.meta.url);
 const workspaceUrl = new URL('./IngestWorkspaceContent.tsx', import.meta.url);
-const modules = readSourceModules([pageUrl, hookUrl, workspaceUrl]);
+const detailPanelUrl = new URL('./ContentDetailPanel.tsx', import.meta.url);
+const detailActionsUrl = new URL('./useIngestDetailActions.ts', import.meta.url);
+const modules = readSourceModules([pageUrl, hookUrl, workspaceUrl, detailPanelUrl, detailActionsUrl]);
 const implementation = combinedSource(modules);
 const pageModule = modules.find((module) => module.name === 'Ingest.tsx');
 assert.ok(pageModule);
@@ -142,6 +144,38 @@ test('ingest labels css hooks and embedded composition can move together', () =>
   assert.match(implementation, /<EmbeddedIngestList/);
   assert.match(implementation, /<ContentDetailPanel/);
   assert.match(implementation, /<EmbeddedIngestWorkspace/);
+});
+
+test('embedded ingest exposes the transcript revision workflow from the content title row', () => {
+  const workspace = readFileSync(workspaceUrl, 'utf8');
+  const detailPanel = readFileSync(detailPanelUrl, 'utf8');
+
+  assert.match(page, /useTranscriptWorkflow\(/);
+  assert.match(page, /<TranscriptActions/);
+  assert.match(page, /<TranscriptEditorDialog/);
+  assert.match(page, /<TranscriptComparisonDialog/);
+  assert.match(page, /<TranscriptRevisionDialog/);
+  assert.match(workspace, /transcriptActions=\{transcriptActions\}/);
+  assert.match(workspace, /transcriptContent=\{transcriptContent\}/);
+  assert.match(workspace, /summaryStale=\{summaryStale\}/);
+  assert.match(detailPanel, /transcript-title-row[\s\S]*<h2[\s\S]*tab === 'body'[\s\S]*transcriptActions/);
+  assert.match(detailPanel, /const bodyText = transcriptContent \?\?/);
+  assert.match(detailPanel, /summaryStale[\s\S]*原文已更新，可重新生成 AI 总结/);
+  assert.match(detailPanel, /if \(summarizing && !detail\?\.ai_summary\)/);
+});
+
+test('embedded summary regeneration waits for fresh transcript lineage while retaining the old summary', () => {
+  const detailActionsModule = modules.find((module) => module.name === 'useIngestDetailActions.ts');
+  assert.ok(detailActionsModule);
+  assertNamedImports(detailActionsModule, './eventSummaryPolling', [
+    'summaryRefreshIsComplete',
+    'transcriptSummaryIsStale',
+  ]);
+  assert.match(detailActionsModule.source, /const previousSummary =/);
+  assert.match(detailActionsModule.source, /waitForFreshLineage/);
+  assert.match(detailActionsModule.source, /summaryRefreshIsComplete\(/);
+  assert.match(detailActionsModule.source, /summarizeRequestSeqRef\.current \+= 1;\s+summarizeAbortRef\.current\?\.abort\(\);\s+setSummarizingId\(null\);/);
+  assert.doesNotMatch(detailActionsModule.source, /if \(data\.ai_summary\)/);
 });
 
 test('request coordinator loader transpiles typed hook exports without resolving React imports', () => {
