@@ -8,14 +8,14 @@ version = "2.0.0"
 description = "知几 —— 个人情报中心后端服务"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.140.0",
-    "uvicorn[standard]>=0.51.0",
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.52.0",
     "python-dotenv>=1.0",
     "python-multipart>=0.0.6",
     "requests>=2.31",
     "beautifulsoup4>=4.12",
     "feedparser>=6.0.13",
-    "openai>=2.48.0",
+    "openai>=2.50.0",
     "yt-dlp>=2024",
     "tos>=2.9",
     "trafilatura>=1.6",
