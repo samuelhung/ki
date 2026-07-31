@@ -4,9 +4,7 @@ import { Upload } from 'lucide-react';
 import Modal from '../components/Modal';
 import { IngestWorkspaceContent } from '../components/cinematic-ingest/IngestWorkspaceContent';
 import { TranscriptActions } from '../components/cinematic-ingest/TranscriptActions';
-import { TranscriptComparisonDialog } from '../components/cinematic-ingest/TranscriptComparisonDialog';
-import { TranscriptEditorDialog } from '../components/cinematic-ingest/TranscriptEditorDialog';
-import { TranscriptRevisionDialog } from '../components/cinematic-ingest/TranscriptRevisionDialog';
+import { TranscriptWorkspaceDialog } from '../components/cinematic-ingest/TranscriptWorkspaceDialog';
 import { useIngestDetailActions } from '../components/cinematic-ingest/useIngestDetailActions';
 import { useIngestEvents } from '../components/cinematic-ingest/useIngestEvents';
 import { useTranscriptWorkflow } from '../components/cinematic-ingest/useTranscriptWorkflow';
@@ -148,12 +146,9 @@ export default function Ingest() {
               transcriptActions={<TranscriptActions
                 transcript={transcriptWorkflow.transcript}
                 loading={transcriptWorkflow.loading}
-                segmenting={transcriptWorkflow.segmenting}
                 error={transcriptWorkflow.error}
                 refreshRequired={transcriptWorkflow.refreshRequired}
-                onEdit={transcriptWorkflow.openEditor}
-                onSegment={transcriptWorkflow.startSegmentation}
-                onHistory={transcriptWorkflow.openHistory}
+                onOpen={transcriptWorkflow.openWorkspace}
                 onRefresh={transcriptWorkflow.refreshTranscript}
               />}
               transcriptContent={transcriptWorkflow.transcript?.content}
@@ -174,37 +169,28 @@ export default function Ingest() {
         </div>
       </div>
 
-      <TranscriptEditorDialog
-        open={transcriptWorkflow.editorOpen}
-        value={transcriptWorkflow.editorText}
-        originalValue={transcriptWorkflow.transcript?.content || ''}
-        saving={transcriptWorkflow.saving}
-        error={transcriptWorkflow.error}
-        onChange={transcriptWorkflow.setEditorText}
-        onSave={transcriptWorkflow.saveManual}
-        onClose={() => transcriptWorkflow.setEditorOpen(false)}
-      />
-      <TranscriptComparisonDialog
-        open={transcriptWorkflow.comparisonOpen}
-        source={transcriptWorkflow.transcript?.content || ''}
-        task={transcriptWorkflow.task}
-        confirming={transcriptWorkflow.confirming}
-        error={transcriptWorkflow.error}
-        onClose={transcriptWorkflow.closeComparison}
-        onRegenerate={transcriptWorkflow.startSegmentation}
-        onConfirm={transcriptWorkflow.confirmSegmentation}
-      />
-      <TranscriptRevisionDialog
-        open={transcriptWorkflow.historyOpen}
+      <TranscriptWorkspaceDialog
+        open={transcriptWorkflow.workspaceOpen}
+        tab={transcriptWorkflow.workspaceTab}
         transcript={transcriptWorkflow.transcript}
+        editorText={transcriptWorkflow.editorText}
+        saving={transcriptWorkflow.saving}
+        segmenting={transcriptWorkflow.segmenting}
+        confirming={transcriptWorkflow.confirming}
+        task={transcriptWorkflow.task}
         selectedRevision={transcriptWorkflow.selectedRevision}
         revisionContent={transcriptWorkflow.revisionContent}
-        loading={transcriptWorkflow.historyLoading}
+        historyLoading={transcriptWorkflow.historyLoading}
         restoring={transcriptWorkflow.restoring}
         error={transcriptWorkflow.error}
-        onSelect={transcriptWorkflow.loadRevision}
-        onRestore={transcriptWorkflow.restoreRevision}
-        onClose={() => transcriptWorkflow.setHistoryOpen(false)}
+        onTabChange={transcriptWorkflow.setWorkspaceTab}
+        onEditorChange={transcriptWorkflow.setEditorText}
+        onSaveManual={transcriptWorkflow.saveManual}
+        onStartSegmentation={transcriptWorkflow.startSegmentation}
+        onConfirmSegmentation={transcriptWorkflow.confirmSegmentation}
+        onSelectRevision={transcriptWorkflow.loadRevision}
+        onRestoreRevision={transcriptWorkflow.restoreRevision}
+        onClose={transcriptWorkflow.closeWorkspace}
       />
 
       {modalType === 'douyin' && (

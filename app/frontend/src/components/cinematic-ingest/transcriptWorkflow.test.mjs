@@ -116,6 +116,7 @@ test('segmentation confirmation updates the task without closing the workspace',
   const confirmSegmentation = source.match(/const confirmSegmentation = useCallback\(async \(\) => \{[\s\S]*?\n  \}, \[[^\]]*\]\);/)?.[0] || '';
 
   assert.match(confirmSegmentation, /setTask\(\(current\)/);
+  assert.match(confirmSegmentation, /confirmed_revision_id:\s*snapshot\.confirmed_revision_id/);
   assert.doesNotMatch(confirmSegmentation, /setWorkspaceOpen\(false\)/);
 });
 

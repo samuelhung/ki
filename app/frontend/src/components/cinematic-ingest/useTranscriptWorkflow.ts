@@ -20,6 +20,8 @@ interface UseTranscriptWorkflowOptions {
   onTranscriptActivated: () => void | Promise<void>;
 }
 
+export type TranscriptWorkspaceTab = 'manual' | 'segment' | 'history';
+
 export function useTranscriptWorkflow({
   eventId,
   onTranscriptActivated,
@@ -35,14 +37,13 @@ export function useTranscriptWorkflow({
 
   const [transcript, setTranscript] = useState<TranscriptSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
-  const [editorOpen, setEditorOpen] = useState(false);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [workspaceTab, setWorkspaceTab] = useState<TranscriptWorkspaceTab>('manual');
   const [editorText, setEditorText] = useState('');
   const [saving, setSaving] = useState(false);
-  const [comparisonOpen, setComparisonOpen] = useState(false);
   const [segmenting, setSegmenting] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [task, setTask] = useState<SegmentationTaskSnapshot | null>(null);
-  const [historyOpen, setHistoryOpen] = useState(false);
   const [selectedRevision, setSelectedRevision] = useState<TranscriptRevisionMeta | null>(null);
   const [revisionContent, setRevisionContent] = useState('');
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -90,9 +91,8 @@ export function useTranscriptWorkflow({
     pollLifecycle.current.abort();
     setTranscript(null);
     setLoading(Boolean(eventId));
-    setEditorOpen(false);
-    setComparisonOpen(false);
-    setHistoryOpen(false);
+    setWorkspaceOpen(false);
+    setWorkspaceTab('manual');
     setEditorText('');
     setSaving(false);
     setTask(null);
@@ -125,12 +125,25 @@ export function useTranscriptWorkflow({
     };
   }, [api, eventId, setRequestError]);
 
-  const openEditor = useCallback(() => {
+  const openWorkspace = useCallback(() => {
     if (!transcript) return;
     setEditorText(transcript.content);
-    setEditorOpen(true);
+    setWorkspaceTab('manual');
+    setWorkspaceOpen(true);
     setError('');
   }, [transcript]);
+
+  const closeWorkspace = useCallback(() => {
+    if (saving || confirming || restoring) return;
+    if (
+      editorText !== (transcript?.content || '')
+      && !window.confirm('有未保存的人工修正，确认放弃吗？')
+    ) return;
+    segmentRun.current += 1;
+    pollLifecycle.current.abort();
+    setSegmenting(false);
+    setWorkspaceOpen(false);
+  }, [confirming, editorText, restoring, saving, transcript?.content]);
 
   const saveManual = useCallback(async () => {
     if (!eventId || !transcript || saving) return;
@@ -142,7 +155,9 @@ export function useTranscriptWorkflow({
       );
       if (!selectionOwner.current.isCurrent(selection)) return;
       await commitActivation(snapshot);
-      setEditorOpen(false);
+      setEditorText(snapshot.content);
+      setTask(null);
+      setWorkspaceTab('segment');
     } catch (reason) {
       if (selectionOwner.current.isCurrent(selection)) setRequestError(reason);
     } finally {
@@ -153,8 +168,8 @@ export function useTranscriptWorkflow({
   const startSegmentation = useCallback(async () => {
     if (!eventId || !transcript || !transcript.can_segment) return;
     if (!segmentGuard.current.begin(eventId)) return;
+    setWorkspaceTab('segment');
     setSegmenting(true);
-    setComparisonOpen(true);
     setTask(null);
     setError('');
     const selection = selectionOwner.current.capture();
@@ -204,13 +219,6 @@ export function useTranscriptWorkflow({
     }
   }, [api, eventId, setRequestError, transcript]);
 
-  const closeComparison = useCallback(() => {
-    segmentRun.current += 1;
-    pollLifecycle.current.abort();
-    setSegmenting(false);
-    setComparisonOpen(false);
-  }, []);
-
   const confirmSegmentation = useCallback(async () => {
     if (!eventId || !task || task.status !== 'ready' || confirming) return;
     const selection = selectionOwner.current.capture();
@@ -219,19 +227,18 @@ export function useTranscriptWorkflow({
       const snapshot = await api.confirmSegmentation(eventId, task.id);
       if (!selectionOwner.current.isCurrent(selection)) return;
       await commitActivation(snapshot);
-      setComparisonOpen(false);
+      setEditorText(snapshot.content);
+      setTask((current) => current ? {
+        ...current,
+        status: 'confirmed',
+        confirmed_revision_id: snapshot.confirmed_revision_id,
+      } : current);
     } catch (reason) {
       if (selectionOwner.current.isCurrent(selection)) setRequestError(reason);
     } finally {
       if (selectionOwner.current.isCurrent(selection)) setConfirming(false);
     }
   }, [api, commitActivation, confirming, eventId, setRequestError, task]);
-
-  const openHistory = useCallback(() => {
-    setHistoryOpen(true);
-    setSelectedRevision(null);
-    setRevisionContent('');
-  }, []);
 
   const loadRevision = useCallback(async (revision: TranscriptRevisionMeta) => {
     if (!eventId) return;
@@ -262,7 +269,11 @@ export function useTranscriptWorkflow({
       );
       if (!selectionOwner.current.isCurrent(selection)) return;
       await commitActivation(snapshot);
-      setHistoryOpen(false);
+      setEditorText(snapshot.content);
+      setTask(null);
+      setWorkspaceTab('history');
+      setSelectedRevision(snapshot.active_revision);
+      setRevisionContent(snapshot.content);
     } catch (reason) {
       if (selectionOwner.current.isCurrent(selection)) setRequestError(reason);
     } finally {
@@ -273,20 +284,16 @@ export function useTranscriptWorkflow({
   return {
     transcript,
     loading,
-    editorOpen,
-    setEditorOpen,
+    workspaceOpen,
+    workspaceTab,
+    setWorkspaceTab,
     editorText,
     setEditorText,
     editorDirty: Boolean(transcript && editorText !== transcript.content),
     saving,
-    comparisonOpen,
-    setComparisonOpen,
-    closeComparison,
     segmenting,
     confirming,
     task,
-    historyOpen,
-    setHistoryOpen,
     selectedRevision,
     revisionContent,
     historyLoading,
@@ -294,11 +301,11 @@ export function useTranscriptWorkflow({
     error,
     refreshRequired,
     refreshTranscript,
-    openEditor,
+    openWorkspace,
+    closeWorkspace,
     saveManual,
     startSegmentation,
     confirmSegmentation,
-    openHistory,
     loadRevision,
     restoreRevision,
   };
