@@ -25,6 +25,10 @@ MODULE_MAP: dict[str, dict[str, tuple[str, list[str]]]] = {
         "classify": ("classifier.py", ["classify_event"]),
         "tag": ("tagger.py", ["extract_tags"]),
         "translate": ("translator.py", ["translate_to_en"]),
+        "segment_transcript": (
+            "transcript_segmentation_service.py",
+            ["segment_core"],
+        ),
     },
     "series": {
         "discover": ("series_discovery_service.py", ["discover_series"]),

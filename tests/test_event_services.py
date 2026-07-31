@@ -9,6 +9,9 @@ from typing import Any
 
 import pytest
 
+from zhiji_backend import db
+from zhiji_backend import transcript_revision_service as transcript_revisions
+
 
 class Cursor:
     def __init__(self, *, row: Any = None, rows: list[Any] | None = None):
@@ -274,6 +277,17 @@ def test_summarize_event_preserves_background_workflow_and_logger(
         trace.append(("resolve", root, parts, kwargs))
         return root.joinpath(*parts)
 
+    transcript_service = SimpleNamespace(
+        ensure_initialized=lambda event_id, **_kwargs: SimpleNamespace(
+            event_id=event_id,
+            active_content="Transcript",
+            active_revision_id="revision-1",
+        ),
+        mark_summary_revision=lambda event_id, revision_id, **_kwargs: trace.append(
+            ("summary-revision", event_id, revision_id)
+        ),
+    )
+
     response, summary_task = service.summarize_event(
         "event-1",
         True,
@@ -285,6 +299,7 @@ def test_summarize_event_preserves_background_workflow_and_logger(
         resolve_under_fn=resolve_under_fn,
         ingest_root=tmp_path,
         logger=service.logger,
+        transcript_service=transcript_service,
     )
     assert response == {
         "event_id": "event-1",
@@ -305,18 +320,112 @@ def test_summarize_event_preserves_background_workflow_and_logger(
         (
             "sql",
             1,
-            "UPDATE events SET ai_summary = NULL, overview = NULL WHERE id = ?",
-            ("event-1",),
-        ),
-        (
-            "sql",
-            2,
             "UPDATE events SET ai_summary = ?, overview = COALESCE(?, overview) WHERE id = ?",
             ("Summary", "Overview", "event-1"),
         ),
     ]
+    assert ("summary-revision", "event-1", "revision-1") in trace
     assert (tmp_path / "summaries/event-1.md").read_text() == "Summary"
     assert service.logger.name == "zhiji_backend.routes.event_routes"
+
+
+def test_summary_lineage_uses_starting_revision_across_manual_edit_race(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = importlib.import_module("zhiji_backend.event_ai_service")
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "summary-lineage.sqlite"))
+    db.init_db()
+    with db.connect() as conn:
+        conn.execute(
+            "INSERT INTO sources (id, name, type, url) VALUES (?, ?, ?, ?)",
+            ("source", "Source", "manual", ""),
+        )
+        conn.execute(
+            """INSERT INTO events
+               (id, source_id, title, url, raw_summary, ai_summary, overview)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            ("evt-race", "source", "Title", "", "原始正文", "旧总结", "旧概览"),
+        )
+
+    response, run_summary = service.summarize_event(
+        "evt-race",
+        True,
+        connect_fn=db.connect,
+        summarize_transcript_fn=lambda transcript, **_kwargs: {
+            "summary": f"新总结:{transcript}",
+            "overview": "新概览",
+        },
+        resolve_under_fn=lambda root, *parts, **_kwargs: root.joinpath(*parts),
+        ingest_root=tmp_path,
+        logger=service.logger,
+    )
+    assert response["status"] == "processing"
+    assert callable(run_summary)
+    with db.connect() as conn:
+        assert (
+            conn.execute(
+                "SELECT ai_summary FROM events WHERE id = 'evt-race'"
+            ).fetchone()[0]
+            == "旧总结"
+        )
+
+    original = transcript_revisions.get_transcript("evt-race", connect_fn=db.connect)
+    manual = transcript_revisions.save_manual(
+        "evt-race",
+        "人工修正文",
+        original.active_revision_id,
+        connect_fn=db.connect,
+        transcripts_dir=tmp_path / "transcripts",
+    )
+    run_summary()
+
+    state = transcript_revisions.get_transcript("evt-race", connect_fn=db.connect)
+    with db.connect() as conn:
+        summary = conn.execute(
+            "SELECT ai_summary FROM events WHERE id = 'evt-race'"
+        ).fetchone()[0]
+    assert state.summary_revision_id == original.active_revision_id
+    assert state.active_revision_id == manual.state.active_revision_id
+    assert state.summary_stale is True
+    assert summary == "新总结:原始正文"
+
+
+def test_summary_lineage_matches_active_revision_without_race(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = importlib.import_module("zhiji_backend.event_ai_service")
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "summary-current.sqlite"))
+    db.init_db()
+    with db.connect() as conn:
+        conn.execute(
+            "INSERT INTO sources (id, name, type, url) VALUES (?, ?, ?, ?)",
+            ("source", "Source", "manual", ""),
+        )
+        conn.execute(
+            """INSERT INTO events
+               (id, source_id, title, url, raw_summary)
+               VALUES (?, ?, ?, ?, ?)""",
+            ("evt-current", "source", "Title", "", "当前正文"),
+        )
+
+    _response, run_summary = service.summarize_event(
+        "evt-current",
+        True,
+        connect_fn=db.connect,
+        summarize_transcript_fn=lambda _text, **_kwargs: {
+            "summary": "新总结",
+            "overview": "概览",
+        },
+        resolve_under_fn=lambda root, *parts, **_kwargs: root.joinpath(*parts),
+        ingest_root=tmp_path,
+        logger=service.logger,
+    )
+    assert callable(run_summary)
+    run_summary()
+
+    state = transcript_revisions.get_transcript("evt-current", connect_fn=db.connect)
+    assert state.summary_revision_id == state.active_revision_id
+    assert state.summary_stale is False
 
 
 def test_tag_and_classify_workflows_preserve_ai_arguments_and_json() -> None:

@@ -3,6 +3,8 @@ CREATE INDEX IF NOT EXISTS idx_events_source_id ON events(source_id);
 CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at);
 CREATE INDEX IF NOT EXISTS idx_events_topic ON events(topic);
 CREATE INDEX IF NOT EXISTS idx_events_translation_status ON events(translation_status);
+CREATE INDEX IF NOT EXISTS idx_transcript_revisions_event_created ON transcript_revisions(event_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_transcript_revisions_parent ON transcript_revisions(parent_revision_id);
 CREATE INDEX IF NOT EXISTS idx_ingest_tasks_created_at ON ingest_tasks(created_at);
 CREATE INDEX IF NOT EXISTS idx_briefings_type ON briefings(type);
 CREATE INDEX IF NOT EXISTS idx_brainstorm_event_id ON brainstorm_questions(event_id);
