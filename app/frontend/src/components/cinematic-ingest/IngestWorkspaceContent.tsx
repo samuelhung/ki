@@ -28,6 +28,9 @@ interface IngestWorkspaceContentProps {
   searchPortalTarget: HTMLElement | null;
   selectedEvent: EventItem | null;
   details: DetailActions;
+  transcriptActions: React.ReactNode;
+  transcriptContent?: string;
+  summaryStale: boolean;
   onRetry: () => void;
   onSelect: (eventId: string) => void;
   onDelete: (eventId: string, event: MouseEvent) => void;
@@ -51,6 +54,9 @@ export function IngestWorkspaceContent({
   searchPortalTarget,
   selectedEvent,
   details,
+  transcriptActions,
+  transcriptContent,
+  summaryStale,
   onRetry,
   onSelect,
   onDelete,
@@ -128,6 +134,9 @@ export function IngestWorkspaceContent({
       error={details.detailError}
       tab={details.detailTab}
       detailTabs={detailTabs}
+      transcriptActions={transcriptActions}
+      transcriptContent={transcriptContent}
+      summaryStale={summaryStale}
       summarizing={Boolean(details.detail && details.summarizingId === details.detail.id)}
       contemplating={details.contemplating}
       contemplateError={details.contemplateError}
@@ -149,7 +158,7 @@ export function IngestWorkspaceContent({
       onChainAnalyze={onChainAnalyze}
       onSyncHints={onSyncHints}
     />
-  ), [detailTabs, details, onChainAnalyze, onContemplate, onLinkQuestions, onSummarize, onSyncHints, onToggleQuestion, selectedEvent]);
+  ), [detailTabs, details, onChainAnalyze, onContemplate, onLinkQuestions, onSummarize, onSyncHints, onToggleQuestion, selectedEvent, summaryStale, transcriptActions, transcriptContent]);
 
   return (
     <EmbeddedIngestWorkspace

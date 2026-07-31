@@ -1,6 +1,8 @@
 import { FileText, Globe, Lightbulb, Loader2, Plus, Sparkles } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { formatTimeBeijing, sourceLabel } from '../../utils';
 import type { EventDetailData } from '../../pages/EventDetailPage';
+import type { EventDetailTab } from './useEventDetail';
 
 export const STATUS_LABEL: Record<string, string> = {
   ready: '就绪', processing: '处理中', failed: '失败', done: '已完成', completed: '已完成', digest: '已摘要',
@@ -24,24 +26,30 @@ interface EventDetailHeaderProps {
   mediaUrl: string;
   summarizingId: string | null;
   contemplating: boolean;
+  tab: EventDetailTab;
+  transcriptActions?: ReactNode;
   onSummarize: (eventId: string) => void;
   onContemplate: () => void;
   onAddTask: () => void;
 }
 
 export function EventDetailHeader({
-  detail, mediaUrl, summarizingId, contemplating, onSummarize, onContemplate, onAddTask,
+  detail, mediaUrl, summarizingId, contemplating, tab, transcriptActions,
+  onSummarize, onContemplate, onAddTask,
 }: EventDetailHeaderProps) {
   return <>
     <div className="mb-6">
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-2">
-            <SourceIcon sourceId={detail.source_id} />
-            <h1 className="text-xl font-bold">{detail.title_cn || detail.title}</h1>
-            <span className={`text-[10px] px-2 py-0.5 rounded-full bg-[#1A1B20] ${STATUS_COLOR[detail.status] || 'text-gray-500'}`}>
-              {STATUS_LABEL[detail.status] || detail.status}
-            </span>
+          <div className="transcript-title-row mb-2 flex flex-wrap items-start justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <SourceIcon sourceId={detail.source_id} />
+              <h1 className="min-w-0 break-words text-xl font-bold">{detail.title_cn || detail.title}</h1>
+              <span className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-[#1A1B20] ${STATUS_COLOR[detail.status] || 'text-gray-500'}`}>
+                {STATUS_LABEL[detail.status] || detail.status}
+              </span>
+            </div>
+            {tab === 'body' && transcriptActions}
           </div>
           <div className="flex items-center gap-3 mt-2 text-[11px] text-gray-600 flex-wrap">
             <span>来源：{sourceLabel(detail.source_id)}</span>
