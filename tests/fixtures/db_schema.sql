@@ -44,6 +44,27 @@ CREATE TABLE IF NOT EXISTS events (
   FOREIGN KEY(source_id) REFERENCES sources(id)
 );
 
+CREATE TABLE IF NOT EXISTS transcript_revisions (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL,
+  parent_revision_id TEXT,
+  source_revision_id TEXT,
+  kind TEXT NOT NULL CHECK(kind IN ('original','manual','segmented','restored')),
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(event_id) REFERENCES events(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS transcript_revision_state (
+  event_id TEXT PRIMARY KEY,
+  original_revision_id TEXT NOT NULL,
+  active_revision_id TEXT NOT NULL,
+  artifact_revision_id TEXT,
+  summary_revision_id TEXT,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(event_id) REFERENCES events(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS briefings (
   id TEXT PRIMARY KEY,
   type TEXT NOT NULL DEFAULT 'quick',

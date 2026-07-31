@@ -5,9 +5,12 @@ from __future__ import annotations
 import importlib
 import logging
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+from zhiji_backend import db
+from zhiji_backend import transcript_revision_service as transcript_revisions
 from zhiji_backend.routes import ingest_routes
 
 
@@ -267,6 +270,17 @@ def test_degraded_log_uses_facade_module_not_injected_logger_name(
     monkeypatch.setattr(
         "zhiji_backend.classifier.classify_event", lambda _event_id: None
     )
+    monkeypatch.setattr(
+        _service(),
+        "transcript_revision_service",
+        SimpleNamespace(
+            ensure_initialized=lambda *_args, **_kwargs: SimpleNamespace(
+                active_revision_id="revision-1"
+            ),
+            mark_artifact_revision=lambda *_args, **_kwargs: True,
+            mark_summary_revision=lambda *_args, **_kwargs: None,
+        ),
+    )
 
     with caplog.at_level(logging.WARNING, logger=different_logger.name):
         ingest_routes._process_ingest(
@@ -282,3 +296,93 @@ def test_degraded_log_uses_facade_module_not_injected_logger_name(
         "RuntimeError",
         "task_failed",
     )
+
+
+@pytest.mark.parametrize(
+    ("summary_result", "has_summary_lineage"),
+    [
+        ({"summary": "初始总结", "overview": "概览"}, True),
+        (None, False),
+    ],
+)
+def test_completed_ingest_creates_original_revision_and_exact_lineage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    summary_result,
+    has_summary_lineage: bool,
+):
+    service = _service()
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "ingest-revisions.sqlite"))
+    db.init_db()
+    with db.connect() as conn:
+        conn.execute(
+            "INSERT INTO sources (id, name, type, url) VALUES (?, ?, ?, ?)",
+            ("source", "Source", "manual", ""),
+        )
+        conn.execute(
+            """INSERT INTO events
+               (id, source_id, title, url, status, content_type)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            ("evt-ingest-test", "source", "Title", "", "processing", "event"),
+        )
+
+    source = tmp_path / "source.txt"
+    source.write_text("上传内容", encoding="utf-8")
+    stages = [{"key": "complete", "status": "pending"}]
+    monkeypatch.setattr(
+        service,
+        "_document_content",
+        lambda *_args, **_kwargs: ("新采集正文ABC123", "Title", stages, None),
+    )
+    monkeypatch.setattr(
+        "zhiji_backend.summarizer.summarize_transcript",
+        lambda *_args, **_kwargs: summary_result,
+    )
+    monkeypatch.setattr("zhiji_backend.classifier.classify_event", lambda _event: None)
+
+    transcripts_dir = tmp_path / "transcripts"
+    service.process_ingest(
+        "evt-ingest-test",
+        "document",
+        source,
+        "topic",
+        "Title",
+        dependencies={
+            "connect_fn": db.connect,
+            "transcripts_dir": transcripts_dir,
+            "summaries_dir": tmp_path / "summaries",
+            "videos_dir": tmp_path / "videos",
+            "audio_dir": tmp_path / "audio",
+            "documents_dir": tmp_path / "documents",
+            "resolve_under_fn": lambda root, name, **_kwargs: root / name,
+            "set_progress_fn": lambda _event, _stages: None,
+            "md5_file_fn": lambda _path: None,
+            "safe_identifier_fn": lambda value: value,
+            "sanitize_task_error_fn": str,
+            "classify_task_error_fn": lambda _exc: "task_failed",
+            "logger": logging.getLogger("test.ingest.revisions"),
+            "module_name": "test.ingest.revisions",
+        },
+    )
+
+    state = transcript_revisions.get_transcript(
+        "evt-ingest-test", connect_fn=db.connect
+    )
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT raw_summary, ai_summary, status FROM events WHERE id = ?",
+            ("evt-ingest-test",),
+        ).fetchone()
+
+    assert state.active_kind == "original"
+    assert state.active_content == row["raw_summary"] == "新采集正文ABC123"
+    assert state.original_revision_id == state.active_revision_id
+    assert state.artifact_revision_id == state.active_revision_id
+    assert (transcripts_dir / "evt-ingest-test.md").read_text(
+        encoding="utf-8"
+    ) == state.active_content
+    assert (
+        state.summary_revision_id == state.active_revision_id
+    ) is has_summary_lineage
+    assert bool(row["ai_summary"]) is has_summary_lineage
+    assert row["status"] == "completed"

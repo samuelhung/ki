@@ -6,6 +6,8 @@ import logging
 from collections.abc import Callable
 from typing import Protocol
 
+from . import transcript_revision_service
+
 logger = logging.getLogger("zhiji_backend.routes.event_routes")
 
 
@@ -34,6 +36,7 @@ def summarize_event(
     resolve_under_fn,
     ingest_root,
     logger,
+    transcript_service=transcript_revision_service,
 ) -> tuple[dict[str, object], Callable[[], None] | None]:
     with connect_fn() as conn:
         row = conn.execute(
@@ -44,8 +47,10 @@ def summarize_event(
     if row is None:
         raise EventNotFoundError
 
+    state = transcript_service.ensure_initialized(event_id, connect_fn=connect_fn)
     title = row["title"] or ""
-    transcript = row["raw_summary"] or ""
+    transcript = state.active_content
+    summary_input_revision_id = state.active_revision_id
     if not transcript.strip():
         raise EventHasNoTranscriptError
     if row["ai_summary"] and not force:
@@ -53,12 +58,6 @@ def summarize_event(
             {"event_id": event_id, "summary": row["ai_summary"], "cached": True},
             None,
         )
-    if force and row["ai_summary"]:
-        with connect_fn() as conn:
-            conn.execute(
-                "UPDATE events SET ai_summary = NULL, overview = NULL WHERE id = ?",
-                (event_id,),
-            )
 
     def _run_summary():
         try:
@@ -82,6 +81,11 @@ def summarize_event(
                     summaries_dir, f"{event_id}.md", must_exist=False
                 )
                 summary_path.write_text(summary, encoding="utf-8")
+                transcript_service.mark_summary_revision(
+                    event_id,
+                    summary_input_revision_id,
+                    connect_fn=connect_fn,
+                )
                 try:
                     from .chain_detector import detect_new_chains
 
