@@ -50,6 +50,27 @@ SCHEMA_SCRIPTS = (
               FOREIGN KEY(source_id) REFERENCES sources(id)
             );
 
+            CREATE TABLE IF NOT EXISTS transcript_revisions (
+              id TEXT PRIMARY KEY,
+              event_id TEXT NOT NULL,
+              parent_revision_id TEXT,
+              source_revision_id TEXT,
+              kind TEXT NOT NULL CHECK(kind IN ('original','manual','segmented','restored')),
+              content TEXT NOT NULL,
+              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY(event_id) REFERENCES events(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS transcript_revision_state (
+              event_id TEXT PRIMARY KEY,
+              original_revision_id TEXT NOT NULL,
+              active_revision_id TEXT NOT NULL,
+              artifact_revision_id TEXT,
+              summary_revision_id TEXT,
+              updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              FOREIGN KEY(event_id) REFERENCES events(id) ON DELETE CASCADE
+            );
+
             CREATE TABLE IF NOT EXISTS briefings (
               id TEXT PRIMARY KEY,
               type TEXT NOT NULL DEFAULT 'quick',
@@ -270,6 +291,8 @@ INDEX_SCRIPTS = (
             CREATE INDEX IF NOT EXISTS idx_events_created_at ON events(created_at);
             CREATE INDEX IF NOT EXISTS idx_events_topic ON events(topic);
             CREATE INDEX IF NOT EXISTS idx_events_translation_status ON events(translation_status);
+            CREATE INDEX IF NOT EXISTS idx_transcript_revisions_event_created ON transcript_revisions(event_id, created_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_transcript_revisions_parent ON transcript_revisions(parent_revision_id);
             CREATE INDEX IF NOT EXISTS idx_ingest_tasks_created_at ON ingest_tasks(created_at);
             CREATE INDEX IF NOT EXISTS idx_briefings_type ON briefings(type);
             CREATE INDEX IF NOT EXISTS idx_brainstorm_event_id ON brainstorm_questions(event_id);
