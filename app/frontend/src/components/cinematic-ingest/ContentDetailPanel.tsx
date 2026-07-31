@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { Link2, Loader2 } from 'lucide-react';
+import { Link2, Loader2, RefreshCw } from 'lucide-react';
 import { backendUrl } from '../../api';
 import { renderMarkdown } from '../MarkdownRenderer';
 import { formatTimeBeijing, sourceLabel, statusLabel } from '../../utils';
@@ -13,6 +13,9 @@ function ContentDetailPanelComponent({
   error,
   tab,
   detailTabs,
+  transcriptActions,
+  transcriptContent,
+  summaryStale,
   summarizing,
   contemplating,
   contemplateError,
@@ -40,6 +43,9 @@ function ContentDetailPanelComponent({
   error: string;
   tab: DetailTab;
   detailTabs: React.ReactNode;
+  transcriptActions?: React.ReactNode;
+  transcriptContent?: string;
+  summaryStale?: boolean;
   summarizing: boolean;
   contemplating: boolean;
   contemplateError: string;
@@ -65,7 +71,7 @@ function ContentDetailPanelComponent({
   const mediaUrl = detail?.video_url ? backendUrl(detail.video_url) : '';
 
   function renderBody() {
-    const bodyText = detail?.summary_cn || detail?.raw_summary;
+    const bodyText = transcriptContent ?? detail?.summary_cn ?? detail?.raw_summary;
     return bodyText ? (
       <div className="detail-markdown whitespace-pre-wrap">{bodyText}</div>
     ) : (
@@ -74,7 +80,7 @@ function ContentDetailPanelComponent({
   }
 
   function renderSummary() {
-    if (summarizing) return <div className="detail-loading"><Loader2 size={20} className="animate-spin" /> {ingestCopy.detail.summaryLoading}</div>;
+    if (summarizing && !detail?.ai_summary) return <div className="detail-loading"><Loader2 size={20} className="animate-spin" /> {ingestCopy.detail.summaryLoading}</div>;
     const hasOverview = Boolean(detail?.overview);
     const hasAiSummary = Boolean(detail?.ai_summary);
     if (!hasOverview && !hasAiSummary) {
@@ -87,6 +93,15 @@ function ContentDetailPanelComponent({
     }
     return (
       <div className="detail-summary">
+        {summaryStale && (
+          <div className="summary-stale-notice">
+            <div><RefreshCw size={15} /><span>原文已更新，可重新生成 AI 总结</span></div>
+            <button type="button" onClick={onSummarize} disabled={summarizing}>
+              {summarizing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+              {summarizing ? '正在重新生成' : '重新生成 AI 总结'}
+            </button>
+          </div>
+        )}
         {detail?.overview && (
           <section>
             <h3>内容概述</h3>
@@ -202,7 +217,10 @@ function ContentDetailPanelComponent({
     <section className="ingest-detail-reader" aria-label="内容详情">
       <header>
         <span>{item ? `${sourceLabel(item.source_id)} · ${statusLabel(item.status)}` : 'CONTENT DETAIL'}</span>
-        <h2>{item?.title_cn || item?.title || ingestCopy.detail.titleFallback}</h2>
+        <div className="transcript-title-row flex flex-wrap items-start justify-between gap-3">
+          <h2>{item?.title_cn || item?.title || ingestCopy.detail.titleFallback}</h2>
+          {tab === 'body' && transcriptActions}
+        </div>
         {item && <small>{formatTimeBeijing(item.created_at)} · {item.topic || 'uncategorized'}</small>}
       </header>
       {mediaUrl && (
