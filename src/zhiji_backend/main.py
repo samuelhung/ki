@@ -56,6 +56,7 @@ ROUTE_NAMES = (
     "dashboard",
     "source",
     "event",
+    "transcript",
     "translate",
     "brainstorm",
     "briefing",

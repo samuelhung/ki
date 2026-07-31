@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiFetch } from '../../api';
+import { abortableDelay } from '../ingest/requestLifecycle';
 import type {
   ChainHint,
   ContemplateSuggestion,
@@ -8,6 +9,10 @@ import type {
   LinkedQuestion,
 } from './ingestTypes';
 import { ingestCopy } from './ingestCopy';
+import {
+  summaryRefreshIsComplete,
+  transcriptSummaryIsStale,
+} from './eventSummaryPolling';
 
 const API_BASE = '/api/events';
 
@@ -43,6 +48,7 @@ export function useIngestDetailActions({
 
   const detailRequestSeqRef = useRef(0);
   const summarizeRequestSeqRef = useRef(0);
+  const summarizeAbortRef = useRef<AbortController | null>(null);
   const contemplateRequestSeqRef = useRef(0);
   const linkedQuestionsRequestSeqRef = useRef(0);
   const chainAnalyzeRequestSeqRef = useRef(0);
@@ -105,31 +111,49 @@ export function useIngestDetailActions({
   const handleSummarize = useCallback(async (eventId: string) => {
     const requestSeq = summarizeRequestSeqRef.current + 1;
     summarizeRequestSeqRef.current = requestSeq;
+    summarizeAbortRef.current?.abort();
+    const controller = new AbortController();
+    summarizeAbortRef.current = controller;
+    const previousSummary = detail?.id === eventId ? detail.ai_summary || '' : '';
+    let waitForFreshLineage = false;
     setSummarizingId(eventId);
     try {
+      try {
+        waitForFreshLineage = await transcriptSummaryIsStale(
+          apiFetch, eventId, controller.signal,
+        );
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') return;
+      }
       const response = await apiFetch(`${API_BASE}/${eventId}/summarize?force=true`, { method: 'POST' });
       if (!response.ok) throw new Error(ingestCopy.detail.summarizeFailed);
-      for (let i = 0; i < 30; i += 1) {
-        await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        await abortableDelay(2000, controller.signal);
         if (requestSeq !== summarizeRequestSeqRef.current || activeEventId !== eventId) return;
-        const detailResponse = await apiFetch(`${API_BASE}/${eventId}`);
-        if (!detailResponse.ok) break;
-        const data = await detailResponse.json();
+        const refreshed = await summaryRefreshIsComplete(
+          apiFetch,
+          eventId,
+          controller.signal,
+          previousSummary,
+          waitForFreshLineage,
+        );
         if (requestSeq !== summarizeRequestSeqRef.current || activeEventId !== eventId) return;
-        if (data.ai_summary) {
-          setDetail(data);
+        if (refreshed) {
+          setDetail(refreshed);
           break;
         }
       }
-    } catch (_) {
+    } catch (error) {
       if (requestSeq !== summarizeRequestSeqRef.current || activeEventId !== eventId) return;
+      if (error instanceof Error && error.name === 'AbortError') return;
       setToast({ text: ingestCopy.detail.summarizeFailed, type: 'info' });
     } finally {
       if (requestSeq === summarizeRequestSeqRef.current) {
+        summarizeAbortRef.current = null;
         setSummarizingId(null);
       }
     }
-  }, [activeEventId, setToast]);
+  }, [activeEventId, detail, setToast]);
 
   const handleContemplate = useCallback(async () => {
     if (!detail) return;
@@ -268,6 +292,7 @@ export function useIngestDetailActions({
   useEffect(() => () => {
     detailRequestSeqRef.current += 1;
     summarizeRequestSeqRef.current += 1;
+    summarizeAbortRef.current?.abort();
     contemplateRequestSeqRef.current += 1;
     linkedQuestionsRequestSeqRef.current += 1;
     chainAnalyzeRequestSeqRef.current += 1;
@@ -275,11 +300,13 @@ export function useIngestDetailActions({
   }, []);
 
   useEffect(() => {
+    summarizeRequestSeqRef.current += 1;
+    summarizeAbortRef.current?.abort();
+    setSummarizingId(null);
     if (!activeEventId) {
       setDetail(null);
       return;
     }
-    summarizeRequestSeqRef.current += 1;
     contemplateRequestSeqRef.current += 1;
     linkedQuestionsRequestSeqRef.current += 1;
     chainAnalyzeRequestSeqRef.current += 1;

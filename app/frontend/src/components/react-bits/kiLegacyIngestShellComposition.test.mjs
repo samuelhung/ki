@@ -415,6 +415,12 @@ test('embedded ingest expands its useful workspace at compact and large referenc
   assert.match(shellCss, /@media \(min-width:\s*1800px\)/);
 });
 
+test('embedded ingest stacks list and detail at phone width so transcript actions remain usable', () => {
+  assert.match(ingest, /legacy-ingest-root is-shell-embedded cinematic-ingest is-content-ingest/);
+  assert.match(shellCss, /@media \(max-width:\s*760px\)[\s\S]*\.legacy-ingest-root\.is-content-ingest\.is-shell-embedded \.ki-ingest-split-stage\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)[^}]*grid-template-rows:\s*minmax\(150px,\s*34%\) minmax\(0,\s*1fr\)[^}]*row-gap:\s*12px[^}]*column-gap:\s*0/s);
+  assert.doesNotMatch(shellCss, /@media \(max-width:\s*760px\)\s*\{\s*\.ki-ingest-split-stage\s*\{/s);
+});
+
 test('the shared shell exposes a continuous middle-workspace scale', () => {
   assert.match(shell, /import \{ useCinematicWorkspaceScale \} from '\.\/useCinematicWorkspaceScale'/);
   assert.match(shell, /const workspaceScale = useCinematicWorkspaceScale\(\)/);

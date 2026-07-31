@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from zhiji_backend import main
 from zhiji_backend.routes import chain_routes
 
 
@@ -35,3 +36,10 @@ def test_update_node_writes_a_real_sqlite_timestamp(tmp_path: Path, monkeypatch)
 
     assert name == "new"
     assert timestamp and timestamp != "datetime('now')"
+
+
+def test_transcript_router_is_registered_immediately_after_event_router() -> None:
+    event_index = main.ROUTE_NAMES.index("event")
+
+    assert main.ROUTE_NAMES[event_index + 1] == "transcript"
+    assert main._dependencies.routes["transcript"].router is main.transcript_router

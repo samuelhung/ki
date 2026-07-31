@@ -10,11 +10,22 @@ import type {
 import { isLatestRequest } from '../ingest/ingestRequestPolicy';
 import { abortableDelay, RequestLifecycle, type RequestOwner } from '../ingest/requestLifecycle';
 import { useAuthenticatedMediaUrl } from '../ingest/useAuthenticatedMediaUrl';
+import {
+  fetchEventDetail,
+  summaryRefreshIsComplete,
+  transcriptSummaryIsStale,
+} from './eventSummaryPolling';
+import {
+  activeActionState,
+  createActiveActionRegistry,
+  createSelectedEventOwner,
+  toMediaPath,
+} from './eventDetailRuntime';
 
 const API_BASE = '/api/events';
 export type EventDetailTab = 'body' | 'summary' | 'questions' | 'chain';
 type EventDetailResponse = EventDetailData & { chain_analysis?: string };
-type SelectedOwner = { selectedId?: string; sequence: number };
+type SelectedOwner = ReturnType<ReturnType<typeof createSelectedEventOwner>['capture']>;
 
 interface CoordinatorOptions<Value> { onCommit: (value: Value) => void; onError: (reason: unknown) => void; }
 interface CoordinatedRequest<Value> { owner: RequestOwner; selectedId: string; request: (signal: AbortSignal) => Promise<Value>; }
@@ -67,63 +78,6 @@ export function createRequestCoordinator<Value>({ onCommit, onError }: Coordinat
     currentSelectedId = '';
   }
   return { start, run, mutateAndRefresh, abort, isCurrent };
-}
-
-export function createSelectedEventOwner(initialSelectedId?: string) {
-  let selectedId = initialSelectedId;
-  let sequence = 0;
-  const capture = (): SelectedOwner => ({ selectedId, sequence });
-  return {
-    capture,
-    select(nextSelectedId?: string) {
-      if (nextSelectedId !== selectedId) {
-        selectedId = nextSelectedId;
-        sequence += 1;
-      }
-      return capture();
-    },
-    isCurrent(owner: SelectedOwner) {
-      return owner.selectedId === selectedId && owner.sequence === sequence;
-    },
-    invalidate(owner: SelectedOwner) {
-      if (owner.selectedId !== selectedId || owner.sequence !== sequence) return;
-      selectedId = undefined;
-      sequence += 1;
-    },
-  };
-}
-
-export function toMediaPath(absolutePath: string | undefined): string | null {
-  if (!absolutePath) return null;
-  const index = absolutePath.indexOf('/data/ingest/');
-  if (index === -1) return null;
-  return '/ingest' + absolutePath.substring(index + '/data/ingest'.length);
-}
-
-type ActiveActionName = 'summarize' | 'contemplate' | 'link' | 'chain' | 'sync';
-export function createActiveActionRegistry() {
-  const active = new Set<string>(); const listeners = new Set<() => void>();
-  let revision = 0;
-  const keyFor = (name: ActiveActionName, eventId: string) => `${name}:${eventId}`;
-  const emit = () => { revision += 1; listeners.forEach((listener) => listener()); };
-  return {
-    begin(name: ActiveActionName, eventId: string) {
-      const key = keyFor(name, eventId); if (active.has(key)) return null;
-      active.add(key); emit(); return key;
-    },
-    end(key: string | null) { if (key && active.delete(key)) emit(); },
-    isActive(name: ActiveActionName, eventId?: string) { return Boolean(eventId && active.has(keyFor(name, eventId))); },
-    subscribe(listener: () => void) { listeners.add(listener); return () => listeners.delete(listener); },
-    getSnapshot() { return revision; },
-  };
-}
-
-export function activeActionState(actions: ReturnType<typeof createActiveActionRegistry>, eventId?: string) {
-  return {
-    summarizingId: actions.isActive('summarize', eventId) ? eventId || null : null,
-    contemplating: actions.isActive('contemplate', eventId), contemplateLinking: actions.isActive('link', eventId),
-    chainLoading: actions.isActive('chain', eventId), syncingHints: actions.isActive('sync', eventId),
-  };
 }
 
 function isAbortError(reason: unknown) {
@@ -234,12 +188,31 @@ export function useEventDetail({ id, onDetailChange }: UseEventDetailOptions) {
     detailCoordinator.abort(); summarizeCoordinator.abort(); linkedCoordinator.abort(); linkCoordinator.abort();
   }, [detailCoordinator, summarizeCoordinator, linkedCoordinator, linkCoordinator]);
 
+  const refreshDetail = async () => {
+    if (!id) return null;
+    const owner = detailCoordinator.start(id);
+    return detailCoordinator.run({
+      owner,
+      selectedId: id,
+      request: (signal) => fetchEventDetail(apiFetch, id, signal),
+    });
+  };
+
   async function handleSummarize(eventId: string) {
     const actionKey = activeActions.begin('summarize', eventId);
     if (!actionKey) return;
     const selection = selectedOwner.capture();
     const owner = summarizeCoordinator.start(eventId);
+    const previousSummary = detail?.id === eventId ? detail.ai_summary || '' : '';
+    let waitForFreshLineage = false;
     try {
+      try {
+        waitForFreshLineage = await transcriptSummaryIsStale(
+          apiFetch, eventId, owner.signal,
+        );
+      } catch (reason) {
+        if (isAbortError(reason)) throw reason;
+      }
       const refreshed = await summarizeCoordinator.mutateAndRefresh({
         owner, selectedId: eventId,
         mutate: async () => {
@@ -250,10 +223,10 @@ export function useEventDetail({ id, onDetailChange }: UseEventDetailOptions) {
         refresh: async (signal) => {
           for (let attempt = 0; attempt < 30; attempt += 1) {
             await abortableDelay(2000, signal);
-            const response = await apiFetch(`${API_BASE}/${eventId}`, { signal });
-            if (!response.ok) break;
-            const data = await response.json() as EventDetailResponse;
-            if (data.ai_summary) return data;
+            const refreshed = await summaryRefreshIsComplete(
+              apiFetch, eventId, signal, previousSummary, waitForFreshLineage,
+            );
+            if (refreshed) return refreshed;
           }
           return null;
         },
@@ -391,6 +364,6 @@ export function useEventDetail({ id, onDetailChange }: UseEventDetailOptions) {
     detail, loading, tab, setTab, mediaUrl, summarizingId, contemplating, contemplateError, contemplateResults,
     contemplateSelected, contemplateLinking, linkedQuestions, linkedQuestionsLoading, chainAnalysis, chainLoading,
     chainError, chainHints, syncingHints, syncResult, chainSuggestionsCount, handleSummarize, handleContemplate,
-    handleContemplateLink, handleChainAnalyze, handleSyncHints, toggleQuestion,
+    handleContemplateLink, handleChainAnalyze, handleSyncHints, toggleQuestion, refreshDetail,
   };
 }

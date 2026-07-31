@@ -3,8 +3,11 @@ import { useLocation } from 'react-router-dom';
 import { Upload } from 'lucide-react';
 import Modal from '../components/Modal';
 import { IngestWorkspaceContent } from '../components/cinematic-ingest/IngestWorkspaceContent';
+import { TranscriptActions } from '../components/cinematic-ingest/TranscriptActions';
+import { TranscriptWorkspaceDialog } from '../components/cinematic-ingest/TranscriptWorkspaceDialog';
 import { useIngestDetailActions } from '../components/cinematic-ingest/useIngestDetailActions';
 import { useIngestEvents } from '../components/cinematic-ingest/useIngestEvents';
+import { useTranscriptWorkflow } from '../components/cinematic-ingest/useTranscriptWorkflow';
 import { apiFetch } from '../api';
 import '../components/cinematic-ingest/cinematic-ingest.css';
 
@@ -42,6 +45,10 @@ export default function Ingest() {
     onPollingSettled: closeIngestModal,
   });
   const details = useIngestDetailActions({ activeEventId, setToast });
+  const transcriptWorkflow = useTranscriptWorkflow({
+    eventId: activeEventId || undefined,
+    onTranscriptActivated: () => undefined,
+  });
 
   useEffect(() => {
     setSearchPortalTarget(document.getElementById('ki-shell-top-accessory'));
@@ -111,9 +118,11 @@ export default function Ingest() {
     setModalType(type);
   }
 
-  const handleEmbeddedSummarize = useCallback(() => {
-    if (details.detail) void details.handleSummarize(details.detail.id);
-  }, [details.detail, details.handleSummarize]);
+  const handleEmbeddedSummarize = useCallback(async () => {
+    if (!details.detail) return;
+    await details.handleSummarize(details.detail.id);
+    await transcriptWorkflow.refreshTranscript();
+  }, [details.detail, details.handleSummarize, transcriptWorkflow.refreshTranscript]);
 
   const handleEmbeddedSearchChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     setSearch(event.target.value);
@@ -121,7 +130,7 @@ export default function Ingest() {
 
   return (
     <>
-      <div className="legacy-ingest-root is-shell-embedded cinematic-ingest flex-1 bg-[#0B0C10] text-white flex flex-col h-full overflow-hidden">
+      <div className="legacy-ingest-root is-shell-embedded cinematic-ingest is-content-ingest flex-1 bg-[#0B0C10] text-white flex flex-col h-full overflow-hidden">
         <div className="flex-1 overflow-y-auto custom-scrollbar px-4 md:px-8 pb-4 md:pb-8">
           <div className="max-w-[1500px] mx-auto pt-4">
             <IngestWorkspaceContent
@@ -134,6 +143,16 @@ export default function Ingest() {
               searchPortalTarget={searchPortalTarget}
               selectedEvent={selectedEvent}
               details={details}
+              transcriptActions={<TranscriptActions
+                transcript={transcriptWorkflow.transcript}
+                loading={transcriptWorkflow.loading}
+                error={transcriptWorkflow.error}
+                refreshRequired={transcriptWorkflow.refreshRequired}
+                onOpen={transcriptWorkflow.openWorkspace}
+                onRefresh={transcriptWorkflow.refreshTranscript}
+              />}
+              transcriptContent={transcriptWorkflow.transcript?.content}
+              summaryStale={transcriptWorkflow.transcript?.summary_stale || false}
               onRetry={loadEvents}
               onSelect={openDetail}
               onDelete={handleDelete}
@@ -149,6 +168,30 @@ export default function Ingest() {
           </div>
         </div>
       </div>
+
+      <TranscriptWorkspaceDialog
+        open={transcriptWorkflow.workspaceOpen}
+        tab={transcriptWorkflow.workspaceTab}
+        transcript={transcriptWorkflow.transcript}
+        editorText={transcriptWorkflow.editorText}
+        saving={transcriptWorkflow.saving}
+        segmenting={transcriptWorkflow.segmenting}
+        confirming={transcriptWorkflow.confirming}
+        task={transcriptWorkflow.task}
+        selectedRevision={transcriptWorkflow.selectedRevision}
+        revisionContent={transcriptWorkflow.revisionContent}
+        historyLoading={transcriptWorkflow.historyLoading}
+        restoring={transcriptWorkflow.restoring}
+        error={transcriptWorkflow.error}
+        onTabChange={transcriptWorkflow.setWorkspaceTab}
+        onEditorChange={transcriptWorkflow.setEditorText}
+        onSaveManual={transcriptWorkflow.saveManual}
+        onStartSegmentation={transcriptWorkflow.startSegmentation}
+        onConfirmSegmentation={transcriptWorkflow.confirmSegmentation}
+        onSelectRevision={transcriptWorkflow.loadRevision}
+        onRestoreRevision={transcriptWorkflow.restoreRevision}
+        onClose={transcriptWorkflow.closeWorkspace}
+      />
 
       {modalType === 'douyin' && (
         <Modal open={true} title="提交抖音视频" onClose={() => setModalType(null)}>
