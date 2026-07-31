@@ -221,7 +221,7 @@ test('transcript correction UI opens one workspace from the title row', () => {
   assert.match(header, /transcript-title-row[\s\S]*<h1[\s\S]*transcriptActions/);
   assert.match(header, /flex-wrap/);
   assert.match(header, /justify-between/);
-  assert.match(actions, />转写处理</);
+  assert.match(actions, /转写处理/);
   assert.doesNotMatch(actions, />人工修正</);
   assert.doesNotMatch(actions, />AI 语义分段</);
   assert.doesNotMatch(actions, /aria-label="修订记录"/);
@@ -271,6 +271,14 @@ test('one transcript workspace owns the global Dock frame and composes all panel
     assert.doesNotMatch(panel, /TranscriptDialogFrame/);
   }
   assert.doesNotMatch(dualNavigationCss, /\.transcript-editor-dialog textarea\s*\{/);
+  assert.match(dualNavigationCss, /\.transcript-workspace-tabs\s*\{/);
+  assert.match(dualNavigationCss, /\.transcript-workspace-tabs\s*\{[^}]*height:\s*44px/);
+  assert.match(dualNavigationCss, /\.transcript-workspace-tabs button\.is-active/);
+  assert.match(dualNavigationCss, /\.global-dock-workspace-dialog\.transcript-workspace-dialog\s*\{[^}]*grid-template-rows:\s*auto 64px minmax\(0, 1fr\)/);
+  assert.match(dualNavigationCss, /\.transcript-workspace-dialog \.transcript-dialog-workspace-body\s*\{[^}]*height:\s*auto/);
+  assert.match(dualNavigationCss, /\.transcript-comparison-pane[\s\S]*overflow:\s*auto/);
+  assert.match(dualNavigationCss, /@media \(max-width: 760px\)[\s\S]*\.global-dock-workspace-dialog\.transcript-workspace-dialog\s*\{[^}]*grid-template-rows:\s*auto 58px minmax\(0, 1fr\)/);
+  assert.match(dualNavigationCss, /@media \(max-width: 760px\)[\s\S]*\.transcript-workspace-tabs/);
 });
 
 test('the standard cinematic npm and CI path covers every completed detail composition', () => {

@@ -152,9 +152,10 @@ test('embedded ingest exposes the transcript revision workflow from the content 
 
   assert.match(page, /useTranscriptWorkflow\(/);
   assert.match(page, /<TranscriptActions/);
-  assert.match(page, /<TranscriptEditorDialog/);
-  assert.match(page, /<TranscriptComparisonDialog/);
-  assert.match(page, /<TranscriptRevisionDialog/);
+  assert.match(page, /<TranscriptWorkspaceDialog/);
+  assert.doesNotMatch(page, /<TranscriptEditorDialog/);
+  assert.doesNotMatch(page, /<TranscriptComparisonDialog/);
+  assert.doesNotMatch(page, /<TranscriptRevisionDialog/);
   assert.match(workspace, /transcriptActions=\{transcriptActions\}/);
   assert.match(workspace, /transcriptContent=\{transcriptContent\}/);
   assert.match(workspace, /summaryStale=\{summaryStale\}/);
