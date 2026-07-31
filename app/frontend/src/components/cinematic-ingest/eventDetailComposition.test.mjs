@@ -17,9 +17,24 @@ const pageUrl = new URL('../../pages/EventDetailPage.tsx', import.meta.url);
 const hookUrl = new URL('./useEventDetail.ts', import.meta.url);
 const headerUrl = new URL('./EventDetailHeader.tsx', import.meta.url);
 const bodyUrl = new URL('./EventDetailBody.tsx', import.meta.url);
+const runtimeUrl = new URL('./eventDetailRuntime.ts', import.meta.url);
+const transcriptActionsUrl = new URL('./TranscriptActions.tsx', import.meta.url);
+const transcriptDialogFrameUrl = new URL('./TranscriptDialogFrame.tsx', import.meta.url);
+const transcriptWorkspaceUrl = new URL('./TranscriptWorkspaceDialog.tsx', import.meta.url);
+const transcriptEditorPanelUrl = new URL('./TranscriptEditorPanel.tsx', import.meta.url);
+const transcriptComparisonPanelUrl = new URL('./TranscriptComparisonPanel.tsx', import.meta.url);
+const transcriptRevisionPanelUrl = new URL('./TranscriptRevisionPanel.tsx', import.meta.url);
+const dualNavigationCss = readFileSync(new URL('../../pages/DualNavigationDemo.css', import.meta.url), 'utf8');
 const packageJson = JSON.parse(readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'));
 const checkScript = readFileSync(new URL('../../../../../scripts/check.sh', import.meta.url), 'utf8');
-const modules = readSourceModules([pageUrl, hookUrl, headerUrl, bodyUrl]);
+const modules = readSourceModules([
+  pageUrl,
+  hookUrl,
+  headerUrl,
+  bodyUrl,
+  runtimeUrl,
+  transcriptActionsUrl,
+]);
 const implementation = combinedSource(modules);
 const pageModule = modules.find((module) => module.name === 'EventDetailPage.tsx');
 assert.ok(pageModule);
@@ -189,6 +204,83 @@ test('event action loading remains authoritative across an A-B-A selection cycle
   for (const staleSetter of ['setSummarizingId', 'setContemplating', 'setContemplateLinking', 'setChainLoading', 'setSyncingHints']) {
     assert.doesNotMatch(hook, new RegExp(staleSetter));
   }
+});
+
+test('transcript correction UI opens one workspace from the title row', () => {
+  for (const url of [
+    transcriptActionsUrl,
+    transcriptWorkspaceUrl,
+    transcriptEditorPanelUrl,
+    transcriptComparisonPanelUrl,
+    transcriptRevisionPanelUrl,
+  ]) assert.ok(existsSync(url), `${url.pathname.split('/').at(-1)} must exist`);
+
+  const header = readFileSync(headerUrl, 'utf8');
+  const actions = readFileSync(transcriptActionsUrl, 'utf8');
+  assert.match(header, /tab === 'body'/);
+  assert.match(header, /transcript-title-row[\s\S]*<h1[\s\S]*transcriptActions/);
+  assert.match(header, /flex-wrap/);
+  assert.match(header, /justify-between/);
+  assert.match(actions, /转写处理/);
+  assert.doesNotMatch(actions, />人工修正</);
+  assert.doesNotMatch(actions, />AI 语义分段</);
+  assert.doesNotMatch(actions, /aria-label="修订记录"/);
+  assert.match(actions, /ml-auto/);
+  assert.match(page, /<TranscriptWorkspaceDialog/);
+  assert.doesNotMatch(page, /<TranscriptEditorDialog/);
+  assert.doesNotMatch(page, /<TranscriptComparisonDialog/);
+  assert.doesNotMatch(page, /<TranscriptRevisionDialog/);
+});
+
+test('one transcript workspace owns the global Dock frame and composes all panels', () => {
+  for (const url of [
+    transcriptWorkspaceUrl,
+    transcriptEditorPanelUrl,
+    transcriptComparisonPanelUrl,
+    transcriptRevisionPanelUrl,
+  ]) assert.ok(existsSync(url), `${url.pathname.split('/').at(-1)} must exist`);
+  assert.ok(existsSync(transcriptDialogFrameUrl));
+
+  const frameModule = readSourceModules([transcriptDialogFrameUrl])[0];
+  assert.ok(frameModule);
+  const frame = frameModule.source;
+  const workspace = readFileSync(transcriptWorkspaceUrl, 'utf8');
+  const panels = [
+    readFileSync(transcriptEditorPanelUrl, 'utf8'),
+    readFileSync(transcriptComparisonPanelUrl, 'utf8'),
+    readFileSync(transcriptRevisionPanelUrl, 'utf8'),
+  ];
+
+  assertNamedImports(frameModule, 'react-dom', ['createPortal']);
+  assert.match(frame, /import '\.\.\/\.\.\/pages\/GlobalDockWorkspaceFrame\.css';/);
+  assert.match(frame, /document\.querySelector<HTMLElement>\('\.dual-nav-demo'\) \|\| document\.body/);
+  assert.match(frame, /dual-nav-action-backdrop global-dock-backdrop global-dock-workspace-backdrop transcript-dialog-backdrop/);
+  assert.match(frame, /global-dock-workspace-stage is-wide transcript-dialog-stage/);
+  assert.match(frame, /KiMagicBentoFrame/);
+  assert.match(frame, /global-dock-workspace-dialog/);
+  assert.match(frame, /createPortal\([\s\S]*dialog[\s\S]*portalHost\)/);
+  for (const label of ['转写处理', '人工修正', 'AI 语义分段', '修订记录']) {
+    assert.match(workspace, new RegExp(label));
+  }
+  for (const component of ['TranscriptDialogFrame', 'TranscriptEditorPanel', 'TranscriptComparisonPanel', 'TranscriptRevisionPanel']) {
+    assert.match(workspace, new RegExp(component));
+  }
+  assert.match(workspace, /closeDisabled=\{saving \|\| props\.segmenting \|\| confirming \|\| restoring\}/);
+  assert.equal(workspace.match(/<TranscriptDialogFrame/g)?.length, 1);
+  for (const panel of panels) {
+    assert.doesNotMatch(panel, /createPortal/);
+    assert.doesNotMatch(panel, /TranscriptDialogFrame/);
+  }
+  assert.doesNotMatch(dualNavigationCss, /\.transcript-editor-dialog textarea\s*\{/);
+  assert.match(dualNavigationCss, /\.transcript-workspace-tabs\s*\{/);
+  assert.match(dualNavigationCss, /\.transcript-workspace-tabs\s*\{[^}]*height:\s*44px/);
+  assert.match(dualNavigationCss, /\.transcript-workspace-tabs button\.is-active/);
+  assert.match(dualNavigationCss, /\.global-dock-workspace-dialog\.transcript-workspace-dialog\s*\{[^}]*grid-template-rows:\s*auto 64px minmax\(0, 1fr\)/);
+  assert.match(dualNavigationCss, /\.transcript-workspace-dialog \.transcript-dialog-workspace-body\s*\{[^}]*height:\s*auto/);
+  assert.match(dualNavigationCss, /\.transcript-comparison-pane[\s\S]*overflow:\s*auto/);
+  assert.match(dualNavigationCss, /@media \(max-width: 760px\)[\s\S]*\.global-dock-workspace-dialog\.transcript-workspace-dialog\s*\{[^}]*grid-template-rows:\s*auto 58px minmax\(0, 1fr\)/);
+  assert.match(dualNavigationCss, /@media \(max-width: 760px\)[\s\S]*\.transcript-workspace-tabs/);
+  assert.match(dualNavigationCss, /@media \(max-width: 760px\)[\s\S]*\.transcript-revision-layout\s*\{[^}]*grid-template-rows:\s*minmax\(0, 38%\) minmax\(0, 1fr\)/);
 });
 
 test('the standard cinematic npm and CI path covers every completed detail composition', () => {

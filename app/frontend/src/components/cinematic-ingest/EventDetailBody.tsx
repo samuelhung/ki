@@ -23,6 +23,8 @@ interface EventDetailBodyProps {
   syncingHints: boolean;
   syncResult: string;
   chainSuggestionsCount: number;
+  transcriptContent?: string;
+  summaryStale: boolean;
   onTabChange: (tab: EventDetailTab) => void;
   onSummarize: (eventId: string) => void;
   onContemplate: () => void;
@@ -58,7 +60,7 @@ export function EventDetailBody(props: EventDetailBodyProps) {
     </div>}
     <div className="min-h-[30vh]">
       {supportedSource ? <>
-        {tab === 'body' && <EventBody detail={detail} />}
+        {tab === 'body' && <EventBody detail={detail} transcriptContent={props.transcriptContent} />}
         {tab === 'summary' && <EventSummary {...props} />}
         {tab === 'questions' && <EventQuestions {...props} />}
         {tab === 'chain' && <EventChain {...props} />}
@@ -71,8 +73,8 @@ export function EventDetailBody(props: EventDetailBodyProps) {
   </>;
 }
 
-function EventBody({ detail }: { detail: EventDetailData }) {
-  const bodyText = detail.summary_cn || detail.raw_summary;
+function EventBody({ detail, transcriptContent }: { detail: EventDetailData; transcriptContent?: string }) {
+  const bodyText = transcriptContent ?? detail.raw_summary;
   return <div className="text-sm leading-relaxed text-gray-300 space-y-2">
     {bodyText ? <div className="whitespace-pre-wrap">{bodyText}</div> : <p className="text-gray-500 py-12 text-center">暂无转写内容</p>}
   </div>;
@@ -81,10 +83,17 @@ function EventBody({ detail }: { detail: EventDetailData }) {
 function EventSummary(props: EventDetailBodyProps) {
   const { detail, summarizingId } = props;
   const hasOverview = !!detail.overview;
-  if (summarizingId === detail.id) {
+  if (summarizingId === detail.id && !detail.ai_summary) {
     return <div className="flex items-center justify-center py-16"><Loader2 size={24} className="animate-spin text-purple-400" /></div>;
   }
   return <div className="space-y-6 text-sm">
+    {props.summaryStale && <div className="summary-stale-notice">
+      <div><Sparkles size={15} /><span>原文已更新，可重新生成 AI 总结</span></div>
+      <button type="button" onClick={() => props.onSummarize(detail.id)} disabled={summarizingId === detail.id}>
+        {summarizingId === detail.id ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+        {summarizingId === detail.id ? '正在重新生成' : '重新生成 AI 总结'}
+      </button>
+    </div>}
     {hasOverview && <div>
       <div className="flex items-center gap-2 mb-3"><span className="w-1 h-4 rounded-full bg-purple-400" /><span className="text-xs text-purple-400 font-medium">内容概述</span></div>
       <div className="text-gray-300 leading-relaxed whitespace-pre-wrap text-sm">{detail.overview}</div>
