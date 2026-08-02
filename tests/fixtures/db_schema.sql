@@ -65,14 +65,6 @@ CREATE TABLE IF NOT EXISTS transcript_revision_state (
   FOREIGN KEY(event_id) REFERENCES events(id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS briefings (
-  id TEXT PRIMARY KEY,
-  type TEXT NOT NULL DEFAULT 'quick',
-  topics_json TEXT NOT NULL DEFAULT '[]',
-  events_used INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
 CREATE TABLE IF NOT EXISTS brainstorm_questions (
   id TEXT PRIMARY KEY,
   event_id TEXT,

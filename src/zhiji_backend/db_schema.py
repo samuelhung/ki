@@ -71,14 +71,6 @@ SCHEMA_SCRIPTS = (
               FOREIGN KEY(event_id) REFERENCES events(id) ON DELETE CASCADE
             );
 
-            CREATE TABLE IF NOT EXISTS briefings (
-              id TEXT PRIMARY KEY,
-              type TEXT NOT NULL DEFAULT 'quick',
-              topics_json TEXT NOT NULL DEFAULT '[]',
-              events_used INTEGER NOT NULL DEFAULT 0,
-              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            );
-
             CREATE TABLE IF NOT EXISTS brainstorm_questions (
               id TEXT PRIMARY KEY,
               event_id TEXT,
@@ -294,7 +286,6 @@ INDEX_SCRIPTS = (
             CREATE INDEX IF NOT EXISTS idx_transcript_revisions_event_created ON transcript_revisions(event_id, created_at DESC);
             CREATE INDEX IF NOT EXISTS idx_transcript_revisions_parent ON transcript_revisions(parent_revision_id);
             CREATE INDEX IF NOT EXISTS idx_ingest_tasks_created_at ON ingest_tasks(created_at);
-            CREATE INDEX IF NOT EXISTS idx_briefings_type ON briefings(type);
             CREATE INDEX IF NOT EXISTS idx_brainstorm_event_id ON brainstorm_questions(event_id);
             CREATE INDEX IF NOT EXISTS idx_brainstorm_status ON brainstorm_questions(status);
             CREATE INDEX IF NOT EXISTS idx_brainstorm_links_question ON brainstorm_event_links(question_id);

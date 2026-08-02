@@ -24,7 +24,6 @@ RETIRED_TABLES = {
 ACTIVE_TABLES = (
     "sources",
     "events",
-    "briefings",
     "series",
     "tasks",
     "study_materials",
@@ -114,10 +113,6 @@ def _create_populated_legacy_database(db_path, monkeypatch) -> dict[str, int]:
             VALUES (?, ?, ?, ?)
             """,
             ("event-1", "source-1", "Active event", "https://example.com/event"),
-        )
-        conn.execute(
-            "INSERT INTO briefings (id, type, topics_json) VALUES (?, ?, ?)",
-            ("briefing-1", "quick", "[]"),
         )
         conn.execute(
             "INSERT INTO series (id, name) VALUES (?, ?)",
@@ -267,9 +262,6 @@ def test_cleanup_migration_drops_retired_schema_and_preserves_active_rows(
         assert conn.execute(
             "SELECT module, task, total_tokens FROM ai_usage ORDER BY id"
         ).fetchall() == [
-            ("briefing", "briefing_quick", 40),
-            ("briefing", "briefing_daily", 50),
-            ("briefing", "briefing_quick", 60),
             ("series", "digest", 70),
             ("digest_briefing", None, 80),
         ]
@@ -420,9 +412,7 @@ def test_fresh_init_never_creates_retired_tables_or_indexes(tmp_path, monkeypatc
             )
             for name in _schema_names(conn, "index")
         )
-        assert {"events", "briefings", "ai_usage", "series"} <= _schema_names(
-            conn, "table"
-        )
+        assert {"events", "ai_usage", "series"} <= _schema_names(conn, "table")
 
 
 def test_backup_database_includes_committed_wal_data_and_is_verified(tmp_path):

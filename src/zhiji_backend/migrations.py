@@ -23,6 +23,7 @@ MIGRATION_LOCK_RETRY_MAX_DELAY_SECONDS = 1.0
 _monotonic = time.monotonic
 _sleep = time.sleep
 DESTRUCTIVE_CLEANUP_MIGRATION = "20260719_remove_retired_features"
+INSTANT_BRIEFING_RETIREMENT_MIGRATION = "20260803_remove_instant_briefing"
 RETIRED_TABLE_NAMES = (
     "event_entities",
     "entity_relations",
@@ -209,5 +210,23 @@ def remove_retired_features(conn: sqlite3.Connection) -> None:
             SET module = 'briefing'
             WHERE module = 'digest_briefing'
               AND task IN ('briefing_quick', 'briefing_daily')
+            """
+        )
+
+
+@register(INSTANT_BRIEFING_RETIREMENT_MIGRATION)
+def remove_instant_briefing(conn: sqlite3.Connection) -> None:
+    conn.execute("DROP INDEX IF EXISTS idx_briefings_type")
+    conn.execute("DROP TABLE IF EXISTS briefings")
+
+    if _table_exists(conn, "ai_usage"):
+        conn.execute(
+            """
+            DELETE FROM ai_usage
+            WHERE module = 'briefing'
+               OR (
+                    module = 'digest_briefing'
+                    AND task IN ('briefing_quick', 'briefing_daily')
+               )
             """
         )

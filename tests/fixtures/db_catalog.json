@@ -25,12 +25,6 @@
   },
   {
     "type": "table",
-    "name": "briefings",
-    "table": "briefings",
-    "sql": "CREATE TABLE briefings (\n              id TEXT PRIMARY KEY,\n              type TEXT NOT NULL DEFAULT 'quick',\n              topics_json TEXT NOT NULL DEFAULT '[]',\n              events_used INTEGER NOT NULL DEFAULT 0,\n              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP\n            )"
-  },
-  {
-    "type": "table",
     "name": "brainstorm_questions",
     "table": "brainstorm_questions",
     "sql": "CREATE TABLE brainstorm_questions (\n              id TEXT PRIMARY KEY,\n              event_id TEXT,\n              question TEXT NOT NULL,\n              status TEXT NOT NULL DEFAULT 'open',\n              created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,\n              summary_created_at TEXT, content_md TEXT NOT NULL DEFAULT '', topic TEXT NOT NULL DEFAULT '', answer TEXT NOT NULL DEFAULT '',\n              FOREIGN KEY(event_id) REFERENCES events(id)\n            )"
@@ -208,12 +202,6 @@
     "name": "idx_ingest_tasks_created_at",
     "table": "ingest_tasks",
     "sql": "CREATE INDEX idx_ingest_tasks_created_at ON ingest_tasks(created_at)"
-  },
-  {
-    "type": "index",
-    "name": "idx_briefings_type",
-    "table": "briefings",
-    "sql": "CREATE INDEX idx_briefings_type ON briefings(type)"
   },
   {
     "type": "index",
