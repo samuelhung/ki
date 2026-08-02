@@ -386,14 +386,14 @@ async def spa_fallback(request: Request, call_next):
     response = await call_next(request)
     if (
         (request.url.path == "/api" or request.url.path.startswith("/api/"))
-        and response.status_code == 405
-        and not any(
-            not isinstance(route, Mount)
-            and route.matches(request.scope)[0] in {Match.FULL, Match.PARTIAL}
-            for route in request.app.routes
-        )
+        and response.status_code in {404, 405}
     ):
-        response = JSONResponse({"detail": "Not Found"}, status_code=404)
+        routes = (route for route in request.app.routes if not isinstance(route, Mount))
+        route_matches = {route.matches(request.scope)[0] for route in routes}
+        if Match.FULL not in route_matches:
+            status_code = 405 if Match.PARTIAL in route_matches else 404
+            detail = "Method Not Allowed" if status_code == 405 else "Not Found"
+            response = JSONResponse({"detail": detail}, status_code=status_code)
     if (
         dependencies.has_frontend
         and response.status_code == 404

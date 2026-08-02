@@ -59,6 +59,21 @@ def test_existing_api_paths_keep_method_not_allowed_semantics(client, method, pa
 
 
 @pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("get", "/api/translate/run"),
+        ("head", "/api/translate/run"),
+        ("get", "/api/tag/batch"),
+        ("head", "/api/health"),
+    ],
+)
+def test_post_only_api_paths_keep_method_not_allowed_semantics(client, method, path):
+    response = getattr(client, method)(path)
+
+    assert response.status_code == 405
+
+
+@pytest.mark.parametrize(
     "module_name",
     [
         "zhiji_backend.briefing",
