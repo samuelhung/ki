@@ -43,6 +43,22 @@ def test_instant_briefing_endpoints_are_absent(client, method, path):
 
 
 @pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("post", "/api/dashboard/summary"),
+        ("delete", "/api/sources"),
+        ("patch", "/api/health"),
+        ("put", "/api/tasks"),
+    ],
+)
+def test_existing_api_paths_keep_method_not_allowed_semantics(client, method, path):
+    response = getattr(client, method)(path)
+
+    assert response.status_code == 405
+    assert response.json() == {"detail": "Method Not Allowed"}
+
+
+@pytest.mark.parametrize(
     "module_name",
     [
         "zhiji_backend.briefing",

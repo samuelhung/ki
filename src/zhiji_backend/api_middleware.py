@@ -21,6 +21,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.trustedhost import (
     TrustedHostMiddleware as StarletteTrustedHostMiddleware,
 )
+from starlette.routing import Match, Mount
 
 from .paths import FRONTEND_DIST
 
@@ -383,6 +384,16 @@ async def spa_fallback(request: Request, call_next):
     """Serve the SPA entry point for missing public frontend routes."""
     dependencies = _request_dependencies(request)
     response = await call_next(request)
+    if (
+        (request.url.path == "/api" or request.url.path.startswith("/api/"))
+        and response.status_code == 405
+        and not any(
+            not isinstance(route, Mount)
+            and route.matches(request.scope)[0] in {Match.FULL, Match.PARTIAL}
+            for route in request.app.routes
+        )
+    ):
+        response = JSONResponse({"detail": "Not Found"}, status_code=404)
     if (
         dependencies.has_frontend
         and response.status_code == 404

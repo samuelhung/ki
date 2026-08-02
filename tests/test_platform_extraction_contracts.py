@@ -175,12 +175,6 @@ EXPECTED_ROUTE_ORDER = [
     ("APIRoute", "/api/digest/latest", ("GET",), "retired_digest_endpoint"),
     (
         "APIRoute",
-        "/api/{path:path}",
-        ("DELETE", "GET", "HEAD", "PATCH", "POST", "PUT"),
-        "_api_not_found",
-    ),
-    (
-        "APIRoute",
         "/ingest/{kind}/{filename:path}",
         ("GET", "HEAD"),
         "serve_ingest_artifact",

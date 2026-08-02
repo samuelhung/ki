@@ -242,10 +242,6 @@ async def retired_digest_endpoint():
     return await static_delivery.retired_digest_endpoint(json_response=JSONResponse)
 
 
-async def _api_not_found():
-    return JSONResponse({"detail": "Not Found"}, status_code=404)
-
-
 async def serve_ingest_artifact(kind: str, filename: str):
     return await static_delivery.serve_ingest_artifact(
         kind,
@@ -333,11 +329,6 @@ def _add_routes(
     application.get("/api/digest/latest", include_in_schema=False)(
         retired_digest_endpoint
     )
-    application.api_route(
-        "/api/{path:path}",
-        methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"],
-        include_in_schema=False,
-    )(_api_not_found)
     application.api_route(
         "/ingest/{kind}/{filename:path}", methods=["GET", "HEAD"]
     )(serve_ingest_artifact)
