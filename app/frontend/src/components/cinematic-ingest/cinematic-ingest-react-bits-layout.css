@@ -185,7 +185,6 @@
   .stream-toolbar,
   .signal-stack,
   .stream-footer,
-  .briefing-stream,
   .stream-loading,
   .stream-empty,
   .stream-error {
@@ -1213,7 +1212,6 @@
   .cinematic-ingest .stream-toolbar,
   .cinematic-ingest .signal-stack,
   .cinematic-ingest .stream-footer,
-  .cinematic-ingest .briefing-stream,
   .cinematic-ingest .stream-loading,
   .cinematic-ingest .stream-empty,
   .cinematic-ingest .stream-error {

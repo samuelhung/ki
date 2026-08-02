@@ -51,7 +51,7 @@ try {
     enforcePerformance: false,
     enforceScreenshotPerformance: false,
     gpuMode: 'metal',
-    pageKeys: ['today', 'ingest', 'briefings'],
+    pageKeys: ['today', 'ingest'],
     viewport: { width, height },
     revisitFirstPage: true,
     warmRevisitCount: 3,
