@@ -22,7 +22,7 @@ Add a `SystemDialogProvider` near the application root, inside `HashRouter` and 
 The public API supports:
 
 - `alert(options): Promise<void>` for acknowledgement-only messages.
-- `confirmAction(options): Promise<'completed' | 'cancelled'>` for destructive or asynchronous confirmations.
+- `confirmAction(options): Promise<'completed' | 'cancelled' | 'failed'>` for destructive or asynchronous confirmations.
 
 `confirmAction` accepts product copy, a visual tone, confirm/cancel labels, a pending label, an asynchronous `action`, an error title, and an error fallback. The provider invokes the callback only after confirmation. Business modules retain API URLs, request payloads, refresh behavior, and error parsing.
 
