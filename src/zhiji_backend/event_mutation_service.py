@@ -33,22 +33,48 @@ def _delete_artifacts(event_id, row, *, safe_unlink_fn, ingest_root) -> None:
             safe_unlink_fn(str(path), ingest_root)
 
 
+def _delete_event_record(conn, event_id: str):
+    row = conn.execute(
+        "SELECT id, video_path, audio_path, document_path FROM events WHERE id = ?",
+        (event_id,),
+    ).fetchone()
+    if row is None:
+        return None
+
+    question_params = (event_id,)
+    conn.execute(
+        "DELETE FROM brainstorm_messages WHERE question_id IN "
+        "(SELECT id FROM brainstorm_questions WHERE event_id = ?)",
+        question_params,
+    )
+    conn.execute(
+        "DELETE FROM brainstorm_contemplate_cache WHERE event_id = ? OR question_id IN "
+        "(SELECT id FROM brainstorm_questions WHERE event_id = ?)",
+        (event_id, event_id),
+    )
+    conn.execute(
+        "DELETE FROM brainstorm_event_links WHERE event_id = ? OR question_id IN "
+        "(SELECT id FROM brainstorm_questions WHERE event_id = ?)",
+        (event_id, event_id),
+    )
+    conn.execute("DELETE FROM brainstorm_questions WHERE event_id = ?", question_params)
+    conn.execute("DELETE FROM chain_data_hints WHERE event_id = ?", (event_id,))
+    conn.execute("DELETE FROM chain_suggestions WHERE event_id = ?", (event_id,))
+    conn.execute("DELETE FROM events WHERE id = ?", (event_id,))
+    return row
+
+
 def delete_event(
     event_id: str, *, connect_fn, safe_unlink_fn, ingest_root
 ) -> dict[str, object]:
     with connect_fn() as conn:
-        row = conn.execute(
-            "SELECT id, video_path, audio_path, document_path FROM events WHERE id = ?",
-            (event_id,),
-        ).fetchone()
+        row = _delete_event_record(conn, event_id)
     if row is None:
         raise EventNotFoundError
 
     _delete_artifacts(
         event_id, row, safe_unlink_fn=safe_unlink_fn, ingest_root=ingest_root
     )
-    with connect_fn() as conn:
-        conn.execute("DELETE FROM events WHERE id = ?", (event_id,))
     return {"ok": True, "deleted": event_id}
 
 
@@ -58,17 +84,12 @@ def batch_delete_events(
     deleted = 0
     for event_id in payload.event_ids:
         with connect_fn() as conn:
-            row = conn.execute(
-                "SELECT id, video_path, audio_path, document_path FROM events WHERE id = ?",
-                (event_id,),
-            ).fetchone()
+            row = _delete_event_record(conn, event_id)
         if row is None:
             continue
         _delete_artifacts(
             event_id, row, safe_unlink_fn=safe_unlink_fn, ingest_root=ingest_root
         )
-        with connect_fn() as conn:
-            conn.execute("DELETE FROM events WHERE id = ?", (event_id,))
         deleted += 1
     return {"ok": True, "deleted": deleted}
 

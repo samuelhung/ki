@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -198,22 +199,106 @@ def test_delete_event_preserves_safe_cleanup_and_database_order(tmp_path: Path) 
     )
 
     assert result == {"ok": True, "deleted": "event-1"}
-    assert trace == [
-        "enter",
-        (
-            "sql",
-            "SELECT id, video_path, audio_path, document_path FROM events WHERE id = ?",
-            ("event-1",),
-        ),
-        "exit",
+    assert trace.count("enter") == 1
+    assert trace.count("exit") == 1
+    transaction_end = trace.index("exit")
+    assert trace[1] == (
+        "sql",
+        "SELECT id, video_path, audio_path, document_path FROM events WHERE id = ?",
+        ("event-1",),
+    )
+    assert ("sql", "DELETE FROM events WHERE id = ?", ("event-1",)) in trace[:transaction_end]
+    assert trace[transaction_end + 1 :] == [
         ("unlink", str(tmp_path / "transcripts/event-1.md"), tmp_path),
         ("unlink", str(tmp_path / "summaries/event-1.md"), tmp_path),
         ("unlink", str(tmp_path / "video.mp4"), tmp_path),
         ("unlink", str(tmp_path / "document.pdf"), tmp_path),
-        "enter",
-        ("sql", "DELETE FROM events WHERE id = ?", ("event-1",)),
-        "exit",
     ]
+
+
+def test_delete_event_removes_foreign_key_dependents_before_artifacts(tmp_path: Path) -> None:
+    service = importlib.import_module("zhiji_backend.event_mutation_service")
+    database = tmp_path / "events.sqlite"
+
+    with sqlite3.connect(database) as conn:
+        conn.executescript(
+            """
+            PRAGMA foreign_keys=ON;
+            CREATE TABLE events (
+              id TEXT PRIMARY KEY,
+              video_path TEXT,
+              audio_path TEXT,
+              document_path TEXT
+            );
+            CREATE TABLE brainstorm_questions (
+              id TEXT PRIMARY KEY,
+              event_id TEXT NOT NULL REFERENCES events(id)
+            );
+            CREATE TABLE brainstorm_event_links (
+              question_id TEXT NOT NULL REFERENCES brainstorm_questions(id),
+              event_id TEXT NOT NULL REFERENCES events(id)
+            );
+            CREATE TABLE brainstorm_messages (question_id TEXT NOT NULL);
+            CREATE TABLE brainstorm_contemplate_cache (question_id TEXT, event_id TEXT);
+            CREATE TABLE chain_data_hints (
+              id TEXT PRIMARY KEY,
+              event_id TEXT NOT NULL REFERENCES events(id)
+            );
+            CREATE TABLE chain_suggestions (
+              id TEXT PRIMARY KEY,
+              event_id TEXT NOT NULL REFERENCES events(id)
+            );
+            INSERT INTO events VALUES ('event-1', 'video.mp4', NULL, NULL);
+            INSERT INTO brainstorm_questions VALUES ('question-1', 'event-1');
+            INSERT INTO brainstorm_event_links VALUES ('question-1', 'event-1');
+            INSERT INTO brainstorm_messages VALUES ('question-1');
+            INSERT INTO brainstorm_contemplate_cache VALUES ('question-1', 'event-1');
+            INSERT INTO chain_data_hints VALUES ('hint-1', 'event-1');
+            INSERT INTO chain_suggestions VALUES ('suggestion-1', 'event-1');
+            """
+        )
+
+    @contextmanager
+    def connect_fn():
+        conn = sqlite3.connect(database)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys=ON")
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    artifact_checks: list[int] = []
+
+    def safe_unlink_fn(path, root):
+        with sqlite3.connect(database) as conn:
+            artifact_checks.append(
+                conn.execute("SELECT COUNT(*) FROM events WHERE id = 'event-1'").fetchone()[0]
+            )
+
+    assert service.delete_event(
+        "event-1",
+        connect_fn=connect_fn,
+        safe_unlink_fn=safe_unlink_fn,
+        ingest_root=tmp_path,
+    ) == {"ok": True, "deleted": "event-1"}
+
+    with sqlite3.connect(database) as conn:
+        for table in (
+            "events",
+            "brainstorm_questions",
+            "brainstorm_event_links",
+            "brainstorm_messages",
+            "brainstorm_contemplate_cache",
+            "chain_data_hints",
+            "chain_suggestions",
+        ):
+            assert conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+    assert artifact_checks and set(artifact_checks) == {0}
 
 
 def test_collect_preserves_validation_and_collector_arguments() -> None:

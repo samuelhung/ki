@@ -598,23 +598,27 @@ def test_event_delete_locks_file_cleanup_sql_order_and_exact_responses(
     with pytest.raises(HTTPException) as error:
         event_routes.delete_event("missing")
     assert (error.value.status_code, error.value.detail) == (404, "Event not found")
-    assert trace[:9] == [
+    first_transaction_end = trace.index("exit")
+    assert trace[:2] == [
         "enter",
         (
             "execute",
             "SELECT id, video_path, audio_path, document_path FROM events WHERE id = ?",
             ("event-1",),
         ),
-        "exit",
+    ]
+    assert (
+        "execute",
+        "DELETE FROM events WHERE id = ?",
+        ("event-1",),
+    ) in trace[:first_transaction_end]
+    assert trace[first_transaction_end + 1 : first_transaction_end + 5] == [
         ("unlink", str(tmp_path / "transcripts" / "event-1.md"), tmp_path),
         ("unlink", str(tmp_path / "summaries" / "event-1.md"), tmp_path),
         ("unlink", str(tmp_path / "video.mp4"), tmp_path),
         ("unlink", str(tmp_path / "document.pdf"), tmp_path),
-        "enter",
-        ("execute", "DELETE FROM events WHERE id = ?", ("event-1",)),
     ]
-    assert trace[9:] == [
-        "exit",
+    assert trace[first_transaction_end + 5 :] == [
         "enter",
         (
             "execute",

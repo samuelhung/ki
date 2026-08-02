@@ -26,6 +26,9 @@ export default function Ingest() {
   const [toast, setToast] = useState<{ text: string; type: 'success' | 'info' } | null>(null);
   const [searchPortalTarget, setSearchPortalTarget] = useState<HTMLElement | null>(null);
   const closeIngestModal = useCallback(() => setModalType(null), []);
+  const showDeleteError = useCallback((message: string) => {
+    setToast({ text: message, type: 'info' });
+  }, []);
   const {
     events,
     loading,
@@ -47,6 +50,7 @@ export default function Ingest() {
   } = useIngestEvents({
     initialSearch: new URLSearchParams(location.search).get('search') || '',
     onPollingSettled: closeIngestModal,
+    onDeleteError: showDeleteError,
   });
   const details = useIngestDetailActions({ activeEventId, setToast });
   const transcriptWorkflow = useTranscriptWorkflow({

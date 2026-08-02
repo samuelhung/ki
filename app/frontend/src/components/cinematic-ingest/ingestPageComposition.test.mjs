@@ -112,7 +112,8 @@ test('ingest endpoints preserve list mutation upload and status polling contract
   assert.match(implementation, /apiFetch\(`\/api\/ingest\/status\/\$\{eventId\}`, \{ signal \}\)/);
   assert.match(implementation, /apiFetch\('\/api\/ingest\/douyin', \{\s*method: 'POST'/);
   assert.match(implementation, /apiFetch\('\/api\/ingest\/file', \{ method: 'POST', timeoutMs: 900_000, body \}\)/);
-  assert.match(implementation, /apiFetch\(`\$\{API_BASE\}\/\$\{eventId\}`, \{ method: 'DELETE' \}\)/);
+  assert.match(implementation, /const response = await apiFetch\(`\$\{API_BASE\}\/\$\{eventId\}`, \{ method: 'DELETE' \}\);\s+if \(!response\.ok\)/);
+  assert.match(implementation, /onDeleteErrorRef\.current/);
   assert.match(implementation, /void loadEventsRef\.current\(\)/);
 });
 
