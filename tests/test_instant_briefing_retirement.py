@@ -1,14 +1,51 @@
 from __future__ import annotations
 
+import importlib.util
 import sqlite3
 
 import pytest
+from fastapi.testclient import TestClient
 
 from zhiji_backend import migrations
 from zhiji_backend.db import init_db
+from zhiji_backend.main import app
 from zhiji_backend.migrations import ensure_migrations
 
 MIGRATION_NAME = "20260803_remove_instant_briefing"
+
+
+@pytest.fixture
+def client():
+    return TestClient(app)
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("get", "/api/briefing"),
+        ("get", "/api/briefing/latest"),
+        ("get", "/api/briefing/briefing-1"),
+        ("post", "/api/briefing/generate"),
+    ],
+)
+def test_instant_briefing_endpoints_are_absent(client, method, path):
+    response = getattr(client, method)(path)
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Not Found"}
+
+
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "zhiji_backend.briefing",
+        "zhiji_backend.briefing_repository",
+        "zhiji_backend.briefing_generation_service",
+        "zhiji_backend.routes.briefing_routes",
+    ],
+)
+def test_instant_briefing_modules_are_removed(module_name):
+    assert importlib.util.find_spec(module_name) is None
 
 
 def _schema_names(conn: sqlite3.Connection, object_type: str) -> set[str]:

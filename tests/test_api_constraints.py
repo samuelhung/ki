@@ -22,7 +22,6 @@ def client():
         "/api/ingest/queue?limit=200",
         "/api/study/list?page_size=200&page=1",
         "/api/study/mistakes/list?page_size=200&page=1",
-        "/api/briefing?limit=200&offset=1000000",
         "/api/chains/hints?limit=200",
         "/api/chains/suggestions?limit=200",
         "/api/dashboard/trend?days=365",
@@ -46,8 +45,6 @@ def test_query_bounds_accept_exact_maximum(client, path):
         "/api/ingest/queue?limit=201",
         "/api/study/list?page_size=201",
         "/api/study/mistakes/list?page_size=201",
-        "/api/briefing?limit=201",
-        "/api/briefing?offset=1000001",
         "/api/chains/hints?limit=201",
         "/api/chains/suggestions?limit=201",
         "/api/dashboard/trend?days=366",
@@ -211,12 +208,6 @@ def test_chain_hint_sync_accepts_100_items_and_rejects_101(client):
 def test_ai_request_item_limits_reject_101(client):
     assert client.post("/api/tag/batch", json={"limit": 101}).status_code == 422
     assert client.post("/api/translate/run", json={"limit": 101}).status_code == 422
-    assert (
-        client.post(
-            "/api/briefing/generate", json={"type": "quick", "limit": 101}
-        ).status_code
-        == 422
-    )
 
 
 @pytest.mark.parametrize(
@@ -227,7 +218,6 @@ def test_ai_request_item_limits_reject_101(client):
         "/api/study/bad%5Cid",
         "/api/tasks/bad%5Cid",
         "/api/ingest/status/bad%5Cid",
-        "/api/briefing/bad%5Cid",
     ],
 )
 def test_route_ids_reject_backslash_with_422(client, path):

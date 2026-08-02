@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import hashlib
 import importlib
 import inspect
-import json
 from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -15,22 +13,10 @@ import pytest
 from fastapi import BackgroundTasks, HTTPException
 from fastapi.routing import APIRoute
 
-from zhiji_backend import briefing, series_service
+from zhiji_backend import series_service
 from zhiji_backend.main import app
 from zhiji_backend.models import CollectRequest
-from zhiji_backend.routes import (
-    briefing_routes,
-    event_routes,
-    series_routes,
-    study_routes,
-)
-
-BRIEFING_PUBLIC_SIGNATURES = {
-    "generate_briefing": "(briefing_type: 'str' = 'quick', limit: 'int' = 80) -> 'dict[str, Any]'",
-    "latest_briefing": "(briefing_type: 'str' = 'quick') -> 'dict[str, Any] | None'",
-    "list_briefings": "(limit: 'int' = 30, offset: 'int' = 0) -> 'dict[str, Any]'",
-    "get_briefing": "(briefing_id: 'str') -> 'dict[str, Any] | None'",
-}
+from zhiji_backend.routes import event_routes, series_routes, study_routes
 
 NO_DEFAULT = inspect.Parameter.empty
 POSITIONAL = inspect.Parameter.POSITIONAL_OR_KEYWORD
@@ -280,20 +266,7 @@ def restore_openapi_schema():
         app.openapi_schema = previous_schema
 
 
-def test_briefing_and_series_public_contracts_are_exact() -> None:
-    briefing_functions = {
-        name: value
-        for name, value in vars(briefing).items()
-        if inspect.isfunction(value)
-        and value.__module__ == briefing.__name__
-        and not name.startswith("_")
-    }
-    assert set(briefing_functions) == set(BRIEFING_PUBLIC_SIGNATURES)
-    assert {
-        name: str(inspect.signature(function))
-        for name, function in briefing_functions.items()
-    } == BRIEFING_PUBLIC_SIGNATURES
-
+def test_series_public_contracts_are_exact() -> None:
     series_functions = {
         name: value
         for name, value in vars(series_service).items()
@@ -337,7 +310,6 @@ def test_event_and_study_route_order_and_openapi_operation_ids_are_exact(
 
 
 def test_domain_loggers_keep_historical_namespaces() -> None:
-    assert briefing.logger.name == "zhiji_backend.briefing"
     assert event_routes.logger.name == "zhiji_backend.routes.event_routes"
     assert study_routes.logger.name == "zhiji_backend.routes.study_routes"
 
@@ -352,203 +324,6 @@ class _Cursor:
 
     def fetchall(self):
         return self._rows
-
-
-BRIEFING_SYSTEM_PROMPT_PREFIX = (
-    "你是一个专业的新闻编辑。根据提供的新闻事件列表，生成一份结构化的中文新闻概览。\n\n"
-    "要求：\n"
-    "1. 按 topic 分组，每组写一个概述段落（2-4句话），概括该主题的整体趋势和关键发展\n"
-    "2. 每组下列出重要事件的要点，每条事件给出 event_id、title_cn（直接用原文）、highlight（一句话亮点）\n"
-    "3. 输出严格的 JSON 格式，结构如下：\n"
-    '  {"topics": [{"topic": "...", "topic_label": "中文标签", "summary": "中文概述", '
-    '"events": [{"event_id": "...", "title_cn": "...", "highlight": "中文亮点", "source_name": "..."}]}]}\n'
-    "4. topic_label 使用中文标签\n"
-    "5. 每个 topic 最多选 6 条最重要的事件\n"
-)
-BRIEFING_SYSTEM_PROMPT_SUFFIX = (
-    "7. highlight 控制在 30 字以内，必须使用中文\n8. summary 必须使用中文，不得出现英文"
-)
-BRIEFING_PROMPTS = {
-    "quick": {
-        "system": BRIEFING_SYSTEM_PROMPT_PREFIX
-        + "6. 风格简洁快速，适合即时快报\n"
-        + BRIEFING_SYSTEM_PROMPT_SUFFIX,
-        "user": "请根据以下新闻事件生成即时快报：\n\n- [event-1] NPR | 事件\n  摘要: 摘要",
-        "system_hash": "4e3c3e2a2309ad2c9181fcc242a0f568d9d2cbb32db7ce4b32565b9b4d3fa9c0",
-        "user_hash": "f66459a4233a500ce65570482fae03d51780522184414d48ef80507cb91088a1",
-        "task": "briefing_quick",
-    },
-    "daily": {
-        "system": BRIEFING_SYSTEM_PROMPT_PREFIX
-        + "6. 风格深度分析，适合每日新闻日报，可以加入趋势解读\n"
-        + BRIEFING_SYSTEM_PROMPT_SUFFIX,
-        "user": "请根据以下新闻事件生成每日深度日报：\n\n- [event-1] NPR | 事件\n  摘要: 摘要",
-        "system_hash": "61e90abad5e8b9527a534ebeb737de0e8181cb82a4766bb766f1b3fe3081d206",
-        "user_hash": "ffd98a88ea3a69bb1c0c489f2056c111d06aa6fb292e26dbc5bf54376e2b8d64",
-        "task": "briefing_daily",
-    },
-}
-BATCH_CONTEMPLATE_SYSTEM_PROMPT = (
-    "你是一个内容匹配助手。以下是一组新闻事件和一组研究问题。\n"
-    "对每个事件-问题组合，判断该事件能否帮助回答该问题：\n"
-    "- high: 事件直接涉及该问题主题，可作为核心素材\n"
-    "- medium: 事件部分相关或可提供背景参考\n"
-    "- low: 完全无关（跳过不输出）\n"
-    "只输出 JSON 数组，严格按以下格式，不要其他内容：\n"
-    '[{"event_index": 0, "question_index": 3, "relevance": "high", "reason": "直接相关"}, ...]\n'
-    "只输出 high 或 medium 的项，low 的跳过。reason 用中文，10字以内。"
-)
-BATCH_CONTEMPLATE_USER_PROMPT = (
-    "新闻事件：\n[事件0] 事件\n  摘要\n\n研究问题：\n[问题0] 为什么"
-)
-
-
-@pytest.mark.parametrize("briefing_type", ["quick", "daily"])
-def test_briefing_generation_locks_prompts_ai_args_sql_order_and_response(
-    briefing_type: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    trace: list[Any] = []
-    chat_calls: list[tuple[list[dict[str, str]], dict[str, Any]]] = []
-    event = {
-        "id": "event-1",
-        "source_id": "npr",
-        "title": "Event",
-        "title_cn": "事件",
-        "raw_summary": None,
-        "summary_cn": "摘要",
-        "ai_summary": None,
-        "topic": "world",
-        "url": "https://example.com/event-1",
-        "importance": 3,
-        "created_at": "2026-07-20 08:00:00",
-    }
-
-    class Connection:
-        def execute(self, sql, params=()):
-            normalized = " ".join(sql.split())
-            trace.append(("execute", normalized, params))
-            if "FROM events WHERE status = 'new'" in normalized:
-                return _Cursor(rows=[event])
-            if "FROM events WHERE id IN" in normalized:
-                return _Cursor(rows=[event])
-            if "FROM brainstorm_questions" in normalized:
-                return _Cursor(rows=[{"id": "question-1", "question": "为什么"}])
-            return _Cursor(rows=[])
-
-    @contextmanager
-    def connect_fn():
-        trace.append("enter")
-        yield Connection()
-        trace.append("exit")
-
-    def chat_fn(messages, **kwargs):
-        chat_calls.append((messages, kwargs))
-        if len(chat_calls) == 1:
-            return json.dumps(
-                {"topics": [{"topic": "world", "events": [{"event_id": "event-1"}]}]}
-            )
-        return "[]"
-
-    monkeypatch.setattr(briefing, "init_db", lambda: trace.append("init_db"))
-    monkeypatch.setattr(briefing, "connect", connect_fn)
-    monkeypatch.setattr(briefing, "chat", chat_fn)
-    monkeypatch.setattr(
-        briefing,
-        "uuid",
-        SimpleNamespace(uuid4=lambda: SimpleNamespace(hex="1234567890abcdef")),
-    )
-
-    result = briefing.generate_briefing(briefing_type, 7)
-
-    assert result == {
-        "id": "briefing-1234567890ab",
-        "type": briefing_type,
-        "topics": [
-            {
-                "topic": "world",
-                "events": [
-                    {"event_id": "event-1", "created_at": "2026-07-20 08:00:00"}
-                ],
-            }
-        ],
-        "events_used": 1,
-    }
-    assert len(chat_calls) == 2
-    generation_messages, generation_args = chat_calls[0]
-    expected = BRIEFING_PROMPTS[briefing_type]
-    assert generation_messages == [
-        {"role": "system", "content": expected["system"]},
-        {"role": "user", "content": expected["user"]},
-    ]
-    assert (
-        hashlib.sha256(generation_messages[0]["content"].encode()).hexdigest()
-        == expected["system_hash"]
-    )
-    assert (
-        hashlib.sha256(generation_messages[1]["content"].encode()).hexdigest()
-        == expected["user_hash"]
-    )
-    assert generation_args == {
-        "temperature": 0.5,
-        "max_tokens": 4096,
-        "response_format": {"type": "json_object"},
-        "timeout": 120,
-        "module": "briefing",
-        "task": expected["task"],
-    }
-
-    contemplate_messages, contemplate_args = chat_calls[1]
-    assert contemplate_messages == [
-        {"role": "system", "content": BATCH_CONTEMPLATE_SYSTEM_PROMPT},
-        {"role": "user", "content": BATCH_CONTEMPLATE_USER_PROMPT},
-    ]
-    assert hashlib.sha256(contemplate_messages[0]["content"].encode()).hexdigest() == (
-        "e18fe371280d0a887bd46f80807c2aa23d1eda4f832ede523810d68aee8d0b9e"
-    )
-    assert hashlib.sha256(contemplate_messages[1]["content"].encode()).hexdigest() == (
-        "3ef3677a2c4af3033ffcc2a242e2cfc99f7eabbfe359248b76440991bfd18b6f"
-    )
-    assert contemplate_args == {
-        "temperature": 0.5,
-        "max_tokens": 4096,
-        "response_format": {"type": "json_object"},
-        "timeout": 180,
-        "module": "briefing",
-        "task": "briefing_quick",
-    }
-    sql_trace = [(entry[1], entry[2]) for entry in trace if isinstance(entry, tuple)]
-    assert sql_trace == [
-        (
-            "SELECT id, source_id, title, title_cn, raw_summary, summary_cn, topic, url, importance, created_at FROM events WHERE status = 'new' AND title_cn IS NOT NULL AND source_id NOT IN ('douyin', 'user-upload') ORDER BY created_at DESC, importance DESC LIMIT ?",
-            (7,),
-        ),
-        (
-            "INSERT INTO briefings (id, type, topics_json, events_used) VALUES (?, ?, ?, ?)",
-            (
-                "briefing-1234567890ab",
-                briefing_type,
-                '[{"topic": "world", "events": [{"event_id": "event-1", "created_at": "2026-07-20 08:00:00"}]}]',
-                1,
-            ),
-        ),
-        (
-            "SELECT id, title_cn, summary_cn, ai_summary FROM events WHERE id IN (?)",
-            ["event-1"],
-        ),
-        (
-            "SELECT id, question FROM brainstorm_questions WHERE status = 'open' ORDER BY created_at DESC LIMIT 40",
-            (),
-        ),
-        (
-            "SELECT question_id, event_id, relevance FROM brainstorm_contemplate_cache WHERE event_id IN (?)",
-            ["event-1"],
-        ),
-        (
-            "INSERT OR REPLACE INTO brainstorm_contemplate_cache (question_id, event_id, relevance, reason) VALUES (?, ?, ?, ?)",
-            ("question-1", "event-1", "low", ""),
-        ),
-    ]
 
 
 def test_event_delete_locks_file_cleanup_sql_order_and_exact_responses(
@@ -801,126 +576,6 @@ def _stub_and_assert(
     args, kwargs = calls[0]
     assert args == expected_args
     assert kwargs == (expected_kwargs or {})
-
-
-def _briefing_repository_forwarding(module, monkeypatch) -> None:
-    sentinel_connect = object()
-    sentinel_init = object()
-    sentinel_parse = object()
-    enrich_calls: list[Any] = []
-    monkeypatch.setattr(briefing, "connect", sentinel_connect)
-    monkeypatch.setattr(briefing, "init_db", sentinel_init)
-    monkeypatch.setattr(briefing, "_parse_topics_json", sentinel_parse)
-    monkeypatch.setattr(
-        briefing,
-        "_enrich_briefing_relevance",
-        lambda topics: enrich_calls.append(topics),
-    )
-    repository_dependencies = {
-        "connect_fn": sentinel_connect,
-        "init_db_fn": sentinel_init,
-    }
-    _stub_and_assert(
-        module,
-        monkeypatch,
-        "list_briefings",
-        lambda: briefing_routes.get_briefing_history(7, 3),
-        expected_args=(7, 3),
-        expected_kwargs=repository_dependencies,
-    )
-    read_calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
-
-    def latest_replacement(*args, **kwargs):
-        read_calls.append(("latest", args, kwargs))
-        return {"id": "latest", "topics": []}
-
-    def detail_replacement(*args, **kwargs):
-        read_calls.append(("detail", args, kwargs))
-        return {"id": "briefing-1", "topics": []}
-
-    monkeypatch.setattr(module, "latest_briefing", latest_replacement)
-    monkeypatch.setattr(module, "get_briefing", detail_replacement)
-    assert briefing_routes.get_latest_briefing("daily")["id"] == "latest"
-    assert briefing_routes.get_briefing_detail("briefing-1")["id"] == "briefing-1"
-    assert read_calls == [
-        (
-            "latest",
-            ("daily",),
-            {**repository_dependencies, "parse_topics_json_fn": sentinel_parse},
-        ),
-        (
-            "detail",
-            ("briefing-1",),
-            {**repository_dependencies, "parse_topics_json_fn": sentinel_parse},
-        ),
-    ]
-    assert enrich_calls == [[], []]
-
-
-def _briefing_generation_forwarding(module, monkeypatch) -> None:
-    sentinel_connect = object()
-    sentinel_init = object()
-    sentinel_call_ai = object()
-    sentinel_fetch = object()
-    sentinel_build = object()
-    sentinel_parse = object()
-    sentinel_uuid = object()
-    generated = {
-        "id": "briefing-1",
-        "type": "daily",
-        "topics": [],
-        "events_used": 0,
-    }
-    generation_calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
-    persist_calls: list[tuple[Any, dict[str, Any]]] = []
-    batch_calls: list[Any] = []
-    monkeypatch.setattr(briefing, "connect", sentinel_connect)
-    monkeypatch.setattr(briefing, "init_db", sentinel_init)
-    monkeypatch.setattr(briefing, "_call_ai", sentinel_call_ai)
-    monkeypatch.setattr(briefing, "_fetch_translated_events", sentinel_fetch)
-    monkeypatch.setattr(briefing, "_build_events_text", sentinel_build)
-    monkeypatch.setattr(briefing, "_parse_generated_topics", sentinel_parse)
-    monkeypatch.setattr(briefing, "uuid", SimpleNamespace(uuid4=sentinel_uuid))
-    monkeypatch.setattr(
-        module,
-        "generate_briefing",
-        lambda *args, **kwargs: generation_calls.append((args, kwargs)) or generated,
-    )
-    monkeypatch.setattr(
-        briefing._repository,
-        "persist_briefing",
-        lambda value, **kwargs: persist_calls.append((value, kwargs)),
-    )
-    monkeypatch.setattr(
-        briefing,
-        "_batch_contemplate_briefing_events",
-        lambda topics: batch_calls.append(topics),
-    )
-
-    assert briefing.generate_briefing("daily", 9) is generated
-    assert generation_calls == [
-        (
-            ("daily", 9),
-            {
-                "call_ai_fn": sentinel_call_ai,
-                "fetch_events_fn": sentinel_fetch,
-                "build_events_text_fn": sentinel_build,
-                "parse_generated_topics_fn": sentinel_parse,
-                "uuid_fn": sentinel_uuid,
-            },
-        )
-    ]
-    assert persist_calls == [
-        (
-            generated,
-            {
-                "connect_fn": sentinel_connect,
-                "init_db_fn": sentinel_init,
-                "json_module": briefing.json,
-            },
-        )
-    ]
-    assert batch_calls == [generated["topics"]]
 
 
 def _event_query_forwarding(module, monkeypatch) -> None:
@@ -1510,16 +1165,6 @@ def _series_mutation_forwarding(module, monkeypatch) -> None:
 
 
 FORWARDING_CONTRACTS = [
-    ForwardingContract(
-        "zhiji_backend.briefing_repository",
-        "zhiji_backend.briefing",
-        _briefing_repository_forwarding,
-    ),
-    ForwardingContract(
-        "zhiji_backend.briefing_generation_service",
-        "zhiji_backend.briefing",
-        _briefing_generation_forwarding,
-    ),
     ForwardingContract(
         "zhiji_backend.event_query_service",
         "zhiji_backend.routes.event_routes",
