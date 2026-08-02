@@ -8,6 +8,8 @@ function safeDeleteText(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const message = value.trim();
   if (!message || message.length > 500 || /<[^>]+>|<!doctype|\n\s+at\s/i.test(message)) return null;
+  if (/traceback\s*\(|(?:^|\n)\s*file\s+["'][^"']+["'],\s*line\s+\d+/i.test(message)) return null;
+  if (/(?:authorization|api[-_ ]?key|secret(?:[-_ ]?key)?|access[-_ ]?token|password)\s*[:=]|bearer\s+[a-z0-9._~+/=-]+/i.test(message)) return null;
   return message;
 }
 

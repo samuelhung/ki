@@ -71,6 +71,8 @@ test('action 失败后原确认原位转为 alert，确认后返回 failed', asy
     'not-an-error',
     new Error('<strong>内部错误</strong>'),
     new Error('Error: boom\n    at remove (runtime.ts:1:1)'),
+    new Error('Traceback (most recent call last):\n  File "api.py", line 8\nSECRET_KEY=top-secret'),
+    new Error('Authorization: Bearer sensitive-token'),
     new Error('x'.repeat(501)),
   ];
 

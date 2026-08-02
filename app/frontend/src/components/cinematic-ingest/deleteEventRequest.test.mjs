@@ -26,6 +26,8 @@ test('validation details are reduced to readable messages', async () => {
 
 test('unsafe or malformed errors use the stable fallback', async () => {
   assert.equal(deleteFailureMessage(new Error('<html>proxy failure</html>')), '删除失败，请稍后重试。');
+  assert.equal(deleteFailureMessage(new Error('Traceback (most recent call last):\n  File "api.py", line 8\nSECRET_KEY=top-secret')), '删除失败，请稍后重试。');
+  assert.equal(deleteFailureMessage(new Error('Authorization: Bearer sensitive-token')), '删除失败，请稍后重试。');
   await assert.rejects(deleteEventRequest('evt-1', async () => new Response('<html>failure</html>', { status: 500 })), { message: '删除失败，请稍后重试。' });
 });
 

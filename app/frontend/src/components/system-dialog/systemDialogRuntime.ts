@@ -73,6 +73,8 @@ function safeErrorMessage(reason: unknown, fallback: string) {
   if (!message || message.length > 500) return fallback;
   if (/<[^>]*>|<!doctype/i.test(message)) return fallback;
   if (/(?:^|\n)\s*at\s+/.test(message)) return fallback;
+  if (/traceback\s*\(|(?:^|\n)\s*file\s+["'][^"']+["'],\s*line\s+\d+/i.test(message)) return fallback;
+  if (/(?:authorization|api[-_ ]?key|secret(?:[-_ ]?key)?|access[-_ ]?token|password)\s*[:=]|bearer\s+[a-z0-9._~+/=-]+/i.test(message)) return fallback;
   return message;
 }
 
