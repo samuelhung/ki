@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { apiFetch } from '../../api';
 import type { TaskConfig } from '../SystemSettingsControls';
+import { readSystemConfigResponse } from './systemConfigRequest';
 import type { SystemConfig } from './systemTypes';
 
 export function useSystemConfig(enabled: boolean) {
@@ -12,7 +13,7 @@ export function useSystemConfig(enabled: boolean) {
     if (!enabled || config) return;
     const controller = new AbortController();
     apiFetch('/api/system-config', { signal: controller.signal })
-      .then((response) => response.json())
+      .then(readSystemConfigResponse)
       .then(setConfig)
       .catch(() => {
         if (!controller.signal.aborted) setMessage('加载配置失败');

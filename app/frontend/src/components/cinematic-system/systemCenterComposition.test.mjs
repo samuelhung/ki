@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import { createSystemPromptCache } from './systemPromptCache.ts';
+import { readSystemConfigResponse } from './systemConfigRequest.ts';
 
 const pageUrl = new URL('../../pages/CinematicSystemCenter.tsx', import.meta.url);
 const panelsUrl = new URL('./SystemCenterPanels.tsx', import.meta.url);
@@ -12,6 +13,23 @@ const appUrl = new URL('../../App.tsx', import.meta.url);
 const curtainUrl = new URL('../../CurtainContext.tsx', import.meta.url);
 const configHookUrl = new URL('./useSystemConfig.ts', import.meta.url);
 const databaseHookUrl = new URL('./useSystemDatabase.ts', import.meta.url);
+
+test('system config rejects unauthorized and malformed payloads before rendering', async () => {
+  await assert.rejects(
+    readSystemConfigResponse(new Response('{"detail":"Unauthorized"}', { status: 401 })),
+    /配置请求失败/,
+  );
+  await assert.rejects(
+    readSystemConfigResponse(new Response('{"ok":true}', { status: 200 })),
+    /配置响应无效/,
+  );
+
+  const config = { general: { model: 'gpt-5.5' } };
+  assert.deepEqual(
+    await readSystemConfigResponse(new Response(JSON.stringify(config), { status: 200 })),
+    config,
+  );
+});
 
 test('system prompt cache coalesces concurrent loads and reuses the result', async () => {
   let calls = 0;
