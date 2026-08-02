@@ -23,6 +23,9 @@ interface IngestWorkspaceContentProps {
   activeEventId: string | null;
   activeTopic: TopicKey;
   loading: boolean;
+  loadingMore: boolean;
+  total: number;
+  hasMore: boolean;
   error: string;
   search: string;
   searchPortalTarget: HTMLElement | null;
@@ -32,6 +35,7 @@ interface IngestWorkspaceContentProps {
   transcriptContent?: string;
   summaryStale: boolean;
   onRetry: () => void;
+  onLoadMore: () => void;
   onSelect: (eventId: string) => void;
   onDelete: (eventId: string, event: MouseEvent) => void;
   onTopicChange: (topic: TopicKey) => void;
@@ -49,6 +53,9 @@ export function IngestWorkspaceContent({
   activeEventId,
   activeTopic,
   loading,
+  loadingMore,
+  total,
+  hasMore,
   error,
   search,
   searchPortalTarget,
@@ -58,6 +65,7 @@ export function IngestWorkspaceContent({
   transcriptContent,
   summaryStale,
   onRetry,
+  onLoadMore,
   onSelect,
   onDelete,
   onTopicChange,
@@ -112,12 +120,16 @@ export function IngestWorkspaceContent({
       activeEventId={activeEventId}
       activeTopic={activeTopic}
       loading={loading}
+      loadingMore={loadingMore}
+      total={total}
+      hasMore={hasMore}
       error={error}
       onRetry={onRetry}
+      onLoadMore={onLoadMore}
       onSelect={onSelect}
       onDelete={onDelete}
     />
-  ), [activeEventId, activeTopic, error, events, loading, onDelete, onRetry, onSelect]);
+  ), [activeEventId, activeTopic, error, events, hasMore, loading, loadingMore, onDelete, onLoadMore, onRetry, onSelect, total]);
 
   const searchAccessory = useMemo(() => (
     <label className="ki-ingest-list-search">

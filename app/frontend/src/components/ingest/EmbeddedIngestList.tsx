@@ -8,13 +8,17 @@ interface EmbeddedIngestListProps {
   activeEventId: string | null;
   activeTopic: TopicKey;
   loading: boolean;
+  loadingMore: boolean;
+  total: number;
+  hasMore: boolean;
   error: string;
   onRetry: () => void;
+  onLoadMore: () => void;
   onSelect: (eventId: string) => void;
   onDelete: (eventId: string, event: MouseEvent) => void;
 }
 
-function EmbeddedIngestListComponent({ events, activeEventId, activeTopic, loading, error, onRetry, onSelect, onDelete }: EmbeddedIngestListProps) {
+function EmbeddedIngestListComponent({ events, activeEventId, activeTopic, loading, loadingMore, total, hasMore, error, onRetry, onLoadMore, onSelect, onDelete }: EmbeddedIngestListProps) {
   return (
     <div className="ki-ingest-event-list">
       {loading ? (
@@ -23,16 +27,26 @@ function EmbeddedIngestListComponent({ events, activeEventId, activeTopic, loadi
         <div className="ki-ingest-pane-state is-error">{error}<button onClick={onRetry}>重试</button></div>
       ) : events.length === 0 ? (
         <div className="ki-ingest-pane-state">当前分类暂无内容</div>
-      ) : events.map((event) => (
-        <EmbeddedIngestRow
-          key={event.id}
-          event={event}
-          active={activeEventId === event.id}
-          fallbackTopic={activeTopic}
-          onSelect={onSelect}
-          onDelete={onDelete}
-        />
-      ))}
+      ) : (
+        <>
+          {events.map((event) => (
+            <EmbeddedIngestRow
+              key={event.id}
+              event={event}
+              active={activeEventId === event.id}
+              fallbackTopic={activeTopic}
+              onSelect={onSelect}
+              onDelete={onDelete}
+            />
+          ))}
+          {hasMore && (
+            <button type="button" className="ki-ingest-load-more" onClick={onLoadMore} disabled={loadingMore}>
+              {loadingMore && <Loader2 size={14} className="animate-spin" />}
+              {loadingMore ? '正在加载' : `继续加载 ${events.length}/${total}`}
+            </button>
+          )}
+        </>
+      )}
     </div>
   );
 }

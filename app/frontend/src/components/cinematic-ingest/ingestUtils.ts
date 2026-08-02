@@ -15,6 +15,12 @@ export function buildEventListPath(historyTab: string, search: string, offset: n
   if (search) params.set('search', search);
   return `/api/events?${params}`;
 }
+
+export function mergeEventPages<T extends { id: string }>(current: T[], incoming: T[], append: boolean): T[] {
+  if (!append) return incoming;
+  const existingIds = new Set(current.map((event) => event.id));
+  return [...current, ...incoming.filter((event) => !existingIds.has(event.id))];
+}
 export const TITLE_DISPLAY_LIMIT = 18;
 export const QUEUE_DELETE_TOMBSTONE_TTL_MS = 60_000;
 export const INDEX_ROW_PITCH = 37;

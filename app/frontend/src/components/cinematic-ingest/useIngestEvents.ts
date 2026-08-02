@@ -4,11 +4,16 @@ import { apiFetch } from '../../api';
 import { isLatestRequest } from '../ingest/ingestRequestPolicy';
 import { abortableDelay, RequestLifecycle } from '../ingest/requestLifecycle';
 import type { RequestOwner } from '../ingest/requestLifecycle';
+import { buildEventListPath, mergeEventPages } from './ingestUtils';
 import { useDebouncedValue } from './useDebouncedValue';
 import type { EventItem, TopicKey } from './ingestTypes';
 
-const PAGE_SIZE = 15;
 const API_BASE = '/api/events';
+
+interface EventPageCommit {
+  data: unknown;
+  append: boolean;
+}
 
 interface RequestCoordinatorOptions<T> {
   onCommit: (value: T) => void;
@@ -61,48 +66,62 @@ interface UseIngestEventsOptions {
 export function useIngestEvents({ initialSearch, onPollingSettled }: UseIngestEventsOptions) {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [total, setTotal] = useState(0);
   const [eventsError, setEventsError] = useState('');
   const [historyTab, setHistoryTab] = useState<TopicKey>('格局');
   const [search, setSearch] = useState(initialSearch);
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
   const debouncedSearch = useDebouncedValue(search, 250);
-  const [eventRequestCoordinator] = useState(() => createRequestCoordinator<unknown>({
-    onCommit: (data) => {
+  const loadOffsetRef = useRef(0);
+  const [eventRequestCoordinator] = useState(() => createRequestCoordinator<EventPageCommit>({
+    onCommit: ({ data, append }) => {
       setEventsError('');
+      const items = data && typeof data === 'object' && 'items' in data
+        ? (data as { items?: EventItem[] }).items || []
+        : Array.isArray(data) ? data : [];
+      setEvents((current) => mergeEventPages(current, items, append));
       if (data && typeof data === 'object' && 'items' in data) {
-        setEvents((data as { items?: EventItem[] }).items || []);
+        const nextTotal = (data as { total?: number }).total;
+        setTotal(typeof nextTotal === 'number' ? nextTotal : items.length);
       } else {
-        setEvents(Array.isArray(data) ? data : []);
+        setTotal((current) => append ? Math.max(current, loadOffsetRef.current + items.length) : items.length);
       }
     },
     onError: (caught) => {
       const error = caught as { message?: string };
       console.error('加载事件列表失败', error);
-      setEventsError(error.message || '加载事件列表失败');
+      if (loadOffsetRef.current === 0) setEventsError(error.message || '加载事件列表失败');
     },
   }));
   const statusRequestLifecycleRef = useRef(new RequestLifecycle());
   const completionTimerRef = useRef<number | null>(null);
   const onPollingSettledRef = useRef(onPollingSettled);
 
-  const loadEvents = useCallback(async () => {
+  const loadEvents = useCallback(async (offset = 0) => {
     const owner = eventRequestCoordinator.start();
-    setLoading(true);
-    const sourceId = 'douyin,user-upload,user-concept';
-    const topicFilter = ['格局', '财富', '认知', '前瞻'].includes(historyTab) ? `&topic=${historyTab}` : '';
-    const searchParam = debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : '';
+    loadOffsetRef.current = offset;
+    if (offset === 0) setLoading(true);
+    else setLoadingMore(true);
     try {
       await eventRequestCoordinator.run({
         owner,
         request: async (signal) => {
-          const response = await apiFetch(`${API_BASE}?source_id=${sourceId}${topicFilter}${searchParam}&limit=${PAGE_SIZE}&offset=0&count=1`, { signal });
-          return response.json();
+          const response = await apiFetch(buildEventListPath(historyTab, debouncedSearch, offset), { signal });
+          return { data: await response.json(), append: offset > 0 };
         },
       });
     } finally {
-      if (eventRequestCoordinator.isCurrent(owner)) setLoading(false);
+      if (eventRequestCoordinator.isCurrent(owner)) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
   }, [debouncedSearch, eventRequestCoordinator, historyTab]);
+
+  const loadMore = useCallback(() => {
+    if (!loading && !loadingMore && events.length < total) void loadEvents(events.length);
+  }, [events.length, loadEvents, loading, loadingMore, total]);
 
   const loadEventsRef = useRef(loadEvents);
 
@@ -182,6 +201,9 @@ export function useIngestEvents({ initialSearch, onPollingSettled }: UseIngestEv
   return {
     events,
     loading,
+    loadingMore,
+    total,
+    hasMore: events.length < total,
     eventsError,
     historyTab,
     search,
@@ -189,6 +211,7 @@ export function useIngestEvents({ initialSearch, onPollingSettled }: UseIngestEv
     activeEventId,
     selectedEvent: events.find((event) => event.id === activeEventId) || null,
     loadEvents,
+    loadMore,
     pollIngestStatus,
     handleDelete,
     openDetail,

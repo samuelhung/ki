@@ -49,6 +49,18 @@ test('buildEventListPath encodes the active topic and search without stale param
   assert.equal(utils.buildEventListPath('全部', '', 0).includes('topic='), false);
 });
 
+test('mergeEventPages appends later pages without duplicating existing events', () => {
+  const firstPage = [{ id: 'event-1' }, { id: 'event-2' }];
+  const secondPage = [{ id: 'event-2' }, { id: 'event-3' }];
+
+  assert.deepEqual(utils.mergeEventPages(firstPage, secondPage, true), [
+    { id: 'event-1' },
+    { id: 'event-2' },
+    { id: 'event-3' },
+  ]);
+  assert.deepEqual(utils.mergeEventPages(firstPage, secondPage, false), secondPage);
+});
+
 test('visibleProgressStages returns previous current and next two stages', () => {
   const stages = [
     { key: 'a', label: 'A', status: 'done' },

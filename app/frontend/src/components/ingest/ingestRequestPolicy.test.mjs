@@ -13,9 +13,11 @@ test('event search is debounced and only the latest response commits', () => {
   assert.match(ingest, /\[debouncedSearch, eventRequestCoordinator, historyTab\]/);
 });
 
-test('embedded list requests do not retain standalone statistics or pagination fetches', () => {
-  assert.doesNotMatch(ingest, /loadStats|topic-counts|setTotal|setPage/);
-  assert.match(ingest, /limit=\$\{PAGE_SIZE\}&offset=0&count=1/);
+test('embedded list requests retain totals and load later offsets', () => {
+  assert.doesNotMatch(ingest, /loadStats|topic-counts|setPage/);
+  assert.match(ingest, /buildEventListPath\(historyTab, debouncedSearch, offset\)/);
+  assert.match(ingest, /setTotal\(/);
+  assert.match(ingest, /events\.length < total/);
 });
 
 test('retained ingest request families abort stale work and clean up on unmount', () => {

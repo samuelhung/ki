@@ -14,9 +14,10 @@ import {
 const pageUrl = new URL('../../pages/Ingest.tsx', import.meta.url);
 const hookUrl = new URL('./useIngestEvents.ts', import.meta.url);
 const workspaceUrl = new URL('./IngestWorkspaceContent.tsx', import.meta.url);
+const utilsUrl = new URL('./ingestUtils.ts', import.meta.url);
 const detailPanelUrl = new URL('./ContentDetailPanel.tsx', import.meta.url);
 const detailActionsUrl = new URL('./useIngestDetailActions.ts', import.meta.url);
-const modules = readSourceModules([pageUrl, hookUrl, workspaceUrl, detailPanelUrl, detailActionsUrl]);
+const modules = readSourceModules([pageUrl, hookUrl, workspaceUrl, detailPanelUrl, detailActionsUrl, utilsUrl]);
 const implementation = combinedSource(modules);
 const pageModule = modules.find((module) => module.name === 'Ingest.tsx');
 assert.ok(pageModule);
@@ -105,10 +106,9 @@ test('ingest detail tabs can move while preserving exact definitions and order',
 });
 
 test('ingest endpoints preserve list mutation upload and status polling contracts', () => {
-  assert.match(implementation, /const PAGE_SIZE = 15/);
   assert.match(implementation, /const API_BASE = '\/api\/events'/);
-  assert.match(implementation, /sourceId = 'douyin,user-upload,user-concept'/);
-  assert.match(implementation, /limit=\$\{PAGE_SIZE\}&offset=0&count=1/);
+  assert.match(implementation, /source_id: 'douyin,user-upload,user-concept'/);
+  assert.match(implementation, /buildEventListPath\(historyTab, debouncedSearch, offset\)/);
   assert.match(implementation, /apiFetch\(`\/api\/ingest\/status\/\$\{eventId\}`, \{ signal \}\)/);
   assert.match(implementation, /apiFetch\('\/api\/ingest\/douyin', \{\s*method: 'POST'/);
   assert.match(implementation, /apiFetch\('\/api\/ingest\/file', \{ method: 'POST', timeoutMs: 900_000, body \}\)/);
@@ -131,8 +131,7 @@ test('ingest lifecycle source preserves cancellation stale suppression refreshes
 test('ingest list queries are committed callback inputs instead of render-phase refs', () => {
   const hook = readFileSync(hookUrl, 'utf8');
   assert.doesNotMatch(hook, /listQueryRef/);
-  assert.match(hook, /const topicFilter = [^\n]*historyTab/);
-  assert.match(hook, /const searchParam = debouncedSearch/);
+  assert.match(hook, /buildEventListPath\(historyTab, debouncedSearch, offset\)/);
   assert.match(hook, /\}, \[debouncedSearch, eventRequestCoordinator, historyTab\]\);/);
 });
 
@@ -212,6 +211,7 @@ test('ingest extraction forwards callbacks and exports its real request coordina
   assert.match(page, /useIngestEvents\(/);
   assertForwardedCallbacks(pageModule, 'IngestWorkspaceContent', {
     onRetry: 'loadEvents',
+    onLoadMore: 'loadMore',
     onSelect: 'openDetail',
     onDelete: 'handleDelete',
     onTopicChange: 'handleEmbeddedTopicChange',

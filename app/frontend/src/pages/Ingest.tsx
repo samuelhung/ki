@@ -29,6 +29,9 @@ export default function Ingest() {
   const {
     events,
     loading,
+    loadingMore,
+    total,
+    hasMore,
     eventsError,
     historyTab,
     search,
@@ -36,6 +39,7 @@ export default function Ingest() {
     activeEventId,
     selectedEvent,
     loadEvents,
+    loadMore,
     pollIngestStatus,
     handleDelete,
     openDetail,
@@ -138,6 +142,9 @@ export default function Ingest() {
               activeEventId={activeEventId}
               activeTopic={historyTab}
               loading={loading}
+              loadingMore={loadingMore}
+              total={total}
+              hasMore={hasMore}
               error={eventsError}
               search={search}
               searchPortalTarget={searchPortalTarget}
@@ -154,6 +161,7 @@ export default function Ingest() {
               transcriptContent={transcriptWorkflow.transcript?.content}
               summaryStale={transcriptWorkflow.transcript?.summary_stale || false}
               onRetry={loadEvents}
+              onLoadMore={loadMore}
               onSelect={openDetail}
               onDelete={handleDelete}
               onTopicChange={handleEmbeddedTopicChange}
