@@ -27,7 +27,6 @@ export const MODULE_CONFIG_KEYS = [
   'ingest_pipeline',
   'series',
   'brainstorm',
-  'briefing',
   'tasks',
   'concept',
 ] as const;
@@ -41,7 +40,6 @@ export const MODULE_CONFIG_ITEMS = [
   { key: 'ingest_pipeline', label: '内容采集', meta: '总结、分类、标注与翻译', icon: Zap, accent: 'gold' },
   { key: 'series', label: '专题引擎', meta: '发现、导言、总结与分析', icon: Layers, accent: 'blue' },
   { key: 'brainstorm', label: '头脑风暴', meta: '回答、总结与概念提取', icon: Radio, accent: 'cyan' },
-  { key: 'briefing', label: '即时快报', meta: '即时快报与深度日报', icon: FileText, accent: 'rose' },
   { key: 'tasks', label: '待办事务', meta: '事务判断与行动建议', icon: CheckCircle, accent: 'gold' },
   { key: 'concept', label: '概念沉淀', meta: '概念补全与结构化', icon: BookOpen, accent: 'violet' },
 ] as const;
@@ -66,7 +64,6 @@ const TASK_NAMES: Record<string, Record<string, string>> = {
   ingest_pipeline: { summarize: '内容总结', classify: '认知分类', tag: '实体标注', translate: '英文翻译' },
   series: { discover: '发现专题', intro: '专题导言', summary: '结构化总结', paper: '论文分析', auto_suggest: '即时匹配' },
   brainstorm: { answer: '综合回答', summary: '对话总结', contemplate: '凝神静思', concept_extract: '概念提取' },
-  briefing: { briefing_quick: '即时快报', briefing_daily: '深度日报' },
   tasks: { judge: '事务判断' },
   concept: { auto_complete: 'AI 补全' },
 };
@@ -75,7 +72,6 @@ const SUGGESTIONS: Record<string, Record<string, { temp: string; tokens: string 
   ingest_pipeline: { summarize: { temp: '0.1-0.3', tokens: '3072' }, classify: { temp: '0.1', tokens: '256' }, tag: { temp: '0.1', tokens: '512' }, translate: { temp: '0.1', tokens: '2048' } },
   series: { discover: { temp: '0.3-0.5', tokens: '4096' }, intro: { temp: '0.3-0.5', tokens: '1024' }, summary: { temp: '0.2-0.3', tokens: '3072' }, paper: { temp: '0.4-0.6', tokens: '16384' }, auto_suggest: { temp: '0.1', tokens: '256' } },
   brainstorm: { answer: { temp: '0.2-0.4', tokens: '8192' }, summary: { temp: '0.2-0.3', tokens: '3000' }, contemplate: { temp: '0.2-0.3', tokens: '800' }, concept_extract: { temp: '0.1', tokens: '2048' } },
-  briefing: { briefing_quick: { temp: '0.2-0.3', tokens: '3072' }, briefing_daily: { temp: '0.2-0.3', tokens: '8192' } },
   tasks: { judge: { temp: '0.3-0.4', tokens: '16384' } },
   concept: { auto_complete: { temp: '0.2-0.3', tokens: '1500' } },
 };

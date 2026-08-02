@@ -121,11 +121,11 @@ test('system center exposes four observation entries and seven direct control en
   const observationItems = page.match(/key: 'observe'[\s\S]*?items:\s*\[([\s\S]*?)\n\s*\],/)?.[1] || '';
   const moduleItems = panels.match(/export const MODULE_CONFIG_ITEMS = \[([\s\S]*?)\n\];/)?.[1] || '';
   assert.equal(observationItems.match(/\{ key:/g)?.length, 4);
-  assert.equal(moduleItems.match(/\{ key:/g)?.length, 6);
+  assert.equal(moduleItems.match(/\{ key:/g)?.length, 5);
   for (const key of ['boundary', 'changelog', 'logs', 'assets', 'base_config']) {
     assert.match(page, new RegExp(`key: '${key}'`));
   }
-  for (const key of ['ingest_pipeline', 'series', 'brainstorm', 'briefing', 'tasks', 'concept']) {
+  for (const key of ['ingest_pipeline', 'series', 'brainstorm', 'tasks', 'concept']) {
     assert.match(panels, new RegExp(`key: '${key}'`));
   }
   assert.doesNotMatch(panels, /digest_briefing|knowledge_graph|知识图谱|实体深度分析|每日摘要/);
@@ -237,16 +237,14 @@ test('asset inventory uses semantic icons and tones for every metric', async () 
   assert.match(css, /@media \(max-width:\s*1180px\)[\s\S]*\.system-asset-group header small\s*\{[^}]*grid-column:\s*2/s);
 });
 
-test('active briefing config uses the current module and task names', async () => {
+test('retired briefing config is absent', async () => {
   const [panels, types] = await Promise.all([
     readFile(panelsUrl, 'utf8'),
     readFile(new URL('./systemTypes.ts', import.meta.url), 'utf8'),
   ]);
 
-  assert.match(panels, /briefing:\s*\{\s*briefing_quick:[\s\S]*briefing_daily:/);
-  assert.doesNotMatch(panels, /digest_briefing|\bdigest:\s*\{|每日摘要/);
-  assert.match(types, /briefing:\s*ModuleConfig/);
-  assert.doesNotMatch(types, /digest_briefing/);
+  assert.doesNotMatch(panels, /briefing_quick|briefing_daily|即时快报|digest_briefing/);
+  assert.doesNotMatch(types, /briefing:\s*ModuleConfig|digest_briefing/);
 });
 
 test('system Prompt content shares one left alignment axis', async () => {

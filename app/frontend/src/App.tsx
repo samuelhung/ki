@@ -15,7 +15,6 @@ import RemoteUnlockGate from './components/auth/RemoteUnlockGate';
 import { useRemoteUnlock } from './components/auth/useRemoteUnlock';
 
 const CinematicHome = lazy(() => import('./pages/CinematicHome'));
-const CinematicBriefings = lazy(() => import('./pages/CinematicBriefings'));
 const CinematicLibrary = lazy(() => import('./pages/CinematicLibrary'));
 const CinematicBrainstorm = lazy(() => import('./pages/CinematicBrainstorm'));
 const CinematicTasks = lazy(() => import('./pages/CinematicTasks'));
@@ -35,7 +34,6 @@ function CurtainOverlay() {
   const location = useLocation();
   const { curtainPhase, onAnimationComplete } = useCurtain();
   const skipInitialCurtain = location.pathname === '/' || location.pathname === '/ingest'
-    || location.pathname === '/briefings'
     || location.pathname === '/events'
     || location.pathname.startsWith('/events/')
     || location.pathname === '/system'
@@ -114,7 +112,7 @@ function Layout() {
   const location = useLocation();
   useMediaTransportConnection();
   const remoteUnlock = useRemoteUnlock();
-  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest' || location.pathname === '/briefings' || location.pathname === '/events' || location.pathname.startsWith('/events/') || location.pathname === '/sources' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series' || location.pathname.startsWith('/series/') || location.pathname === '/study' || location.pathname.startsWith('/study/') || location.pathname === '/study-mistakes' || location.pathname === '/industry-chains' || location.pathname === '/chains' || location.pathname === '/brainstorm' || location.pathname.startsWith('/brainstorm/') || location.pathname === '/tasks';
+  const isCinematicFullScreen = location.pathname === '/' || location.pathname === '/ingest' || location.pathname === '/events' || location.pathname.startsWith('/events/') || location.pathname === '/sources' || location.pathname === '/system' || location.pathname === '/settings' || location.pathname === '/toolbox' || location.pathname === '/tools' || location.pathname === '/series' || location.pathname.startsWith('/series/') || location.pathname === '/study' || location.pathname.startsWith('/study/') || location.pathname === '/study-mistakes' || location.pathname === '/industry-chains' || location.pathname === '/chains' || location.pathname === '/brainstorm' || location.pathname.startsWith('/brainstorm/') || location.pathname === '/tasks';
 
   // ---- Offline detection ----
   const [isOnline, setIsOnline] = useState(true);
@@ -324,7 +322,6 @@ export default function App() {
         <Route element={<Layout />}>
           <Route index element={<CinematicHome />} />
           <Route path="ingest" element={<LegacyIngestShellPreview />} />
-          <Route path="briefings" element={<CinematicBriefings />} />
           <Route path="events" element={<CinematicLibrary />} />
           <Route path="sources" element={<CinematicLibrary />} />
           <Route path="brainstorm" element={<CinematicBrainstorm />} />

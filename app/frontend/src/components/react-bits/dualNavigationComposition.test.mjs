@@ -61,9 +61,9 @@ test('production navigation shell keeps the approved gooey navigation parameters
 
 test('the primary navigation exposes the formal chinese information architecture', () => {
   const items = shell.match(/const TOP_ITEMS:[^=]+= \[([\s\S]*?)\n\];/)?.[1] || '';
-  assert.equal((items.match(/label:/g) || []).length, 7);
+  assert.equal((items.match(/label:/g) || []).length, 6);
   assert.doesNotMatch(items, /label: '首页'/);
-  assert.match(items, /label: '内容采集', href: '\/ingest'[\s\S]*label: '即时快报', href: '\/briefings'[\s\S]*label: '专题系列', href: '\/series'[\s\S]*label: '头脑风暴', href: '\/brainstorm'[\s\S]*label: '产业链', href: '\/industry-chains'[\s\S]*label: '工具箱', href: '\/toolbox'[\s\S]*label: '系统中枢', href: '\/system'/);
+  assert.match(items, /label: '内容采集', href: '\/ingest'[\s\S]*label: '专题系列', href: '\/series'[\s\S]*label: '头脑风暴', href: '\/brainstorm'[\s\S]*label: '产业链', href: '\/industry-chains'[\s\S]*label: '工具箱', href: '\/toolbox'[\s\S]*label: '系统中枢', href: '\/system'/);
   assert.doesNotMatch(items, /事件列表|信息源/);
   assert.doesNotMatch(items, /label: 'INGEST'/);
   assert.match(shell, /pathname\.startsWith\('\/brainstorm'\)/);
