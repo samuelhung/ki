@@ -28,25 +28,23 @@ def test_verify_wheel_requires_current_production_frontend(tmp_path: Path) -> No
             "zhiji_backend/frontend_dist/index.html",
             "zhiji_backend/frontend_dist/assets/three-vendor-hash.js",
             "zhiji_backend/frontend_dist/assets/KiNavigationShell-hash.js",
-            "zhiji_backend/frontend_dist/assets/CinematicBriefings-hash.js",
         ],
     )
 
     verify_wheel(wheel)
 
 
-def test_verify_wheel_rejects_missing_briefing_workspace(tmp_path: Path) -> None:
+def test_verify_wheel_rejects_missing_navigation_shell(tmp_path: Path) -> None:
     wheel = tmp_path / "zhiji_backend-2.0.0-py3-none-any.whl"
     _write_wheel(
         wheel,
         [
             "zhiji_backend/frontend_dist/index.html",
             "zhiji_backend/frontend_dist/assets/three-vendor-hash.js",
-            "zhiji_backend/frontend_dist/assets/KiNavigationShell-hash.js",
         ],
     )
 
-    with pytest.raises(SystemExit, match="CinematicBriefings"):
+    with pytest.raises(SystemExit, match="KiNavigationShell"):
         verify_wheel(wheel)
 
 

@@ -33,7 +33,6 @@ fi
 
 for route in \
   'path="ingest" element={<LegacyIngestShellPreview />}' \
-  'path="briefings" element={<CinematicBriefings />}' \
   'path="events" element={<CinematicLibrary />}' \
   'path="sources" element={<CinematicLibrary />}'; do
   if ! grep -F -q "$route" "$APP"; then
@@ -42,19 +41,24 @@ for route in \
   fi
 done
 
-for retired_page in Events.tsx Sources.tsx; do
+for retired_page in Events.tsx Sources.tsx CinematicBriefings.tsx CinematicBriefings.css; do
   if [[ -e "$ROOT/app/frontend/src/pages/$retired_page" ]]; then
     echo "retired page must stay removed: $retired_page" >&2
     exit 1
   fi
 done
 
-for label in "内容采集" "即时快报" "专题系列" "头脑风暴" "产业链" "工具箱" "系统中枢"; do
+for label in "内容采集" "专题系列" "头脑风暴" "产业链" "工具箱" "系统中枢"; do
   if ! grep -q "$label" "$SHELL"; then
     echo "production navigation missing: $label" >&2
     exit 1
   fi
 done
+
+if grep -q "即时快报\|/briefings" "$SHELL"; then
+  echo "instant briefing navigation must stay removed" >&2
+  exit 1
+fi
 
 for contract in \
   "<KiNavigationShell" \

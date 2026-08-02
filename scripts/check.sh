@@ -48,6 +48,9 @@ PRODUCTION_INGEST_FILES = {
     "app/frontend/src/pages/LegacyIngestShellPreview.tsx",
 }
 PRODUCTION_INGEST_BRIEFING = re.compile(r"\bbriefing\b|快报", re.IGNORECASE)
+RETIRED_INSTANT_BRIEFING = re.compile(
+    r"CinematicBriefings|/api/briefing|/briefings|briefing_quick|briefing_daily|即时快报"
+)
 STRING_LITERAL = re.compile(r"(?P<quote>['\"`])(?P<value>[^'\"`\n]*)(?P=quote)")
 OLD_ROUTE_SEGMENT = re.compile(r"(?:^|/)[^/?#]*-old(?:$|[/?#])", re.IGNORECASE)
 ROUTE_CONTEXT = re.compile(r"(?:\b(?:path|route|href|url)\s*[:=]\s*|\bpath\s*=\s*)$", re.IGNORECASE)
@@ -832,17 +835,27 @@ def scan(root: Path) -> list[str]:
         violations.append(
             "app/frontend/public/api/digest: retired frontend static path must not exist"
         )
+    retired_briefing_directory = root / "app/frontend/src/components/cinematic-briefings"
+    if os.path.lexists(retired_briefing_directory):
+        violations.append(
+            "app/frontend/src/components/cinematic-briefings: retired instant briefing directory must not exist"
+        )
     retired_files = {
         "app/frontend/src/pages/BrandDepthDemo.tsx",
         "app/frontend/src/pages/BrandLockupDemo.tsx",
         "app/frontend/src/pages/CircularGalleryDemo.tsx",
         "app/frontend/src/pages/DockPopupVisualDemo.tsx",
         "app/frontend/src/pages/DualNavigationDemo.tsx",
+        "app/frontend/src/pages/CinematicBriefings.tsx",
         "src/zhiji_backend/entity.py",
         "src/zhiji_backend/entities.py",
         "src/zhiji_backend/digest.py",
         "src/zhiji_backend/digest_ai.py",
+        "src/zhiji_backend/briefing.py",
+        "src/zhiji_backend/briefing_generation_service.py",
+        "src/zhiji_backend/briefing_repository.py",
         "src/zhiji_backend/routes/entity_routes.py",
+        "src/zhiji_backend/routes/briefing_routes.py",
         "src/zhiji_backend/routes/digest_routes.py",
     }
     for relative, path in source_paths(root):
@@ -850,6 +863,18 @@ def scan(root: Path) -> list[str]:
         if relative_name in retired_files:
             violations.append(f"{relative_name}: retired business module must not exist")
         source = path.read_text(encoding="utf-8")
+        for match in RETIRED_INSTANT_BRIEFING.finditer(source):
+            if relative_name == "src/zhiji_backend/migrations.py" and match.group(0) in {
+                "briefing_quick",
+                "briefing_daily",
+            }:
+                continue
+            if relative_name == "app/frontend/src/systemDocData.ts" and match.group(0) == "即时快报":
+                continue
+            line = source.count("\n", 0, match.start()) + 1
+            violations.append(
+                f"{relative_name}:{line}: retired instant briefing: {match.group(0)!r}"
+            )
         if relative_name.startswith(PRODUCTION_INGEST_PREFIXES) or relative_name in PRODUCTION_INGEST_FILES:
             for match in PRODUCTION_INGEST_BRIEFING.finditer(source):
                 line = source.count("\n", 0, match.start()) + 1
@@ -922,10 +947,13 @@ def self_test() -> None:
         write(
             root,
             "app/frontend/src/pages/CinematicBriefings.tsx",
-            "export const route = '/briefings';\nexport const title = '即时快报';\n",
+            "export const route = '/briefings';\n"
+            "export const api = '/api/briefing/latest';\n"
+            "export const task = 'briefing_quick';\n"
+            "export const label = '即时快报';\n",
         )
-        if any("production ingestion briefing residue" in item for item in scan(root)):
-            raise SystemExit("FAIL retired feature scan rejected independent briefing page")
+        if not any("retired instant briefing" in item for item in scan(root)):
+            raise SystemExit("FAIL retired feature scan allowed instant briefing resurrection")
 
     retired_route_cases = {
         "app/frontend/src/LegacyRoute.jsx": 'const path = "/reports-old";\n',

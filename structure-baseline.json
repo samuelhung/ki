@@ -3,7 +3,8 @@
     "app/frontend/src/components/cinematic-chains/ChainDetailView.tsx": 438,
     "app/frontend/src/components/cinematic/cinematicSceneRuntime.ts": 478,
     "app/frontend/src/components/react-bits/KiMagicBento.tsx": 520,
-    "app/frontend/src/pages/CinematicIndustryChains.tsx": 521
+    "app/frontend/src/pages/CinematicIndustryChains.tsx": 521,
+    "src/zhiji_backend/api_middleware.py": 411
   },
   "ruff_per_file_ignores": {
     "scripts/backfill_overviews.py": [
