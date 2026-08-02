@@ -21,6 +21,7 @@ test('alert 保持可见，确认后完成并清空快照', async () => {
     kind: 'alert', title: '提示', message: '已保存', tone: 'default', pending: false,
     confirmLabel: '', cancelLabel: '', pendingLabel: '', acknowledgeLabel: '知道了',
   });
+  assert.strictEqual(controller.getSnapshot(), controller.getSnapshot());
   await Promise.resolve();
   assert.equal(settled, false);
   controller.acknowledge();

@@ -78,11 +78,13 @@ function safeErrorMessage(reason: unknown, fallback: string) {
 
 export function createSystemDialogController(): SystemDialogController {
   let active: DialogRequest | null = null;
+  let snapshot: SystemDialogSnapshot = null;
   const queue: DialogRequest[] = [];
   const listeners = new Set<() => void>();
   let destroyed = false;
 
   const notify = () => {
+    snapshot = buildSnapshot();
     for (const listener of listeners) listener();
   };
 
@@ -105,7 +107,7 @@ export function createSystemDialogController(): SystemDialogController {
     notify();
   };
 
-  const getSnapshot = (): SystemDialogSnapshot => {
+  function buildSnapshot(): SystemDialogSnapshot {
     if (!active) return null;
     if (active.type === 'alert') {
       return {
@@ -144,10 +146,10 @@ export function createSystemDialogController(): SystemDialogController {
       pendingLabel: active.options.pendingLabel ?? defaultLabels.pending,
       acknowledgeLabel: active.options.acknowledgeLabel ?? defaultLabels.acknowledge,
     };
-  };
+  }
 
   return {
-    getSnapshot,
+    getSnapshot: () => snapshot,
     subscribe(listener) {
       if (destroyed) return () => {};
       listeners.add(listener);
@@ -200,6 +202,7 @@ export function createSystemDialogController(): SystemDialogController {
         else request.resolve('cancelled');
       }
       active = null;
+      snapshot = null;
       queue.length = 0;
       listeners.clear();
     },
