@@ -21,7 +21,7 @@ def test_credential_store_module_exists():
     assert importlib.util.find_spec("zhiji_backend.credential_store") is not None
 
 
-def test_config_normalization_merges_legacy_briefing_and_removes_retired_modules():
+def test_config_normalization_removes_retired_modules():
     raw = {
         "general": {"model": "custom-model"},
         "digest_briefing": {
@@ -40,10 +40,6 @@ def test_config_normalization_merges_legacy_briefing_and_removes_retired_modules
     assert changed is True
     assert normalized == {
         "general": {"model": "custom-model"},
-        "briefing": {
-            "briefing_quick": {"temperature": 0.2, "max_tokens": 1000},
-            "briefing_daily": {"thinking": True},
-        },
         "custom": {"preserved": True},
     }
     assert raw["digest_briefing"]["briefing_quick"]["temperature"] == 0.8
@@ -265,7 +261,6 @@ def test_frontend_full_get_put_roundtrip_preserves_response_contract(config_clie
         "ingest_pipeline",
         "series",
         "brainstorm",
-        "briefing",
         "tasks",
         "concept",
         "study",
@@ -287,7 +282,7 @@ def test_sparse_known_update_merges_without_resetting_other_values(config_client
     after = config_manager.get_config()
     assert after["series"]["paper"]["max_tokens"] == 12000
     assert after["series"]["paper"]["temperature"] == before["series"]["paper"]["temperature"]
-    assert after["briefing"] == before["briefing"]
+    assert after["brainstorm"] == before["brainstorm"]
 
 
 @pytest.mark.parametrize(
@@ -1128,7 +1123,6 @@ def test_cli_init_creates_env_and_config_with_0600_permissions(tmp_path):
         "ingest_pipeline",
         "series",
         "brainstorm",
-        "briefing",
         "tasks",
         "concept",
         "study",

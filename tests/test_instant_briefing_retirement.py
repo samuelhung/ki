@@ -6,10 +6,17 @@ import sqlite3
 import pytest
 from fastapi.testclient import TestClient
 
-from zhiji_backend import migrations
+from zhiji_backend import (
+    config_manager,
+    migrations,
+    prompt_registry,
+    system_config_schema,
+)
 from zhiji_backend.db import init_db
+from zhiji_backend.event_query_service import event_topic_counts
 from zhiji_backend.main import app
 from zhiji_backend.migrations import ensure_migrations
+from zhiji_backend.routes import system_routes
 
 MIGRATION_NAME = "20260803_remove_instant_briefing"
 
@@ -46,6 +53,57 @@ def test_instant_briefing_endpoints_are_absent(client, method, path):
 )
 def test_instant_briefing_modules_are_removed(module_name):
     assert importlib.util.find_spec(module_name) is None
+
+
+def test_instant_briefing_configuration_and_prompts_are_absent():
+    normalized, changed = config_manager._normalize_persisted_config(
+        {
+            "briefing": {"briefing_quick": {"max_tokens": 5000}},
+            "digest_briefing": {"briefing_daily": {"max_tokens": 7000}},
+            "series": {"summary": {"max_tokens": 8000}},
+        }
+    )
+
+    assert changed is True
+    assert "briefing" not in config_manager._defaults()
+    assert "briefing" not in normalized
+    assert "digest_briefing" not in normalized
+    assert normalized["series"]["summary"]["max_tokens"] == 8000
+    assert "briefing" not in system_config_schema.SystemConfigUpdate.model_fields
+    assert "briefing" not in prompt_registry.MODULE_MAP
+    assert "briefing" not in prompt_registry.PROMPT_SOURCES
+    assert "briefings" not in system_routes.TABLE_DESCRIPTIONS
+
+
+def test_event_topic_counts_have_no_briefing_bucket():
+    class Cursor:
+        def __init__(self, value):
+            self.value = value
+
+        def fetchone(self):
+            return (self.value,)
+
+    class Connection:
+        def __init__(self):
+            self.calls = 0
+
+        def execute(self, _sql, _params=()):
+            self.calls += 1
+            return Cursor(self.calls)
+
+    connection = Connection()
+
+    class Scope:
+        def __enter__(self):
+            return connection
+
+        def __exit__(self, *_args):
+            return None
+
+    result = event_topic_counts(connect_fn=Scope)
+
+    assert result == {"格局": 1, "财富": 2, "认知": 3, "前瞻": 4}
+    assert connection.calls == 4
 
 
 def _schema_names(conn: sqlite3.Connection, object_type: str) -> set[str]:

@@ -18,15 +18,15 @@ def _load_from(config_path: Path, monkeypatch):
     return config_manager.load_config()
 
 
-def test_defaults_expose_only_active_briefing_tasks():
+def test_defaults_exclude_retired_modules():
     defaults = config_manager._defaults()
 
-    assert set(defaults["briefing"]) == {"briefing_quick", "briefing_daily"}
+    assert "briefing" not in defaults
     assert "digest_briefing" not in defaults
     assert "knowledge_graph" not in defaults
 
 
-def test_load_config_normalizes_retired_modules_without_losing_overrides(tmp_path, monkeypatch):
+def test_load_config_discards_retired_modules_without_losing_overrides(tmp_path, monkeypatch):
     config_path = tmp_path / "system_config.json"
     config_path.write_text(
         json.dumps(
@@ -37,7 +37,9 @@ def test_load_config_normalizes_retired_modules_without_losing_overrides(tmp_pat
                     "briefing_quick": {"max_tokens": 4096, "thinking": True},
                     "briefing_daily": {"temperature": 0.17},
                 },
+                "briefing": {"briefing_quick": {"max_tokens": 5000}},
                 "knowledge_graph": {"entity_insight": {"max_tokens": 2048}},
+                "series": {"summary": {"max_tokens": 8000}},
                 "custom_module": {"custom_task": {"max_tokens": 77}},
             }
         ),
@@ -46,22 +48,18 @@ def test_load_config_normalizes_retired_modules_without_losing_overrides(tmp_pat
 
     loaded = _load_from(config_path, monkeypatch)
 
-    assert loaded["briefing"]["briefing_quick"]["max_tokens"] == 4096
-    assert loaded["briefing"]["briefing_quick"]["thinking"] is True
-    assert loaded["briefing"]["briefing_daily"]["temperature"] == 0.17
     assert loaded["general"]["base_url"] == "https://ai.example.test/v1"
+    assert loaded["series"]["summary"]["max_tokens"] == 8000
     assert loaded["custom_module"] == {"custom_task": {"max_tokens": 77}}
-    assert set(loaded["briefing"]) == {"briefing_quick", "briefing_daily"}
+    assert "briefing" not in loaded
     assert "digest_briefing" not in loaded
     assert "knowledge_graph" not in loaded
 
     persisted = json.loads(config_path.read_text(encoding="utf-8"))
     assert persisted["general"] == {"base_url": "https://ai.example.test/v1"}
+    assert persisted["series"] == {"summary": {"max_tokens": 8000}}
     assert persisted["custom_module"] == {"custom_task": {"max_tokens": 77}}
-    assert persisted["briefing"] == {
-        "briefing_quick": {"max_tokens": 4096, "thinking": True},
-        "briefing_daily": {"temperature": 0.17},
-    }
+    assert "briefing" not in persisted
     assert "digest_briefing" not in persisted
     assert "knowledge_graph" not in persisted
 
@@ -85,7 +83,8 @@ def test_preflight_config_load_does_not_persist_normalization_before_backup_gate
 
     loaded = config_manager.load_config(persist_normalization=False)
 
-    assert loaded["briefing"]["briefing_quick"]["max_tokens"] == 4096
+    assert "briefing" not in loaded
+    assert "digest_briefing" not in loaded
     assert config_path.read_text(encoding="utf-8") == original
 
 
@@ -99,33 +98,6 @@ def test_main_loads_and_persists_config_only_after_migration_gate():
     config_index = main_source.index("load_config()", migration_index)
     assert migration_index < config_index
     assert "load_config(persist_normalization=False)" in config_source
-
-
-def test_new_briefing_overrides_take_precedence_over_legacy_values(tmp_path, monkeypatch):
-    config_path = tmp_path / "system_config.json"
-    config_path.write_text(
-        json.dumps(
-            {
-                "digest_briefing": {
-                    "briefing_quick": {"temperature": 0.12, "max_tokens": 4000},
-                    "briefing_daily": {"max_tokens": 7000},
-                },
-                "briefing": {
-                    "briefing_quick": {"max_tokens": 5000},
-                    "digest": {"max_tokens": 1234},
-                    "retired_task": {"thinking": True},
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    loaded = _load_from(config_path, monkeypatch)
-
-    assert loaded["briefing"]["briefing_quick"]["temperature"] == 0.12
-    assert loaded["briefing"]["briefing_quick"]["max_tokens"] == 5000
-    assert loaded["briefing"]["briefing_daily"]["max_tokens"] == 7000
-    assert set(loaded["briefing"]) == {"briefing_quick", "briefing_daily"}
 
 
 def test_normalized_config_is_persisted_once_and_reload_is_idempotent(tmp_path, monkeypatch):
@@ -156,13 +128,13 @@ def test_normalized_config_is_persisted_once_and_reload_is_idempotent(tmp_path, 
 
     assert first == second
     assert len(writes) == 1
-    assert writes[0] == {"briefing": {"briefing_quick": {"max_tokens": 4096}}}
+    assert writes[0] == {}
 
 
 def test_already_normalized_config_is_not_rewritten(tmp_path, monkeypatch):
     config_path = tmp_path / "system_config.json"
     config_path.write_text(
-        json.dumps({"briefing": {"briefing_daily": {"max_tokens": 9000}}}),
+        json.dumps({"series": {"summary": {"max_tokens": 9000}}}),
         encoding="utf-8",
     )
     writes: list[dict] = []
@@ -172,7 +144,7 @@ def test_already_normalized_config_is_not_rewritten(tmp_path, monkeypatch):
 
     loaded = config_manager.load_config()
 
-    assert loaded["briefing"]["briefing_daily"]["max_tokens"] == 9000
+    assert loaded["series"]["summary"]["max_tokens"] == 9000
     assert writes == []
 
 
@@ -180,16 +152,10 @@ def _set_active_config(**overrides):
     config_manager._config = config_manager._deep_merge(config_manager._defaults(), overrides)
 
 
-def test_save_config_normalizes_legacy_only_payload_and_preserves_active_overrides(tmp_path, monkeypatch):
+def test_save_config_discards_retired_payload_and_preserves_active_overrides(tmp_path, monkeypatch):
     config_path = tmp_path / "system_config.json"
     monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
-    _set_active_config(
-        briefing={
-            "briefing_quick": {"max_tokens": 3500},
-            "briefing_daily": {"max_tokens": 9100},
-        },
-        series={"paper": {"max_tokens": 17000}},
-    )
+    _set_active_config(series={"paper": {"max_tokens": 17000}})
 
     config_manager.save_config(
         {
@@ -202,48 +168,26 @@ def test_save_config_normalizes_legacy_only_payload_and_preserves_active_overrid
     )
 
     saved = config_manager.get_config()
-    assert saved["briefing"]["briefing_quick"]["max_tokens"] == 4500
-    assert saved["briefing"]["briefing_daily"]["max_tokens"] == 9100
     assert saved["series"]["paper"]["max_tokens"] == 17000
+    assert "briefing" not in saved
     assert "digest_briefing" not in saved
     assert "knowledge_graph" not in saved
     assert json.loads(config_path.read_text(encoding="utf-8")) == saved
 
 
-def test_save_config_merges_canonical_only_payload_with_current_active_config(tmp_path, monkeypatch):
+def test_save_config_merges_active_payload_with_current_active_config(tmp_path, monkeypatch):
     config_path = tmp_path / "system_config.json"
     monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
-    _set_active_config(briefing={"briefing_quick": {"max_tokens": 4200}})
+    _set_active_config(series={"paper": {"max_tokens": 17000}})
 
     config_manager.save_config(
-        {"briefing": {"briefing_daily": {"temperature": 0.19, "max_tokens": 9300}}}
+        {"series": {"summary": {"temperature": 0.19, "max_tokens": 9300}}}
     )
 
     saved = config_manager.get_config()
-    assert saved["briefing"]["briefing_quick"]["max_tokens"] == 4200
-    assert saved["briefing"]["briefing_daily"]["temperature"] == 0.19
-    assert saved["briefing"]["briefing_daily"]["max_tokens"] == 9300
-
-
-def test_save_config_mixed_payload_gives_canonical_briefing_values_precedence(tmp_path, monkeypatch):
-    config_path = tmp_path / "system_config.json"
-    monkeypatch.setattr(config_manager, "CONFIG_PATH", config_path)
-    _set_active_config()
-
-    config_manager.save_config(
-        {
-            "digest_briefing": {
-                "briefing_quick": {"temperature": 0.11, "max_tokens": 4100},
-                "briefing_daily": {"max_tokens": 9200},
-            },
-            "briefing": {"briefing_quick": {"max_tokens": 5100}},
-        }
-    )
-
-    saved = config_manager.get_config()
-    assert saved["briefing"]["briefing_quick"]["temperature"] == 0.11
-    assert saved["briefing"]["briefing_quick"]["max_tokens"] == 5100
-    assert saved["briefing"]["briefing_daily"]["max_tokens"] == 9200
+    assert saved["series"]["paper"]["max_tokens"] == 17000
+    assert saved["series"]["summary"]["temperature"] == 0.19
+    assert saved["series"]["summary"]["max_tokens"] == 9300
 
 
 def test_save_config_preserves_unrelated_modules_omitted_by_stale_client(tmp_path, monkeypatch):
@@ -264,7 +208,7 @@ def test_save_config_preserves_unrelated_modules_omitted_by_stale_client(tmp_pat
 
 def test_save_failure_does_not_replace_active_in_memory_config(tmp_path, monkeypatch):
     monkeypatch.setattr(config_manager, "CONFIG_PATH", tmp_path / "system_config.json")
-    _set_active_config(briefing={"briefing_quick": {"max_tokens": 4300}})
+    _set_active_config(series={"paper": {"max_tokens": 17000}})
     before = config_manager.get_config()
     monkeypatch.setattr(
         config_manager,
@@ -273,12 +217,10 @@ def test_save_failure_does_not_replace_active_in_memory_config(tmp_path, monkeyp
     )
 
     with pytest.raises(OSError, match="disk full"):
-        config_manager.save_config(
-            {"digest_briefing": {"briefing_quick": {"max_tokens": 5300}}}
-        )
+        config_manager.save_config({"series": {"summary": {"max_tokens": 5300}}})
 
     assert config_manager.get_config() is before
-    assert config_manager.get_config()["briefing"]["briefing_quick"]["max_tokens"] == 4300
+    assert config_manager.get_config()["series"]["paper"]["max_tokens"] == 17000
 
 
 def test_overlapping_saves_are_serialized_without_losing_merges(tmp_path, monkeypatch):
@@ -340,11 +282,11 @@ def test_overlapping_saves_are_serialized_without_losing_merges(tmp_path, monkey
 
     first = threading.Thread(
         target=run_save,
-        args=({"briefing": {"briefing_quick": {"max_tokens": 4800}}},),
+        args=({"series": {"summary": {"max_tokens": 4800}}},),
     )
     second = threading.Thread(
         target=run_save,
-        args=({"series": {"paper": {"max_tokens": 18000}}},),
+        args=({"tasks": {"judge": {"max_tokens": 18000}}},),
         kwargs={"done": second_done},
     )
 
@@ -367,8 +309,8 @@ def test_overlapping_saves_are_serialized_without_losing_merges(tmp_path, monkey
     active = config_manager.get_config()
     persisted = json.loads(config_path.read_text(encoding="utf-8"))
     assert persisted == active
-    assert active["briefing"]["briefing_quick"]["max_tokens"] == 4800
-    assert active["series"]["paper"]["max_tokens"] == 18000
+    assert active["series"]["summary"]["max_tokens"] == 4800
+    assert active["tasks"]["judge"]["max_tokens"] == 18000
 
 
 def test_load_keeps_normalized_config_when_migration_persistence_fails(
@@ -394,8 +336,8 @@ def test_load_keeps_normalized_config_when_migration_persistence_fails(
 
     loaded = config_manager.load_config()
 
-    assert loaded["briefing"]["briefing_quick"]["max_tokens"] == 4700
     assert loaded["general"]["base_url"] == "https://parsed.example.test/v1"
+    assert "briefing" not in loaded
     assert "digest_briefing" not in loaded
     assert "Failed to persist normalized system config" in caplog.text
 
@@ -412,7 +354,6 @@ def test_daily_digest_surfaces_are_retired():
     active_sources = [
         ROOT / "src/zhiji_backend/main.py",
         ROOT / "src/zhiji_backend/prompt_registry.py",
-        ROOT / "src/zhiji_backend/briefing.py",
         ROOT / "src/zhiji_backend/routes/system_routes.py",
         ROOT / "app/frontend/src/components/cinematic-system/SystemCenterPanels.tsx",
         ROOT / "app/frontend/src/components/cinematic-system/systemTypes.ts",
@@ -428,7 +369,7 @@ def test_daily_digest_surfaces_are_retired():
     assert "fileCount('digests')" not in combined
 
 
-def test_system_inventory_hides_digest_table_and_files_but_keeps_briefings(tmp_path, monkeypatch):
+def test_system_inventory_hides_retired_digest_and_briefing_tables(tmp_path, monkeypatch):
     monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
     init_db()
 
@@ -438,4 +379,4 @@ def test_system_inventory_hides_digest_table_and_files_but_keeps_briefings(tmp_p
     payload = response.json()
     assert "digests" not in payload["database"]["tables"]
     assert "digests" not in payload["files"]
-    assert "briefings" in payload["database"]["tables"]
+    assert "briefings" not in payload["database"]["tables"]

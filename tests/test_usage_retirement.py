@@ -15,7 +15,7 @@ def _freeze_usage_day(monkeypatch) -> str:
     return BOUNDARY_USAGE_AT.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def test_usage_dashboard_combines_historical_briefing_rows_and_excludes_digest(
+def test_usage_dashboard_does_not_rewrite_historical_briefing_rows_and_excludes_digest(
     tmp_path, monkeypatch
 ):
     monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "intelligence.sqlite"))
@@ -42,12 +42,13 @@ def test_usage_dashboard_combines_historical_briefing_rows_and_excludes_digest(
     assert payload["today"]["total_calls"] == 3
     assert payload["today"]["total_tokens"] == 600
     assert payload["modules"] == [
-        {"module": "briefing", "calls": 3, "tokens": 600, "cost": 0.06}
+        {"module": "digest_briefing", "calls": 2, "tokens": 400, "cost": 0.04},
+        {"module": "briefing", "calls": 1, "tokens": 200, "cost": 0.02},
     ]
     tasks = {(row["module"], row["task"]): row for row in payload["tasks"]}
-    assert tasks[("briefing", "briefing_quick")]["calls"] == 2
-    assert tasks[("briefing", "briefing_quick")]["tokens"] == 300
-    assert tasks[("briefing", "briefing_daily")]["calls"] == 1
+    assert tasks[("digest_briefing", "briefing_quick")]["tokens"] == 100
+    assert tasks[("briefing", "briefing_quick")]["tokens"] == 200
+    assert tasks[("digest_briefing", "briefing_daily")]["tokens"] == 300
     assert all(task != "digest" for _, task in tasks)
     assert payload["trend"][-1]["calls"] == 3
     assert payload["trend"][-1]["tokens"] == 600

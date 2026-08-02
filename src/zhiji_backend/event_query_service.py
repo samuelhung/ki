@@ -151,10 +151,6 @@ def event_topic_counts(*, connect_fn) -> dict[str, int]:
                 (topic,),
             ).fetchone()[0]
             result[topic] = int(count)
-        briefing_count = conn.execute(
-            "SELECT COUNT(*) FROM events WHERE source_id NOT IN ('douyin','user-upload','user-concept','')"
-        ).fetchone()[0]
-        result["briefing"] = int(briefing_count)
     return result
 
 

@@ -53,11 +53,6 @@ class BrainstormConfigUpdate(StrictConfigModel):
     concept_extract: TaskConfigUpdate | None = None
 
 
-class BriefingConfigUpdate(StrictConfigModel):
-    briefing_quick: TaskConfigUpdate | None = None
-    briefing_daily: TaskConfigUpdate | None = None
-
-
 class TasksConfigUpdate(StrictConfigModel):
     judge: TaskConfigUpdate | None = None
 
@@ -107,7 +102,6 @@ class SystemConfigUpdate(StrictConfigModel):
     ingest_pipeline: IngestPipelineConfigUpdate | None = None
     series: SeriesConfigUpdate | None = None
     brainstorm: BrainstormConfigUpdate | None = None
-    briefing: BriefingConfigUpdate | None = None
     tasks: TasksConfigUpdate | None = None
     concept: ConceptConfigUpdate | None = None
     study: StudyConfigUpdate | None = None

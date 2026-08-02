@@ -52,16 +52,6 @@ MODULE_MAP: dict[str, dict[str, tuple[str, list[str]]]] = {
         ),
         "concept_extract": ("brainstorm_concept_service.py", ["precipitate_concept"]),
     },
-    "briefing": {
-        "briefing_quick": (
-            "briefing_generation_service.py",
-            ["generate_briefing", "batch_contemplate_briefing_events"],
-        ),
-        "briefing_daily": (
-            "briefing_generation_service.py",
-            ["generate_briefing", "batch_contemplate_briefing_events"],
-        ),
-    },
     "tasks": {
         "judge": ("routes/task_routes.py", ["_run_task_ai_judge"]),
     },
@@ -78,28 +68,6 @@ class PromptSource(NamedTuple):
 
 
 PROMPT_SOURCES: dict[str, dict[str, dict[str, PromptSource]]] = {
-    "briefing": {
-        "briefing_quick": {
-            "prompt": PromptSource(
-                "briefing_generation_service.py",
-                "batch_contemplate_briefing_events",
-                "legacy_built",
-            ),
-            "user_prompt": PromptSource(
-                "briefing_generation_service.py", "generate_briefing"
-            ),
-        },
-        "briefing_daily": {
-            "prompt": PromptSource(
-                "briefing_generation_service.py",
-                "batch_contemplate_briefing_events",
-                "legacy_built",
-            ),
-            "user_prompt": PromptSource(
-                "briefing_generation_service.py", "generate_briefing"
-            ),
-        },
-    },
     "brainstorm": {
         "answer": {
             "prompt": PromptSource(

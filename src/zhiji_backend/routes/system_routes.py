@@ -16,7 +16,6 @@ TABLE_DESCRIPTIONS: dict[str, str] = {
     "brainstorm_event_links": "问题-事件关联",
     "series": "专题系列",
     "tasks": "待办事务",
-    "briefings": "情报快报",
     "ingest_tasks": "摄入任务队列",
     "ai_usage": "AI 调用记录",
     "sources": "信息源",

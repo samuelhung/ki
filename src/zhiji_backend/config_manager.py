@@ -85,10 +85,6 @@ def _defaults() -> dict:
             "contemplate":     {"temperature": 0.3, "max_tokens": 800,   "thinking": False},
             "concept_extract": {"temperature": 0.1, "max_tokens": 2048,  "thinking": False},
         },
-        "briefing": {
-            "briefing_quick": {"temperature": 0.3, "max_tokens": 3072,  "thinking": False},
-            "briefing_daily": {"temperature": 0.3, "max_tokens": 8192,  "thinking": False},
-        },
         "tasks": {
             "judge":     {"temperature": 0.4, "max_tokens": 16384, "thinking": False},
         },
@@ -312,32 +308,13 @@ def _deep_merge(base: dict, override: dict) -> dict:
 
 
 def _normalize_persisted_config(raw: dict) -> tuple[dict, bool]:
-    """Migrate retired module keys while preserving sparse user overrides."""
+    """Remove retired module keys while preserving active configuration."""
     if not isinstance(raw, dict):
         raise ValueError("System config root must be an object")
     normalized = dict(raw)
-    legacy = normalized.pop("digest_briefing", None)
+    normalized.pop("briefing", None)
+    normalized.pop("digest_briefing", None)
     normalized.pop("knowledge_graph", None)
-
-    current = normalized.get("briefing")
-    legacy_tasks = legacy if isinstance(legacy, dict) else {}
-    current_tasks = current if isinstance(current, dict) else {}
-    briefing: dict[str, Any] = {}
-
-    for task in ("briefing_quick", "briefing_daily"):
-        legacy_override = legacy_tasks.get(task)
-        current_override = current_tasks.get(task)
-        if isinstance(legacy_override, dict) and isinstance(current_override, dict):
-            briefing[task] = _deep_merge(legacy_override, current_override)
-        elif isinstance(current_override, dict):
-            briefing[task] = dict(current_override)
-        elif isinstance(legacy_override, dict):
-            briefing[task] = dict(legacy_override)
-
-    if briefing:
-        normalized["briefing"] = briefing
-    elif "briefing" in normalized:
-        normalized.pop("briefing")
 
     return normalized, normalized != raw
 

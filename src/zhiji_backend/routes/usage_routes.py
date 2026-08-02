@@ -11,12 +11,7 @@ router = APIRouter(prefix="/api/usage", tags=["usage"])
 ACTIVE_USAGE_CTE = """
 WITH active_usage AS (
   SELECT *,
-         CASE
-           WHEN module = 'digest_briefing'
-            AND task IN ('briefing_quick', 'briefing_daily')
-           THEN 'briefing'
-           ELSE module
-         END AS active_module
+         module AS active_module
   FROM ai_usage
   WHERE NOT (
     COALESCE(module, '') = 'digest_briefing'
