@@ -1057,6 +1057,80 @@ def test_launchd_controller_uses_configured_test_label_and_plist(tmp_path: Path)
     ]
 
 
+def test_launchd_controller_retries_transient_bootstrap_eio(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    commands: list[list[str]] = []
+    delays: list[float] = []
+
+    def transient_bootstrap(command: list[str], **kwargs) -> None:
+        assert kwargs == {"check": True}
+        commands.append(command)
+        if len(commands) == 1:
+            raise subprocess.CalledProcessError(5, command)
+
+    service = LaunchdServiceController(
+        config,
+        run=transient_bootstrap,
+        uid=501,
+        sleep=delays.append,
+    )
+    service.start()
+
+    expected = ["launchctl", "bootstrap", "gui/501", str(config.launchd_plist)]
+    assert commands == [expected, expected]
+    assert delays == [0.25]
+
+
+def test_launchd_controller_does_not_retry_non_eio(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    commands: list[list[str]] = []
+    delays: list[float] = []
+
+    def permanent_failure(command: list[str], **kwargs) -> None:
+        assert kwargs == {"check": True}
+        commands.append(command)
+        raise subprocess.CalledProcessError(2, command)
+
+    service = LaunchdServiceController(
+        config,
+        run=permanent_failure,
+        uid=501,
+        sleep=delays.append,
+    )
+
+    with pytest.raises(subprocess.CalledProcessError) as caught:
+        service.start()
+
+    assert caught.value.returncode == 2
+    assert len(commands) == 1
+    assert delays == []
+
+
+def test_launchd_controller_limits_eio_retries(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    commands: list[list[str]] = []
+    delays: list[float] = []
+
+    def permanent_eio(command: list[str], **kwargs) -> None:
+        assert kwargs == {"check": True}
+        commands.append(command)
+        raise subprocess.CalledProcessError(5, command)
+
+    service = LaunchdServiceController(
+        config,
+        run=permanent_eio,
+        uid=501,
+        sleep=delays.append,
+    )
+
+    with pytest.raises(subprocess.CalledProcessError) as caught:
+        service.start()
+
+    assert caught.value.returncode == 5
+    assert len(commands) == 20
+    assert delays == [0.25] * 19
+
+
 def test_default_smoke_checks_liveness_database_and_core_api(monkeypatch) -> None:
     requested: list[str] = []
     payloads = {

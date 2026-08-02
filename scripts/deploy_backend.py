@@ -92,10 +92,18 @@ class BackendDeployConfig:
 
 
 class LaunchdServiceController:
-    def __init__(self, config: BackendDeployConfig, *, run=subprocess.run, uid: int | None = None):
+    def __init__(
+        self,
+        config: BackendDeployConfig,
+        *,
+        run=subprocess.run,
+        uid: int | None = None,
+        sleep: Callable[[float], None] = time.sleep,
+    ):
         self._config = config
         self._run = run
         self._domain = f"gui/{os.getuid() if uid is None else uid}"
+        self._sleep = sleep
 
     def stop(self) -> None:
         self._run(
@@ -104,10 +112,15 @@ class LaunchdServiceController:
         )
 
     def start(self) -> None:
-        self._run(
-            ["launchctl", "bootstrap", self._domain, str(self._config.launchd_plist)],
-            check=True,
-        )
+        command = ["launchctl", "bootstrap", self._domain, str(self._config.launchd_plist)]
+        for attempt in range(20):
+            try:
+                self._run(command, check=True)
+                return
+            except subprocess.CalledProcessError as exc:
+                if exc.returncode != errno.EIO or attempt == 19:
+                    raise
+                self._sleep(0.25)
 
 
 def _is_loopback_bind(bind_host: str) -> bool:
