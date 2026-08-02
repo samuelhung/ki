@@ -6,8 +6,6 @@ import { once } from 'node:events';
 import net from 'node:net';
 
 const chromePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
-const generateBriefing = /^(?:1|true)$/i.test(process.env.ZHIJI_QA_GENERATE_BRIEFING || '');
-
 function pageUrl(baseUrl, path) {
   return new URL(path, baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`).toString();
 }
@@ -136,28 +134,6 @@ async function waitForStableSelectors(cdp, label, selectors, timeoutMs = 20000) 
   `, timeoutMs);
 }
 
-async function waitForBriefingTerminalState(cdp, timeoutMs = 20000) {
-  await waitFor(cdp, 'briefing history and detail terminal state', `
-    const historyError = document.querySelector('.briefing-history-list .ki-ingest-pane-state.is-error');
-    if (historyError) throw new Error('Briefing QA failed: history error: ' + historyError.textContent.trim());
-    const detailError = document.querySelector('.briefing-detail-state.is-error');
-    if (detailError) throw new Error('Briefing QA failed: detail error: ' + detailError.textContent.trim());
-
-    const loadingLabels = ['快报历史加载中', '快报详情加载中'];
-    const loadingStates = [...document.querySelectorAll('.ki-ingest-pane-state, .briefing-detail-state')]
-      .filter((element) => loadingLabels.some((label) => element.textContent.includes(label)));
-    if (loadingStates.length) return false;
-
-    const historyState = document.querySelector('.briefing-history-list .ki-ingest-pane-state');
-    const historyLoaded = Boolean(document.querySelector('.briefing-history-row'));
-    const historyEmpty = Boolean(historyState && historyState.textContent.includes('暂无快报'));
-    const detailState = document.querySelector('.briefing-detail-state');
-    const detailLoaded = Boolean(document.querySelector('.briefing-detail-header'));
-    const detailEmpty = Boolean(detailState && detailState.textContent.includes('选择一份快报查看详情'));
-    return (historyLoaded && detailLoaded) || (historyEmpty && detailEmpty);
-  `, timeoutMs);
-}
-
 async function navigate(cdp, url, markerSource) {
   await cdp.send('Page.navigate', { url });
   await waitFor(cdp, `page ${url}`, `return document.readyState === 'complete' || document.readyState === 'interactive';`);
@@ -271,59 +247,6 @@ async function runJourneyQa(baseUrl, outDir) {
     }
     assertions.push('detail_tabs_switch');
     screenshots.push(await capture(cdp, resolvedOutDir, 'ingest-journey'));
-
-    await navigate(cdp, pageUrl(baseUrl, '/#/briefings'), `
-      const selectors = ['.ki-shell-briefings', '.briefing-split-stage', '.briefing-history-pane', '.briefing-detail-pane'];
-      return selectors.every((selector) => {
-        const element = document.querySelector(selector);
-        if (!element) return false;
-        const bounds = element.getBoundingClientRect();
-        return bounds.width > 0 && bounds.height > 0;
-      });
-    `);
-    await waitForBriefingTerminalState(cdp);
-    await waitForStableSelectors(cdp, 'stable briefing workspace', [
-      '.ki-shell-briefings',
-      '.briefing-split-stage',
-      '.briefing-history-pane',
-      '.briefing-detail-pane',
-    ]);
-    await waitForBriefingTerminalState(cdp);
-    assertions.push('briefing_workspace_ready');
-
-    if (generateBriefing) {
-      const initialBriefingState = await evaluate(cdp, `
-        const rows = [...document.querySelectorAll('.briefing-history-row')];
-        return {
-          count: rows.length,
-          first: rows[0]?.textContent || '',
-          detail: document.querySelector('.briefing-detail-header')?.textContent || '',
-        };
-      `);
-      const generationStarted = await evaluate(cdp, `
-        const button = document.querySelector('.briefing-generate-button');
-        if (!button || button.disabled) return false;
-        button.click();
-        return true;
-      `);
-      if (!generationStarted) throw new Error('Briefing generation button was not available');
-      await waitFor(cdp, 'briefing generation', `
-        const button = document.querySelector('.briefing-generate-button');
-        const rows = [...document.querySelectorAll('.briefing-history-row')];
-        const first = rows[0]?.textContent || '';
-        const changed = rows.length > ${initialBriefingState.count} || first !== ${JSON.stringify(initialBriefingState.first)};
-        const firstSelected = rows[0]?.getAttribute('aria-pressed') === 'true';
-        const detailText = document.querySelector('.briefing-detail-header')?.textContent || '';
-        const detailAdvanced = detailText !== ${JSON.stringify(initialBriefingState.detail)} ||
-          Boolean(document.querySelector('.briefing-detail-state'));
-        return Boolean(button && !button.disabled && !document.querySelector('.briefing-generate-error') && changed && firstSelected && detailAdvanced);
-      `, 120000);
-      await waitForBriefingTerminalState(cdp, 120000);
-      assertions.push('briefing_generation_succeeds');
-    } else {
-      assertions.push('briefing_generation_skipped');
-    }
-    screenshots.push(await capture(cdp, resolvedOutDir, 'briefings-journey'));
 
     await navigate(cdp, pageUrl(baseUrl, '/#/system'), `
       return Boolean(document.querySelector('.system-detail-reader') && document.querySelector('.system-core-box'));

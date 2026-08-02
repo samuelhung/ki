@@ -31,17 +31,6 @@ const pages = [
     virtualTimeBudgetMs: 14000,
   },
   {
-    key: 'briefings',
-    path: '/#/briefings',
-    markers: ['ki-shell-briefings', 'briefing-split-stage', 'briefing-history-pane', 'briefing-detail-pane'],
-    readySelectors: ['.ki-shell-briefings', '.briefing-split-stage', '.briefing-history-pane', '.briefing-detail-pane'],
-    readyState: 'briefings',
-    maxScreenshotMs: 8000,
-    maxDomDumpMs: 5500,
-    expectedCanvasCount: 1,
-    virtualTimeBudgetMs: 14000,
-  },
-  {
     key: 'system',
     path: '/#/system',
     markers: ['ki-shell-system', 'ki-ingest-split-stage', 'system-detail-reader', 'system-function-list'],
@@ -660,26 +649,6 @@ async function capturePageWithCdp({ cdp, url, page, screenshotPath }) {
       const markers = ${JSON.stringify(page.markers)};
       if (!markers.every((marker) => html.includes(marker))) return false;
       if (html.includes('加载中...')) return false;
-      const briefingTerminalReady = () => {
-        const historyError = document.querySelector('.briefing-history-list .ki-ingest-pane-state.is-error');
-        if (historyError) throw new Error('Briefing QA failed: history error: ' + historyError.textContent.trim());
-        const detailError = document.querySelector('.briefing-detail-state.is-error');
-        if (detailError) throw new Error('Briefing QA failed: detail error: ' + detailError.textContent.trim());
-
-        const loadingLabels = ['快报历史加载中', '快报详情加载中'];
-        const loadingStates = [...document.querySelectorAll('.ki-ingest-pane-state, .briefing-detail-state')]
-          .filter((element) => loadingLabels.some((label) => element.textContent.includes(label)));
-        if (loadingStates.length) return false;
-
-        const historyState = document.querySelector('.briefing-history-list .ki-ingest-pane-state');
-        const historyLoaded = Boolean(document.querySelector('.briefing-history-row'));
-        const historyEmpty = Boolean(historyState && historyState.textContent.includes('暂无快报'));
-        const detailState = document.querySelector('.briefing-detail-state');
-        const detailLoaded = Boolean(document.querySelector('.briefing-detail-header'));
-        const detailEmpty = Boolean(detailState && detailState.textContent.includes('选择一份快报查看详情'));
-        return (historyLoaded && detailLoaded) || (historyEmpty && detailEmpty);
-      };
-      if (${JSON.stringify(page.readyState || '')} === 'briefings' && !briefingTerminalReady()) return false;
       const readySelectors = ${JSON.stringify(page.readySelectors || [])};
       if (readySelectors.length) {
         const snapshot = () => readySelectors.map((selector) => {
@@ -706,8 +675,7 @@ async function capturePageWithCdp({ cdp, url, page, screenshotPath }) {
               Math.abs(item.left - before[index].left) < 0.5 &&
               Math.abs(item.width - before[index].width) < 0.5 &&
               Math.abs(item.height - before[index].height) < 0.5);
-            resolveReady(rectanglesStable &&
-              (${JSON.stringify(page.readyState || '')} !== 'briefings' || briefingTerminalReady()));
+            resolveReady(rectanglesStable);
           } catch (error) {
             rejectReady(error);
           }

@@ -16,7 +16,6 @@ function shouldBypassCurtain(to: string | number) {
   if (typeof to !== 'string') return false;
   const pathname = to.split(/[?#]/, 1)[0];
   return pathname === '/ingest'
-    || pathname === '/briefings'
     || pathname === '/events'
     || pathname.startsWith('/events/')
     || pathname === '/system'

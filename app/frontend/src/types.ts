@@ -78,27 +78,3 @@ export interface CollectResult {
   events: Record<string, unknown>[];
   errors: { source_id: string; error: string }[];
 }
-
-export interface BriefingEvent {
-  event_id: string;
-  title_cn: string;
-  highlight: string;
-  source_name: string;
-  created_at?: string;
-  relevance?: { high: number; medium: number };
-}
-
-export interface BriefingTopic {
-  topic: string;
-  topic_label: string;
-  summary: string;
-  events: BriefingEvent[];
-}
-
-export interface Briefing {
-  id: string;
-  type: 'quick' | 'daily';
-  topics: BriefingTopic[];
-  events_used: number;
-  created_at: string;
-}
