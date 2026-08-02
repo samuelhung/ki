@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { MouseEvent } from 'react';
 import { apiFetch } from '../../api';
 import { isLatestRequest } from '../ingest/ingestRequestPolicy';
 import { abortableDelay, RequestLifecycle } from '../ingest/requestLifecycle';
 import type { RequestOwner } from '../ingest/requestLifecycle';
+import { deleteEventRequest } from './deleteEventRequest';
 import { buildEventListPath, mergeEventPages } from './ingestUtils';
 import { useDebouncedValue } from './useDebouncedValue';
 import type { EventItem, TopicKey } from './ingestTypes';
-
-const API_BASE = '/api/events';
 
 interface EventPageCommit {
   data: unknown;
@@ -61,10 +59,9 @@ export function createRequestCoordinator<T>({ onCommit, onError }: RequestCoordi
 interface UseIngestEventsOptions {
   initialSearch: string;
   onPollingSettled: () => void;
-  onDeleteError: (message: string) => void;
 }
 
-export function useIngestEvents({ initialSearch, onPollingSettled, onDeleteError }: UseIngestEventsOptions) {
+export function useIngestEvents({ initialSearch, onPollingSettled }: UseIngestEventsOptions) {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -98,7 +95,6 @@ export function useIngestEvents({ initialSearch, onPollingSettled, onDeleteError
   const statusRequestLifecycleRef = useRef(new RequestLifecycle());
   const completionTimerRef = useRef<number | null>(null);
   const onPollingSettledRef = useRef(onPollingSettled);
-  const onDeleteErrorRef = useRef(onDeleteError);
 
   const loadEvents = useCallback(async (offset = 0) => {
     const owner = eventRequestCoordinator.start();
@@ -134,10 +130,6 @@ export function useIngestEvents({ initialSearch, onPollingSettled, onDeleteError
   useEffect(() => {
     onPollingSettledRef.current = onPollingSettled;
   }, [onPollingSettled]);
-
-  useEffect(() => {
-    onDeleteErrorRef.current = onDeleteError;
-  }, [onDeleteError]);
 
   useEffect(() => {
     void loadEvents();
@@ -187,20 +179,9 @@ export function useIngestEvents({ initialSearch, onPollingSettled, onDeleteError
     }
   }, []);
 
-  const handleDelete = useCallback(async (eventId: string, event: MouseEvent) => {
-    event.stopPropagation();
-    if (!confirm('确定要删除这条记录吗？')) return;
-    try {
-      const response = await apiFetch(`${API_BASE}/${eventId}`, { method: 'DELETE' });
-      if (!response.ok) {
-        const data = await response.json().catch(() => null);
-        throw new Error(data?.detail || '删除失败，请稍后重试');
-      }
-      await loadEventsRef.current();
-    } catch (error: unknown) {
-      console.error('删除事件失败', error);
-      onDeleteErrorRef.current(error instanceof Error ? error.message : '删除失败，请稍后重试');
-    }
+  const deleteEvent = useCallback(async (eventId: string) => {
+    await deleteEventRequest(eventId, apiFetch);
+    await loadEventsRef.current();
   }, []);
 
   const openDetail = useCallback((eventId: string) => setActiveEventId(eventId), []);
@@ -224,7 +205,7 @@ export function useIngestEvents({ initialSearch, onPollingSettled, onDeleteError
     loadEvents,
     loadMore,
     pollIngestStatus,
-    handleDelete,
+    deleteEvent,
     openDetail,
     handleEmbeddedTopicChange,
   };

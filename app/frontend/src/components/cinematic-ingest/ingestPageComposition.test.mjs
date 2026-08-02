@@ -106,15 +106,29 @@ test('ingest detail tabs can move while preserving exact definitions and order',
 });
 
 test('ingest endpoints preserve list mutation upload and status polling contracts', () => {
-  assert.match(implementation, /const API_BASE = '\/api\/events'/);
+  const hook = readFileSync(hookUrl, 'utf8');
   assert.match(implementation, /source_id: 'douyin,user-upload,user-concept'/);
   assert.match(implementation, /buildEventListPath\(historyTab, debouncedSearch, offset\)/);
   assert.match(implementation, /apiFetch\(`\/api\/ingest\/status\/\$\{eventId\}`, \{ signal \}\)/);
   assert.match(implementation, /apiFetch\('\/api\/ingest\/douyin', \{\s*method: 'POST'/);
   assert.match(implementation, /apiFetch\('\/api\/ingest\/file', \{ method: 'POST', timeoutMs: 900_000, body \}\)/);
-  assert.match(implementation, /const response = await apiFetch\(`\$\{API_BASE\}\/\$\{eventId\}`, \{ method: 'DELETE' \}\);\s+if \(!response\.ok\)/);
-  assert.match(implementation, /onDeleteErrorRef\.current/);
-  assert.match(implementation, /void loadEventsRef\.current\(\)/);
+  assert.match(hook, /import \{ deleteEventRequest \} from '.\/deleteEventRequest';/);
+  assert.match(hook, /await deleteEventRequest\(eventId, apiFetch\);/);
+  assert.match(hook, /await loadEventsRef\.current\(\);/);
+  assert.doesNotMatch(hook, /const API_BASE =/);
+  assert.doesNotMatch(hook, /onDeleteErrorRef/);
+});
+
+test('content deletion uses the global async dialog and never browser confirmation or toast errors', () => {
+  assert.match(page, /useSystemDialog\(\)/);
+  assert.match(page, /systemDialog\.confirmAction\(/);
+  assert.match(page, /title: '删除内容'/);
+  assert.match(page, /errorTitle: '无法删除'/);
+  assert.match(page, /pendingLabel: '删除中\.\.\.'/);
+  assert.match(page, /action: \(\) => deleteEvent\(eventId\)/);
+  assert.doesNotMatch(implementation, /\bconfirm\(/);
+  assert.doesNotMatch(implementation, /onDeleteError/);
+  assert.doesNotMatch(page, /showDeleteError/);
 });
 
 test('ingest lifecycle source preserves cancellation stale suppression refreshes and errors', () => {

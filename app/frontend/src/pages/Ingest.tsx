@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Upload } from 'lucide-react';
 import Modal from '../components/Modal';
+import { useSystemDialog } from '../components/system-dialog/SystemDialogContext';
 import { IngestWorkspaceContent } from '../components/cinematic-ingest/IngestWorkspaceContent';
 import { TranscriptActions } from '../components/cinematic-ingest/TranscriptActions';
 import { TranscriptWorkspaceDialog } from '../components/cinematic-ingest/TranscriptWorkspaceDialog';
@@ -13,6 +14,7 @@ import '../components/cinematic-ingest/cinematic-ingest.css';
 
 export default function Ingest() {
   const location = useLocation();
+  const systemDialog = useSystemDialog();
   const [modalType, setModalType] = useState<'douyin' | 'file' | null>(null);
   const [douyinText, setDouyinText] = useState('');
   const [douyinTopic, setDouyinTopic] = useState('');
@@ -26,9 +28,6 @@ export default function Ingest() {
   const [toast, setToast] = useState<{ text: string; type: 'success' | 'info' } | null>(null);
   const [searchPortalTarget, setSearchPortalTarget] = useState<HTMLElement | null>(null);
   const closeIngestModal = useCallback(() => setModalType(null), []);
-  const showDeleteError = useCallback((message: string) => {
-    setToast({ text: message, type: 'info' });
-  }, []);
   const {
     events,
     loading,
@@ -44,13 +43,12 @@ export default function Ingest() {
     loadEvents,
     loadMore,
     pollIngestStatus,
-    handleDelete,
+    deleteEvent,
     openDetail,
     handleEmbeddedTopicChange,
   } = useIngestEvents({
     initialSearch: new URLSearchParams(location.search).get('search') || '',
     onPollingSettled: closeIngestModal,
-    onDeleteError: showDeleteError,
   });
   const details = useIngestDetailActions({ activeEventId, setToast });
   const transcriptWorkflow = useTranscriptWorkflow({
@@ -135,6 +133,24 @@ export default function Ingest() {
   const handleEmbeddedSearchChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     setSearch(event.target.value);
   }, [setSearch]);
+
+  const handleDelete = useCallback((eventId: string, event: React.MouseEvent) => {
+    event.stopPropagation();
+    const item = events.find((candidate) => candidate.id === eventId);
+    const title = item?.title_cn || item?.title || '未命名内容';
+    void systemDialog.confirmAction({
+      title: '删除内容',
+      message: `确认删除「${title}」？此操作不可撤销。`,
+      tone: 'danger',
+      confirmLabel: '确认删除',
+      cancelLabel: '取消',
+      pendingLabel: '删除中...',
+      acknowledgeLabel: '知道了',
+      action: () => deleteEvent(eventId),
+      errorTitle: '无法删除',
+      errorFallback: '删除失败，请稍后重试。',
+    });
+  }, [deleteEvent, events, systemDialog]);
 
   return (
     <>
