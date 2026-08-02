@@ -27,10 +27,10 @@ export type SystemDialogSnapshot = null | {
   message: string;
   tone: DialogTone;
   pending: boolean;
-  confirmLabel: string | undefined;
-  cancelLabel: string | undefined;
-  pendingLabel: string | undefined;
-  acknowledgeLabel: string | undefined;
+  confirmLabel: string;
+  cancelLabel: string;
+  pendingLabel: string;
+  acknowledgeLabel: string;
 };
 
 export type SystemDialogController = {
@@ -38,7 +38,7 @@ export type SystemDialogController = {
   subscribe: (listener: () => void) => () => void;
   alert: (options: AlertOptions) => Promise<void>;
   confirmAction: (options: ConfirmActionOptions) => Promise<ConfirmActionResult>;
-  confirm: () => void;
+  confirm: () => Promise<void>;
   cancel: () => void;
   acknowledge: () => void;
   destroy: () => void;
@@ -63,7 +63,7 @@ type DialogRequest = AlertRequest | ConfirmRequest;
 const defaultLabels = {
   confirm: '确认',
   cancel: '取消',
-  pending: '处理中',
+  pending: '处理中...',
   acknowledge: '知道了',
 };
 
@@ -114,9 +114,9 @@ export function createSystemDialogController(): SystemDialogController {
         message: active.options.message,
         tone: active.options.tone ?? 'default',
         pending: false,
-        confirmLabel: undefined,
-        cancelLabel: undefined,
-        pendingLabel: undefined,
+        confirmLabel: '',
+        cancelLabel: '',
+        pendingLabel: '',
         acknowledgeLabel: active.options.acknowledgeLabel ?? defaultLabels.acknowledge,
       };
     }
@@ -127,9 +127,9 @@ export function createSystemDialogController(): SystemDialogController {
         message: safeErrorMessage(active.error, active.options.errorFallback),
         tone: active.options.tone ?? 'danger',
         pending: false,
-        confirmLabel: undefined,
-        cancelLabel: undefined,
-        pendingLabel: undefined,
+        confirmLabel: '',
+        cancelLabel: '',
+        pendingLabel: '',
         acknowledgeLabel: active.options.acknowledgeLabel ?? defaultLabels.acknowledge,
       };
     }
@@ -161,33 +161,22 @@ export function createSystemDialogController(): SystemDialogController {
       if (destroyed) return Promise.resolve('cancelled');
       return new Promise((resolve) => enqueue({ type: 'confirm', options, resolve, phase: 'ready' }));
     },
-    confirm() {
+    async confirm() {
       if (destroyed || !active || active.type !== 'confirm' || active.phase !== 'ready') return;
       const request = active;
       request.phase = 'pending';
       notify();
-      let action: Promise<void>;
       try {
-        action = request.options.action();
+        await request.options.action();
+        if (destroyed || active !== request || request.phase !== 'pending') return;
+        request.resolve('completed');
+        finishActive();
       } catch (reason) {
         if (destroyed || active !== request || request.phase !== 'pending') return;
         request.error = reason;
         request.phase = 'failed';
         notify();
-        return;
       }
-      Promise.resolve(action)
-        .then(() => {
-          if (destroyed || active !== request || request.phase !== 'pending') return;
-          request.resolve('completed');
-          finishActive();
-        })
-        .catch((reason: unknown) => {
-          if (destroyed || active !== request || request.phase !== 'pending') return;
-          request.error = reason;
-          request.phase = 'failed';
-          notify();
-        });
     },
     cancel() {
       if (destroyed || !active || active.type !== 'confirm' || active.phase !== 'ready') return;

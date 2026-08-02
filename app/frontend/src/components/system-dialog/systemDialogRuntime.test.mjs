@@ -19,7 +19,7 @@ test('alert 保持可见，确认后完成并清空快照', async () => {
 
   assert.deepEqual(controller.getSnapshot(), {
     kind: 'alert', title: '提示', message: '已保存', tone: 'default', pending: false,
-    confirmLabel: undefined, cancelLabel: undefined, pendingLabel: undefined, acknowledgeLabel: '知道了',
+    confirmLabel: '', cancelLabel: '', pendingLabel: '', acknowledgeLabel: '知道了',
   });
   await Promise.resolve();
   assert.equal(settled, false);
@@ -36,11 +36,13 @@ test('confirmAction pending 时锁定，重复确认只执行一次并在成功�
     action: () => new Promise((resolve) => { calls += 1; release = resolve; }),
   }));
 
-  controller.confirm();
-  controller.confirm();
+  const firstConfirm = controller.confirm();
+  const secondConfirm = controller.confirm();
+  assert.equal(typeof firstConfirm.then, 'function');
   assert.equal(calls, 1);
   assert.equal(controller.getSnapshot()?.pending, true);
   release();
+  await Promise.all([firstConfirm, secondConfirm]);
   assert.equal(await result, 'completed');
   assert.equal(controller.getSnapshot(), null);
 });
@@ -56,10 +58,51 @@ test('action 失败后原确认原位转为 alert，确认后返回 failed', asy
   await Promise.resolve();
   assert.deepEqual(controller.getSnapshot(), {
     kind: 'alert', title: '无法删除', message: '内容仍被 2 个专题引用', tone: 'danger', pending: false,
-    confirmLabel: undefined, cancelLabel: undefined, pendingLabel: undefined, acknowledgeLabel: '知道了',
+    confirmLabel: '', cancelLabel: '', pendingLabel: '', acknowledgeLabel: '知道了',
   });
   controller.acknowledge();
   assert.equal(await result, 'failed');
+});
+
+test('默认四类标签明确可用，所有快照标签均为字符串', async () => {
+  const controller = createSystemDialogController();
+  const alert = controller.alert({ title: '提示', message: '消息' });
+  assert.deepEqual(controller.getSnapshot(), {
+    kind: 'alert', title: '提示', message: '消息', tone: 'default', pending: false,
+    confirmLabel: '', cancelLabel: '', pendingLabel: '', acknowledgeLabel: '知道了',
+  });
+  controller.acknowledge();
+  await alert;
+
+  const confirmation = controller.confirmAction(confirmOptions());
+  assert.deepEqual(controller.getSnapshot(), {
+    kind: 'confirm', title: '删除专题', message: '删除后无法恢复', tone: 'danger', pending: false,
+    confirmLabel: '确认', cancelLabel: '取消', pendingLabel: '处理中...', acknowledgeLabel: '知道了',
+  });
+  controller.cancel();
+  await confirmation;
+});
+
+test('不安全或不可用的 action 错误消息使用 fallback', async () => {
+  const controller = createSystemDialogController();
+  const unsafeReasons = [
+    'not-an-error',
+    new Error('<strong>内部错误</strong>'),
+    new Error('Error: boom\n    at remove (runtime.ts:1:1)'),
+    new Error('x'.repeat(501)),
+  ];
+
+  for (const reason of unsafeReasons) {
+    const result = controller.confirmAction(confirmOptions({
+      action: async () => { throw reason; },
+      errorFallback: '安全提示',
+    }));
+    await controller.confirm();
+    assert.equal(controller.getSnapshot()?.kind, 'alert');
+    assert.equal(controller.getSnapshot()?.message, '安全提示');
+    controller.acknowledge();
+    assert.equal(await result, 'failed');
+  }
 });
 
 test('cancel 返回 cancelled 且不会执行 action', async () => {
