@@ -386,3 +386,83 @@ def test_completed_ingest_creates_original_revision_and_exact_lineage(
     ) is has_summary_lineage
     assert bool(row["ai_summary"]) is has_summary_lineage
     assert row["status"] == "completed"
+
+
+def test_completed_douyin_ingest_marks_every_progress_stage_done(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    service = _service()
+    monkeypatch.setenv("KI_DB_PATH", str(tmp_path / "douyin-progress.sqlite"))
+    db.init_db()
+    event_id = "evt-ingest-progress"
+    with db.connect() as conn:
+        conn.execute(
+            "INSERT INTO sources (id, name, type, url) VALUES (?, ?, ?, ?)",
+            ("douyin", "Douyin", "manual", ""),
+        )
+        conn.execute(
+            """INSERT INTO events
+               (id, source_id, title, url, status, content_type)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (event_id, "douyin", "Title", "", "processing", "event"),
+        )
+
+    stages = service._stages(
+        "parse:解析链接,download:下载视频,persist:保存视频,extract:提取音频,"
+        "tos:上传 TOS,transcribe:语音转写,summarize:AI 总结,writedb:写入数据库,"
+        "classify:自动分类,done:完成"
+    )
+    for index in range(6):
+        stages[index]["status"] = "done"
+    stages[6]["status"] = "active"
+    monkeypatch.setattr(
+        service,
+        "_douyin_content",
+        lambda *_args, **_kwargs: ("转写正文", "Title", stages, "video-md5"),
+    )
+    monkeypatch.setattr(
+        "zhiji_backend.summarizer.summarize_transcript",
+        lambda *_args, **_kwargs: {"summary": "总结", "overview": "概览"},
+    )
+    monkeypatch.setattr("zhiji_backend.classifier.classify_event", lambda _event: None)
+    monkeypatch.setattr(
+        service,
+        "transcript_revision_service",
+        SimpleNamespace(
+            ensure_initialized=lambda *_args, **_kwargs: SimpleNamespace(
+                active_revision_id="revision-1"
+            ),
+            mark_artifact_revision=lambda *_args, **_kwargs: True,
+            mark_summary_revision=lambda *_args, **_kwargs: None,
+        ),
+    )
+
+    progress_updates: list[list[dict]] = []
+    service.process_ingest(
+        event_id,
+        "douyin_share",
+        "share text",
+        "topic",
+        "Title",
+        dependencies={
+            "connect_fn": db.connect,
+            "transcripts_dir": tmp_path / "transcripts",
+            "summaries_dir": tmp_path / "summaries",
+            "videos_dir": tmp_path / "videos",
+            "audio_dir": tmp_path / "audio",
+            "documents_dir": tmp_path / "documents",
+            "resolve_under_fn": lambda root, name, **_kwargs: root / name,
+            "set_progress_fn": lambda _event, value: progress_updates.append(
+                [dict(stage) for stage in value]
+            ),
+            "md5_file_fn": lambda _path: None,
+            "safe_identifier_fn": lambda value: value,
+            "sanitize_task_error_fn": str,
+            "classify_task_error_fn": lambda _exc: "task_failed",
+            "logger": logging.getLogger("test.ingest.douyin-progress"),
+            "module_name": "test.ingest.douyin-progress",
+        },
+    )
+
+    assert progress_updates
+    assert {stage["status"] for stage in progress_updates[-1]} == {"done"}

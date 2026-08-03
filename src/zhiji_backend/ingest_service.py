@@ -364,6 +364,8 @@ def process_ingest(
             classify_event(event_id)
         except Exception:
             log.warning(_CLASSIFY_LOG, event_id, exc_info=True)
+        if ingest_type == "douyin_share":
+            _advance(stages, 8, event_id, progress)
         stages[-1]["status"] = "done"
         progress(event_id, stages)
     except Exception as exc:
