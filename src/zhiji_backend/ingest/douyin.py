@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import ipaddress
 import inspect
+import ipaddress
 import json
 import re
 from collections.abc import Callable
