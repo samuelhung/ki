@@ -10,7 +10,12 @@ from unittest.mock import MagicMock
 import pytest
 import requests
 
-from zhiji_backend.ingest import douyin, douyin_download, remote_transport
+from zhiji_backend.ingest import (
+    douyin,
+    douyin_dns,
+    douyin_download,
+    remote_transport,
+)
 
 
 class Response:
@@ -54,74 +59,48 @@ def test_validate_remote_url_rejects_benchmark_fake_ip_by_default():
         )
 
 
-@pytest.mark.parametrize(
-    "url",
-    [
-        "https://aweme.snssdk.com/video.mp4",
-        "https://video.365yg.com/video.mp4",
-    ],
-)
-def test_douyin_accepts_benchmark_fake_ip_for_trusted_https_media(url: str):
-    target = douyin._validate_remote_url(
-        url,
-        resolver=lambda _host, _port: ["198.18.0.190"],
-    )
+def test_douyin_resolver_delegates_to_douyin_dns(monkeypatch):
+    system_resolver = MagicMock(return_value=["192.0.2.1"])
+    resolver = MagicMock(return_value=["93.184.216.34"])
+    monkeypatch.setattr(remote_transport, "_resolve_host", system_resolver)
+    monkeypatch.setattr(douyin_dns, "resolve_douyin_host", resolver)
 
-    assert target.public_ips == ("198.18.0.190",)
+    assert douyin._resolve_host("dynamic.example", 443) == ["93.184.216.34"]
+    resolver.assert_called_once_with("dynamic.example", 443)
+    system_resolver.assert_not_called()
 
 
-@pytest.mark.parametrize(
-    ("url", "resolved_ip"),
-    [
-        ("https://evil.example/video.mp4", "198.18.0.190"),
-        ("http://aweme.snssdk.com/video.mp4", "198.18.0.190"),
-        ("https://aweme.snssdk.com/video.mp4", "192.168.1.20"),
-    ],
-)
-def test_douyin_rejects_untrusted_non_global_targets(url: str, resolved_ip: str):
+def test_douyin_facade_no_longer_allows_fake_ip_connections():
     with pytest.raises(ValueError, match="公网"):
         douyin._validate_remote_url(
-            url,
-            resolver=lambda _host, _port: [resolved_ip],
+            "https://aweme.snssdk.com/video.mp4",
+            resolver=lambda _host, _port: ["198.18.0.190"],
         )
 
 
-def test_douyin_safe_get_connects_to_trusted_fake_ip_with_original_hostname():
-    responses = [Response()]
-    requests_seen = []
-    connections = []
-
-    def connection_factory(scheme: str, ip: str, port: int, hostname: str):
-        connections.append((scheme, ip, port, hostname))
-        return Connection(responses, requests_seen)
-
-    response = douyin._safe_get(
-        None,
-        "https://aweme.snssdk.com/video.mp4",
-        headers={"User-Agent": "test"},
-        timeout=(1, 2),
-        resolver=lambda _host, _port: ["198.18.0.190"],
-        max_redirects=1,
-        connection_factory=connection_factory,
-    )
-
-    assert connections == [
-        ("https", "198.18.0.190", 443, "aweme.snssdk.com")
-    ]
-    assert requests_seen[0][1]["Host"] == "aweme.snssdk.com"
-    response.close()
-
-
-def test_douyin_safe_get_revalidates_trusted_fake_ip_redirects():
+def test_douyin_safe_get_resolves_every_dynamic_redirect_hop():
     responses = [
         Response(
             status_code=302,
-            headers={"Location": "https://video.365yg.com/final.mp4"},
+            headers={"Location": "https://v5.cdn.example/two"},
+        ),
+        Response(
+            status_code=302,
+            headers={"Location": "https://dynamic.example/final"},
         ),
         Response(),
     ]
     requests_seen = []
+    resolved_hosts = []
     connections = []
+
+    def resolver(host: str, _port: int) -> list[str]:
+        resolved_hosts.append(host)
+        return {
+            "aweme.snssdk.com": ["93.184.216.10"],
+            "v5.cdn.example": ["93.184.216.11"],
+            "dynamic.example": ["93.184.216.12"],
+        }[host]
 
     def connection_factory(scheme: str, ip: str, port: int, hostname: str):
         connections.append((scheme, ip, port, hostname))
@@ -129,63 +108,30 @@ def test_douyin_safe_get_revalidates_trusted_fake_ip_redirects():
 
     response = douyin._safe_get(
         None,
-        "https://aweme.snssdk.com/video.mp4",
+        "https://aweme.snssdk.com/one",
         headers={"User-Agent": "test"},
         timeout=(1, 2),
-        resolver=lambda _host, _port: ["198.18.0.190"],
-        max_redirects=1,
+        resolver=resolver,
+        max_redirects=2,
         connection_factory=connection_factory,
     )
 
+    assert resolved_hosts == [
+        "aweme.snssdk.com",
+        "v5.cdn.example",
+        "dynamic.example",
+    ]
     assert connections == [
-        ("https", "198.18.0.190", 443, "aweme.snssdk.com"),
-        ("https", "198.18.0.190", 443, "video.365yg.com"),
+        ("https", "93.184.216.10", 443, "aweme.snssdk.com"),
+        ("https", "93.184.216.11", 443, "v5.cdn.example"),
+        ("https", "93.184.216.12", 443, "dynamic.example"),
+    ]
+    assert [headers["Host"] for _target, headers, _timeout in requests_seen] == [
+        "aweme.snssdk.com",
+        "v5.cdn.example",
+        "dynamic.example",
     ]
     response.close()
-
-
-@pytest.mark.parametrize(
-    ("location", "redirect_ip"),
-    [
-        ("https://evil.example/final.mp4", "198.18.0.190"),
-        ("https://aweme.snssdk.com/final.mp4", "192.168.1.20"),
-        ("http://aweme.snssdk.com/final.mp4", "198.18.0.190"),
-    ],
-)
-def test_douyin_safe_get_blocks_untrusted_redirect_before_connecting(
-    location: str,
-    redirect_ip: str,
-):
-    redirect = Response(status_code=302, headers={"Location": location})
-    responses = [redirect]
-    requests_seen = []
-    connections = []
-    resolution_count = 0
-
-    def resolver(_host: str, _port: int) -> list[str]:
-        nonlocal resolution_count
-        resolution_count += 1
-        return ["198.18.0.190"] if resolution_count == 1 else [redirect_ip]
-
-    def connection_factory(scheme: str, ip: str, port: int, hostname: str):
-        connections.append((scheme, ip, port, hostname))
-        return Connection(responses, requests_seen)
-
-    with pytest.raises(ValueError, match="公网"):
-        douyin._safe_get(
-            None,
-            "https://aweme.snssdk.com/video.mp4",
-            headers={"User-Agent": "test"},
-            timeout=(1, 2),
-            resolver=resolver,
-            max_redirects=1,
-            connection_factory=connection_factory,
-        )
-
-    assert connections == [
-        ("https", "198.18.0.190", 443, "aweme.snssdk.com")
-    ]
-    assert redirect.close_calls == 1
 
 
 def test_douyin_safe_get_prefers_public_ip_over_fake_ip():
