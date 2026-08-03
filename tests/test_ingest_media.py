@@ -12,6 +12,8 @@ from zhiji_backend.ingest.media import (
     FFMPEG_MAX_ALLOC_BYTES,
     FFMPEG_MAX_OUTPUT_BYTES,
     FFMPEG_TIMEOUT_SECONDS,
+    FFMPEG_TRUSTED_PATHS,
+    _resolve_ffmpeg,
     extract_audio,
 )
 
@@ -49,6 +51,69 @@ def test_extract_audio_missing_input_raises():
     """Non-existent input file should raise an error."""
     with pytest.raises((FileNotFoundError, subprocess.CalledProcessError, RuntimeError)):
         extract_audio(Path("/nonexistent/video.mp4"), Path("/tmp/out.wav"))
+
+
+def test_resolve_ffmpeg_prefers_path_lookup():
+    with patch(
+        "zhiji_backend.ingest.media.shutil.which",
+        return_value="/opt/local/bin/ffmpeg",
+    ):
+        assert _resolve_ffmpeg() == "/opt/local/bin/ffmpeg"
+
+
+def test_resolve_ffmpeg_uses_intel_homebrew_fallback(tmp_path: Path):
+    ffmpeg = tmp_path / "usr-local-ffmpeg"
+    ffmpeg.write_bytes(b"binary")
+    ffmpeg.chmod(0o755)
+
+    with patch("zhiji_backend.ingest.media.shutil.which", return_value=None):
+        with patch("zhiji_backend.ingest.media.FFMPEG_TRUSTED_PATHS", (ffmpeg,)):
+            assert _resolve_ffmpeg() == str(ffmpeg.resolve())
+
+
+def test_resolve_ffmpeg_uses_apple_silicon_fallback_after_missing_intel(tmp_path: Path):
+    missing = tmp_path / "missing-intel-ffmpeg"
+    ffmpeg = tmp_path / "opt-homebrew-ffmpeg"
+    ffmpeg.write_bytes(b"binary")
+    ffmpeg.chmod(0o755)
+
+    with patch("zhiji_backend.ingest.media.shutil.which", return_value=None):
+        with patch(
+            "zhiji_backend.ingest.media.FFMPEG_TRUSTED_PATHS",
+            (missing, ffmpeg),
+        ):
+            assert _resolve_ffmpeg() == str(ffmpeg.resolve())
+
+
+@pytest.mark.parametrize("kind", ["missing", "directory", "non_executable"])
+def test_resolve_ffmpeg_rejects_unusable_trusted_candidates(tmp_path: Path, kind: str):
+    candidate = tmp_path / "ffmpeg"
+    if kind == "directory":
+        candidate.mkdir()
+    elif kind == "non_executable":
+        candidate.write_bytes(b"binary")
+        candidate.chmod(0o644)
+
+    with patch("zhiji_backend.ingest.media.shutil.which", return_value=None):
+        with patch("zhiji_backend.ingest.media.FFMPEG_TRUSTED_PATHS", (candidate,)):
+            assert _resolve_ffmpeg() is None
+
+
+def test_ffmpeg_trusted_paths_cover_both_homebrew_prefixes():
+    assert FFMPEG_TRUSTED_PATHS == (
+        Path("/usr/local/bin/ffmpeg"),
+        Path("/opt/homebrew/bin/ffmpeg"),
+    )
+
+
+def test_extract_audio_raises_when_no_ffmpeg_candidate_is_usable(tmp_path: Path):
+    video = tmp_path / "input.mp4"
+    video.write_bytes(b"video")
+
+    with patch("zhiji_backend.ingest.media.shutil.which", return_value=None):
+        with patch("zhiji_backend.ingest.media.FFMPEG_TRUSTED_PATHS", ()):
+            with pytest.raises(RuntimeError, match="ffmpeg executable not found"):
+                extract_audio(video, tmp_path / "output.wav")
 
 
 @patch("zhiji_backend.ingest.media.shutil.which", return_value="/opt/local/bin/ffmpeg")
