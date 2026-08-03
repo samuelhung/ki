@@ -59,6 +59,7 @@ class BackendDeployConfig:
     health_origin: str
     python_executable: Path
     bind_host: str = "127.0.0.1"
+    preserve_history: bool = False
 
     @property
     def release_id(self) -> str:
@@ -687,13 +688,14 @@ def _deploy_backend_locked(
         service.start()
         stopped = False
         smoke_check()
-        prune_versions(
-            config.versions_dir,
-            current=target,
-            rollback_target=previous,
-            keep_previous=2,
-        )
-        prune_daily_backups(config.backups_dir, keep_days=7)
+        if not config.preserve_history:
+            prune_versions(
+                config.versions_dir,
+                current=target,
+                rollback_target=previous,
+                keep_previous=2,
+            )
+            prune_daily_backups(config.backups_dir, keep_days=7)
         return target
     except Exception as original:
         rollback_errors: list[str] = []
@@ -766,6 +768,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--health-origin", default="http://127.0.0.1:9120")
     parser.add_argument("--python", type=Path, default=Path(sys.executable))
     parser.add_argument("--bind-host", default="127.0.0.1")
+    parser.add_argument("--preserve-history", action="store_true")
     args = parser.parse_args(raw_argv)
     config = BackendDeployConfig(
         release_tag=args.tag,
@@ -781,6 +784,7 @@ def main(argv: list[str] | None = None) -> int:
         health_origin=args.health_origin,
         python_executable=args.python,
         bind_host=args.bind_host,
+        preserve_history=args.preserve_history,
     )
     try:
         target = deploy_backend(

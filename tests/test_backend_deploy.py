@@ -186,6 +186,23 @@ def test_main_defaults_bind_host_to_loopback(tmp_path: Path, monkeypatch) -> Non
     assert captured[0].bind_host == "127.0.0.1"
 
 
+def test_main_propagates_preserve_history(tmp_path: Path, monkeypatch) -> None:
+    config = _config(tmp_path)
+    captured: list[BackendDeployConfig] = []
+
+    def capture_deploy(deploy_config: BackendDeployConfig, **_kwargs) -> Path:
+        captured.append(deploy_config)
+        return deploy_config.versions_dir / deploy_config.release_id
+
+    monkeypatch.setattr("scripts.deploy_backend.deploy_backend", capture_deploy)
+    monkeypatch.setattr("scripts.deploy_backend.LaunchdServiceController", lambda _config: object())
+
+    result = main([*_main_argv(config), "--preserve-history"])
+
+    assert result == 0
+    assert captured[0].preserve_history is True
+
+
 @pytest.mark.parametrize("option", ["--api-token", "--ki-api-token", "--remote-api-token"])
 @pytest.mark.parametrize("form", ["separated", "equals"])
 def test_main_rejects_command_line_secrets_without_echoing_them(
@@ -997,6 +1014,42 @@ def test_successful_deploy_retains_actual_previous_version_even_when_older_by_mt
     assert previous.exists()
     assert target.exists()
     assert len([path for path in versions.iterdir() if path.is_dir()]) == 3
+
+
+def test_preserve_history_skips_successful_release_pruning(tmp_path: Path, monkeypatch) -> None:
+    config = replace(_config(tmp_path), preserve_history=True)
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        "scripts.deploy_backend.prune_versions",
+        lambda *_args, **_kwargs: calls.append("versions"),
+    )
+    monkeypatch.setattr(
+        "scripts.deploy_backend.prune_daily_backups",
+        lambda *_args, **_kwargs: calls.append("backups"),
+    )
+
+    deploy_backend(config, service=FakeService(), installer=_install, smoke_check=lambda: None)
+
+    assert calls == []
+
+
+def test_default_deployment_keeps_successful_release_pruning(tmp_path: Path, monkeypatch) -> None:
+    config = _config(tmp_path)
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        "scripts.deploy_backend.prune_versions",
+        lambda *_args, **_kwargs: calls.append("versions"),
+    )
+    monkeypatch.setattr(
+        "scripts.deploy_backend.prune_daily_backups",
+        lambda *_args, **_kwargs: calls.append("backups"),
+    )
+
+    deploy_backend(config, service=FakeService(), installer=_install, smoke_check=lambda: None)
+
+    assert calls == ["versions", "backups"]
 
 
 def test_retention_keeps_current_previous_two_and_seven_daily_backups(tmp_path: Path) -> None:
