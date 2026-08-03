@@ -108,6 +108,9 @@ test('dock workspaces are lazy loaded and preserve merged modes inside one overl
   assert.match(dockQueueOverlay, /retryQueueTask/);
   assert.match(dockQueueOverlay, /deleteQueueTask/);
   assert.match(dockQueueOverlay, /queueStatusCounts\.done/);
+  assert.match(dockQueueOverlay, /import \{ formatTimeBeijing \} from '\.\.\/utils';/);
+  assert.match(dockQueueOverlay, /formatTimeBeijing\(item\.created_at\)/);
+  assert.doesNotMatch(dockQueueOverlay, /item\.created_at\?\.slice\(0, 19\)/);
   assert.match(dockDiscoveryOverlay, /<KiMagicBentoFrame/);
   assert.match(dockDiscoveryOverlay, /buildStage2Payload/);
   assert.match(dockDiscoveryOverlay, /全局发现/);

@@ -13,6 +13,7 @@ import {
 import type { QueueItem } from '../components/cinematic-ingest/ingestTypes';
 import { useIngestQueue } from '../components/cinematic-ingest/useIngestQueue';
 import KiMagicBentoFrame from '../components/react-bits/KiMagicBentoFrame';
+import { formatTimeBeijing } from '../utils';
 import type { DualNavigationActionItem } from './DualNavigationActionMenu';
 import './GlobalDockQueueOverlay.css';
 
@@ -64,7 +65,7 @@ export default function GlobalDockQueueOverlay({ action, onClose }: { action: Du
                       <b>{title}</b>
                       <small>{item.error || status.label}</small>
                     </span>
-                    <em>{item.created_at?.slice(0, 19) || '--'}</em>
+                    <em>{formatTimeBeijing(item.created_at) || '--'}</em>
                     <span className="global-dock-queue-state">{status.label}</span>
                     <div className="global-dock-queue-actions">
                       {item.status === 'error' && (
