@@ -140,6 +140,10 @@ def _validate_remote_url(
     url: str,
     *,
     resolver: Callable[[str, int], list[str]],
+    allow_non_global_address: Callable[
+        [str, str, ipaddress.IPv4Address | ipaddress.IPv6Address], bool
+    ]
+    | None = None,
 ) -> _RemoteTarget:
     try:
         parsed = urlsplit(url)
@@ -162,9 +166,15 @@ def _validate_remote_url(
         addresses = [ipaddress.ip_address(value) for value in resolved]
     except ValueError as exc:
         raise ValueError("远程视频主机解析结果无效") from exc
-    public_ips = tuple(
-        sorted({str(address) for address in addresses if address.is_global})
-    )
+    public_addresses = {address for address in addresses if address.is_global}
+    allowed_addresses = public_addresses
+    if not allowed_addresses and allow_non_global_address is not None:
+        allowed_addresses = {
+            address
+            for address in addresses
+            if allow_non_global_address(scheme, host, address)
+        }
+    public_ips = tuple(sorted(str(address) for address in allowed_addresses))
     if not public_ips:
         raise ValueError("远程视频地址必须解析到公网 IP")
     host_header = f"[{host}]" if ":" in host else host

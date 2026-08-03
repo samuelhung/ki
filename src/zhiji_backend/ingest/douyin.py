@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import inspect
 import json
 import re
@@ -20,6 +21,7 @@ MOBILE_UA = (
     "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
 )
 MAX_VIDEO_REDIRECTS = 5
+_PROXY_FAKE_IP_NETWORK = ipaddress.ip_network("198.18.0.0/15")
 
 _RemoteTarget = remote_transport._RemoteTarget
 _PinnedConnection = remote_transport._PinnedConnection
@@ -187,7 +189,29 @@ def _validate_remote_url(
     *,
     resolver: Callable[[str, int], list[str]],
 ) -> _RemoteTarget:
-    return remote_transport._validate_remote_url(url, resolver=resolver)
+    return remote_transport._validate_remote_url(
+        url,
+        resolver=resolver,
+        allow_non_global_address=_allow_trusted_douyin_fake_ip,
+    )
+
+
+def _allow_trusted_douyin_fake_ip(
+    scheme: str,
+    hostname: str,
+    address: ipaddress.IPv4Address | ipaddress.IPv6Address,
+) -> bool:
+    trusted_host = (
+        hostname == "aweme.snssdk.com"
+        or hostname == "365yg.com"
+        or hostname.endswith(".365yg.com")
+    )
+    return (
+        scheme == "https"
+        and trusted_host
+        and address.version == 4
+        and address in _PROXY_FAKE_IP_NETWORK
+    )
 
 
 def _session_cookie_header(session: requests.Session | None, url: str) -> str | None:

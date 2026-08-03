@@ -46,6 +46,46 @@ def test_validate_remote_url_accepts_mixed_answers_but_keeps_only_public_ips():
     assert target.public_ips == ("93.184.216.34",)
 
 
+def test_validate_remote_url_rejects_benchmark_fake_ip_by_default():
+    with pytest.raises(ValueError, match="公网"):
+        remote_transport._validate_remote_url(
+            "https://video.example.com/file.mp4",
+            resolver=lambda _host, _port: ["198.18.0.190"],
+        )
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://aweme.snssdk.com/video.mp4",
+        "https://video.365yg.com/video.mp4",
+    ],
+)
+def test_douyin_accepts_benchmark_fake_ip_for_trusted_https_media(url: str):
+    target = douyin._validate_remote_url(
+        url,
+        resolver=lambda _host, _port: ["198.18.0.190"],
+    )
+
+    assert target.public_ips == ("198.18.0.190",)
+
+
+@pytest.mark.parametrize(
+    ("url", "resolved_ip"),
+    [
+        ("https://evil.example/video.mp4", "198.18.0.190"),
+        ("http://aweme.snssdk.com/video.mp4", "198.18.0.190"),
+        ("https://aweme.snssdk.com/video.mp4", "192.168.1.20"),
+    ],
+)
+def test_douyin_rejects_untrusted_non_global_targets(url: str, resolved_ip: str):
+    with pytest.raises(ValueError, match="公网"):
+        douyin._validate_remote_url(
+            url,
+            resolver=lambda _host, _port: [resolved_ip],
+        )
+
+
 def test_safe_get_filters_cookies_again_for_redirect_target():
     session = requests.Session()
     session.cookies.set("origin", "one", domain="origin.example", path="/")
