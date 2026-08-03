@@ -86,6 +86,132 @@ def test_douyin_rejects_untrusted_non_global_targets(url: str, resolved_ip: str)
         )
 
 
+def test_douyin_safe_get_connects_to_trusted_fake_ip_with_original_hostname():
+    responses = [Response()]
+    requests_seen = []
+    connections = []
+
+    def connection_factory(scheme: str, ip: str, port: int, hostname: str):
+        connections.append((scheme, ip, port, hostname))
+        return Connection(responses, requests_seen)
+
+    response = douyin._safe_get(
+        None,
+        "https://aweme.snssdk.com/video.mp4",
+        headers={"User-Agent": "test"},
+        timeout=(1, 2),
+        resolver=lambda _host, _port: ["198.18.0.190"],
+        max_redirects=1,
+        connection_factory=connection_factory,
+    )
+
+    assert connections == [
+        ("https", "198.18.0.190", 443, "aweme.snssdk.com")
+    ]
+    assert requests_seen[0][1]["Host"] == "aweme.snssdk.com"
+    response.close()
+
+
+def test_douyin_safe_get_revalidates_trusted_fake_ip_redirects():
+    responses = [
+        Response(
+            status_code=302,
+            headers={"Location": "https://video.365yg.com/final.mp4"},
+        ),
+        Response(),
+    ]
+    requests_seen = []
+    connections = []
+
+    def connection_factory(scheme: str, ip: str, port: int, hostname: str):
+        connections.append((scheme, ip, port, hostname))
+        return Connection(responses, requests_seen)
+
+    response = douyin._safe_get(
+        None,
+        "https://aweme.snssdk.com/video.mp4",
+        headers={"User-Agent": "test"},
+        timeout=(1, 2),
+        resolver=lambda _host, _port: ["198.18.0.190"],
+        max_redirects=1,
+        connection_factory=connection_factory,
+    )
+
+    assert connections == [
+        ("https", "198.18.0.190", 443, "aweme.snssdk.com"),
+        ("https", "198.18.0.190", 443, "video.365yg.com"),
+    ]
+    response.close()
+
+
+@pytest.mark.parametrize(
+    ("location", "redirect_ip"),
+    [
+        ("https://evil.example/final.mp4", "198.18.0.190"),
+        ("https://aweme.snssdk.com/final.mp4", "192.168.1.20"),
+        ("http://aweme.snssdk.com/final.mp4", "198.18.0.190"),
+    ],
+)
+def test_douyin_safe_get_blocks_untrusted_redirect_before_connecting(
+    location: str,
+    redirect_ip: str,
+):
+    redirect = Response(status_code=302, headers={"Location": location})
+    responses = [redirect]
+    requests_seen = []
+    connections = []
+    resolution_count = 0
+
+    def resolver(_host: str, _port: int) -> list[str]:
+        nonlocal resolution_count
+        resolution_count += 1
+        return ["198.18.0.190"] if resolution_count == 1 else [redirect_ip]
+
+    def connection_factory(scheme: str, ip: str, port: int, hostname: str):
+        connections.append((scheme, ip, port, hostname))
+        return Connection(responses, requests_seen)
+
+    with pytest.raises(ValueError, match="公网"):
+        douyin._safe_get(
+            None,
+            "https://aweme.snssdk.com/video.mp4",
+            headers={"User-Agent": "test"},
+            timeout=(1, 2),
+            resolver=resolver,
+            max_redirects=1,
+            connection_factory=connection_factory,
+        )
+
+    assert connections == [
+        ("https", "198.18.0.190", 443, "aweme.snssdk.com")
+    ]
+    assert redirect.close_calls == 1
+
+
+def test_douyin_safe_get_prefers_public_ip_over_fake_ip():
+    responses = [Response()]
+    connections = []
+
+    def connection_factory(scheme: str, ip: str, port: int, hostname: str):
+        connections.append((scheme, ip, port, hostname))
+        return Connection(responses, [])
+
+    response = douyin._safe_get(
+        None,
+        "https://aweme.snssdk.com/video.mp4",
+        headers={"User-Agent": "test"},
+        timeout=(1, 2),
+        resolver=lambda _host, _port: ["198.18.0.190", "93.184.216.34"],
+        max_redirects=1,
+        connection_factory=connection_factory,
+    )
+
+    assert connections == [
+        ("https", "93.184.216.34", 443, "aweme.snssdk.com")
+    ]
+    response.close()
+
+
 def test_safe_get_filters_cookies_again_for_redirect_target():
     session = requests.Session()
     session.cookies.set("origin", "one", domain="origin.example", path="/")

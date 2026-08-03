@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
+import { formatTimeBeijing } from '../../utils.ts';
 
 const app = readFileSync(new URL('../../App.tsx', import.meta.url), 'utf8');
 const curtain = readFileSync(new URL('../../CurtainContext.tsx', import.meta.url), 'utf8');
@@ -77,6 +78,10 @@ test('the global dock is consolidated into nine stable workspaces', () => {
   }
   assert.doesNotMatch(items, /key: 'douyin'|key: 'file'|key: 'global'|key: 'topic'|key: 'compose'/);
   assert.match(shell, /GLOBAL \/ 9/);
+});
+
+test('queue timestamps convert stored UTC values to Beijing time', () => {
+  assert.equal(formatTimeBeijing('2026-08-03 09:56:03'), '2026/8/3 17:56:03');
 });
 
 test('dock workspaces are lazy loaded and preserve merged modes inside one overlay', () => {
