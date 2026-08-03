@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -13,6 +14,25 @@ FFMPEG_TIMEOUT_SECONDS = 300
 FFMPEG_MAX_ALLOC_BYTES = 256 * 1024 * 1024
 FFMPEG_ADDRESS_SPACE_BYTES = 2 * 1024 * 1024 * 1024
 FFMPEG_CPU_SECONDS = 300
+FFMPEG_TRUSTED_PATHS = (
+    Path("/usr/local/bin/ffmpeg"),
+    Path("/opt/homebrew/bin/ffmpeg"),
+)
+
+
+def _resolve_ffmpeg() -> str | None:
+    discovered = shutil.which("ffmpeg")
+    if discovered:
+        return discovered
+
+    for candidate in FFMPEG_TRUSTED_PATHS:
+        try:
+            resolved = candidate.resolve(strict=True)
+        except (OSError, RuntimeError):
+            continue
+        if resolved.is_file() and os.access(resolved, os.X_OK):
+            return str(resolved)
+    return None
 
 
 def _command_prefix(ffmpeg: str) -> list[str]:
@@ -59,7 +79,7 @@ def extract_audio(
     if not video_path.exists():
         raise FileNotFoundError(f"Video file not found: {video_path}")
 
-    ffmpeg = shutil.which("ffmpeg")
+    ffmpeg = _resolve_ffmpeg()
     if not ffmpeg:
         raise RuntimeError("ffmpeg executable not found")
 

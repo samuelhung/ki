@@ -85,6 +85,27 @@ def test_resolve_ffmpeg_uses_apple_silicon_fallback_after_missing_intel(tmp_path
             assert _resolve_ffmpeg() == str(ffmpeg.resolve())
 
 
+def test_resolve_ffmpeg_accepts_symlink_to_executable_file(tmp_path: Path):
+    target = tmp_path / "ffmpeg-target"
+    target.write_bytes(b"binary")
+    target.chmod(0o755)
+    candidate = tmp_path / "ffmpeg"
+    candidate.symlink_to(target)
+
+    with patch("zhiji_backend.ingest.media.shutil.which", return_value=None):
+        with patch("zhiji_backend.ingest.media.FFMPEG_TRUSTED_PATHS", (candidate,)):
+            assert _resolve_ffmpeg() == str(target.resolve())
+
+
+def test_resolve_ffmpeg_rejects_symlink_loop(tmp_path: Path):
+    candidate = tmp_path / "ffmpeg"
+    candidate.symlink_to(candidate)
+
+    with patch("zhiji_backend.ingest.media.shutil.which", return_value=None):
+        with patch("zhiji_backend.ingest.media.FFMPEG_TRUSTED_PATHS", (candidate,)):
+            assert _resolve_ffmpeg() is None
+
+
 @pytest.mark.parametrize("kind", ["missing", "directory", "non_executable"])
 def test_resolve_ffmpeg_rejects_unusable_trusted_candidates(tmp_path: Path, kind: str):
     candidate = tmp_path / "ffmpeg"
