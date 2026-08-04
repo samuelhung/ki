@@ -126,7 +126,9 @@ test('queue progress track keeps exact desktop and mobile geometry', () => {
   const desktopProgress = dockQueueCss.match(/\.global-dock-queue-progress \{[\s\S]*?\n\}/)?.[0] || '';
   const stage = dockQueueCss.match(/\.global-dock-queue-progress > div \{[\s\S]*?\n\}/)?.[0] || '';
   const stageText = dockQueueCss.match(/\.global-dock-queue-progress > div > (?:b|small),[\s\S]*?\n\}/)?.[0] || '';
-  const mobile = dockQueueCss.match(/@media \(max-width: 760px\) \{[\s\S]*?\n\}/)?.[0] || '';
+  const mobileStart = dockQueueCss.indexOf('@media (max-width: 760px) {');
+  const mobileCss = mobileStart >= 0 ? dockQueueCss.slice(mobileStart) : '';
+  const mobileProgress = mobileCss.match(/^\s*\.global-dock-queue-progress \{([^}]*)\}/m)?.[1] || '';
 
   assert.match(dockQueueCss, /\.global-dock-queue-stage \{\s*width:\s*min\(820px, calc\(100vw - 48px\)\);/);
   assert.match(desktopProgress, /grid-column:\s*2\s*\/\s*-1;/);
@@ -158,13 +160,13 @@ test('queue progress track keeps exact desktop and mobile geometry', () => {
   assert.match(dockQueueCss, /\.global-dock-queue-progress > div\.is-active > b,[\s\S]*?\.global-dock-queue-progress > div\.is-active > small \{\s*color:\s*#74c7ff;\s*\}/);
   assert.match(dockQueueCss, /\.global-dock-queue-progress > div\.is-error > b,[\s\S]*?\.global-dock-queue-progress > div\.is-error > small \{\s*color:\s*#fb7185;\s*\}/);
 
-  assert.match(mobile, /\.global-dock-queue-stage \{\s*width:\s*calc\(100vw - 28px\);/);
-  assert.match(mobile, /\.global-dock-queue-progress \{[\s\S]*?display:\s*flex;/);
-  assert.match(mobile, /\.global-dock-queue-progress \{[\s\S]*?overflow-x:\s*auto;/);
-  assert.match(mobile, /\.global-dock-queue-progress \{[\s\S]*?overscroll-behavior-x:\s*contain;/);
-  assert.match(mobile, /\.global-dock-queue-progress \{[\s\S]*?scrollbar-width:\s*thin;/);
-  assert.match(mobile, /\.global-dock-queue-progress \{[\s\S]*?touch-action:\s*pan-x;/);
-  assert.match(mobile, /\.global-dock-queue-progress > div \{[\s\S]*?flex:\s*0 0 84px;/);
+  assert.match(mobileCss, /\.global-dock-queue-stage \{\s*width:\s*calc\(100vw - 28px\);/);
+  assert.match(mobileProgress, /display:\s*flex;/);
+  assert.match(mobileProgress, /overflow-x:\s*auto;/);
+  assert.match(mobileProgress, /overscroll-behavior-x:\s*contain;/);
+  assert.match(mobileProgress, /scrollbar-width:\s*thin;/);
+  assert.doesNotMatch(mobileProgress, /touch-action\s*:/);
+  assert.match(mobileCss, /\.global-dock-queue-progress > div \{[\s\S]*?flex:\s*0 0 84px;/);
   assert.equal((dockQueueCss.match(/overflow-x\s*:/g) || []).length, 1);
   assert.doesNotMatch(dockQueueCss, /\.global-dock-queue-(?:backdrop|page|dialog|list|stage)(?: article)?[^{]*\{[^}]*overflow-x:/);
   assert.doesNotMatch(dockQueueCss, /font-size:\s*(?:[0-9]|10)px;/);

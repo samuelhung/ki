@@ -162,6 +162,6 @@
   .global-dock-queue-list article { grid-template-columns: 16px minmax(0, 1fr) 48px; }
   .global-dock-queue-list article > em,
   .global-dock-queue-state { display: none; }
-  .global-dock-queue-progress { display: flex; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; touch-action: pan-x; }
+  .global-dock-queue-progress { display: flex; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
   .global-dock-queue-progress > div { flex: 0 0 84px; }
 }
