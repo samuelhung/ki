@@ -11,7 +11,9 @@ interface TranscriptActionsProps {
   onRefresh: () => void;
 }
 
-type TranscriptActionButtonProps = Pick<TranscriptActionsProps, 'transcript' | 'loading' | 'onOpen'>;
+type TranscriptActionButtonProps = Pick<TranscriptActionsProps, 'transcript' | 'loading' | 'onOpen'> & {
+  iconOnly?: boolean;
+};
 type TranscriptStatusProps = Pick<
   TranscriptActionsProps,
   'transcript' | 'loading' | 'error' | 'refreshRequired' | 'onRefresh'
@@ -26,12 +28,18 @@ function transcriptStatus(transcript: TranscriptSnapshot | null) {
   return '原始转写';
 }
 
-export function TranscriptActionButton({ transcript, loading, onOpen }: TranscriptActionButtonProps) {
+export function TranscriptActionButton({
+  transcript,
+  loading,
+  onOpen,
+  iconOnly = false,
+}: TranscriptActionButtonProps) {
   const unavailable = loading || !transcript;
   return <button type="button" onClick={onOpen} disabled={unavailable}
-    className="transcript-action-button"
-    title="人工修正、AI 语义分段与修订记录">
-    <FilePenLine size={14} />转写处理
+    className={iconOnly ? 'transcript-action-icon' : 'transcript-action-button'}
+    title={iconOnly ? '转写处理' : '人工修正、AI 语义分段与修订记录'}
+    aria-label={iconOnly ? '转写处理' : undefined}>
+    <FilePenLine size={14} />{!iconOnly && '转写处理'}
   </button>;
 }
 

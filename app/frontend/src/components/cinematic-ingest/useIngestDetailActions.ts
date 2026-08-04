@@ -288,6 +288,12 @@ export function useIngestDetailActions({
     });
   }, []);
 
+  const updateEventTitle = useCallback((eventId: string, titleCn: string) => {
+    setDetail((current) => current?.id === eventId
+      ? { ...current, title_cn: titleCn }
+      : current);
+  }, []);
+
   useEffect(() => () => {
     detailRequestSeqRef.current += 1;
     summarizeRequestSeqRef.current += 1;
@@ -339,6 +345,7 @@ export function useIngestDetailActions({
     syncingHints,
     syncResult,
     loadDetail,
+    updateEventTitle,
     handleSummarize,
     handleContemplate,
     handleContemplateLink,

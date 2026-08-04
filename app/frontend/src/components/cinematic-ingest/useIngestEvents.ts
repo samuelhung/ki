@@ -184,6 +184,12 @@ export function useIngestEvents({ initialSearch, onPollingSettled }: UseIngestEv
     await loadEventsRef.current();
   }, []);
 
+  const updateEventTitle = useCallback((eventId: string, titleCn: string) => {
+    setEvents((current) => current.map((event) => (
+      event.id === eventId ? { ...event, title_cn: titleCn } : event
+    )));
+  }, []);
+
   const openDetail = useCallback((eventId: string) => setActiveEventId(eventId), []);
   const handleEmbeddedTopicChange = useCallback((topic: TopicKey) => {
     setHistoryTab(topic);
@@ -206,6 +212,7 @@ export function useIngestEvents({ initialSearch, onPollingSettled }: UseIngestEv
     loadMore,
     pollIngestStatus,
     deleteEvent,
+    updateEventTitle,
     openDetail,
     handleEmbeddedTopicChange,
   };

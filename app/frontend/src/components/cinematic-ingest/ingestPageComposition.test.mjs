@@ -17,6 +17,9 @@ const workspaceUrl = new URL('./IngestWorkspaceContent.tsx', import.meta.url);
 const utilsUrl = new URL('./ingestUtils.ts', import.meta.url);
 const detailPanelUrl = new URL('./ContentDetailPanel.tsx', import.meta.url);
 const detailActionsUrl = new URL('./useIngestDetailActions.ts', import.meta.url);
+const transcriptActionsUrl = new URL('./TranscriptActions.tsx', import.meta.url);
+const titleActionButtonUrl = new URL('./TitleActionButton.tsx', import.meta.url);
+const titleEditorDialogUrl = new URL('./TitleEditorDialog.tsx', import.meta.url);
 const modules = readSourceModules([pageUrl, hookUrl, workspaceUrl, detailPanelUrl, detailActionsUrl, utilsUrl]);
 const implementation = combinedSource(modules);
 const pageModule = modules.find((module) => module.name === 'Ingest.tsx');
@@ -176,23 +179,36 @@ test('ingest labels css hooks and embedded composition can move together', () =>
   assert.match(implementation, /<EmbeddedIngestWorkspace/);
 });
 
-test('embedded ingest exposes the transcript revision workflow from the content title row', () => {
+test('embedded ingest exposes title and transcript icon actions from the body title row', () => {
   const workspace = readFileSync(workspaceUrl, 'utf8');
   const detailPanel = readFileSync(detailPanelUrl, 'utf8');
+  const transcriptActions = readFileSync(transcriptActionsUrl, 'utf8');
 
   assert.match(page, /useTranscriptWorkflow\(/);
+  assert.match(page, /useTitleEditor\(/);
+  assert.match(page, /import \{ TitleActionButton \} from/);
+  assert.match(page, /import \{ TitleEditorDialog \} from/);
   assert.match(page, /import \{ TranscriptActionButton, TranscriptStatus \} from/);
-  assert.match(page, /transcriptActionButton=\{<TranscriptActionButton/);
+  assert.match(page, /titleActions=\{<div className="transcript-title-actions ml-auto flex shrink-0 items-center gap-1\.5">[\s\S]*<TitleActionButton[\s\S]*<TranscriptActionButton[\s\S]*iconOnly/);
+  assert.ok(page.indexOf('<TitleActionButton') < page.indexOf('<TranscriptActionButton'));
   assert.match(page, /transcriptStatus=\{<TranscriptStatus/);
   assert.match(page, /<TranscriptWorkspaceDialog/);
   assert.doesNotMatch(page, /<TranscriptEditorDialog/);
   assert.doesNotMatch(page, /<TranscriptComparisonDialog/);
   assert.doesNotMatch(page, /<TranscriptRevisionDialog/);
-  assert.match(workspace, /transcriptActionButton=\{transcriptActionButton\}/);
+  assert.match(workspace, /titleActions=\{titleActions\}/);
   assert.match(workspace, /transcriptStatus=\{transcriptStatus\}/);
   assert.match(workspace, /transcriptContent=\{transcriptContent\}/);
   assert.match(workspace, /summaryStale=\{summaryStale\}/);
-  assert.match(detailPanel, /transcript-title-row[\s\S]*<h2[\s\S]*tab === 'body'[\s\S]*transcriptActionButton/);
+  assert.match(detailPanel, /transcript-title-row[\s\S]*<h2[\s\S]*tab === 'body'[\s\S]*titleActions/);
+  assert.doesNotMatch(workspace, /transcriptActionButton/);
+  assert.doesNotMatch(detailPanel, /transcriptActionButton/);
+  assert.match(transcriptActions, /iconOnly\?: boolean/);
+  assert.match(transcriptActions, /iconOnly = false/);
+  assert.match(transcriptActions, /iconOnly \? 'transcript-action-icon' : 'transcript-action-button'/);
+  assert.match(transcriptActions, /aria-label=\{iconOnly \? '转写处理' : undefined\}/);
+  assert.match(transcriptActions, /title=\{iconOnly \? '转写处理' : '人工修正、AI 语义分段与修订记录'\}/);
+  assert.match(transcriptActions, /<FilePenLine size=\{14\} \/>\{!iconOnly && '转写处理'\}/);
   assert.match(
     detailPanel,
     /ingest-detail-meta-row[\s\S]*formatTimeBeijing\(item\.created_at\)[\s\S]*item\.topic[\s\S]*tab === 'body'[\s\S]*transcriptStatus/,
@@ -200,6 +216,54 @@ test('embedded ingest exposes the transcript revision workflow from the content 
   assert.match(detailPanel, /const bodyText = transcriptContent \?\?/);
   assert.match(detailPanel, /summaryStale[\s\S]*原文已更新，可重新生成 AI 总结/);
   assert.match(detailPanel, /if \(summarizing && !detail\?\.ai_summary\)/);
+});
+
+test('title action and editor dialog preserve icon accessibility and complete editor states', () => {
+  assert.ok(existsSync(titleActionButtonUrl), 'TitleActionButton.tsx must exist');
+  assert.ok(existsSync(titleEditorDialogUrl), 'TitleEditorDialog.tsx must exist');
+  const titleAction = readFileSync(titleActionButtonUrl, 'utf8');
+  const dialog = readFileSync(titleEditorDialogUrl, 'utf8');
+
+  assert.match(titleAction, /import \{ Pencil \} from 'lucide-react'/);
+  assert.match(titleAction, /<button[\s\S]*type="button"[\s\S]*className="transcript-action-icon"[\s\S]*title="修改标题"[\s\S]*aria-label="修改标题"[\s\S]*onClick=\{onOpen\}[\s\S]*<Pencil[\s\S]*<\/button>/);
+  assert.doesNotMatch(titleAction, />\s*修改标题\s*</);
+
+  assert.match(dialog, /<Modal open=\{open\} onClose=\{onClose\} title="修改标题" maxWidth="md">/);
+  assert.match(dialog, />显示标题</);
+  assert.match(dialog, /value=\{input\}/);
+  assert.match(dialog, /onChange=\{\(event\) => onInputChange\(event\.target\.value\)\}/);
+  assert.match(dialog, /disabled=\{saving\}/);
+  assert.doesNotMatch(dialog, /maxLength=/);
+  assert.match(dialog, /Array\.from\(input\.trim\(\)\)\.length\}\/20/);
+  assert.match(dialog, /generating \? <Loader2[\s\S]*: <Sparkles/);
+  assert.match(dialog, /disabled=\{generating \|\| saving\}/);
+  assert.match(dialog, /generating \? '生成中' : 'AI 生成'/);
+  assert.match(dialog, /suggestions\.length > 0/);
+  assert.match(dialog, /suggestions\.map\(\(suggestion\) =>/);
+  assert.match(dialog, /onClick=\{\(\) => onSelectSuggestion\(suggestion\)\}/);
+  assert.match(dialog, /selectedTitle === suggestion \? ' is-selected' : ''/);
+  assert.match(dialog, /disabled=\{saving\}/);
+  assert.match(dialog, /\{error &&/);
+  assert.match(dialog, /\{validationError &&/);
+  assert.match(dialog, />\s*取消\s*</);
+  assert.match(dialog, /onClick=\{onSave\}[\s\S]*disabled=\{saving \|\| Boolean\(validationError\)\}/);
+  assert.match(dialog, /saving \? <Loader2[\s\S]*saving \? '保存中' : '保存标题'/);
+});
+
+test('title saves synchronize list and detail state locally before showing success', () => {
+  const eventsHook = readFileSync(hookUrl, 'utf8');
+  const detailActions = readFileSync(detailActionsUrl, 'utf8');
+
+  assert.match(eventsHook, /const updateEventTitle = useCallback\(\(eventId: string, titleCn: string\) => \{\s*setEvents\(\(current\) => current\.map\(\(event\) => \(\s*event\.id === eventId \? \{ \.\.\.event, title_cn: titleCn \} : event\s*\)\)\);\s*\}, \[\]\);/);
+  assert.match(eventsHook, /return \{[\s\S]*updateEventTitle,/);
+  assert.match(detailActions, /const updateEventTitle = useCallback\(\(eventId: string, titleCn: string\) => \{\s*setDetail\(\(current\) => current\?\.id === eventId\s*\? \{ \.\.\.current, title_cn: titleCn \}\s*: current\);\s*\}, \[\]\);/);
+  assert.match(detailActions, /return \{[\s\S]*updateEventTitle,/);
+
+  assert.match(page, /const handleTitleSaved = useCallback\(\(eventId: string, titleCn: string\) => \{\s*updateEventTitle\(eventId, titleCn\);\s*details\.updateEventTitle\(eventId, titleCn\);\s*\}, \[details\.updateEventTitle, updateEventTitle\]\);/);
+  assert.match(page, /const handleTitleSuccess = useCallback\(\(\) => \{\s*setToast\(\{ text: '标题已更新', type: 'success' \}\);\s*\}, \[\]\);/);
+  assert.match(page, /useTitleEditor\(\{\s*activeEventId,\s*onSaved: handleTitleSaved,\s*onSuccess: handleTitleSuccess,\s*\}\)/);
+  assert.match(page, /const event = details\.detail \|\| selectedEvent;\s*if \(event\) titleEditor\.start\(event\);/);
+  assert.match(page, /<TitleEditorDialog[\s\S]*open=\{titleEditor\.open\}[\s\S]*input=\{titleEditor\.input\}[\s\S]*suggestions=\{titleEditor\.suggestions\}[\s\S]*selectedTitle=\{titleEditor\.selectedTitle\}[\s\S]*generating=\{titleEditor\.generating\}[\s\S]*saving=\{titleEditor\.saving\}[\s\S]*error=\{titleEditor\.error\}[\s\S]*validationError=\{titleEditor\.validationError\}[\s\S]*onInputChange=\{titleEditor\.changeInput\}[\s\S]*onSelectSuggestion=\{titleEditor\.selectSuggestion\}[\s\S]*onGenerate=\{titleEditor\.generate\}[\s\S]*onSave=\{titleEditor\.save\}[\s\S]*onClose=\{titleEditor\.close\}/);
 });
 
 test('embedded summary regeneration waits for fresh transcript lineage while retaining the old summary', () => {

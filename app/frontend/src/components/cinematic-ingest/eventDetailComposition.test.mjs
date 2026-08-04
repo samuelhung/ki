@@ -244,6 +244,10 @@ test('transcript title controls expose separate action and status components', (
     '已恢复历史版本',
     '加载转写版本…',
   ]) assert.match(actions, new RegExp(status));
+  assert.match(page, /<TranscriptActions/);
+  assert.doesNotMatch(page, /<TranscriptActions[^>]*iconOnly/);
+  assert.match(actions, /iconOnly = false/);
+  assert.match(actions, /!iconOnly && '转写处理'/);
 });
 
 test('one transcript workspace owns the global Dock frame and composes all panels', () => {

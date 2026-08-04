@@ -31,7 +31,7 @@ interface IngestWorkspaceContentProps {
   searchPortalTarget: HTMLElement | null;
   selectedEvent: EventItem | null;
   details: DetailActions;
-  transcriptActionButton: React.ReactNode;
+  titleActions: React.ReactNode;
   transcriptStatus: React.ReactNode;
   transcriptContent?: string;
   summaryStale: boolean;
@@ -62,7 +62,7 @@ export function IngestWorkspaceContent({
   searchPortalTarget,
   selectedEvent,
   details,
-  transcriptActionButton,
+  titleActions,
   transcriptStatus,
   transcriptContent,
   summaryStale,
@@ -148,7 +148,7 @@ export function IngestWorkspaceContent({
       error={details.detailError}
       tab={details.detailTab}
       detailTabs={detailTabs}
-      transcriptActionButton={transcriptActionButton}
+      titleActions={titleActions}
       transcriptStatus={transcriptStatus}
       transcriptContent={transcriptContent}
       summaryStale={summaryStale}
@@ -173,7 +173,7 @@ export function IngestWorkspaceContent({
       onChainAnalyze={onChainAnalyze}
       onSyncHints={onSyncHints}
     />
-  ), [detailTabs, details, onChainAnalyze, onContemplate, onLinkQuestions, onSummarize, onSyncHints, onToggleQuestion, selectedEvent, summaryStale, transcriptActionButton, transcriptContent, transcriptStatus]);
+  ), [detailTabs, details, onChainAnalyze, onContemplate, onLinkQuestions, onSummarize, onSyncHints, onToggleQuestion, selectedEvent, summaryStale, titleActions, transcriptContent, transcriptStatus]);
 
   return (
     <EmbeddedIngestWorkspace

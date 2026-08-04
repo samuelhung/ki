@@ -13,7 +13,7 @@ function ContentDetailPanelComponent({
   error,
   tab,
   detailTabs,
-  transcriptActionButton,
+  titleActions,
   transcriptStatus,
   transcriptContent,
   summaryStale,
@@ -44,7 +44,7 @@ function ContentDetailPanelComponent({
   error: string;
   tab: DetailTab;
   detailTabs: React.ReactNode;
-  transcriptActionButton?: React.ReactNode;
+  titleActions?: React.ReactNode;
   transcriptStatus?: React.ReactNode;
   transcriptContent?: string;
   summaryStale?: boolean;
@@ -221,7 +221,7 @@ function ContentDetailPanelComponent({
         <span>{item ? `${sourceLabel(item.source_id)} · ${statusLabel(item.status)}` : 'CONTENT DETAIL'}</span>
         <div className="transcript-title-row flex flex-wrap items-start justify-between gap-3">
           <h2>{item?.title_cn || item?.title || ingestCopy.detail.titleFallback}</h2>
-          {tab === 'body' && transcriptActionButton}
+          {tab === 'body' && titleActions}
         </div>
         {item && (
           <div className="ingest-detail-meta-row">

@@ -4,10 +4,13 @@ import { Upload } from 'lucide-react';
 import Modal from '../components/Modal';
 import { useSystemDialog } from '../components/system-dialog/SystemDialogContext';
 import { IngestWorkspaceContent } from '../components/cinematic-ingest/IngestWorkspaceContent';
+import { TitleActionButton } from '../components/cinematic-ingest/TitleActionButton';
+import { TitleEditorDialog } from '../components/cinematic-ingest/TitleEditorDialog';
 import { TranscriptActionButton, TranscriptStatus } from '../components/cinematic-ingest/TranscriptActions';
 import { TranscriptWorkspaceDialog } from '../components/cinematic-ingest/TranscriptWorkspaceDialog';
 import { useIngestDetailActions } from '../components/cinematic-ingest/useIngestDetailActions';
 import { useIngestEvents } from '../components/cinematic-ingest/useIngestEvents';
+import { useTitleEditor } from '../components/cinematic-ingest/useTitleEditor';
 import { useTranscriptWorkflow } from '../components/cinematic-ingest/useTranscriptWorkflow';
 import { apiFetch } from '../api';
 import '../components/cinematic-ingest/cinematic-ingest.css';
@@ -44,6 +47,7 @@ export default function Ingest() {
     loadMore,
     pollIngestStatus,
     deleteEvent,
+    updateEventTitle,
     openDetail,
     handleEmbeddedTopicChange,
   } = useIngestEvents({
@@ -51,6 +55,18 @@ export default function Ingest() {
     onPollingSettled: closeIngestModal,
   });
   const details = useIngestDetailActions({ activeEventId, setToast });
+  const handleTitleSaved = useCallback((eventId: string, titleCn: string) => {
+    updateEventTitle(eventId, titleCn);
+    details.updateEventTitle(eventId, titleCn);
+  }, [details.updateEventTitle, updateEventTitle]);
+  const handleTitleSuccess = useCallback(() => {
+    setToast({ text: '标题已更新', type: 'success' });
+  }, []);
+  const titleEditor = useTitleEditor({
+    activeEventId,
+    onSaved: handleTitleSaved,
+    onSuccess: handleTitleSuccess,
+  });
   const transcriptWorkflow = useTranscriptWorkflow({
     eventId: activeEventId || undefined,
     onTranscriptActivated: () => undefined,
@@ -139,6 +155,11 @@ export default function Ingest() {
     openDetail(eventId);
   }, [details.setDetailTab, openDetail]);
 
+  const handleOpenTitleEditor = useCallback(() => {
+    const event = details.detail || selectedEvent;
+    if (event) titleEditor.start(event);
+  }, [details.detail, selectedEvent, titleEditor.start]);
+
   const handleDelete = useCallback((eventId: string, event: React.MouseEvent) => {
     event.stopPropagation();
     const item = events.find((candidate) => candidate.id === eventId);
@@ -175,11 +196,15 @@ export default function Ingest() {
               searchPortalTarget={searchPortalTarget}
               selectedEvent={selectedEvent}
               details={details}
-              transcriptActionButton={<TranscriptActionButton
-                transcript={transcriptWorkflow.transcript}
-                loading={transcriptWorkflow.loading}
-                onOpen={transcriptWorkflow.openWorkspace}
-              />}
+              titleActions={<div className="transcript-title-actions ml-auto flex shrink-0 items-center gap-1.5">
+                <TitleActionButton onOpen={handleOpenTitleEditor} />
+                <TranscriptActionButton
+                  transcript={transcriptWorkflow.transcript}
+                  loading={transcriptWorkflow.loading}
+                  onOpen={transcriptWorkflow.openWorkspace}
+                  iconOnly
+                />
+              </div>}
               transcriptStatus={<TranscriptStatus
                 transcript={transcriptWorkflow.transcript}
                 loading={transcriptWorkflow.loading}
@@ -205,6 +230,22 @@ export default function Ingest() {
           </div>
         </div>
       </div>
+
+      <TitleEditorDialog
+        open={titleEditor.open}
+        input={titleEditor.input}
+        suggestions={titleEditor.suggestions}
+        selectedTitle={titleEditor.selectedTitle}
+        generating={titleEditor.generating}
+        saving={titleEditor.saving}
+        error={titleEditor.error}
+        validationError={titleEditor.validationError}
+        onInputChange={titleEditor.changeInput}
+        onSelectSuggestion={titleEditor.selectSuggestion}
+        onGenerate={titleEditor.generate}
+        onSave={titleEditor.save}
+        onClose={titleEditor.close}
+      />
 
       <TranscriptWorkspaceDialog
         open={transcriptWorkflow.workspaceOpen}
