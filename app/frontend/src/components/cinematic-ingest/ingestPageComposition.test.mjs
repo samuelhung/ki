@@ -341,7 +341,7 @@ test('title editor dialog constrains its content and scrolls suggestions', () =>
   );
   assert.match(
     dualNavigationCss,
-    /\.title-editor-suggestions\s*\{[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/s,
+    /\.title-editor-suggestions\s*\{[^}]*display:\s*grid;[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/s,
   );
 });
 
