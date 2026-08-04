@@ -63,6 +63,24 @@ function cssBlockBody(source, marker) {
   throw new Error(`CSS block is not closed: ${marker}`);
 }
 
+function cssRuleWithDeclarations(source, selector, declarations) {
+  let selectorIndex = source.indexOf(selector);
+  while (selectorIndex >= 0) {
+    const previousRuleEnd = source.lastIndexOf('}', selectorIndex);
+    const blockStart = source.indexOf('{', selectorIndex + selector.length);
+    if (blockStart < 0) break;
+
+    const selectorText = source.slice(previousRuleEnd + 1, blockStart);
+    const blockEnd = source.indexOf('}', blockStart + 1);
+    const body = source.slice(blockStart + 1, blockEnd);
+    if (selectorText.includes(selector) && declarations.every((declaration) => declaration.test(body))) return body;
+
+    selectorIndex = source.indexOf(selector, selectorIndex + selector.length);
+  }
+
+  throw new Error(`CSS rule with declarations not found: ${selector}`);
+}
+
 function jsxDivBlock(source, marker) {
   const start = source.indexOf(marker);
   if (start < 0) throw new Error(`JSX div marker not found: ${marker}`);
@@ -214,20 +232,21 @@ test('queue task summary keeps title, lifecycle, runtime, time, and actions on o
   assert.match(dockQueueOverlay, /const TASK_STATUS_LABELS: Record<QueueItem\['status'\], string> = \{\s*running: '处理中',\s*pending: '等待处理',\s*error: '处理异常',\s*done: '处理完成',\s*\};/);
   assert.match(dockQueueOverlay, /const taskMessage = item\.error \|\| TASK_STATUS_LABELS\[item\.status\];/);
   assert.match(taskSummary, /global-dock-queue-task[\s\S]*global-dock-queue-message[\s\S]*global-dock-queue-state[\s\S]*formatTimeBeijing\(item\.created_at\)[\s\S]*global-dock-queue-actions/);
-  assert.match(taskSummary, /global-dock-queue-task[\s\S]*title=\{title\}/);
-  assert.match(taskSummary, /global-dock-queue-message[\s\S]*title=\{taskMessage\}/);
+  assert.match(taskSummary, /<\w+\b(?=[^>]*className="global-dock-queue-task")(?=[^>]*title=\{title\})[^>]*>/);
+  assert.match(taskSummary, /<\w+\b(?=[^>]*className="global-dock-queue-message")(?=[^>]*title=\{taskMessage\})[^>]*>/);
 });
 
 test('queue task summary has stable desktop and compact geometry', () => {
-  const desktopArticle = cssBlockBody(dockQueueCss, '.global-dock-queue-list article');
-  const summary = cssBlockBody(dockQueueCss, '.global-dock-queue-summary');
-  const task = cssBlockBody(dockQueueCss, '.global-dock-queue-task');
-  const message = cssBlockBody(dockQueueCss, '.global-dock-queue-message');
-  const state = cssBlockBody(dockQueueCss, '.global-dock-queue-state');
-  const time = cssBlockBody(dockQueueCss, '.global-dock-queue-summary > em');
-  const actions = cssBlockBody(dockQueueCss, '.global-dock-queue-actions');
+  const desktopArticle = cssRuleWithDeclarations(dockQueueCss, '.global-dock-queue-list article', [/grid-template-columns:\s*18px minmax\(0, 1fr\);/]);
+  const summary = cssRuleWithDeclarations(dockQueueCss, '.global-dock-queue-summary', [/display:\s*flex;/, /align-items:\s*center;/, /min-width:\s*0;/, /white-space:\s*nowrap;/]);
+  const task = cssRuleWithDeclarations(dockQueueCss, '.global-dock-queue-task', [/flex:\s*1 1 auto;/, /min-width:\s*0;/]);
+  const message = cssRuleWithDeclarations(dockQueueCss, '.global-dock-queue-message', [/max-width:\s*32%;/]);
+  const messageEllipsis = cssRuleWithDeclarations(dockQueueCss, '.global-dock-queue-message', [/overflow:\s*hidden;/, /text-overflow:\s*ellipsis;/]);
+  const state = cssRuleWithDeclarations(dockQueueCss, '.global-dock-queue-state', [/flex:\s*0 0 auto;/]);
+  const time = cssRuleWithDeclarations(dockQueueCss, '.global-dock-queue-summary > em', [/flex:\s*0 0 auto;/]);
+  const actions = cssRuleWithDeclarations(dockQueueCss, '.global-dock-queue-actions', [/flex:\s*0 0 auto;/]);
   const mobileCss = cssBlockBody(dockQueueCss, '@media (max-width: 760px)');
-  const mobileArticle = cssBlockBody(mobileCss, '.global-dock-queue-list article');
+  const mobileArticle = cssRuleWithDeclarations(mobileCss, '.global-dock-queue-list article', [/grid-template-columns:\s*16px minmax\(0, 1fr\);/]);
 
   assert.match(desktopArticle, /grid-template-columns:\s*18px minmax\(0, 1fr\);/);
   assert.match(summary, /display:\s*flex;/);
@@ -237,8 +256,8 @@ test('queue task summary has stable desktop and compact geometry', () => {
   assert.match(task, /flex:\s*1 1 auto;/);
   assert.match(task, /min-width:\s*0;/);
   assert.match(message, /max-width:\s*32%;/);
-  assert.match(message, /overflow:\s*hidden;/);
-  assert.match(message, /text-overflow:\s*ellipsis;/);
+  assert.match(messageEllipsis, /overflow:\s*hidden;/);
+  assert.match(messageEllipsis, /text-overflow:\s*ellipsis;/);
   assert.match(state, /flex:\s*0 0 auto;/);
   assert.match(time, /flex:\s*0 0 auto;/);
   assert.match(actions, /flex:\s*0 0 auto;/);
