@@ -32,6 +32,7 @@ const homeCss = readFileSync(new URL('../../pages/CinematicHome.css', import.met
 const variants = readFileSync(new URL('../../pages/DualNavigationActionMenu.tsx', import.meta.url), 'utf8');
 const gooeyNav = readFileSync(new URL('./GooeyNav.tsx', import.meta.url), 'utf8');
 const gooeyCss = readFileSync(new URL('./GooeyNav.css', import.meta.url), 'utf8');
+const dockQueueCss = readFileSync(new URL('../../pages/GlobalDockQueueOverlay.css', import.meta.url), 'utf8');
 const dockPopupCss = [
   'GlobalDockWorkspaceFrame.css',
   'GlobalDockAccessOverlay.css',
@@ -119,6 +120,54 @@ test('queue overlay renders the full progress track with accessible current-stag
   const articleEnd = dockQueueOverlay.indexOf('</article>', progressTrackRender);
   assert.ok(actionsStart >= 0 && actionsEnd >= 0 && progressTrackRender >= 0 && articleEnd >= 0);
   assert.ok(actionsEnd < progressTrackRender && progressTrackRender < articleEnd);
+});
+
+test('queue progress track keeps exact desktop and mobile geometry', () => {
+  const desktopProgress = dockQueueCss.match(/\.global-dock-queue-progress \{[\s\S]*?\n\}/)?.[0] || '';
+  const stage = dockQueueCss.match(/\.global-dock-queue-progress > div \{[\s\S]*?\n\}/)?.[0] || '';
+  const stageText = dockQueueCss.match(/\.global-dock-queue-progress > div > (?:b|small),[\s\S]*?\n\}/)?.[0] || '';
+  const mobile = dockQueueCss.match(/@media \(max-width: 760px\) \{[\s\S]*?\n\}/)?.[0] || '';
+
+  assert.match(dockQueueCss, /\.global-dock-queue-stage \{\s*width:\s*min\(820px, calc\(100vw - 48px\)\);/);
+  assert.match(desktopProgress, /grid-column:\s*2\s*\/\s*-1;/);
+  assert.match(desktopProgress, /display:\s*grid;/);
+  assert.match(desktopProgress, /width:\s*100%;/);
+  assert.match(desktopProgress, /min-width:\s*0;/);
+  assert.match(desktopProgress, /grid-template-columns:\s*repeat\(var\(--queue-progress-stage-count\),\s*minmax\(0,\s*1fr\)\);/);
+  assert.match(desktopProgress, /gap:\s*6px;/);
+  assert.match(desktopProgress, /padding-bottom:\s*13px;/);
+
+  assert.match(stage, /display:\s*grid;/);
+  assert.match(stage, /min-width:\s*0;/);
+  assert.match(stage, /gap:\s*4px;/);
+  assert.match(stage, /padding-top:\s*7px;/);
+  assert.match(stage, /border-top:\s*2px solid rgba\(255, 255, 255, \.12\);/);
+  assert.match(stageText, /overflow:\s*hidden;/);
+  assert.match(stageText, /text-overflow:\s*ellipsis;/);
+  assert.match(stageText, /white-space:\s*nowrap;/);
+  assert.match(stageText, /letter-spacing:\s*0;/);
+  assert.match(stageText, /font-size:\s*var\(--dock-font-micro\);/);
+  assert.match(dockQueueCss, /\.global-dock-queue-progress > div > b \{[\s\S]*?font-weight:\s*500;/);
+  assert.match(dockQueueCss, /\.global-dock-queue-progress > div > small \{[\s\S]*?color:\s*rgba\(255, 255, 255, \.28\);/);
+
+  assert.match(dockQueueCss, /\.global-dock-queue-progress > div\.is-done \{\s*border-top-color:\s*#76e6b7;\s*\}/);
+  assert.match(dockQueueCss, /\.global-dock-queue-progress > div\.is-active \{\s*border-top-color:\s*#74c7ff;\s*\}/);
+  assert.match(dockQueueCss, /\.global-dock-queue-progress > div\.is-error \{\s*border-top-color:\s*#fb7185;\s*\}/);
+  assert.match(dockQueueCss, /\.global-dock-queue-progress > div\.is-pending \{\s*border-top-color:\s*rgba\(255, 255, 255, \.28\);\s*\}/);
+  assert.match(dockQueueCss, /\.global-dock-queue-progress > div\.is-done > b,[\s\S]*?\.global-dock-queue-progress > div\.is-done > small \{\s*color:\s*#76e6b7;\s*\}/);
+  assert.match(dockQueueCss, /\.global-dock-queue-progress > div\.is-active > b,[\s\S]*?\.global-dock-queue-progress > div\.is-active > small \{\s*color:\s*#74c7ff;\s*\}/);
+  assert.match(dockQueueCss, /\.global-dock-queue-progress > div\.is-error > b,[\s\S]*?\.global-dock-queue-progress > div\.is-error > small \{\s*color:\s*#fb7185;\s*\}/);
+
+  assert.match(mobile, /\.global-dock-queue-stage \{\s*width:\s*calc\(100vw - 28px\);/);
+  assert.match(mobile, /\.global-dock-queue-progress \{[\s\S]*?display:\s*flex;/);
+  assert.match(mobile, /\.global-dock-queue-progress \{[\s\S]*?overflow-x:\s*auto;/);
+  assert.match(mobile, /\.global-dock-queue-progress \{[\s\S]*?overscroll-behavior-x:\s*contain;/);
+  assert.match(mobile, /\.global-dock-queue-progress \{[\s\S]*?scrollbar-width:\s*thin;/);
+  assert.match(mobile, /\.global-dock-queue-progress \{[\s\S]*?touch-action:\s*pan-x;/);
+  assert.match(mobile, /\.global-dock-queue-progress > div \{[\s\S]*?flex:\s*0 0 84px;/);
+  assert.doesNotMatch(dockQueueCss, /\.global-dock-queue-(?:backdrop|dialog|list|stage)(?: article)?[^{]*\{[^}]*overflow-x:/);
+  assert.doesNotMatch(dockQueueCss, /font-size:\s*(?:[0-9]|10)px;/);
+  assert.doesNotMatch(dockQueueCss, /letter-spacing:\s*-/);
 });
 
 test('dock workspaces are lazy loaded and preserve merged modes inside one overlay', () => {

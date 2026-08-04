@@ -102,6 +102,43 @@
 .global-dock-queue-actions button:focus-visible { color: #d6b2ff; filter: drop-shadow(0 0 6px rgba(188, 126, 255, .5)); }
 .global-dock-queue-actions button svg { width: 12px; }
 
+.global-dock-queue-progress {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-column: 2 / -1;
+  grid-template-columns: repeat(var(--queue-progress-stage-count), minmax(0, 1fr));
+  gap: 6px;
+  padding-bottom: 13px;
+}
+.global-dock-queue-progress > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  padding-top: 7px;
+  border-top: 2px solid rgba(255, 255, 255, .12);
+}
+.global-dock-queue-progress > div > b,
+.global-dock-queue-progress > div > small {
+  overflow: hidden;
+  font-size: var(--dock-font-micro);
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.global-dock-queue-progress > div > b { color: rgba(255, 255, 255, .72); font-weight: 500; }
+.global-dock-queue-progress > div > small { color: rgba(255, 255, 255, .28); }
+.global-dock-queue-progress > div.is-done { border-top-color: #76e6b7; }
+.global-dock-queue-progress > div.is-active { border-top-color: #74c7ff; }
+.global-dock-queue-progress > div.is-error { border-top-color: #fb7185; }
+.global-dock-queue-progress > div.is-pending { border-top-color: rgba(255, 255, 255, .28); }
+.global-dock-queue-progress > div.is-done > b,
+.global-dock-queue-progress > div.is-done > small { color: #76e6b7; }
+.global-dock-queue-progress > div.is-active > b,
+.global-dock-queue-progress > div.is-active > small { color: #74c7ff; }
+.global-dock-queue-progress > div.is-error > b,
+.global-dock-queue-progress > div.is-error > small { color: #fb7185; }
+
 .global-dock-queue-empty { display: grid; min-height: 230px; place-items: center; align-content: center; gap: 8px; color: rgba(255, 255, 255, .3); text-align: center; }
 .global-dock-queue-empty svg { width: 22px; color: rgba(255, 127, 157, .52); filter: drop-shadow(0 0 8px rgba(255, 91, 135, .22)); }
 .global-dock-queue-empty b { color: rgba(255, 255, 255, .58); font-size: var(--dock-font-body); font-weight: 500; }
@@ -125,4 +162,6 @@
   .global-dock-queue-list article { grid-template-columns: 16px minmax(0, 1fr) 48px; }
   .global-dock-queue-list article > em,
   .global-dock-queue-state { display: none; }
+  .global-dock-queue-progress { display: flex; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; touch-action: pan-x; }
+  .global-dock-queue-progress > div { flex: 0 0 84px; }
 }
