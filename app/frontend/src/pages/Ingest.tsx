@@ -134,6 +134,11 @@ export default function Ingest() {
     setSearch(event.target.value);
   }, [setSearch]);
 
+  const handleSelectEvent = useCallback((eventId: string) => {
+    details.setDetailTab('body');
+    openDetail(eventId);
+  }, [details.setDetailTab, openDetail]);
+
   const handleDelete = useCallback((eventId: string, event: React.MouseEvent) => {
     event.stopPropagation();
     const item = events.find((candidate) => candidate.id === eventId);
@@ -182,7 +187,7 @@ export default function Ingest() {
               summaryStale={transcriptWorkflow.transcript?.summary_stale || false}
               onRetry={loadEvents}
               onLoadMore={loadMore}
-              onSelect={openDetail}
+              onSelect={handleSelectEvent}
               onDelete={handleDelete}
               onTopicChange={handleEmbeddedTopicChange}
               onSearchChange={handleEmbeddedSearchChange}

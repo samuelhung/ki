@@ -105,6 +105,22 @@ test('ingest detail tabs can move while preserving exact definitions and order',
   assert.match(implementation, /ingest-tab-trigger launcher-action pixel-command/);
 });
 
+test('every embedded content selection opens the transcript tab', () => {
+  const detailActions = readFileSync(detailActionsUrl, 'utf8');
+
+  assert.match(detailActions, /useState<DetailTab>\('body'\)/);
+  assert.doesNotMatch(detailActions, /setDetailTab\('summary'\)/);
+  assert.match(
+    detailActions,
+    /useEffect\(\(\) => \{[\s\S]*?setDetailTab\('body'\);[\s\S]*?loadDetail\(activeEventId\)/,
+  );
+  assert.match(
+    page,
+    /const handleSelectEvent = useCallback\(\(eventId: string\) => \{\s*details\.setDetailTab\('body'\);\s*openDetail\(eventId\);\s*\}, \[details\.setDetailTab, openDetail\]\);/,
+  );
+  assert.match(page, /onSelect=\{handleSelectEvent\}/);
+});
+
 test('ingest endpoints preserve list mutation upload and status polling contracts', () => {
   const hook = readFileSync(hookUrl, 'utf8');
   assert.match(implementation, /source_id: 'douyin,user-upload,user-concept'/);
@@ -227,7 +243,7 @@ test('ingest extraction forwards callbacks and exports its real request coordina
   assertForwardedCallbacks(pageModule, 'IngestWorkspaceContent', {
     onRetry: 'loadEvents',
     onLoadMore: 'loadMore',
-    onSelect: 'openDetail',
+    onSelect: 'handleSelectEvent',
     onDelete: 'handleDelete',
     onTopicChange: 'handleEmbeddedTopicChange',
     onSearchChange: 'handleEmbeddedSearchChange',

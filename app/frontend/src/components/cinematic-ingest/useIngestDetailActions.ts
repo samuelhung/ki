@@ -30,7 +30,7 @@ export function useIngestDetailActions({
   const [detail, setDetail] = useState<EventItem | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState('');
-  const [detailTab, setDetailTab] = useState<DetailTab>('summary');
+  const [detailTab, setDetailTab] = useState<DetailTab>('body');
   const [summarizingId, setSummarizingId] = useState<string | null>(null);
   const [contemplating, setContemplating] = useState(false);
   const [contemplateError, setContemplateError] = useState('');
@@ -68,7 +68,6 @@ export function useIngestDetailActions({
       const data: EventItem = await response.json();
       if (requestSeq !== detailRequestSeqRef.current) return;
       setDetail(data);
-      setDetailTab('summary');
       setChainAnalysis(data.chain_analysis || '');
       setChainHints([]);
       const linked = (data.associated_questions || []).map((question) => ({
@@ -300,6 +299,7 @@ export function useIngestDetailActions({
   }, []);
 
   useEffect(() => {
+    setDetailTab('body');
     summarizeRequestSeqRef.current += 1;
     summarizeAbortRef.current?.abort();
     setSummarizingId(null);
