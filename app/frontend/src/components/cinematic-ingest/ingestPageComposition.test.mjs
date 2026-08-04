@@ -6,6 +6,7 @@ import {
   assertForwardedCallbacks,
   assertNamedImports,
   combinedSource,
+  loadPureDeclarations,
   loadRequestCoordinatorFactory,
   objectArrayValues,
   readSourceModules,
@@ -262,8 +263,23 @@ test('title saves synchronize list and detail state locally before showing succe
   assert.match(page, /const handleTitleSaved = useCallback\(\(eventId: string, titleCn: string\) => \{\s*updateEventTitle\(eventId, titleCn\);\s*details\.updateEventTitle\(eventId, titleCn\);\s*\}, \[details\.updateEventTitle, updateEventTitle\]\);/);
   assert.match(page, /const handleTitleSuccess = useCallback\(\(\) => \{\s*setToast\(\{ text: '标题已更新', type: 'success' \}\);\s*\}, \[\]\);/);
   assert.match(page, /useTitleEditor\(\{\s*activeEventId,\s*onSaved: handleTitleSaved,\s*onSuccess: handleTitleSuccess,\s*\}\)/);
-  assert.match(page, /const event = details\.detail \|\| selectedEvent;\s*if \(event\) titleEditor\.start\(event\);/);
+  assert.match(page, /if \(titleEditorEvent\) titleEditor\.start\(titleEditorEvent\);/);
   assert.match(page, /<TitleEditorDialog[\s\S]*open=\{titleEditor\.open\}[\s\S]*input=\{titleEditor\.input\}[\s\S]*suggestions=\{titleEditor\.suggestions\}[\s\S]*selectedTitle=\{titleEditor\.selectedTitle\}[\s\S]*generating=\{titleEditor\.generating\}[\s\S]*saving=\{titleEditor\.saving\}[\s\S]*error=\{titleEditor\.error\}[\s\S]*validationError=\{titleEditor\.validationError\}[\s\S]*onInputChange=\{titleEditor\.changeInput\}[\s\S]*onSelectSuggestion=\{titleEditor\.selectSuggestion\}[\s\S]*onGenerate=\{titleEditor\.generate\}[\s\S]*onSave=\{titleEditor\.save\}[\s\S]*onClose=\{titleEditor\.close\}/);
+});
+
+test('title editor never binds a stale detail title to the newly active event', () => {
+  const { resolveTitleEditorEvent } = loadPureDeclarations(modules, ['resolveTitleEditorEvent']);
+  const eventA = { id: 'event-a', title_cn: '标题 A' };
+  const eventB = { id: 'event-b', title_cn: '标题 B' };
+
+  assert.equal(resolveTitleEditorEvent('event-b', eventA), null);
+  assert.equal(resolveTitleEditorEvent('event-b', null), null);
+  assert.equal(resolveTitleEditorEvent('event-b', eventB), eventB);
+  assert.equal(resolveTitleEditorEvent('event-a', eventA), eventA);
+  assert.equal(resolveTitleEditorEvent(null, eventA), null);
+
+  assert.match(page, /const titleEditorEvent = resolveTitleEditorEvent\(activeEventId, details\.detail\)/);
+  assert.match(page, /<TitleActionButton onOpen=\{handleOpenTitleEditor\} disabled=\{!titleEditorEvent\} \/>/);
 });
 
 test('embedded summary regeneration waits for fresh transcript lineage while retaining the old summary', () => {

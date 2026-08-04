@@ -12,8 +12,16 @@ import { useIngestDetailActions } from '../components/cinematic-ingest/useIngest
 import { useIngestEvents } from '../components/cinematic-ingest/useIngestEvents';
 import { useTitleEditor } from '../components/cinematic-ingest/useTitleEditor';
 import { useTranscriptWorkflow } from '../components/cinematic-ingest/useTranscriptWorkflow';
+import type { EventItem } from '../components/cinematic-ingest/ingestTypes';
 import { apiFetch } from '../api';
 import '../components/cinematic-ingest/cinematic-ingest.css';
+
+export function resolveTitleEditorEvent(
+  activeEventId: string | null,
+  detail: EventItem | null,
+): EventItem | null {
+  return activeEventId && detail?.id === activeEventId ? detail : null;
+}
 
 export default function Ingest() {
   const location = useLocation();
@@ -67,6 +75,7 @@ export default function Ingest() {
     onSaved: handleTitleSaved,
     onSuccess: handleTitleSuccess,
   });
+  const titleEditorEvent = resolveTitleEditorEvent(activeEventId, details.detail);
   const transcriptWorkflow = useTranscriptWorkflow({
     eventId: activeEventId || undefined,
     onTranscriptActivated: () => undefined,
@@ -156,9 +165,8 @@ export default function Ingest() {
   }, [details.setDetailTab, openDetail]);
 
   const handleOpenTitleEditor = useCallback(() => {
-    const event = details.detail || selectedEvent;
-    if (event) titleEditor.start(event);
-  }, [details.detail, selectedEvent, titleEditor.start]);
+    if (titleEditorEvent) titleEditor.start(titleEditorEvent);
+  }, [titleEditor.start, titleEditorEvent]);
 
   const handleDelete = useCallback((eventId: string, event: React.MouseEvent) => {
     event.stopPropagation();
@@ -197,7 +205,7 @@ export default function Ingest() {
               selectedEvent={selectedEvent}
               details={details}
               titleActions={<div className="transcript-title-actions ml-auto flex shrink-0 items-center gap-1.5">
-                <TitleActionButton onOpen={handleOpenTitleEditor} />
+                <TitleActionButton onOpen={handleOpenTitleEditor} disabled={!titleEditorEvent} />
                 <TranscriptActionButton
                   transcript={transcriptWorkflow.transcript}
                   loading={transcriptWorkflow.loading}
