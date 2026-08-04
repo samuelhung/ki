@@ -110,7 +110,7 @@ POST /api/events/{event_id}/title/suggestions
 
 ### 组件边界
 
-- `TranscriptActionButton` 改为纯图标按钮，继续只负责转写入口和禁用状态。
+- `TranscriptActionButton` 增加 `iconOnly` 展示变体，继续只负责转写入口和禁用状态；内容采集页使用纯图标，现有独立事件详情组合组件继续使用带文字版本。
 - 新增 `TitleActionButton`，只负责修改标题入口。
 - 新增 `TitleEditorDialog`，拥有输入、候选、生成、保存、错误和请求取消状态。
 - `ContentDetailPanel` 接收统一的标题操作节点，不直接拥有弹窗业务状态。
@@ -155,6 +155,7 @@ AI 生成和标题保存分别使用独立 `AbortController`。关闭弹窗、�
 ## 验收标准
 
 - 标题右侧只显示两个同尺寸图标按钮，顺序和工具提示正确。
+- 独立事件详情继续保留原有带文字的“转写处理”按钮，不受内容采集页图标化影响。
 - 原始 `events.title` 在任何标题修改后保持不变。
 - 手动标题可输入、保存，并立即同步到详情与左侧列表。
 - 手动标题和 AI 候选均限制为 1–20 个字符，使用相同计数规则。
