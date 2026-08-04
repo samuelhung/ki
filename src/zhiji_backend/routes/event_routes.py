@@ -6,11 +6,12 @@ import json
 import logging
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .. import event_ai_service as _ai
 from .. import event_mutation_service as _mutation
 from .. import event_query_service as _query
+from .. import event_title_service as _titles
 from ..classifier import classify_batch, classify_event
 from ..collector import collect_once, fetch_url
 from ..db import connect, seed_default_sources
@@ -79,6 +80,44 @@ def get_event(event_id: SafeIdentifier) -> dict[str, object]:
         )
     except _query.EventNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Event not found") from exc
+
+
+class EventTitleRequest(BaseModel):
+    display_title: str
+
+    @field_validator("display_title")
+    @classmethod
+    def normalize_display_title(cls, value: str) -> str:
+        return _titles.normalize_display_title(value)
+
+
+@router.put("/api/events/{event_id}/title")
+def update_event_title(
+    event_id: SafeIdentifier, payload: EventTitleRequest
+) -> dict[str, str | None]:
+    try:
+        return _titles.update_display_title(
+            event_id, payload.display_title, connect_fn=connect
+        )
+    except _titles.EventNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Event not found") from exc
+
+
+@router.post("/api/events/{event_id}/title/suggestions")
+def suggest_event_titles(event_id: SafeIdentifier) -> dict[str, list[str]]:
+    try:
+        titles = _titles.suggest_display_titles(event_id, connect_fn=connect)
+        return {"titles": titles}
+    except _titles.EventNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Event not found") from exc
+    except _titles.TranscriptUnavailableError as exc:
+        raise HTTPException(
+            status_code=400, detail="Event has no transcript content"
+        ) from exc
+    except _titles.TitleSuggestionError as exc:
+        raise HTTPException(
+            status_code=502, detail="Title suggestions are temporarily unavailable"
+        ) from exc
 
 
 @router.delete("/api/events/{event_id}")
