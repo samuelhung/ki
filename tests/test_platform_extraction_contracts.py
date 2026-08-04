@@ -201,6 +201,8 @@ EXPECTED_OPENAPI_OPERATIONS = [
     ("/api/events/topic-counts", "get", "event_topic_counts_api_events_topic_counts_get"),
     ("/api/events/{event_id}", "get", "get_event_api_events__event_id__get"),
     ("/api/events/{event_id}", "delete", "delete_event_api_events__event_id__delete"),
+    ("/api/events/{event_id}/title", "put", "update_event_title_api_events__event_id__title_put"),
+    ("/api/events/{event_id}/title/suggestions", "post", "suggest_event_titles_api_events__event_id__title_suggestions_post"),
     ("/api/events/batch-delete", "post", "batch_delete_events_api_events_batch_delete_post"),
     ("/api/events/{event_id}/summarize", "post", "summarize_event_api_events__event_id__summarize_post"),
     ("/api/collect", "post", "collect_api_collect_post"),
