@@ -2,6 +2,12 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import ts from 'typescript';
+import { getModalBackdropHandler } from '../modalLifecycle.ts';
+import {
+  completeTitleSave,
+  createTitleEditorState,
+  titleEditorReducer,
+} from './titleEditorRuntime.ts';
 import {
   assertForwardedCallbacks,
   assertNamedImports,
@@ -26,6 +32,68 @@ const implementation = combinedSource(modules);
 const pageModule = modules.find((module) => module.name === 'Ingest.tsx');
 assert.ok(pageModule);
 const page = pageModule.source;
+
+function loadTitleEditorDialogComponent() {
+  const source = readFileSync(titleEditorDialogUrl, 'utf8');
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: {
+      jsx: ts.JsxEmit.ReactJSX,
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+    },
+  }).outputText;
+  const ModalStub = function ModalStub() {};
+  const jsx = (type, props, key) => ({ type, props: props || {}, key: key ?? null });
+  const loaded = { exports: {} };
+  const requireModule = (specifier) => {
+    if (specifier === 'react') return { useRef: (initial) => ({ current: initial }) };
+    if (specifier === 'react/jsx-runtime') return { Fragment: Symbol('Fragment'), jsx, jsxs: jsx };
+    if (specifier === 'lucide-react') return { Loader2: 'Loader2', Sparkles: 'Sparkles' };
+    if (specifier === '../Modal') return ModalStub;
+    throw new Error(`Unexpected TitleEditorDialog dependency: ${specifier}`);
+  };
+  Function('require', 'module', 'exports', compiled)(requireModule, loaded, loaded.exports);
+  return { TitleEditorDialog: loaded.exports.TitleEditorDialog, ModalStub };
+}
+
+function findElements(node, predicate, matches = []) {
+  if (Array.isArray(node)) {
+    node.forEach((child) => findElements(child, predicate, matches));
+    return matches;
+  }
+  if (!node || typeof node !== 'object' || !('props' in node)) return matches;
+  if (predicate(node)) matches.push(node);
+  findElements(node.props.children, predicate, matches);
+  return matches;
+}
+
+function elementText(node) {
+  if (Array.isArray(node)) return node.map(elementText).join('');
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (!node || typeof node !== 'object' || !('props' in node)) return '';
+  return elementText(node.props.children);
+}
+
+const { TitleEditorDialog: ExecutableTitleEditorDialog, ModalStub } = loadTitleEditorDialogComponent();
+
+function renderTitleEditorDialog(overrides = {}) {
+  return ExecutableTitleEditorDialog({
+    open: true,
+    input: '当前标题',
+    suggestions: [],
+    selectedTitle: null,
+    generating: false,
+    saving: false,
+    error: '',
+    validationError: '',
+    onInputChange: () => undefined,
+    onSelectSuggestion: () => undefined,
+    onGenerate: () => undefined,
+    onSave: () => undefined,
+    onClose: () => undefined,
+    ...overrides,
+  });
+}
 
 function deferred() {
   let resolve;
@@ -229,7 +297,6 @@ test('title action and editor dialog preserve icon accessibility and complete ed
   assert.match(titleAction, /<button[\s\S]*type="button"[\s\S]*className="transcript-action-icon"[\s\S]*title="修改标题"[\s\S]*aria-label="修改标题"[\s\S]*onClick=\{onOpen\}[\s\S]*<Pencil[\s\S]*<\/button>/);
   assert.doesNotMatch(titleAction, />\s*修改标题\s*</);
 
-  assert.match(dialog, /<Modal open=\{open\} onClose=\{onClose\} title="修改标题" maxWidth="md">/);
   assert.match(dialog, />显示标题</);
   assert.match(dialog, /value=\{input\}/);
   assert.match(dialog, /onChange=\{\(event\) => onInputChange\(event\.target\.value\)\}/);
@@ -247,8 +314,84 @@ test('title action and editor dialog preserve icon accessibility and complete ed
   assert.match(dialog, /\{error &&/);
   assert.match(dialog, /\{validationError &&/);
   assert.match(dialog, />\s*取消\s*</);
-  assert.match(dialog, /onClick=\{onSave\}[\s\S]*disabled=\{saving \|\| Boolean\(validationError\)\}/);
+  assert.match(dialog, /onClick=\{onSave\}[\s\S]*disabled=\{generating \|\| saving \|\| Boolean\(validationError\)\}/);
   assert.match(dialog, /saving \? <Loader2[\s\S]*saving \? '保存中' : '保存标题'/);
+});
+
+test('title editor component locks close paths while saving and wires reliable input focus', () => {
+  let closeCalls = 0;
+  const savingDialog = renderTitleEditorDialog({
+    saving: true,
+    onClose: () => { closeCalls += 1; },
+  });
+  assert.equal(savingDialog.type, ModalStub);
+  assert.equal(savingDialog.props.dismissible, false);
+  savingDialog.props.onClose();
+  assert.equal(closeCalls, 0, 'defensive onClose must ignore close attempts while saving');
+  assert.equal(getModalBackdropHandler(savingDialog.props.dismissible, savingDialog.props.onClose), undefined);
+
+  const cancelButton = findElements(
+    savingDialog,
+    (node) => node.type === 'button' && elementText(node).trim() === '取消',
+  )[0];
+  assert.ok(cancelButton);
+  cancelButton.props.onClick();
+  assert.equal(closeCalls, 0);
+
+  const input = findElements(savingDialog, (node) => node.type === 'input')[0];
+  assert.ok(input);
+  assert.equal(savingDialog.props.initialFocusRef, input.props.ref);
+  assert.ok(input.props.ref && typeof input.props.ref === 'object');
+
+  const openDialog = renderTitleEditorDialog({ onClose: () => { closeCalls += 1; } });
+  assert.equal(openDialog.props.dismissible, true);
+  openDialog.props.onClose();
+  assert.equal(closeCalls, 1);
+});
+
+test('title editor component exposes candidate selection and clears it after manual input', () => {
+  let state = createTitleEditorState();
+  state = titleEditorReducer(state, { type: 'start', input: '当前标题' });
+  state = titleEditorReducer(state, {
+    type: 'generate-success', suggestions: ['候选一', '候选二', '候选三'],
+  });
+  state = titleEditorReducer(state, { type: 'select-suggestion', value: '候选二' });
+
+  const render = () => renderTitleEditorDialog({
+    ...state,
+    validationError: '',
+    onInputChange: (value) => { state = titleEditorReducer(state, { type: 'change-input', value }); },
+    onSelectSuggestion: (value) => { state = titleEditorReducer(state, { type: 'select-suggestion', value }); },
+  });
+  let dialog = render();
+  let candidateButtons = findElements(dialog, (node) => (
+    node.type === 'button' && elementText(node).startsWith('候选')
+  ));
+  assert.deepEqual(candidateButtons.map((button) => button.props['aria-pressed']), [false, true, false]);
+
+  candidateButtons[2].props.onClick();
+  assert.equal(state.input, '候选三');
+  assert.equal(state.selectedTitle, '候选三');
+  dialog = render();
+  const input = findElements(dialog, (node) => node.type === 'input')[0];
+  input.props.onChange({ target: { value: '人工修改' } });
+  assert.equal(state.input, '人工修改');
+  assert.equal(state.selectedTitle, null);
+  dialog = render();
+  candidateButtons = findElements(dialog, (node) => (
+    node.type === 'button' && elementText(node).startsWith('候选')
+  ));
+  assert.deepEqual(candidateButtons.map((button) => button.props['aria-pressed']), [false, false, false]);
+});
+
+test('title editor component disables saving throughout generation', () => {
+  const dialog = renderTitleEditorDialog({ generating: true });
+  const saveButton = findElements(
+    dialog,
+    (node) => node.type === 'button' && elementText(node).includes('保存标题'),
+  )[0];
+  assert.ok(saveButton);
+  assert.equal(saveButton.props.disabled, true);
 });
 
 test('title saves synchronize list and detail state locally before showing success', () => {
@@ -260,7 +403,28 @@ test('title saves synchronize list and detail state locally before showing succe
   assert.match(detailActions, /const updateEventTitle = useCallback\(\(eventId: string, titleCn: string\) => \{\s*setDetail\(\(current\) => current\?\.id === eventId\s*\? \{ \.\.\.current, title_cn: titleCn \}\s*: current\);\s*\}, \[\]\);/);
   assert.match(detailActions, /return \{[\s\S]*updateEventTitle,/);
 
-  assert.match(page, /const handleTitleSaved = useCallback\(\(eventId: string, titleCn: string\) => \{\s*updateEventTitle\(eventId, titleCn\);\s*details\.updateEventTitle\(eventId, titleCn\);\s*\}, \[details\.updateEventTitle, updateEventTitle\]\);/);
+  const { synchronizeSavedTitle } = loadPureDeclarations(modules, ['synchronizeSavedTitle']);
+  const calls = [];
+  completeTitleSave(
+    { id: 'event-a', title: 'Original', title_cn: '新标题' },
+    {
+      onSaved: (eventId, titleCn) => synchronizeSavedTitle(
+        eventId,
+        titleCn,
+        (id, title) => calls.push(['list', id, title]),
+        (id, title) => calls.push(['detail', id, title]),
+      ),
+      onSuccess: () => calls.push(['success']),
+      onClose: () => calls.push(['close']),
+    },
+  );
+  assert.deepEqual(calls, [
+    ['list', 'event-a', '新标题'],
+    ['detail', 'event-a', '新标题'],
+    ['success'],
+    ['close'],
+  ]);
+  assert.match(page, /synchronizeSavedTitle\(eventId, titleCn, updateEventTitle, details\.updateEventTitle\)/);
   assert.match(page, /const handleTitleSuccess = useCallback\(\(\) => \{\s*setToast\(\{ text: '标题已更新', type: 'success' \}\);\s*\}, \[\]\);/);
   assert.match(page, /useTitleEditor\(\{\s*activeEventId,\s*onSaved: handleTitleSaved,\s*onSuccess: handleTitleSuccess,\s*\}\)/);
   assert.match(page, /if \(titleEditorEvent\) titleEditor\.start\(titleEditorEvent\);/);

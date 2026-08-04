@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { Loader2, Sparkles } from 'lucide-react';
 import Modal from '../Modal';
 
@@ -32,13 +33,25 @@ export function TitleEditorDialog({
   onSave,
   onClose,
 }: TitleEditorDialogProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const handleClose = () => {
+    if (!saving) onClose();
+  };
+
   return (
-    <Modal open={open} onClose={onClose} title="修改标题" maxWidth="md">
+    <Modal
+      open={open}
+      onClose={handleClose}
+      title="修改标题"
+      maxWidth="md"
+      dismissible={!saving}
+      initialFocusRef={inputRef}
+    >
       <div className="title-editor-dialog space-y-4">
         <label className="block">
           <span className="mb-1 block text-sm text-gray-400">显示标题</span>
           <input
-            autoFocus
+            ref={inputRef}
             value={input}
             onChange={(event) => onInputChange(event.target.value)}
             disabled={saving}
@@ -66,6 +79,7 @@ export function TitleEditorDialog({
                 key={suggestion}
                 type="button"
                 className={`title-editor-suggestion${selectedTitle === suggestion ? ' is-selected' : ''}`}
+                aria-pressed={selectedTitle === suggestion}
                 onClick={() => onSelectSuggestion(suggestion)}
                 disabled={saving}
               >
@@ -81,7 +95,7 @@ export function TitleEditorDialog({
         <div className="flex justify-end gap-2">
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             disabled={saving}
             className="rounded-lg px-4 py-2 text-sm text-gray-400 hover:text-white disabled:opacity-50"
           >
@@ -90,7 +104,7 @@ export function TitleEditorDialog({
           <button
             type="button"
             onClick={onSave}
-            disabled={saving || Boolean(validationError)}
+            disabled={generating || saving || Boolean(validationError)}
             className="inline-flex items-center gap-1.5 rounded-lg border border-purple-500/30 bg-purple-500/20 px-4 py-2 text-sm font-medium text-purple-300 disabled:opacity-50"
           >
             {saving ? <Loader2 size={13} className="animate-spin" /> : null}

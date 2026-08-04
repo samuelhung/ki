@@ -23,6 +23,16 @@ export function resolveTitleEditorEvent(
   return activeEventId && detail?.id === activeEventId ? detail : null;
 }
 
+export function synchronizeSavedTitle(
+  eventId: string,
+  titleCn: string,
+  updateListTitle: (eventId: string, titleCn: string) => void,
+  updateDetailTitle: (eventId: string, titleCn: string) => void,
+): void {
+  updateListTitle(eventId, titleCn);
+  updateDetailTitle(eventId, titleCn);
+}
+
 export default function Ingest() {
   const location = useLocation();
   const systemDialog = useSystemDialog();
@@ -64,8 +74,7 @@ export default function Ingest() {
   });
   const details = useIngestDetailActions({ activeEventId, setToast });
   const handleTitleSaved = useCallback((eventId: string, titleCn: string) => {
-    updateEventTitle(eventId, titleCn);
-    details.updateEventTitle(eventId, titleCn);
+    synchronizeSavedTitle(eventId, titleCn, updateEventTitle, details.updateEventTitle);
   }, [details.updateEventTitle, updateEventTitle]);
   const handleTitleSuccess = useCallback(() => {
     setToast({ text: '标题已更新', type: 'success' });

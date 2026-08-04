@@ -10,7 +10,7 @@ interface ModalProps {
   children: ReactNode;
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
   dismissible?: boolean;
-  initialFocusRef?: React.RefObject<HTMLButtonElement | null>;
+  initialFocusRef?: React.RefObject<HTMLElement | null>;
 }
 
 const _maxWidthClass: Record<string, string> = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-lg', xl: 'max-w-xl', '2xl': 'max-w-2xl' };
