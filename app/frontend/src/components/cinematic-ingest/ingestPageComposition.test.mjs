@@ -181,15 +181,22 @@ test('embedded ingest exposes the transcript revision workflow from the content 
   const detailPanel = readFileSync(detailPanelUrl, 'utf8');
 
   assert.match(page, /useTranscriptWorkflow\(/);
-  assert.match(page, /<TranscriptActions/);
+  assert.match(page, /import \{ TranscriptActionButton, TranscriptStatus \} from/);
+  assert.match(page, /transcriptActionButton=\{<TranscriptActionButton/);
+  assert.match(page, /transcriptStatus=\{<TranscriptStatus/);
   assert.match(page, /<TranscriptWorkspaceDialog/);
   assert.doesNotMatch(page, /<TranscriptEditorDialog/);
   assert.doesNotMatch(page, /<TranscriptComparisonDialog/);
   assert.doesNotMatch(page, /<TranscriptRevisionDialog/);
-  assert.match(workspace, /transcriptActions=\{transcriptActions\}/);
+  assert.match(workspace, /transcriptActionButton=\{transcriptActionButton\}/);
+  assert.match(workspace, /transcriptStatus=\{transcriptStatus\}/);
   assert.match(workspace, /transcriptContent=\{transcriptContent\}/);
   assert.match(workspace, /summaryStale=\{summaryStale\}/);
-  assert.match(detailPanel, /transcript-title-row[\s\S]*<h2[\s\S]*tab === 'body'[\s\S]*transcriptActions/);
+  assert.match(detailPanel, /transcript-title-row[\s\S]*<h2[\s\S]*tab === 'body'[\s\S]*transcriptActionButton/);
+  assert.match(
+    detailPanel,
+    /ingest-detail-meta-row[\s\S]*formatTimeBeijing\(item\.created_at\)[\s\S]*item\.topic[\s\S]*tab === 'body'[\s\S]*transcriptStatus/,
+  );
   assert.match(detailPanel, /const bodyText = transcriptContent \?\?/);
   assert.match(detailPanel, /summaryStale[\s\S]*原文已更新，可重新生成 AI 总结/);
   assert.match(detailPanel, /if \(summarizing && !detail\?\.ai_summary\)/);

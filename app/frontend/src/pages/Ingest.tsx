@@ -4,7 +4,7 @@ import { Upload } from 'lucide-react';
 import Modal from '../components/Modal';
 import { useSystemDialog } from '../components/system-dialog/SystemDialogContext';
 import { IngestWorkspaceContent } from '../components/cinematic-ingest/IngestWorkspaceContent';
-import { TranscriptActions } from '../components/cinematic-ingest/TranscriptActions';
+import { TranscriptActionButton, TranscriptStatus } from '../components/cinematic-ingest/TranscriptActions';
 import { TranscriptWorkspaceDialog } from '../components/cinematic-ingest/TranscriptWorkspaceDialog';
 import { useIngestDetailActions } from '../components/cinematic-ingest/useIngestDetailActions';
 import { useIngestEvents } from '../components/cinematic-ingest/useIngestEvents';
@@ -175,12 +175,16 @@ export default function Ingest() {
               searchPortalTarget={searchPortalTarget}
               selectedEvent={selectedEvent}
               details={details}
-              transcriptActions={<TranscriptActions
+              transcriptActionButton={<TranscriptActionButton
+                transcript={transcriptWorkflow.transcript}
+                loading={transcriptWorkflow.loading}
+                onOpen={transcriptWorkflow.openWorkspace}
+              />}
+              transcriptStatus={<TranscriptStatus
                 transcript={transcriptWorkflow.transcript}
                 loading={transcriptWorkflow.loading}
                 error={transcriptWorkflow.error}
                 refreshRequired={transcriptWorkflow.refreshRequired}
-                onOpen={transcriptWorkflow.openWorkspace}
                 onRefresh={transcriptWorkflow.refreshTranscript}
               />}
               transcriptContent={transcriptWorkflow.transcript?.content}

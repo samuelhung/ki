@@ -13,7 +13,8 @@ function ContentDetailPanelComponent({
   error,
   tab,
   detailTabs,
-  transcriptActions,
+  transcriptActionButton,
+  transcriptStatus,
   transcriptContent,
   summaryStale,
   summarizing,
@@ -43,7 +44,8 @@ function ContentDetailPanelComponent({
   error: string;
   tab: DetailTab;
   detailTabs: React.ReactNode;
-  transcriptActions?: React.ReactNode;
+  transcriptActionButton?: React.ReactNode;
+  transcriptStatus?: React.ReactNode;
   transcriptContent?: string;
   summaryStale?: boolean;
   summarizing: boolean;
@@ -219,9 +221,19 @@ function ContentDetailPanelComponent({
         <span>{item ? `${sourceLabel(item.source_id)} · ${statusLabel(item.status)}` : 'CONTENT DETAIL'}</span>
         <div className="transcript-title-row flex flex-wrap items-start justify-between gap-3">
           <h2>{item?.title_cn || item?.title || ingestCopy.detail.titleFallback}</h2>
-          {tab === 'body' && transcriptActions}
+          {tab === 'body' && transcriptActionButton}
         </div>
-        {item && <small>{formatTimeBeijing(item.created_at)} · {item.topic || 'uncategorized'}</small>}
+        {item && (
+          <div className="ingest-detail-meta-row">
+            <small>{formatTimeBeijing(item.created_at)} · {item.topic || 'uncategorized'}</small>
+            {tab === 'body' && transcriptStatus && (
+              <>
+                <span className="ingest-detail-meta-separator" aria-hidden="true">·</span>
+                {transcriptStatus}
+              </>
+            )}
+          </div>
+        )}
       </header>
       {mediaUrl && (
         <video controls playsInline preload="metadata" className="ingest-detail-video" src={mediaUrl}>
