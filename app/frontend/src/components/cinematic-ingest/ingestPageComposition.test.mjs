@@ -27,11 +27,13 @@ const detailActionsUrl = new URL('./useIngestDetailActions.ts', import.meta.url)
 const transcriptActionsUrl = new URL('./TranscriptActions.tsx', import.meta.url);
 const titleActionButtonUrl = new URL('./TitleActionButton.tsx', import.meta.url);
 const titleEditorDialogUrl = new URL('./TitleEditorDialog.tsx', import.meta.url);
+const dualNavigationCssUrl = new URL('../../pages/DualNavigationDemo.css', import.meta.url);
 const modules = readSourceModules([pageUrl, hookUrl, workspaceUrl, detailPanelUrl, detailActionsUrl, utilsUrl]);
 const implementation = combinedSource(modules);
 const pageModule = modules.find((module) => module.name === 'Ingest.tsx');
 assert.ok(pageModule);
 const page = pageModule.source;
+const dualNavigationCss = readFileSync(dualNavigationCssUrl, 'utf8');
 
 function loadTitleEditorDialogComponent() {
   const source = readFileSync(titleEditorDialogUrl, 'utf8');
@@ -316,6 +318,38 @@ test('title action and editor dialog preserve icon accessibility and complete ed
   assert.match(dialog, />\s*取消\s*</);
   assert.match(dialog, /onClick=\{onSave\}[\s\S]*disabled=\{generating \|\| saving \|\| Boolean\(validationError\)\}/);
   assert.match(dialog, /saving \? <Loader2[\s\S]*saving \? '保存中' : '保存标题'/);
+});
+
+test('title row actions remain a compact non-wrapping group', () => {
+  assert.match(
+    dualNavigationCss,
+    /\.transcript-title-actions\s*\{[^}]*display:\s*inline-flex;[^}]*flex:\s*0 0 auto;[^}]*align-items:\s*center;[^}]*justify-content:\s*center;[^}]*flex-wrap:\s*nowrap;[^}]*gap:\s*6px;/s,
+  );
+});
+
+test('title row icon actions keep a fixed 30 pixel square hit area', () => {
+  assert.match(
+    dualNavigationCss,
+    /\.transcript-action-icon\s*\{[^}]*width:\s*30px;[^}]*height:\s*30px;[^}]*min-height:\s*30px;[^}]*padding:\s*0;[^}]*flex:\s*0 0 30px;/s,
+  );
+});
+
+test('title editor dialog constrains its content and scrolls suggestions', () => {
+  assert.match(
+    dualNavigationCss,
+    /\.title-editor-dialog\s*\{[^}]*display:\s*flex;[^}]*max-height:\s*min\(70vh,\s*560px\);[^}]*min-height:\s*0;[^}]*flex-direction:\s*column;[^}]*gap:\s*14px;[^}]*overflow:\s*hidden;/s,
+  );
+  assert.match(
+    dualNavigationCss,
+    /\.title-editor-suggestions\s*\{[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/s,
+  );
+});
+
+test('title editor dialog uses a compact viewport height on narrow screens', () => {
+  assert.match(
+    dualNavigationCss,
+    /@media \(max-width:\s*640px\)\s*\{[\s\S]*?\.title-editor-dialog\s*\{[^}]*max-height:\s*calc\(100dvh - 150px\);/s,
+  );
 });
 
 test('title editor component locks close paths while saving and wires reliable input focus', () => {
