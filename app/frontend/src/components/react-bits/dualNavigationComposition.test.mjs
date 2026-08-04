@@ -86,14 +86,29 @@ test('queue timestamps convert stored UTC values to Beijing time', () => {
 
 test('queue overlay renders the full progress track with accessible current-stage focus', () => {
   const dockQueueOverlay = readFileSync(dockQueueOverlayUrl, 'utf8');
-  assert.match(dockQueueOverlay, /queueProgressStages\(item\)/);
-  assert.match(dockQueueOverlay, /global-dock-queue-progress/);
-  assert.match(dockQueueOverlay, /stages\.map\(\(stage, index\) =>/);
-  assert.match(dockQueueOverlay, /stageLabel\(stage\.status\)/);
-  assert.match(dockQueueOverlay, /aria-label=\{`\$\{label\}，\$\{statusLabel\}`\}/);
-  assert.match(dockQueueOverlay, /scrollIntoView\(\{\s*block: 'nearest',\s*inline: 'center',\s*behavior: 'smooth',?\s*\}\)/s);
-  assert.match(dockQueueOverlay, /tabIndex=\{0\}/);
-  assert.match(dockQueueOverlay, /'--queue-progress-stage-count': stages\.length/);
+  const progressTrack = dockQueueOverlay.match(/function QueueProgressTrack[\s\S]*?\n}\n\nexport default/)?.[0] || '';
+
+  assert.match(progressTrack, /const stages = queueProgressStages\(item\);/);
+  assert.match(progressTrack, /const current = stages\.find\(\(stage\) => stage\.status === 'active' \|\| stage\.status === 'error'\);/);
+  assert.match(progressTrack, /ref=\{isCurrent \? currentStageRef : undefined\}/);
+  assert.match(progressTrack, /if \(!node \|\| !window\.matchMedia\('\(max-width: 760px\)'\)\.matches\) return;/);
+  assert.match(progressTrack, /scrollIntoView\(\{\s*block: 'nearest',\s*inline: 'center',\s*behavior: 'smooth',?\s*\}\)/s);
+  assert.match(progressTrack, /}, \[current\?\.key, current\?\.status\]\);/);
+  assert.match(progressTrack, /if \(stages\.length === 0\) return null;/);
+  assert.match(progressTrack, /const currentLabel = current \? `\$\{current\.label\}，\$\{stageLabel\(current\.status\)\}` : '等待更新';/);
+  assert.match(progressTrack, /className="global-dock-queue-progress"[\s\S]*aria-label=\{currentLabel\}[\s\S]*tabIndex=\{0\}[\s\S]*'--queue-progress-stage-count': stages\.length/s);
+  assert.match(progressTrack, /stages\.map\(\(stage, index\) =>/);
+  assert.match(progressTrack, /key=\{`\$\{stage\.key\}-\$\{index\}`\}/);
+  assert.match(progressTrack, /className=\{`is-\$\{stage\.status\}\$\{isCurrent \? ' is-current' : ''\}`\}/);
+  assert.match(progressTrack, /title=\{`\$\{label\} · \$\{statusLabel\}`\}/);
+  assert.match(progressTrack, /aria-label=\{`\$\{label\}，\$\{statusLabel\}`\}/);
+
+  const actionsStart = dockQueueOverlay.indexOf('<div className="global-dock-queue-actions">');
+  const actionsEnd = dockQueueOverlay.indexOf('</div>', actionsStart);
+  const progressTrackRender = dockQueueOverlay.indexOf('<QueueProgressTrack item={item} />');
+  const articleEnd = dockQueueOverlay.indexOf('</article>', progressTrackRender);
+  assert.ok(actionsStart >= 0 && actionsEnd >= 0 && progressTrackRender >= 0 && articleEnd >= 0);
+  assert.ok(actionsEnd < progressTrackRender && progressTrackRender < articleEnd);
 });
 
 test('dock workspaces are lazy loaded and preserve merged modes inside one overlay', () => {
