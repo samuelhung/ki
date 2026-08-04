@@ -232,6 +232,20 @@ test('transcript correction UI opens one workspace from the title row', () => {
   assert.doesNotMatch(page, /<TranscriptRevisionDialog/);
 });
 
+test('transcript title controls expose separate action and status components', () => {
+  const actions = readFileSync(transcriptActionsUrl, 'utf8');
+  assert.match(actions, /export function TranscriptActionButton/);
+  assert.match(actions, /export function TranscriptStatus/);
+  assert.match(actions, /export function TranscriptActions[\s\S]*<TranscriptActionButton[\s\S]*<TranscriptStatus/);
+  for (const status of [
+    '原始转写',
+    '已人工校验',
+    '已完成语义分段',
+    '已恢复历史版本',
+    '加载转写版本…',
+  ]) assert.match(actions, new RegExp(status));
+});
+
 test('one transcript workspace owns the global Dock frame and composes all panels', () => {
   for (const url of [
     transcriptWorkspaceUrl,
