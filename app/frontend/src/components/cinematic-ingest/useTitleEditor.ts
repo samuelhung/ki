@@ -1,12 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef } from 'react';
 import { apiFetch } from '../../api';
 import type { EventItem } from './ingestTypes';
 import {
-  createTitleRequestOwner,
+  completeTitleSave,
+  createTitleEditorLifecycle,
+  createTitleEditorState,
   requestTitleSuggestions,
   saveDisplayTitle,
+  titleEditorReducer,
   titleValidationError,
 } from './titleEditorRuntime';
+import type { SavedEventTitle } from './titleEditorRuntime';
 
 export interface UseTitleEditorOptions {
   activeEventId: string | null;
@@ -25,163 +29,97 @@ function errorMessage(reason: unknown, fallback: string): string {
 }
 
 export function useTitleEditor({ activeEventId, onSaved, onSuccess }: UseTitleEditorOptions) {
-  const [open, setOpen] = useState(false);
-  const [input, setInput] = useState('');
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [selectedTitle, setSelectedTitle] = useState<string | null>(null);
-  const [generating, setGenerating] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const suggestionOwnerRef = useRef(createTitleRequestOwner());
-  const saveOwnerRef = useRef(createTitleRequestOwner());
-  const generatingRef = useRef(false);
-  const savingRef = useRef(false);
-  const inputRef = useRef(input);
-  const activeEventIdRef = useRef(activeEventId);
-  inputRef.current = input;
-  activeEventIdRef.current = activeEventId;
+  const [state, dispatch] = useReducer(titleEditorReducer, undefined, createTitleEditorState);
+  const lifecycleRef = useRef(createTitleEditorLifecycle());
+  const inputRef = useRef('');
 
   const start = useCallback((event: EventItem) => {
-    suggestionOwnerRef.current.abort();
-    saveOwnerRef.current.abort();
-    generatingRef.current = false;
-    savingRef.current = false;
+    lifecycleRef.current.abortRequests();
     const initialInput = event.title_cn || event.title || '';
     inputRef.current = initialInput;
-    setInput(initialInput);
-    setSuggestions([]);
-    setSelectedTitle(null);
-    setError('');
-    setGenerating(false);
-    setSaving(false);
-    setOpen(true);
+    dispatch({ type: 'start', input: initialInput });
   }, []);
 
   const close = useCallback(() => {
-    suggestionOwnerRef.current.abort();
-    saveOwnerRef.current.abort();
-    generatingRef.current = false;
-    savingRef.current = false;
-    setOpen(false);
-    setGenerating(false);
-    setSaving(false);
-    setError('');
+    lifecycleRef.current.abortRequests();
+    dispatch({ type: 'close' });
   }, []);
 
   const changeInput = useCallback((value: string) => {
     inputRef.current = value;
-    setInput(value);
-    setSelectedTitle(suggestions.includes(value) ? value : null);
-    setError('');
-  }, [suggestions]);
+    dispatch({ type: 'change-input', value });
+  }, []);
 
   const selectSuggestion = useCallback((value: string) => {
     inputRef.current = value;
-    setInput(value);
-    setSelectedTitle(value);
-    setError('');
+    dispatch({ type: 'select-suggestion', value });
   }, []);
 
   const generate = useCallback(async () => {
-    if (generating || saving) return;
-    if (generatingRef.current || savingRef.current) return;
-    const eventId = activeEventId;
-    if (!eventId) return;
-    const token = suggestionOwnerRef.current.start(eventId);
-    if (!suggestionOwnerRef.current.isCurrent(token) || activeEventIdRef.current !== eventId) return;
-    generatingRef.current = true;
-    setGenerating(true);
-    setError('');
+    const token = lifecycleRef.current.beginSuggestion();
+    if (!token) return;
+    const { eventId } = token;
+    dispatch({ type: 'generate-start' });
     try {
       const nextSuggestions = await requestTitleSuggestions(eventId, token.signal, apiFetch);
-      if (!suggestionOwnerRef.current.isCurrent(token) || activeEventIdRef.current !== eventId) return;
-      setSuggestions(nextSuggestions);
-      const currentInput = inputRef.current;
-      setSelectedTitle(nextSuggestions.includes(currentInput) ? currentInput : null);
+      if (!lifecycleRef.current.isSuggestionCurrent(token)) return;
+      dispatch({ type: 'generate-success', suggestions: nextSuggestions });
     } catch (reason) {
       if (
-        suggestionOwnerRef.current.isCurrent(token)
-        && activeEventIdRef.current === eventId
+        lifecycleRef.current.isSuggestionCurrent(token)
         && errorName(reason) !== 'AbortError'
       ) {
-        setError(errorMessage(reason, 'AI 标题生成失败'));
+        dispatch({ type: 'generate-failure', error: errorMessage(reason, 'AI 标题生成失败') });
       }
     } finally {
-      if (suggestionOwnerRef.current.isCurrent(token) && activeEventIdRef.current === eventId) {
-        generatingRef.current = false;
-        setGenerating(false);
+      if (lifecycleRef.current.finishSuggestion(token)) {
+        dispatch({ type: 'generate-end' });
       }
     }
-  }, [activeEventId, generating, saving]);
+  }, []);
 
   const save = useCallback(async () => {
-    const validation = titleValidationError(input);
+    const value = inputRef.current;
+    const validation = titleValidationError(value);
     if (validation) {
-      setError(validation);
+      dispatch({ type: 'set-error', error: validation });
       return;
     }
-    if (saving || generating) return;
-    if (savingRef.current || generatingRef.current) return;
-    const eventId = activeEventId;
-    if (!eventId) return;
-    const token = saveOwnerRef.current.start(eventId);
-    if (!saveOwnerRef.current.isCurrent(token) || activeEventIdRef.current !== eventId) return;
-    savingRef.current = true;
-    setSaving(true);
-    setError('');
+    const token = lifecycleRef.current.beginSave();
+    if (!token) return;
+    const { eventId } = token;
+    dispatch({ type: 'save-start' });
+    let result: SavedEventTitle;
     try {
-      const result = await saveDisplayTitle(eventId, input, token.signal, apiFetch);
-      if (!saveOwnerRef.current.isCurrent(token) || activeEventIdRef.current !== eventId) return;
-      onSaved(result.id, result.title_cn);
-      onSuccess();
-      close();
+      result = await saveDisplayTitle(eventId, value, token.signal, apiFetch);
     } catch (reason) {
-      if (
-        saveOwnerRef.current.isCurrent(token)
-        && activeEventIdRef.current === eventId
-        && errorName(reason) !== 'AbortError'
-      ) {
-        setError(errorMessage(reason, '保存标题失败'));
+      if (lifecycleRef.current.isSaveCurrent(token) && errorName(reason) !== 'AbortError') {
+        dispatch({ type: 'save-failure', error: errorMessage(reason, '保存标题失败') });
       }
-    } finally {
-      if (saveOwnerRef.current.isCurrent(token) && activeEventIdRef.current === eventId) {
-        savingRef.current = false;
-        setSaving(false);
+      if (lifecycleRef.current.finishSave(token)) {
+        dispatch({ type: 'save-end' });
       }
+      return;
     }
-  }, [activeEventId, close, generating, input, onSaved, onSuccess, saving]);
+    if (!lifecycleRef.current.isSaveCurrent(token)) return;
+    completeTitleSave(result, { onSaved, onSuccess, onClose: close });
+  }, [close, onSaved, onSuccess]);
 
-  useEffect(() => {
-    suggestionOwnerRef.current.abort();
-    saveOwnerRef.current.abort();
-    generatingRef.current = false;
-    savingRef.current = false;
+  useLayoutEffect(() => {
+    lifecycleRef.current.commitActiveEvent(activeEventId);
     inputRef.current = '';
-    setOpen(false);
-    setInput('');
-    setSuggestions([]);
-    setSelectedTitle(null);
-    setGenerating(false);
-    setSaving(false);
-    setError('');
+    dispatch({ type: 'active-event-changed' });
   }, [activeEventId]);
 
   useEffect(() => {
     return () => {
-      suggestionOwnerRef.current.abort();
-      saveOwnerRef.current.abort();
+      lifecycleRef.current.destroy();
     };
   }, []);
 
   return {
-    open,
-    input,
-    suggestions,
-    selectedTitle,
-    generating,
-    saving,
-    error,
-    validationError: titleValidationError(input),
+    ...state,
+    validationError: titleValidationError(state.input),
     start,
     close,
     changeInput,

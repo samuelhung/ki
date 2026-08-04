@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import * as titleRuntime from './titleEditorRuntime.ts';
 import {
   createTitleRequestOwner,
   requestTitleSuggestions,
@@ -135,6 +136,26 @@ test('title save exposes a stable error for HTTP failures and bad JSON', async (
   );
 });
 
+test('title save rejects malformed or mismatched authoritative event fields', async () => {
+  for (const payload of [
+    null,
+    {},
+    { id: 'event-1', title: 42, title_cn: '标题' },
+    { id: 'event-1', title: 'Original', title_cn: 42 },
+    { id: 'event-2', title: 'Original', title_cn: '标题' },
+  ]) {
+    await assert.rejects(
+      saveDisplayTitle(
+        'event-1',
+        '标题',
+        new AbortController().signal,
+        async () => jsonResponse(payload),
+      ),
+      { message: '保存标题失败' },
+    );
+  }
+});
+
 test('title save normalizes request-stage failures', async () => {
   await assert.rejects(
     saveDisplayTitle('event-1', '标题', new AbortController().signal, async () => {
@@ -183,13 +204,128 @@ test('request ownership suppresses stale A-B-A responses and aborts actual signa
   assert.equal(owners.isCurrent(currentA), false);
 });
 
-test('title editor hook keeps suggestion and save request ownership independent', () => {
+test('title editor lifecycle changes owners only when an active event commits', () => {
+  const lifecycle = titleRuntime.createTitleEditorLifecycle();
+  lifecycle.commitActiveEvent('event-a');
+  const staleA = lifecycle.beginSuggestion();
+  assert.ok(staleA);
+
+  // A speculative B render does not call commitActiveEvent.
+  assert.equal(lifecycle.isSuggestionCurrent(staleA), true);
+  lifecycle.commitActiveEvent('event-b');
+  assert.equal(staleA.signal.aborted, true);
+  assert.equal(lifecycle.isSuggestionCurrent(staleA), false);
+
+  const eventB = lifecycle.beginSuggestion();
+  assert.ok(eventB);
+  lifecycle.commitActiveEvent('event-a');
+  const currentA = lifecycle.beginSuggestion();
+  assert.ok(currentA);
+  assert.equal(eventB.signal.aborted, true);
+  assert.equal(lifecycle.isSuggestionCurrent(eventB), false);
+  assert.equal(lifecycle.isSuggestionCurrent(currentA), true);
+  assert.ok(staleA.sequence < eventB.sequence && eventB.sequence < currentA.sequence);
+});
+
+test('title editor lifecycle aborts close and unmount work', () => {
+  const closeLifecycle = titleRuntime.createTitleEditorLifecycle();
+  closeLifecycle.commitActiveEvent('event-a');
+  const suggestion = closeLifecycle.beginSuggestion();
+  assert.ok(suggestion);
+  closeLifecycle.abortRequests();
+  assert.equal(suggestion.signal.aborted, true);
+  assert.equal(closeLifecycle.isSuggestionCurrent(suggestion), false);
+
+  const unmountLifecycle = titleRuntime.createTitleEditorLifecycle();
+  unmountLifecycle.commitActiveEvent('event-a');
+  const save = unmountLifecycle.beginSave();
+  assert.ok(save);
+  unmountLifecycle.destroy();
+  assert.equal(save.signal.aborted, true);
+  assert.equal(unmountLifecycle.isSaveCurrent(save), false);
+});
+
+test('title editor lifecycle blocks double submits and generation-save overlap', () => {
+  const lifecycle = titleRuntime.createTitleEditorLifecycle();
+  lifecycle.commitActiveEvent('event-a');
+  const suggestion = lifecycle.beginSuggestion();
+  assert.ok(suggestion);
+  assert.equal(lifecycle.beginSuggestion(), null);
+  assert.equal(lifecycle.beginSave(), null);
+  assert.equal(lifecycle.finishSuggestion(suggestion), true);
+
+  const save = lifecycle.beginSave();
+  assert.ok(save);
+  assert.equal(lifecycle.beginSave(), null);
+  assert.equal(lifecycle.beginSuggestion(), null);
+  assert.equal(lifecycle.finishSave(save), true);
+  assert.ok(lifecycle.beginSuggestion());
+});
+
+test('title editor reducer preserves edits and candidates across failures and regeneration', () => {
+  let state = titleRuntime.createTitleEditorState();
+  state = titleRuntime.titleEditorReducer(state, { type: 'start', input: '初始标题' });
+  state = titleRuntime.titleEditorReducer(state, {
+    type: 'generate-success', suggestions: ['候选一', '候选二', '候选三'],
+  });
+  state = titleRuntime.titleEditorReducer(state, { type: 'change-input', value: '人工输入' });
+  const beforeFailure = state;
+  state = titleRuntime.titleEditorReducer(state, { type: 'generate-failure', error: '生成失败' });
+  assert.equal(state.input, '人工输入');
+  assert.deepEqual(state.suggestions, beforeFailure.suggestions);
+
+  state = titleRuntime.titleEditorReducer(state, {
+    type: 'generate-success', suggestions: ['新一', '新二', '新三'],
+  });
+  assert.equal(state.input, '人工输入', 'regeneration must not overwrite current input');
+  assert.deepEqual(state.suggestions, ['新一', '新二', '新三']);
+  state = titleRuntime.titleEditorReducer(state, { type: 'save-failure', error: '保存失败' });
+  assert.equal(state.input, '人工输入');
+  assert.deepEqual(state.suggestions, ['新一', '新二', '新三']);
+});
+
+test('title editor reducer closes after a successful save', () => {
+  let state = titleRuntime.createTitleEditorState();
+  state = titleRuntime.titleEditorReducer(state, { type: 'start', input: '标题' });
+  state = titleRuntime.titleEditorReducer(state, { type: 'save-start' });
+  titleRuntime.completeTitleSave(
+    { id: 'event-a', title: 'Original', title_cn: '标题' },
+    {
+      onSaved: () => undefined,
+      onSuccess: () => undefined,
+      onClose: () => {
+        state = titleRuntime.titleEditorReducer(state, { type: 'close' });
+      },
+    },
+  );
+  assert.equal(state.open, false);
+  assert.equal(state.saving, false);
+  assert.equal(state.error, '');
+});
+
+test('save success callbacks close outside request error normalization', () => {
+  const callbackError = new Error('callback detail');
+  let succeeded = 0;
+  let closed = 0;
+  assert.throws(() => titleRuntime.completeTitleSave(
+    { id: 'event-a', title: 'Original', title_cn: '标题' },
+    {
+      onSaved: () => { throw callbackError; },
+      onSuccess: () => { succeeded += 1; },
+      onClose: () => { closed += 1; },
+    },
+  ), (reason) => reason === callbackError);
+  assert.equal(succeeded, 1);
+  assert.equal(closed, 1);
+});
+
+test('title editor hook uses the executable title lifecycle coordinator', () => {
   const hook = readFileSync(new URL('./useTitleEditor.ts', import.meta.url), 'utf8');
 
-  assert.match(hook, /const suggestionOwnerRef = useRef\(createTitleRequestOwner\(\)\)/);
-  assert.match(hook, /const saveOwnerRef = useRef\(createTitleRequestOwner\(\)\)/);
-  assert.match(hook, /suggestionOwnerRef\.current\.start\(eventId\)/);
-  assert.match(hook, /saveOwnerRef\.current\.start\(eventId\)/);
+  assert.match(hook, /const lifecycleRef = useRef\(createTitleEditorLifecycle\(\)\)/);
+  assert.match(hook, /lifecycleRef\.current\.beginSuggestion\(\)/);
+  assert.match(hook, /lifecycleRef\.current\.beginSave\(\)/);
+  assert.match(hook, /useReducer\(titleEditorReducer, undefined, createTitleEditorState\)/);
 });
 
 test('title editor start, close, input, and suggestion selection preserve explicit editing', () => {
@@ -200,29 +336,16 @@ test('title editor start, close, input, and suggestion selection preserve explic
   const select = hook.slice(hook.indexOf('const selectSuggestion ='), hook.indexOf('const generate ='));
 
   assert.match(start, /event\.title_cn \|\| event\.title \|\| ''/);
-  for (const reset of [
-    'suggestionOwnerRef.current.abort()',
-    'saveOwnerRef.current.abort()',
-    'setSuggestions([])',
-    'setSelectedTitle(null)',
-    "setError('')",
-    'setGenerating(false)',
-    'setSaving(false)',
-    'setOpen(true)',
-  ]) assert.ok(start.includes(reset), `start must include ${reset}`);
   for (const action of [
-    'suggestionOwnerRef.current.abort()',
-    'saveOwnerRef.current.abort()',
-    'setOpen(false)',
-    'setGenerating(false)',
-    'setSaving(false)',
-    "setError('')",
+    'lifecycleRef.current.abortRequests()',
+    "dispatch({ type: 'start', input: initialInput })",
+  ]) assert.ok(start.includes(action), `start must include ${action}`);
+  for (const action of [
+    'lifecycleRef.current.abortRequests()',
+    "dispatch({ type: 'close' })",
   ]) assert.ok(close.includes(action), `close must include ${action}`);
-  assert.match(change, /setInput\(value\)/);
-  assert.match(change, /suggestions\.includes\(value\) \? value : null/);
-  assert.match(change, /setError\(''\)/);
-  assert.match(select, /setInput\(value\)/);
-  assert.match(select, /setSelectedTitle\(value\)/);
+  assert.match(change, /dispatch\(\{ type: 'change-input', value \}\)/);
+  assert.match(select, /dispatch\(\{ type: 'select-suggestion', value \}\)/);
   assert.doesNotMatch(select, /saveDisplayTitle/);
 });
 
@@ -231,30 +354,33 @@ test('title editor generation and saving enforce validation, current tokens, and
   const generate = hook.slice(hook.indexOf('const generate ='), hook.indexOf('const save ='));
   const save = hook.slice(hook.indexOf('const save ='), hook.indexOf('useEffect('));
 
-  assert.match(generate, /if \(generating \|\| saving\) return/);
   assert.match(generate, /requestTitleSuggestions\(eventId, token\.signal, apiFetch\)/);
-  assert.ok((generate.match(/suggestionOwnerRef\.current\.isCurrent\(token\)/g) || []).length >= 2);
-  assert.doesNotMatch(generate, /setInput\(/);
-  assert.match(generate, /setSuggestions\(nextSuggestions\)/);
-  assert.match(generate, /const currentInput = inputRef\.current/);
-  assert.match(generate, /setSelectedTitle\(nextSuggestions\.includes\(currentInput\) \? currentInput : null\)/);
+  assert.ok((generate.match(/lifecycleRef\.current\.isSuggestionCurrent\(token\)/g) || []).length >= 2);
+  assert.match(generate, /dispatch\(\{ type: 'generate-success', suggestions: nextSuggestions \}\)/);
   assert.match(generate, /errorName\(reason\) !== 'AbortError'/);
 
-  assert.match(save, /if \(saving \|\| generating\) return/);
-  assert.match(save, /const validation = titleValidationError\(input\)/);
-  assert.match(save, /saveDisplayTitle\(eventId, input, token\.signal, apiFetch\)/);
-  assert.ok((save.match(/saveOwnerRef\.current\.isCurrent\(token\)/g) || []).length >= 2);
-  assert.match(save, /onSaved\(result\.id, result\.title_cn\)/);
-  assert.match(save, /onSuccess\(\)/);
-  assert.match(save, /close\(\)/);
+  assert.match(save, /const validation = titleValidationError\(value\)/);
+  assert.match(save, /saveDisplayTitle\(eventId, value, token\.signal, apiFetch\)/);
+  assert.ok((save.match(/lifecycleRef\.current\.isSaveCurrent\(token\)/g) || []).length >= 1);
+  const requestCatchEnd = save.indexOf('\n    if (!lifecycleRef.current.isSaveCurrent(token))');
+  assert.notEqual(requestCatchEnd, -1);
+  assert.ok(save.indexOf('completeTitleSave(', requestCatchEnd) > requestCatchEnd);
 });
 
 test('title editor closes on event changes and unmount cleanup only aborts', () => {
   const hook = readFileSync(new URL('./useTitleEditor.ts', import.meta.url), 'utf8');
-  const effects = hook.slice(hook.indexOf('useEffect('));
+  const hookBody = hook.slice(hook.indexOf('export function useTitleEditor'));
+  const effects = hook.slice(hook.indexOf('useLayoutEffect('));
+  const beforeLayoutEffect = hookBody.slice(0, hookBody.indexOf('useLayoutEffect('));
 
+  assert.doesNotMatch(hookBody, /^\s*inputRef\.current = input;$/m);
+  assert.doesNotMatch(hookBody, /^\s*activeEventIdRef\.current = activeEventId;$/m);
+  assert.doesNotMatch(beforeLayoutEffect, /commitActiveEvent\(/);
+  assert.match(effects, /lifecycleRef\.current\.commitActiveEvent\(activeEventId\)/);
+  assert.match(effects, /inputRef\.current = ''/);
+  assert.match(effects, /dispatch\(\{ type: 'active-event-changed' \}\)/);
   assert.match(effects, /\}, \[activeEventId\]\)/);
-  assert.match(effects, /return \(\) => \{[\s\S]*suggestionOwnerRef\.current\.abort\(\)[\s\S]*saveOwnerRef\.current\.abort\(\)[\s\S]*\}/);
+  assert.match(effects, /return \(\) => \{[\s\S]*lifecycleRef\.current\.destroy\(\)[\s\S]*\}/);
   const cleanup = effects.match(/return \(\) => \{([\s\S]*?)\};/)?.[1] || '';
   assert.doesNotMatch(cleanup, /set[A-Z]/);
 });
