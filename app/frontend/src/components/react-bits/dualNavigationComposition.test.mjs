@@ -64,7 +64,7 @@ function cssBlockBody(source, marker) {
 }
 
 function normalizeCssSelector(selector) {
-  return selector.trim().replace(/\s+/g, ' ');
+  return selector.trim().replace(/\s+/g, ' ').replace(/\s*([>+~])\s*/g, '$1');
 }
 
 function cssSelectors(selectorText) {
@@ -98,6 +98,38 @@ function cssSelectorsWithDeclaration(source, declaration) {
     if (declaration.test(match[2])) rules.push(...cssSelectors(match[1]));
   }
   return rules;
+}
+
+function tsObjectBlock(source, marker) {
+  const markerIndex = source.indexOf(marker);
+  if (markerIndex < 0) throw new Error(`TS object marker not found: ${marker}`);
+
+  const blockStart = source.indexOf('{', markerIndex + marker.length);
+  if (blockStart < 0) throw new Error(`TS object block start not found: ${marker}`);
+
+  let depth = 0;
+  let quote = '';
+  let escaped = false;
+  for (let index = blockStart; index < source.length; index += 1) {
+    const character = source[index];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === quote) quote = '';
+      continue;
+    }
+    if (character === '\'' || character === '"' || character === '`') {
+      quote = character;
+      continue;
+    }
+    if (character === '{') depth += 1;
+    if (character === '}') {
+      depth -= 1;
+      if (depth === 0) return source.slice(blockStart + 1, index);
+    }
+  }
+
+  throw new Error(`TS object block is not closed: ${marker}`);
 }
 
 function jsxDivBlock(source, marker) {
@@ -267,12 +299,13 @@ test('queue task summary keeps title, lifecycle, runtime, time, and actions on o
   const task = jsxElementBlock(taskSummary, 'global-dock-queue-task');
   const message = jsxElementBlock(taskSummary, 'global-dock-queue-message');
   const state = jsxElementBlock(taskSummary, 'global-dock-queue-state');
+  const statusLabels = tsObjectBlock(dockQueueOverlay, "const TASK_STATUS_LABELS: Record<QueueItem['status'], string> =");
 
   assert.match(dockQueueOverlay, /const TASK_STATUS_LABELS: Record<QueueItem\['status'\], string> = \{/);
-  assert.match(dockQueueOverlay, /running:\s*'处理中'/);
-  assert.match(dockQueueOverlay, /pending:\s*'等待处理'/);
-  assert.match(dockQueueOverlay, /error:\s*'处理异常'/);
-  assert.match(dockQueueOverlay, /done:\s*'处理完成'/);
+  assert.match(statusLabels, /running:\s*'处理中'/);
+  assert.match(statusLabels, /pending:\s*'等待处理'/);
+  assert.match(statusLabels, /error:\s*'处理异常'/);
+  assert.match(statusLabels, /done:\s*'处理完成'/);
   assert.match(dockQueueOverlay, /const taskMessage = item\.error \|\| TASK_STATUS_LABELS\[item\.status\];/);
   assert.match(taskSummary, /global-dock-queue-task[\s\S]*global-dock-queue-message[\s\S]*global-dock-queue-state[\s\S]*formatTimeBeijing\(item\.created_at\)[\s\S]*global-dock-queue-actions/);
   assert.match(task, /^<\w+\b(?=[^>]*className="global-dock-queue-task")(?=[^>]*title=\{title\})[^>]*>/);
@@ -315,13 +348,14 @@ test('queue task summary has stable desktop and compact geometry', () => {
 
   assert.match(mobileArticle, /grid-template-columns:\s*16px minmax\(0, 1fr\);/);
   const desktopCss = dockQueueCss.slice(0, dockQueueCss.indexOf('@media (max-width: 760px)'));
-  const hiddenMobileSelectors = cssSelectorsWithDeclaration(mobileCss, /display:\s*none;/)
+  const hiddenMobileSelectors = cssSelectorsWithDeclaration(mobileCss, /display:\s*none(?:\s*!important)?\s*;/)
     .filter((selector) => selector.includes('.global-dock-queue-'))
     .sort();
-  const hiddenDesktopSelectors = cssSelectorsWithDeclaration(desktopCss, /display:\s*none;/);
+  const hiddenDesktopSelectors = cssSelectorsWithDeclaration(desktopCss, /display:\s*none(?:\s*!important)?\s*;/);
 
-  assert.deepEqual(hiddenMobileSelectors, ['.global-dock-queue-summary > em']);
-  assert.equal(hiddenDesktopSelectors.includes('.global-dock-queue-summary > em'), false);
+  const timeSelector = normalizeCssSelector('.global-dock-queue-summary > em');
+  assert.deepEqual(hiddenMobileSelectors, [timeSelector]);
+  assert.equal(hiddenDesktopSelectors.includes(timeSelector), false);
 });
 
 test('dock workspaces are lazy loaded and preserve merged modes inside one overlay', () => {
