@@ -90,6 +90,7 @@ test('queue overlay renders the full progress track with accessible current-stag
 
   assert.match(progressTrack, /const stages = queueProgressStages\(item\);/);
   assert.match(progressTrack, /const current = stages\.find\(\(stage\) => stage\.status === 'active' \|\| stage\.status === 'error'\);/);
+  assert.match(progressTrack, /const isCurrent = current === stage;/);
   assert.match(progressTrack, /ref=\{isCurrent \? currentStageRef : undefined\}/);
   assert.match(progressTrack, /if \(!node \|\| !window\.matchMedia\('\(max-width: 760px\)'\)\.matches\) return;/);
   assert.match(progressTrack, /scrollIntoView\(\{\s*block: 'nearest',\s*inline: 'center',\s*behavior: 'smooth',?\s*\}\)/s);
@@ -102,6 +103,8 @@ test('queue overlay renders the full progress track with accessible current-stag
   assert.match(progressTrack, /className=\{`is-\$\{stage\.status\}\$\{isCurrent \? ' is-current' : ''\}`\}/);
   assert.match(progressTrack, /title=\{`\$\{label\} · \$\{statusLabel\}`\}/);
   assert.match(progressTrack, /aria-label=\{`\$\{label\}，\$\{statusLabel\}`\}/);
+  assert.match(progressTrack, /<b>\{label\}<\/b>/);
+  assert.match(progressTrack, /<small>\{statusLabel\}<\/small>/);
 
   const actionsStart = dockQueueOverlay.indexOf('<div className="global-dock-queue-actions">');
   const actionsEnd = dockQueueOverlay.indexOf('</div>', actionsStart);
