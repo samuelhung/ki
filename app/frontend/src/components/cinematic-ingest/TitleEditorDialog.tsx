@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { Loader2, Sparkles } from 'lucide-react';
 import Modal from '../Modal';
+import { normalizeDisplayTitle } from './titleEditorRuntime';
 
 interface TitleEditorDialogProps {
   open: boolean;
@@ -60,7 +61,7 @@ export function TitleEditorDialog({
         </label>
 
         <div className="title-editor-controls flex items-center justify-between gap-3">
-          <span className="title-editor-count text-xs text-gray-500">{Array.from(input.trim()).length}/20</span>
+          <span className="title-editor-count text-xs text-gray-500">{Array.from(normalizeDisplayTitle(input)).length}/20</span>
           <button
             type="button"
             onClick={onGenerate}

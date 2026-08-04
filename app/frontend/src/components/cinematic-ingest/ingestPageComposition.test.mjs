@@ -7,6 +7,7 @@ import {
   completeTitleSave,
   createEventTitleOverrides,
   createTitleEditorState,
+  normalizeDisplayTitle,
   titleEditorReducer,
 } from './titleEditorRuntime.ts';
 import {
@@ -53,6 +54,7 @@ function loadTitleEditorDialogComponent() {
     if (specifier === 'react/jsx-runtime') return { Fragment: Symbol('Fragment'), jsx, jsxs: jsx };
     if (specifier === 'lucide-react') return { Loader2: 'Loader2', Sparkles: 'Sparkles' };
     if (specifier === '../Modal') return ModalStub;
+    if (specifier === './titleEditorRuntime') return { normalizeDisplayTitle };
     throw new Error(`Unexpected TitleEditorDialog dependency: ${specifier}`);
   };
   Function('require', 'module', 'exports', compiled)(requireModule, loaded, loaded.exports);
@@ -328,7 +330,8 @@ test('title action and editor dialog preserve icon accessibility and complete ed
   assert.match(dialog, /onChange=\{\(event\) => onInputChange\(event\.target\.value\)\}/);
   assert.match(dialog, /disabled=\{saving\}/);
   assert.doesNotMatch(dialog, /maxLength=/);
-  assert.match(dialog, /Array\.from\(input\.trim\(\)\)\.length\}\/20/);
+  assert.match(dialog, /import \{ normalizeDisplayTitle \} from '.\/titleEditorRuntime'/);
+  assert.match(dialog, /Array\.from\(normalizeDisplayTitle\(input\)\)\.length\}\/20/);
   assert.match(dialog, /generating \? <Loader2[\s\S]*: <Sparkles/);
   assert.match(dialog, /disabled=\{generating \|\| saving\}/);
   assert.match(dialog, /generating \? '生成中' : 'AI 生成'/);
@@ -342,6 +345,22 @@ test('title action and editor dialog preserve icon accessibility and complete ed
   assert.match(dialog, />\s*取消\s*</);
   assert.match(dialog, /onClick=\{onSave\}[\s\S]*disabled=\{generating \|\| saving \|\| Boolean\(validationError\)\}/);
   assert.match(dialog, /saving \? <Loader2[\s\S]*saving \? '保存中' : '保存标题'/);
+});
+
+test('title editor count uses normalized edges without changing the raw input', () => {
+  for (const edge of ['\u0085', '\ufeff', '\u00a0']) {
+    const input = `${edge}${'汉'.repeat(20)}${edge}`;
+    const dialog = renderTitleEditorDialog({ input });
+    const count = findElements(
+      dialog,
+      (node) => node.type === 'span' && node.props.className.includes('title-editor-count'),
+    )[0];
+    const field = findElements(dialog, (node) => node.type === 'input')[0];
+
+    assert.ok(count);
+    assert.equal(elementText(count), '20/20');
+    assert.equal(field.props.value, input);
+  }
 });
 
 test('title row actions remain a compact non-wrapping group', () => {
