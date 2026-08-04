@@ -319,7 +319,7 @@ test('queue task summary has stable desktop and compact geometry', () => {
   const desktopArticle = cssRuleWithDeclarations(dockQueueCss, '.global-dock-queue-list article', [/grid-template-columns:\s*18px minmax\(0, 1fr\);/]);
   const summary = cssRuleWithDeclarations(dockQueueCss, '.global-dock-queue-summary', [/display:\s*flex;/, /align-items:\s*center;/, /min-width:\s*0;/, /white-space:\s*nowrap;/]);
   const task = cssRuleWithDeclarations(dockQueueCss, '.global-dock-queue-task', [/flex:\s*1 1 auto;/, /min-width:\s*0;/]);
-  const message = cssRuleWithDeclarations(dockQueueCss, '.global-dock-queue-message', [/max-width:\s*32%;/]);
+  const message = cssRuleWithDeclarations(dockQueueCss, '.global-dock-queue-message', [/flex:\s*0 0 auto;/, /max-width:\s*32%;/]);
   const messageEllipsis = cssRuleWithDeclarations(dockQueueCss, '.global-dock-queue-message', [/overflow:\s*hidden;/, /text-overflow:\s*ellipsis;/]);
   const taskTitle = cssRuleWithDeclarations(dockQueueCss, '.global-dock-queue-task b', [/display:\s*block;/, /overflow:\s*hidden;/, /text-overflow:\s*ellipsis;/, /white-space:\s*nowrap;/]);
   const state = cssRuleWithDeclarations(dockQueueCss, '.global-dock-queue-state', [/flex:\s*0 0 auto;/]);
@@ -335,6 +335,7 @@ test('queue task summary has stable desktop and compact geometry', () => {
   assert.match(summary, /white-space:\s*nowrap;/);
   assert.match(task, /flex:\s*1 1 auto;/);
   assert.match(task, /min-width:\s*0;/);
+  assert.match(message, /flex:\s*0 0 auto;/);
   assert.match(message, /max-width:\s*32%;/);
   assert.match(messageEllipsis, /overflow:\s*hidden;/);
   assert.match(messageEllipsis, /text-overflow:\s*ellipsis;/);

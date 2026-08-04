@@ -87,7 +87,7 @@
 .global-dock-queue-summary { display: flex; min-width: 0; align-items: center; gap: 10px; white-space: nowrap; }
 .global-dock-queue-task { display: block; flex: 1 1 auto; min-width: 0; }
 .global-dock-queue-task b { display: block; overflow: hidden; color: rgba(255, 255, 255, .78); font-size: var(--dock-font-body); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-.global-dock-queue-message { flex: 0 1 auto; max-width: 32%; overflow: hidden; color: rgba(255, 255, 255, .28); font-size: var(--dock-font-micro); text-overflow: ellipsis; white-space: nowrap; }
+.global-dock-queue-message { flex: 0 0 auto; max-width: 32%; overflow: hidden; color: rgba(255, 255, 255, .28); font-size: var(--dock-font-micro); text-overflow: ellipsis; white-space: nowrap; }
 .global-dock-queue-state { flex: 0 0 auto; color: rgba(255, 255, 255, .38); font-size: var(--dock-font-micro); text-align: right; }
 .global-dock-queue-list article.is-running .global-dock-queue-state { color: #74c7ff; }
 .global-dock-queue-list article.is-pending .global-dock-queue-state { color: #ffd269; }
