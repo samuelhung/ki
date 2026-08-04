@@ -165,7 +165,8 @@ test('queue progress track keeps exact desktop and mobile geometry', () => {
   assert.match(mobile, /\.global-dock-queue-progress \{[\s\S]*?scrollbar-width:\s*thin;/);
   assert.match(mobile, /\.global-dock-queue-progress \{[\s\S]*?touch-action:\s*pan-x;/);
   assert.match(mobile, /\.global-dock-queue-progress > div \{[\s\S]*?flex:\s*0 0 84px;/);
-  assert.doesNotMatch(dockQueueCss, /\.global-dock-queue-(?:backdrop|dialog|list|stage)(?: article)?[^{]*\{[^}]*overflow-x:/);
+  assert.equal((dockQueueCss.match(/overflow-x\s*:/g) || []).length, 1);
+  assert.doesNotMatch(dockQueueCss, /\.global-dock-queue-(?:backdrop|page|dialog|list|stage)(?: article)?[^{]*\{[^}]*overflow-x:/);
   assert.doesNotMatch(dockQueueCss, /font-size:\s*(?:[0-9]|10)px;/);
   assert.doesNotMatch(dockQueueCss, /letter-spacing:\s*-/);
 });
