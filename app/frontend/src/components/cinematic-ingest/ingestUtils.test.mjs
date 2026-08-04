@@ -76,6 +76,71 @@ test('visibleProgressStages returns previous current and next two stages', () =>
   );
 });
 
+test('queueProgressStages returns running stages without mutating their status', () => {
+  const progress_stages = [
+    { key: 'fetch', label: '抓取视频', status: 'done' },
+    { key: 'asr', label: '转写原文', status: 'active' },
+    { key: 'summary', label: 'AI 总结', status: 'pending' },
+    { key: 'store', label: '写入事件', status: 'error' },
+  ];
+  const item = {
+    id: 'task-running',
+    ingest_type: 'douyin_share',
+    status: 'running',
+    progress_stages,
+  };
+
+  assert.deepEqual(utils.queueProgressStages(item), progress_stages);
+  assert.deepEqual(progress_stages, [
+    { key: 'fetch', label: '抓取视频', status: 'done' },
+    { key: 'asr', label: '转写原文', status: 'active' },
+    { key: 'summary', label: 'AI 总结', status: 'pending' },
+    { key: 'store', label: '写入事件', status: 'error' },
+  ]);
+});
+
+test('queueProgressStages maps the first active error-task stage to error without mutation', () => {
+  const progress_stages = [
+    { key: 'fetch', label: '抓取视频', status: 'done' },
+    { key: 'asr', label: '转写原文', status: 'active' },
+    { key: 'summary', label: 'AI 总结', status: 'pending' },
+  ];
+  const item = {
+    id: 'task-error-active',
+    ingest_type: 'douyin_share',
+    status: 'error',
+    progress_stages,
+  };
+
+  const result = utils.queueProgressStages(item);
+
+  assert.notEqual(result, progress_stages);
+  assert.deepEqual(result, [
+    { key: 'fetch', label: '抓取视频', status: 'done' },
+    { key: 'asr', label: '转写原文', status: 'error' },
+    { key: 'summary', label: 'AI 总结', status: 'pending' },
+  ]);
+  assert.equal(progress_stages[1].status, 'active');
+});
+
+test('queueProgressStages preserves explicit errors and hides compact or missing stages', () => {
+  const explicitError = {
+    id: 'task-explicit-error',
+    ingest_type: 'douyin_share',
+    status: 'error',
+    progress_stages: [
+      { key: 'fetch', label: '抓取视频', status: 'done' },
+      { key: 'asr', label: '转写原文', status: 'error' },
+    ],
+  };
+
+  assert.deepEqual(utils.queueProgressStages(explicitError), explicitError.progress_stages);
+  assert.notEqual(utils.queueProgressStages(explicitError), explicitError.progress_stages);
+  assert.deepEqual(utils.queueProgressStages({ id: 'task-pending', ingest_type: 'douyin_share', status: 'pending' }), []);
+  assert.deepEqual(utils.queueProgressStages({ id: 'task-done', ingest_type: 'douyin_share', status: 'done' }), []);
+  assert.deepEqual(utils.queueProgressStages({ id: 'task-running-missing', ingest_type: 'douyin_share', status: 'running' }), []);
+});
+
 test('processingTrackHint explains running pending and error states', () => {
   assert.equal(
     utils.processingTrackHint({

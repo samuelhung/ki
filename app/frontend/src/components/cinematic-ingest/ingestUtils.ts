@@ -81,6 +81,17 @@ export function stageLabel(status: ProgressStage['status']) {
   return ingestCopy.queue.waiting;
 }
 
+export function queueProgressStages(item: QueueItem): ProgressStage[] {
+  if (item.status !== 'running' && item.status !== 'error') return [];
+
+  const stages = (item.progress_stages || []).map((stage) => ({ ...stage }));
+  if (item.status !== 'error' || stages.some((stage) => stage.status === 'error')) return stages;
+
+  const activeIndex = stages.findIndex((stage) => stage.status === 'active');
+  if (activeIndex >= 0) stages[activeIndex] = { ...stages[activeIndex], status: 'error' };
+  return stages;
+}
+
 export function visibleProgressStages(stages: ProgressStage[]): Array<ProgressStage & { isCurrent: boolean }> {
   if (stages.length === 0) return [];
   const activeIndex = stages.findIndex((stage) => stage.status === 'active' || stage.status === 'error');
