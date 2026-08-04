@@ -207,6 +207,10 @@ test('formal ingest composes a split list orbit and reusable detail workspace', 
   );
   assert.match(
     shellCss,
+    /\.ki-ingest-detail-pane \.ingest-detail-reader\s*\{[^}]*box-sizing:\s*border-box\s*!important/s,
+  );
+  assert.match(
+    shellCss,
     /\.legacy-ingest-root\.is-shell-embedded \.ki-ingest-detail-pane \.ingest-tab-trigger\s*\{[^}]*min-width:\s*0\s*!important/s,
   );
   assert.match(shellCss, /\.ki-ingest-topic-orbit/);
