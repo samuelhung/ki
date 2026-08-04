@@ -44,6 +44,25 @@ const dockPopupCss = [
   'GlobalDockOverviewOverlay.css',
 ].map((file) => readFileSync(new URL(`../../pages/${file}`, import.meta.url), 'utf8')).join('\n');
 
+function cssBlockBody(source, marker) {
+  const markerIndex = source.indexOf(marker);
+  if (markerIndex < 0) throw new Error(`CSS marker not found: ${marker}`);
+
+  const blockStart = source.indexOf('{', markerIndex + marker.length);
+  if (blockStart < 0) throw new Error(`CSS block start not found: ${marker}`);
+
+  let depth = 0;
+  for (let index = blockStart; index < source.length; index += 1) {
+    if (source[index] === '{') depth += 1;
+    if (source[index] === '}') {
+      depth -= 1;
+      if (depth === 0) return source.slice(blockStart + 1, index);
+    }
+  }
+
+  throw new Error(`CSS block is not closed: ${marker}`);
+}
+
 test('production navigation shell keeps the top and bottom menus independent', () => {
   assert.match(productionPage, /<KiNavigationShell/);
   assert.match(shell, /<GooeyNav/);
@@ -126,9 +145,8 @@ test('queue progress track keeps exact desktop and mobile geometry', () => {
   const desktopProgress = dockQueueCss.match(/\.global-dock-queue-progress \{[\s\S]*?\n\}/)?.[0] || '';
   const stage = dockQueueCss.match(/\.global-dock-queue-progress > div \{[\s\S]*?\n\}/)?.[0] || '';
   const stageText = dockQueueCss.match(/\.global-dock-queue-progress > div > (?:b|small),[\s\S]*?\n\}/)?.[0] || '';
-  const mobileStart = dockQueueCss.indexOf('@media (max-width: 760px) {');
-  const mobileCss = mobileStart >= 0 ? dockQueueCss.slice(mobileStart) : '';
-  const mobileProgress = mobileCss.match(/^\s*\.global-dock-queue-progress \{([^}]*)\}/m)?.[1] || '';
+  const mobileCss = cssBlockBody(dockQueueCss, '@media (max-width: 760px)');
+  const mobileProgress = cssBlockBody(mobileCss, '.global-dock-queue-progress');
 
   assert.match(dockQueueCss, /\.global-dock-queue-stage \{\s*width:\s*min\(820px, calc\(100vw - 48px\)\);/);
   assert.match(desktopProgress, /grid-column:\s*2\s*\/\s*-1;/);
