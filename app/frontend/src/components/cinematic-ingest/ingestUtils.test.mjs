@@ -90,7 +90,11 @@ test('queueProgressStages returns running stages without mutating their status',
     progress_stages,
   };
 
-  assert.deepEqual(utils.queueProgressStages(item), progress_stages);
+  const result = utils.queueProgressStages(item);
+
+  assert.deepEqual(result, progress_stages);
+  assert.notEqual(result, progress_stages);
+  result.forEach((stage, index) => assert.notEqual(stage, progress_stages[index]));
   assert.deepEqual(progress_stages, [
     { key: 'fetch', label: '抓取视频', status: 'done' },
     { key: 'asr', label: '转写原文', status: 'active' },
@@ -103,7 +107,8 @@ test('queueProgressStages maps the first active error-task stage to error withou
   const progress_stages = [
     { key: 'fetch', label: '抓取视频', status: 'done' },
     { key: 'asr', label: '转写原文', status: 'active' },
-    { key: 'summary', label: 'AI 总结', status: 'pending' },
+    { key: 'summary', label: 'AI 总结', status: 'active' },
+    { key: 'store', label: '写入事件', status: 'pending' },
   ];
   const item = {
     id: 'task-error-active',
@@ -118,9 +123,11 @@ test('queueProgressStages maps the first active error-task stage to error withou
   assert.deepEqual(result, [
     { key: 'fetch', label: '抓取视频', status: 'done' },
     { key: 'asr', label: '转写原文', status: 'error' },
-    { key: 'summary', label: 'AI 总结', status: 'pending' },
+    { key: 'summary', label: 'AI 总结', status: 'active' },
+    { key: 'store', label: '写入事件', status: 'pending' },
   ]);
   assert.equal(progress_stages[1].status, 'active');
+  assert.equal(progress_stages[2].status, 'active');
 });
 
 test('queueProgressStages preserves explicit errors and hides compact or missing stages', () => {
@@ -136,6 +143,20 @@ test('queueProgressStages preserves explicit errors and hides compact or missing
 
   assert.deepEqual(utils.queueProgressStages(explicitError), explicitError.progress_stages);
   assert.notEqual(utils.queueProgressStages(explicitError), explicitError.progress_stages);
+  const noActiveError = {
+    id: 'task-error-inactive',
+    ingest_type: 'douyin_share',
+    status: 'error',
+    progress_stages: [
+      { key: 'fetch', label: '抓取视频', status: 'done' },
+      { key: 'summary', label: 'AI 总结', status: 'pending' },
+    ],
+  };
+  const noActiveResult = utils.queueProgressStages(noActiveError);
+
+  assert.deepEqual(noActiveResult, noActiveError.progress_stages);
+  assert.notEqual(noActiveResult, noActiveError.progress_stages);
+  noActiveResult.forEach((stage, index) => assert.notEqual(stage, noActiveError.progress_stages[index]));
   assert.deepEqual(utils.queueProgressStages({ id: 'task-pending', ingest_type: 'douyin_share', status: 'pending' }), []);
   assert.deepEqual(utils.queueProgressStages({ id: 'task-done', ingest_type: 'douyin_share', status: 'done' }), []);
   assert.deepEqual(utils.queueProgressStages({ id: 'task-running-missing', ingest_type: 'douyin_share', status: 'running' }), []);
