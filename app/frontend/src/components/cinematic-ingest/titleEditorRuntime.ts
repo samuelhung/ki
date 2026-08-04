@@ -33,10 +33,16 @@ export async function requestTitleSuggestions(
   signal: AbortSignal,
   fetcher: TitleFetcher,
 ): Promise<string[]> {
-  const response = await fetcher(`/api/events/${eventId}/title/suggestions`, {
-    method: 'POST',
-    signal,
-  });
+  let response: Response;
+  try {
+    response = await fetcher(`/api/events/${eventId}/title/suggestions`, {
+      method: 'POST',
+      signal,
+    });
+  } catch (reason) {
+    if (isAbortError(reason)) throw reason;
+    throw new Error('AI 标题生成失败');
+  }
   if (!response.ok) {
     throw new Error(response.status === 400 ? '当前内容没有可用原文' : 'AI 标题生成失败');
   }
@@ -63,12 +69,18 @@ export async function saveDisplayTitle(
   signal: AbortSignal,
   fetcher: TitleFetcher,
 ): Promise<SavedEventTitle> {
-  const response = await fetcher(`/api/events/${eventId}/title`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ display_title: value.trim() }),
-    signal,
-  });
+  let response: Response;
+  try {
+    response = await fetcher(`/api/events/${eventId}/title`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ display_title: value.trim() }),
+      signal,
+    });
+  } catch (reason) {
+    if (isAbortError(reason)) throw reason;
+    throw new Error('保存标题失败');
+  }
   if (!response.ok) throw new Error('保存标题失败');
 
   try {

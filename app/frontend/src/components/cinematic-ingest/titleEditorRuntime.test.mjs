@@ -58,6 +58,25 @@ test('title suggestions expose stable errors for 400 and generic HTTP failures',
   );
 });
 
+test('title suggestions normalize request-stage failures', async () => {
+  await assert.rejects(
+    requestTitleSuggestions('event-1', new AbortController().signal, async () => {
+      throw new Error('network detail');
+    }),
+    { message: 'AI 标题生成失败' },
+  );
+});
+
+test('title suggestions preserve request-stage cancellation', async () => {
+  const aborted = new DOMException('Aborted', 'AbortError');
+  await assert.rejects(
+    requestTitleSuggestions('event-1', new AbortController().signal, async () => {
+      throw aborted;
+    }),
+    (reason) => reason === aborted,
+  );
+});
+
 test('title suggestions reject bad JSON and payloads that are not exactly three strings', async () => {
   await assert.rejects(
     requestTitleSuggestions('event-1', new AbortController().signal, async () => new Response('{bad json')),
@@ -113,6 +132,25 @@ test('title save exposes a stable error for HTTP failures and bad JSON', async (
   await assert.rejects(
     saveDisplayTitle('event-1', '标题', new AbortController().signal, async () => new Response('{bad json')),
     { message: '保存标题失败' },
+  );
+});
+
+test('title save normalizes request-stage failures', async () => {
+  await assert.rejects(
+    saveDisplayTitle('event-1', '标题', new AbortController().signal, async () => {
+      throw new Error('network detail');
+    }),
+    { message: '保存标题失败' },
+  );
+});
+
+test('title save preserves request-stage cancellation', async () => {
+  const aborted = new DOMException('Aborted', 'AbortError');
+  await assert.rejects(
+    saveDisplayTitle('event-1', '标题', new AbortController().signal, async () => {
+      throw aborted;
+    }),
+    (reason) => reason === aborted,
   );
 });
 
