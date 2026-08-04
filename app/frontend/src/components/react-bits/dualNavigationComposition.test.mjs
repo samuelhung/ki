@@ -84,6 +84,18 @@ test('queue timestamps convert stored UTC values to Beijing time', () => {
   assert.equal(formatTimeBeijing('2026-08-03 09:56:03'), '2026/8/3 17:56:03');
 });
 
+test('queue overlay renders the full progress track with accessible current-stage focus', () => {
+  const dockQueueOverlay = readFileSync(dockQueueOverlayUrl, 'utf8');
+  assert.match(dockQueueOverlay, /queueProgressStages\(item\)/);
+  assert.match(dockQueueOverlay, /global-dock-queue-progress/);
+  assert.match(dockQueueOverlay, /stages\.map\(\(stage, index\) =>/);
+  assert.match(dockQueueOverlay, /stageLabel\(stage\.status\)/);
+  assert.match(dockQueueOverlay, /aria-label=\{`\$\{label\}，\$\{statusLabel\}`\}/);
+  assert.match(dockQueueOverlay, /scrollIntoView\(\{\s*block: 'nearest',\s*inline: 'center',\s*behavior: 'smooth',?\s*\}\)/s);
+  assert.match(dockQueueOverlay, /tabIndex=\{0\}/);
+  assert.match(dockQueueOverlay, /'--queue-progress-stage-count': stages\.length/);
+});
+
 test('dock workspaces are lazy loaded and preserve merged modes inside one overlay', () => {
   assert.match(shell, /lazy\(\(\) => import\('\.\/GlobalDockOverlay'\)\)/);
   assert.equal(existsSync(dockAccessOverlayUrl), true);

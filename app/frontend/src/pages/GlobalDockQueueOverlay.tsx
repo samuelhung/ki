@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import type { QueueItem } from '../components/cinematic-ingest/ingestTypes';
+import { queueProgressStages, stageLabel } from '../components/cinematic-ingest/ingestUtils';
 import { useIngestQueue } from '../components/cinematic-ingest/useIngestQueue';
 import KiMagicBentoFrame from '../components/react-bits/KiMagicBentoFrame';
 import { formatTimeBeijing } from '../utils';
@@ -23,6 +24,49 @@ const STATUS_META: Record<QueueItem['status'], { label: string; icon: typeof Clo
   error: { label: '异常', icon: AlertTriangle },
   done: { label: '已完成', icon: CheckCircle2 },
 };
+
+function QueueProgressTrack({ item }: { item: QueueItem }) {
+  const stages = queueProgressStages(item);
+  const current = stages.find((stage) => stage.status === 'active' || stage.status === 'error');
+  const currentStageRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const node = currentStageRef.current;
+    if (!node || !window.matchMedia('(max-width: 760px)').matches) return;
+    node.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+  }, [current?.key, current?.status]);
+
+  if (stages.length === 0) return null;
+
+  const currentLabel = current ? `${current.label}，${stageLabel(current.status)}` : '等待更新';
+
+  return (
+    <div
+      className="global-dock-queue-progress"
+      aria-label={currentLabel}
+      tabIndex={0}
+      style={{ '--queue-progress-stage-count': stages.length } as CSSProperties}
+    >
+      {stages.map((stage, index) => {
+        const label = stage.label;
+        const statusLabel = stageLabel(stage.status);
+        const isCurrent = current === stage;
+        return (
+          <div
+            key={`${stage.key}-${index}`}
+            className={`is-${stage.status}${isCurrent ? ' is-current' : ''}`}
+            ref={isCurrent ? currentStageRef : undefined}
+            title={`${label} · ${statusLabel}`}
+            aria-label={`${label}，${statusLabel}`}
+          >
+            <b>{label}</b>
+            <small>{statusLabel}</small>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function GlobalDockQueueOverlay({ action, onClose }: { action: DualNavigationActionItem; onClose: () => void }) {
   const [notice, setNotice] = useState<{ text: string; type: 'success' | 'info' } | null>(null);
@@ -73,6 +117,7 @@ export default function GlobalDockQueueOverlay({ action, onClose }: { action: Du
                       )}
                       <button type="button" onClick={() => void deleteQueueTask(item.id)} aria-label={`删除 ${title}`} title="删除" data-bento-suspend><Trash2 /></button>
                     </div>
+                    <QueueProgressTrack item={item} />
                   </article>
                 );
               })}
