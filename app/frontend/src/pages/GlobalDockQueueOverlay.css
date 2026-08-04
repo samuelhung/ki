@@ -73,7 +73,7 @@
 .global-dock-queue-list article {
   display: grid;
   min-height: 58px;
-  grid-template-columns: 18px minmax(0, 1fr) 126px 58px 52px;
+  grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
   gap: 10px;
   border-bottom: 1px solid rgba(255, 255, 255, .055);
@@ -84,19 +84,17 @@
 .global-dock-queue-list article.is-pending > svg { color: #ffd269; }
 .global-dock-queue-list article.is-error > svg { color: #fb7185; filter: drop-shadow(0 0 7px rgba(251, 113, 133, .42)); }
 .global-dock-queue-list article.is-done > svg { color: #76e6b7; }
-.global-dock-queue-task { display: grid; min-width: 0; gap: 4px; }
-.global-dock-queue-task b,
-.global-dock-queue-task small,
-.global-dock-queue-list article > em { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.global-dock-queue-task b { color: rgba(255, 255, 255, .78); font-size: var(--dock-font-body); font-weight: 500; }
-.global-dock-queue-task small,
-.global-dock-queue-list article > em { color: rgba(255, 255, 255, .28); font-size: var(--dock-font-micro); font-style: normal; }
-.global-dock-queue-state { color: rgba(255, 255, 255, .38); font-size: var(--dock-font-micro); text-align: right; }
+.global-dock-queue-summary { display: flex; min-width: 0; align-items: center; gap: 10px; white-space: nowrap; }
+.global-dock-queue-task { display: block; flex: 1 1 auto; min-width: 0; }
+.global-dock-queue-task b { display: block; overflow: hidden; color: rgba(255, 255, 255, .78); font-size: var(--dock-font-body); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.global-dock-queue-message { flex: 0 1 auto; max-width: 32%; overflow: hidden; color: rgba(255, 255, 255, .28); font-size: var(--dock-font-micro); text-overflow: ellipsis; white-space: nowrap; }
+.global-dock-queue-state { flex: 0 0 auto; color: rgba(255, 255, 255, .38); font-size: var(--dock-font-micro); text-align: right; }
 .global-dock-queue-list article.is-running .global-dock-queue-state { color: #74c7ff; }
 .global-dock-queue-list article.is-pending .global-dock-queue-state { color: #ffd269; }
 .global-dock-queue-list article.is-error .global-dock-queue-state { color: #fb7185; }
 .global-dock-queue-list article.is-done .global-dock-queue-state { color: #76e6b7; }
-.global-dock-queue-actions { display: flex; justify-content: flex-end; gap: 5px; }
+.global-dock-queue-summary > em { flex: 0 0 auto; overflow: hidden; color: rgba(255, 255, 255, .28); font-size: var(--dock-font-micro); font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
+.global-dock-queue-actions { display: flex; flex: 0 0 auto; justify-content: flex-end; gap: 5px; }
 .global-dock-queue-actions button { display: grid; width: 22px; height: 22px; place-items: center; padding: 0; border: 0; outline: 0; background: transparent; color: rgba(255, 255, 255, .28); cursor: pointer; }
 .global-dock-queue-actions button:hover,
 .global-dock-queue-actions button:focus-visible { color: #d6b2ff; filter: drop-shadow(0 0 6px rgba(188, 126, 255, .5)); }
@@ -159,9 +157,10 @@
   .global-dock-queue-stage { width: calc(100vw - 28px); }
   .global-dock-queue-metrics > div { grid-template-columns: 14px minmax(0, 1fr); padding: 0 8px; }
   .global-dock-queue-metrics strong { grid-column: 2; }
-  .global-dock-queue-list article { grid-template-columns: 16px minmax(0, 1fr) 48px; }
-  .global-dock-queue-list article > em,
-  .global-dock-queue-state { display: none; }
+  .global-dock-queue-list article { grid-template-columns: 16px minmax(0, 1fr); }
+  .global-dock-queue-summary { gap: 6px; }
+  .global-dock-queue-summary > em { display: none; }
+  .global-dock-queue-message { max-width: 28%; }
   .global-dock-queue-progress { display: flex; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
   .global-dock-queue-progress > div { flex: 0 0 84px; }
 }

@@ -25,6 +25,13 @@ const STATUS_META: Record<QueueItem['status'], { label: string; icon: typeof Clo
   done: { label: '已完成', icon: CheckCircle2 },
 };
 
+const TASK_STATUS_LABELS: Record<QueueItem['status'], string> = {
+  running: '处理中',
+  pending: '等待处理',
+  error: '处理异常',
+  done: '处理完成',
+};
+
 function QueueProgressTrack({ item }: { item: QueueItem }) {
   const stages = queueProgressStages(item);
   const current = stages.find((stage) => stage.status === 'active' || stage.status === 'error');
@@ -108,20 +115,21 @@ export default function GlobalDockQueueOverlay({ action, onClose }: { action: Du
                 const status = STATUS_META[item.status];
                 const StatusIcon = status.icon;
                 const title = item.title || item.ingest_type || '处理任务';
+                const taskMessage = item.error || TASK_STATUS_LABELS[item.status];
                 return (
                   <article key={item.id} className={`is-${item.status}`}>
                     <StatusIcon className={item.status === 'running' ? 'animate-spin' : ''} />
-                    <span className="global-dock-queue-task">
-                      <b>{title}</b>
-                      <small>{item.error || status.label}</small>
-                    </span>
-                    <em>{formatTimeBeijing(item.created_at) || '--'}</em>
-                    <span className="global-dock-queue-state">{status.label}</span>
-                    <div className="global-dock-queue-actions">
-                      {item.status === 'error' && (
-                        <button type="button" onClick={() => void retryQueueTask(item.id)} aria-label={`重试 ${title}`} title="重试" data-bento-suspend><RotateCcw /></button>
-                      )}
-                      <button type="button" onClick={() => void deleteQueueTask(item.id)} aria-label={`删除 ${title}`} title="删除" data-bento-suspend><Trash2 /></button>
+                    <div className="global-dock-queue-summary">
+                      <span className="global-dock-queue-task" title={title}><b>{title}</b></span>
+                      <small className="global-dock-queue-message" title={taskMessage}>{taskMessage}</small>
+                      <span className="global-dock-queue-state">{status.label}</span>
+                      <em>{formatTimeBeijing(item.created_at) || '--'}</em>
+                      <div className="global-dock-queue-actions">
+                        {item.status === 'error' && (
+                          <button type="button" onClick={() => void retryQueueTask(item.id)} aria-label={`重试 ${title}`} title="重试" data-bento-suspend><RotateCcw /></button>
+                        )}
+                        <button type="button" onClick={() => void deleteQueueTask(item.id)} aria-label={`删除 ${title}`} title="删除" data-bento-suspend><Trash2 /></button>
+                      </div>
                     </div>
                     <QueueProgressTrack item={item} />
                   </article>
