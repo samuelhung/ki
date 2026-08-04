@@ -63,6 +63,22 @@ function cssBlockBody(source, marker) {
   throw new Error(`CSS block is not closed: ${marker}`);
 }
 
+function jsxDivBlock(source, marker) {
+  const start = source.indexOf(marker);
+  if (start < 0) throw new Error(`JSX div marker not found: ${marker}`);
+
+  const divTag = /<\/?div\b[^>]*>/g;
+  divTag.lastIndex = start;
+  let depth = 0;
+  let match;
+  while ((match = divTag.exec(source))) {
+    depth += match[0].startsWith('</') ? -1 : 1;
+    if (depth === 0) return source.slice(start, divTag.lastIndex);
+  }
+
+  throw new Error(`JSX div is not closed: ${marker}`);
+}
+
 test('production navigation shell keeps the top and bottom menus independent', () => {
   assert.match(productionPage, /<KiNavigationShell/);
   assert.match(shell, /<GooeyNav/);
@@ -189,6 +205,48 @@ test('queue progress track keeps exact desktop and mobile geometry', () => {
   assert.doesNotMatch(dockQueueCss, /\.global-dock-queue-(?:backdrop|page|dialog|list|stage)(?: article)?[^{]*\{[^}]*overflow-x:/);
   assert.doesNotMatch(dockQueueCss, /font-size:\s*(?:[0-9]|10)px;/);
   assert.doesNotMatch(dockQueueCss, /letter-spacing:\s*-/);
+});
+
+test('queue task summary keeps title, lifecycle, runtime, time, and actions on one line', () => {
+  const dockQueueOverlay = readFileSync(dockQueueOverlayUrl, 'utf8');
+  const taskSummary = jsxDivBlock(dockQueueOverlay, '<div className="global-dock-queue-summary">');
+
+  assert.match(dockQueueOverlay, /const TASK_STATUS_LABELS: Record<QueueItem\['status'\], string> = \{\s*running: '处理中',\s*pending: '等待处理',\s*error: '处理异常',\s*done: '处理完成',\s*\};/);
+  assert.match(dockQueueOverlay, /const taskMessage = item\.error \|\| TASK_STATUS_LABELS\[item\.status\];/);
+  assert.match(taskSummary, /global-dock-queue-task[\s\S]*global-dock-queue-message[\s\S]*global-dock-queue-state[\s\S]*formatTimeBeijing\(item\.created_at\)[\s\S]*global-dock-queue-actions/);
+  assert.match(taskSummary, /global-dock-queue-task[\s\S]*title=\{title\}/);
+  assert.match(taskSummary, /global-dock-queue-message[\s\S]*title=\{taskMessage\}/);
+});
+
+test('queue task summary has stable desktop and compact geometry', () => {
+  const desktopArticle = cssBlockBody(dockQueueCss, '.global-dock-queue-list article');
+  const summary = cssBlockBody(dockQueueCss, '.global-dock-queue-summary');
+  const task = cssBlockBody(dockQueueCss, '.global-dock-queue-task');
+  const message = cssBlockBody(dockQueueCss, '.global-dock-queue-message');
+  const state = cssBlockBody(dockQueueCss, '.global-dock-queue-state');
+  const time = cssBlockBody(dockQueueCss, '.global-dock-queue-summary > em');
+  const actions = cssBlockBody(dockQueueCss, '.global-dock-queue-actions');
+  const mobileCss = cssBlockBody(dockQueueCss, '@media (max-width: 760px)');
+  const mobileArticle = cssBlockBody(mobileCss, '.global-dock-queue-list article');
+
+  assert.match(desktopArticle, /grid-template-columns:\s*18px minmax\(0, 1fr\);/);
+  assert.match(summary, /display:\s*flex;/);
+  assert.match(summary, /align-items:\s*center;/);
+  assert.match(summary, /min-width:\s*0;/);
+  assert.match(summary, /white-space:\s*nowrap;/);
+  assert.match(task, /flex:\s*1 1 auto;/);
+  assert.match(task, /min-width:\s*0;/);
+  assert.match(message, /max-width:\s*32%;/);
+  assert.match(message, /overflow:\s*hidden;/);
+  assert.match(message, /text-overflow:\s*ellipsis;/);
+  assert.match(state, /flex:\s*0 0 auto;/);
+  assert.match(time, /flex:\s*0 0 auto;/);
+  assert.match(actions, /flex:\s*0 0 auto;/);
+
+  assert.match(mobileArticle, /grid-template-columns:\s*16px minmax\(0, 1fr\);/);
+  assert.match(mobileCss, /\.global-dock-queue-summary > em\s*\{\s*display:\s*none;/);
+  assert.doesNotMatch(mobileCss, /\.global-dock-queue-state\s*\{[^}]*display:\s*none;/);
+  assert.doesNotMatch(mobileCss, /\.global-dock-queue-summary > em\s*,[\s\S]*?\.global-dock-queue-state\s*\{[^}]*display:\s*none;/);
 });
 
 test('dock workspaces are lazy loaded and preserve merged modes inside one overlay', () => {
