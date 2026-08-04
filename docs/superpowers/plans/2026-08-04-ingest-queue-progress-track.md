@@ -376,6 +376,19 @@ Expected: no unstaged source changes or generated frontend assets.
 - Preserve: all `/Users/mrh/Documents/KI/backups/deploy-*.sqlite`
 - Deploy: `/Users/mrh/Documents/KI/runtime/versions/2.0.0+111`
 
+- [ ] **Step 0: Satisfy the production source gate**
+
+Merge the reviewed feature branch into `main`, push it to `origin/main`, then perform the deployment from an isolated clean checkout where all four assertions pass:
+
+```bash
+test "$(git branch --show-current)" = main
+test -z "$(git status --porcelain)"
+git fetch origin main
+test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+```
+
+Do not build a production wheel from the feature branch, from an unpushed local merge, or from the existing main worktree while it contains unrelated user changes.
+
 - [ ] **Step 1: Run the read-only production preflight**
 
 ```bash
