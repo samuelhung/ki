@@ -29,11 +29,16 @@ function QueueProgressTrack({ item }: { item: QueueItem }) {
   const stages = queueProgressStages(item);
   const current = stages.find((stage) => stage.status === 'active' || stage.status === 'error');
   const currentStageRef = useRef<HTMLDivElement | null>(null);
+  const trackRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const node = currentStageRef.current;
-    if (!node || !window.matchMedia('(max-width: 760px)').matches) return;
-    node.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+    const track = trackRef.current;
+    if (!node || !track || !window.matchMedia('(max-width: 760px)').matches) return;
+    const trackRect = track.getBoundingClientRect();
+    const nodeRect = node.getBoundingClientRect();
+    const left = Math.max(0, track.scrollLeft + nodeRect.left - trackRect.left - (track.clientWidth - nodeRect.width) / 2);
+    track.scrollTo({ left, behavior: 'smooth' });
   }, [current?.key, current?.status]);
 
   if (stages.length === 0) return null;
@@ -43,6 +48,7 @@ function QueueProgressTrack({ item }: { item: QueueItem }) {
   return (
     <div
       className="global-dock-queue-progress"
+      ref={trackRef}
       aria-label={currentLabel}
       tabIndex={0}
       style={{ '--queue-progress-stage-count': stages.length } as CSSProperties}
