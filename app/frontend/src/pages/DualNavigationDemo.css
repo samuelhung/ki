@@ -747,7 +747,8 @@
   height: 100% !important;
 }
 
-.legacy-ingest-root.is-shell-embedded .ki-ingest-detail-pane .ingest-detail-reader {
+.legacy-ingest-root.is-shell-embedded.cinematic-ingest .ki-ingest-detail-pane .ingest-detail-reader {
+  width: 100% !important;
   min-width: 0 !important;
   overflow: hidden !important;
   opacity: 1 !important;
@@ -756,6 +757,10 @@
 
 .legacy-ingest-root.is-shell-embedded .ki-ingest-detail-pane .ingest-detail-tabs {
   grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+}
+
+.legacy-ingest-root.is-shell-embedded .ki-ingest-detail-pane .ingest-tab-trigger {
+  min-width: 0 !important;
 }
 
 .legacy-ingest-root.is-shell-embedded .ki-ingest-detail-pane .detail-scroll {
