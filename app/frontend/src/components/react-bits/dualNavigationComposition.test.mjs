@@ -63,7 +63,16 @@ function cssBlockBody(source, marker) {
   throw new Error(`CSS block is not closed: ${marker}`);
 }
 
+function normalizeCssSelector(selector) {
+  return selector.trim().replace(/\s+/g, ' ');
+}
+
+function cssSelectors(selectorText) {
+  return selectorText.split(',').map(normalizeCssSelector).filter(Boolean);
+}
+
 function cssRuleWithDeclarations(source, selector, declarations) {
+  const normalizedSelector = normalizeCssSelector(selector);
   let selectorIndex = source.indexOf(selector);
   while (selectorIndex >= 0) {
     const previousRuleEnd = source.lastIndexOf('}', selectorIndex);
@@ -73,12 +82,22 @@ function cssRuleWithDeclarations(source, selector, declarations) {
     const selectorText = source.slice(previousRuleEnd + 1, blockStart);
     const blockEnd = source.indexOf('}', blockStart + 1);
     const body = source.slice(blockStart + 1, blockEnd);
-    if (selectorText.includes(selector) && declarations.every((declaration) => declaration.test(body))) return body;
+    if (cssSelectors(selectorText).includes(normalizedSelector) && declarations.every((declaration) => declaration.test(body))) return body;
 
     selectorIndex = source.indexOf(selector, selectorIndex + selector.length);
   }
 
   throw new Error(`CSS rule with declarations not found: ${selector}`);
+}
+
+function cssSelectorsWithDeclaration(source, declaration) {
+  const rules = [];
+  const cssRule = /([^{}]+)\{([^{}]*)\}/g;
+  let match;
+  while ((match = cssRule.exec(source))) {
+    if (declaration.test(match[2])) rules.push(...cssSelectors(match[1]));
+  }
+  return rules;
 }
 
 function jsxDivBlock(source, marker) {
@@ -95,6 +114,23 @@ function jsxDivBlock(source, marker) {
   }
 
   throw new Error(`JSX div is not closed: ${marker}`);
+}
+
+function jsxElementBlock(source, className) {
+  const openingTag = new RegExp(`<([a-z][\\w-]*)\\b[^>]*\\bclassName="${className}"[^>]*>`).exec(source);
+  if (!openingTag) throw new Error(`JSX element not found: ${className}`);
+
+  const tagName = openingTag[1];
+  const tag = new RegExp(`<\\/?${tagName}\\b[^>]*>`, 'g');
+  tag.lastIndex = openingTag.index;
+  let depth = 0;
+  let match;
+  while ((match = tag.exec(source))) {
+    depth += match[0].startsWith('</') ? -1 : 1;
+    if (depth === 0) return source.slice(openingTag.index, tag.lastIndex);
+  }
+
+  throw new Error(`JSX element is not closed: ${className}`);
 }
 
 test('production navigation shell keeps the top and bottom menus independent', () => {
@@ -228,12 +264,22 @@ test('queue progress track keeps exact desktop and mobile geometry', () => {
 test('queue task summary keeps title, lifecycle, runtime, time, and actions on one line', () => {
   const dockQueueOverlay = readFileSync(dockQueueOverlayUrl, 'utf8');
   const taskSummary = jsxDivBlock(dockQueueOverlay, '<div className="global-dock-queue-summary">');
+  const task = jsxElementBlock(taskSummary, 'global-dock-queue-task');
+  const message = jsxElementBlock(taskSummary, 'global-dock-queue-message');
+  const state = jsxElementBlock(taskSummary, 'global-dock-queue-state');
 
-  assert.match(dockQueueOverlay, /const TASK_STATUS_LABELS: Record<QueueItem\['status'\], string> = \{\s*running: '处理中',\s*pending: '等待处理',\s*error: '处理异常',\s*done: '处理完成',\s*\};/);
+  assert.match(dockQueueOverlay, /const TASK_STATUS_LABELS: Record<QueueItem\['status'\], string> = \{/);
+  assert.match(dockQueueOverlay, /running:\s*'处理中'/);
+  assert.match(dockQueueOverlay, /pending:\s*'等待处理'/);
+  assert.match(dockQueueOverlay, /error:\s*'处理异常'/);
+  assert.match(dockQueueOverlay, /done:\s*'处理完成'/);
   assert.match(dockQueueOverlay, /const taskMessage = item\.error \|\| TASK_STATUS_LABELS\[item\.status\];/);
   assert.match(taskSummary, /global-dock-queue-task[\s\S]*global-dock-queue-message[\s\S]*global-dock-queue-state[\s\S]*formatTimeBeijing\(item\.created_at\)[\s\S]*global-dock-queue-actions/);
-  assert.match(taskSummary, /<\w+\b(?=[^>]*className="global-dock-queue-task")(?=[^>]*title=\{title\})[^>]*>/);
-  assert.match(taskSummary, /<\w+\b(?=[^>]*className="global-dock-queue-message")(?=[^>]*title=\{taskMessage\})[^>]*>/);
+  assert.match(task, /^<\w+\b(?=[^>]*className="global-dock-queue-task")(?=[^>]*title=\{title\})[^>]*>/);
+  assert.match(task, /<b>\{title\}<\/b>/);
+  assert.match(message, /^<\w+\b(?=[^>]*className="global-dock-queue-message")(?=[^>]*title=\{taskMessage\})[^>]*>/);
+  assert.match(message, />\s*\{taskMessage\}\s*<\//);
+  assert.match(state, />\s*\{status\.label\}\s*<\//);
 });
 
 test('queue task summary has stable desktop and compact geometry', () => {
@@ -242,6 +288,7 @@ test('queue task summary has stable desktop and compact geometry', () => {
   const task = cssRuleWithDeclarations(dockQueueCss, '.global-dock-queue-task', [/flex:\s*1 1 auto;/, /min-width:\s*0;/]);
   const message = cssRuleWithDeclarations(dockQueueCss, '.global-dock-queue-message', [/max-width:\s*32%;/]);
   const messageEllipsis = cssRuleWithDeclarations(dockQueueCss, '.global-dock-queue-message', [/overflow:\s*hidden;/, /text-overflow:\s*ellipsis;/]);
+  const taskTitle = cssRuleWithDeclarations(dockQueueCss, '.global-dock-queue-task b', [/display:\s*block;/, /overflow:\s*hidden;/, /text-overflow:\s*ellipsis;/, /white-space:\s*nowrap;/]);
   const state = cssRuleWithDeclarations(dockQueueCss, '.global-dock-queue-state', [/flex:\s*0 0 auto;/]);
   const time = cssRuleWithDeclarations(dockQueueCss, '.global-dock-queue-summary > em', [/flex:\s*0 0 auto;/]);
   const actions = cssRuleWithDeclarations(dockQueueCss, '.global-dock-queue-actions', [/flex:\s*0 0 auto;/]);
@@ -258,14 +305,23 @@ test('queue task summary has stable desktop and compact geometry', () => {
   assert.match(message, /max-width:\s*32%;/);
   assert.match(messageEllipsis, /overflow:\s*hidden;/);
   assert.match(messageEllipsis, /text-overflow:\s*ellipsis;/);
+  assert.match(taskTitle, /display:\s*block;/);
+  assert.match(taskTitle, /overflow:\s*hidden;/);
+  assert.match(taskTitle, /text-overflow:\s*ellipsis;/);
+  assert.match(taskTitle, /white-space:\s*nowrap;/);
   assert.match(state, /flex:\s*0 0 auto;/);
   assert.match(time, /flex:\s*0 0 auto;/);
   assert.match(actions, /flex:\s*0 0 auto;/);
 
   assert.match(mobileArticle, /grid-template-columns:\s*16px minmax\(0, 1fr\);/);
-  assert.match(mobileCss, /\.global-dock-queue-summary > em\s*\{\s*display:\s*none;/);
-  assert.doesNotMatch(mobileCss, /\.global-dock-queue-state\s*\{[^}]*display:\s*none;/);
-  assert.doesNotMatch(mobileCss, /\.global-dock-queue-summary > em\s*,[\s\S]*?\.global-dock-queue-state\s*\{[^}]*display:\s*none;/);
+  const desktopCss = dockQueueCss.slice(0, dockQueueCss.indexOf('@media (max-width: 760px)'));
+  const hiddenMobileSelectors = cssSelectorsWithDeclaration(mobileCss, /display:\s*none;/)
+    .filter((selector) => selector.includes('.global-dock-queue-'))
+    .sort();
+  const hiddenDesktopSelectors = cssSelectorsWithDeclaration(desktopCss, /display:\s*none;/);
+
+  assert.deepEqual(hiddenMobileSelectors, ['.global-dock-queue-summary > em']);
+  assert.equal(hiddenDesktopSelectors.includes('.global-dock-queue-summary > em'), false);
 });
 
 test('dock workspaces are lazy loaded and preserve merged modes inside one overlay', () => {
