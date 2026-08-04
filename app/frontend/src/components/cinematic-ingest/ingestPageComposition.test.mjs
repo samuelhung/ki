@@ -76,6 +76,29 @@ function elementText(node) {
   return elementText(node.props.children);
 }
 
+function cssRules(source, selector) {
+  const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const blocks = [...source.matchAll(new RegExp(`(?:^|[{}])\\s*${escapedSelector}\\s*\\{([^{}]*)\\}`, 'g'))];
+  return blocks.map(([, body]) => Object.fromEntries(body
+    .split(';')
+    .map((declaration) => declaration.trim())
+    .filter(Boolean)
+    .map((declaration) => {
+      const separator = declaration.indexOf(':');
+      return [
+        declaration.slice(0, separator).trim(),
+        declaration.slice(separator + 1).replace(/\s+/g, ' ').trim(),
+      ];
+    })));
+}
+
+function assertCssRule(source, selector, expected) {
+  const rule = cssRules(source, selector).find((candidate) => Object.entries(expected)
+    .every(([property, value]) => candidate[property] === value));
+  assert.ok(rule, `${selector} must include ${JSON.stringify(expected)}`);
+  return rule;
+}
+
 const { TitleEditorDialog: ExecutableTitleEditorDialog, ModalStub } = loadTitleEditorDialogComponent();
 
 function renderTitleEditorDialog(overrides = {}) {
@@ -321,34 +344,71 @@ test('title action and editor dialog preserve icon accessibility and complete ed
 });
 
 test('title row actions remain a compact non-wrapping group', () => {
-  assert.match(
-    dualNavigationCss,
-    /\.transcript-title-actions\s*\{[^}]*display:\s*inline-flex;[^}]*flex:\s*0 0 auto;[^}]*align-items:\s*center;[^}]*justify-content:\s*center;[^}]*flex-wrap:\s*nowrap;[^}]*gap:\s*6px;/s,
-  );
+  assertCssRule(dualNavigationCss, '.ki-ingest-detail-pane .transcript-title-actions', {
+    display: 'inline-flex',
+    flex: '0 0 auto',
+    'align-items': 'center',
+    'justify-content': 'center',
+    'flex-wrap': 'nowrap',
+    gap: '6px',
+  });
+
+  const sharedRules = cssRules(dualNavigationCss, '.transcript-title-actions');
+  assert.ok(sharedRules.some((rule) => rule.width === '100%'), 'standalone narrow layout must retain width: 100%');
+  assert.equal(sharedRules.some((rule) => rule.display === 'inline-flex'), false);
+  assert.equal(sharedRules.some((rule) => rule['flex-wrap'] === 'nowrap'), false);
+  assert.equal(sharedRules.some((rule) => rule['justify-content'] === 'center'), false);
 });
 
 test('title row icon actions keep a fixed 30 pixel square hit area', () => {
-  assert.match(
-    dualNavigationCss,
-    /\.transcript-action-icon\s*\{[^}]*width:\s*30px;[^}]*height:\s*30px;[^}]*min-height:\s*30px;[^}]*padding:\s*0;[^}]*flex:\s*0 0 30px;/s,
-  );
+  assertCssRule(dualNavigationCss, '.ki-ingest-detail-pane .transcript-action-icon', {
+    'box-sizing': 'border-box',
+    width: '30px',
+    height: '30px',
+    'min-width': '30px',
+    'min-height': '30px',
+    padding: '0',
+    flex: '0 0 30px',
+    'flex-shrink': '0',
+  });
 });
 
 test('title editor dialog constrains its content and scrolls suggestions', () => {
-  assert.match(
-    dualNavigationCss,
-    /\.title-editor-dialog\s*\{[^}]*display:\s*flex;[^}]*max-height:\s*min\(70vh,\s*560px\);[^}]*min-height:\s*0;[^}]*flex-direction:\s*column;[^}]*gap:\s*14px;[^}]*overflow:\s*hidden;/s,
-  );
-  assert.match(
-    dualNavigationCss,
-    /\.title-editor-suggestions\s*\{[^}]*display:\s*grid;[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/s,
-  );
+  assertCssRule(dualNavigationCss, '.title-editor-dialog', {
+    display: 'flex',
+    'max-height': 'min(70vh, 560px, calc(100dvh - 110px))',
+    'min-height': '0',
+    'flex-direction': 'column',
+    gap: '14px',
+    'overflow-x': 'hidden',
+    'overflow-y': 'auto',
+    'overscroll-behavior': 'contain',
+  });
+  assertCssRule(dualNavigationCss, '.title-editor-suggestions', {
+    display: 'grid',
+    'min-height': '0',
+    'overflow-y': 'auto',
+  });
 });
 
 test('title editor dialog uses a compact viewport height on narrow screens', () => {
+  const dialog = readFileSync(titleEditorDialogUrl, 'utf8');
+  assert.match(dialog, /className="title-editor-controls /);
+  assert.match(dialog, /className="title-editor-count /);
+  assert.match(dialog, /className="title-editor-generate /);
+  assert.match(dialog, /className="title-editor-footer /);
+
+  assertCssRule(dualNavigationCss, '.title-editor-suggestions', {
+    display: 'grid',
+    'min-height': '0',
+    'max-height': 'min(180px, 32dvh)',
+    flex: '0 0 auto',
+    'overflow-y': 'auto',
+  });
+  assertCssRule(dualNavigationCss, '.title-editor-footer', { flex: '0 0 auto' });
   assert.match(
     dualNavigationCss,
-    /@media \(max-width:\s*640px\)\s*\{[\s\S]*?\.title-editor-dialog\s*\{[^}]*max-height:\s*calc\(100dvh - 150px\);/s,
+    /@media \(max-width:\s*640px\)\s*\{[\s\S]*?\.title-editor-dialog\s*\{[^}]*max-height:\s*clamp\(96px,\s*calc\(100dvh - 150px\),\s*min\(70vh,\s*560px\)\);/s,
   );
 });
 

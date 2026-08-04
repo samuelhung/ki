@@ -250,6 +250,25 @@ test('transcript title controls expose separate action and status components', (
   assert.match(actions, /!iconOnly && '转写处理'/);
 });
 
+test('standalone transcript actions keep their wrapping layout when ingest styles load', () => {
+  const actions = readFileSync(transcriptActionsUrl, 'utf8');
+  assert.match(actions, /transcript-title-actions[^"]*flex-col items-end/);
+
+  const sharedRules = [...dualNavigationCss.matchAll(
+    /(?:^|[{}])\s*\.transcript-title-actions\s*\{([^{}]*)\}/g,
+  )].map((match) => match[1]);
+  assert.ok(sharedRules.some((rule) => /width:\s*100%/.test(rule)));
+  for (const rule of sharedRules) {
+    assert.doesNotMatch(rule, /display:\s*inline-flex/);
+    assert.doesNotMatch(rule, /flex-wrap:\s*nowrap/);
+    assert.doesNotMatch(rule, /justify-content:\s*center/);
+  }
+  assert.match(
+    dualNavigationCss,
+    /\.ki-ingest-detail-pane \.transcript-title-actions\s*\{[^}]*display:\s*inline-flex;/s,
+  );
+});
+
 test('one transcript workspace owns the global Dock frame and composes all panels', () => {
   for (const url of [
     transcriptWorkspaceUrl,

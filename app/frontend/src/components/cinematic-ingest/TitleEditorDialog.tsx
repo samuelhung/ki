@@ -59,13 +59,13 @@ export function TitleEditorDialog({
           />
         </label>
 
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-xs text-gray-500">{Array.from(input.trim()).length}/20</span>
+        <div className="title-editor-controls flex items-center justify-between gap-3">
+          <span className="title-editor-count text-xs text-gray-500">{Array.from(input.trim()).length}/20</span>
           <button
             type="button"
             onClick={onGenerate}
             disabled={generating || saving}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-purple-500/30 bg-purple-500/15 px-3 py-1.5 text-xs text-purple-300 disabled:opacity-50"
+            className="title-editor-generate inline-flex items-center gap-1.5 rounded-lg border border-purple-500/30 bg-purple-500/15 px-3 py-1.5 text-xs text-purple-300 disabled:opacity-50"
           >
             {generating ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
             {generating ? '生成中' : 'AI 生成'}
@@ -92,7 +92,7 @@ export function TitleEditorDialog({
         {error && <p className="text-xs text-red-400">{error}</p>}
         {validationError && <p className="text-xs text-red-400">{validationError}</p>}
 
-        <div className="flex justify-end gap-2">
+        <div className="title-editor-footer flex justify-end gap-2">
           <button
             type="button"
             onClick={handleClose}
