@@ -48,6 +48,17 @@ def test_update_event_title_rejects_empty_or_overlong_values(
     assert response.status_code == 422
 
 
+@pytest.mark.parametrize("display_title", ["\u001c", "\u0085", "\ufeff", "\u00a0"])
+def test_update_event_title_rejects_cross_runtime_whitespace_only(
+    client: TestClient, display_title: str
+) -> None:
+    response = client.put(
+        "/api/events/event-1/title", json={"display_title": display_title}
+    )
+
+    assert response.status_code == 422
+
+
 def test_update_event_title_accepts_twenty_characters(client: TestClient, monkeypatch) -> None:
     title = "中" * 20
     monkeypatch.setattr(

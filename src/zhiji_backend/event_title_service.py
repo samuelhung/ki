@@ -10,6 +10,14 @@ from . import ai_client, transcript_revision_service
 from .db import connect
 from .security.constraints import safe_identifier
 
+DISPLAY_TITLE_EDGE_WHITESPACE = (
+    "\u0009\u000a\u000b\u000c\u000d"
+    "\u001c\u001d\u001e\u001f"
+    "\u0020\u0085\u00a0\u1680"
+    "\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a"
+    "\u2028\u2029\u202f\u205f\u3000\ufeff"
+)
+
 
 class InvalidDisplayTitleError(ValueError):
     """Raised when a display title is empty or exceeds its length limit."""
@@ -31,7 +39,7 @@ def normalize_display_title(value: str) -> str:
     """Return a trimmed display title constrained to one through twenty characters."""
     if not isinstance(value, str):
         raise InvalidDisplayTitleError
-    normalized = value.strip()
+    normalized = value.strip(DISPLAY_TITLE_EDGE_WHITESPACE)
     if not 1 <= len(normalized) <= 20:
         raise InvalidDisplayTitleError
     return normalized

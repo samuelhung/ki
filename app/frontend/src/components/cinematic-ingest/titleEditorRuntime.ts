@@ -6,6 +6,51 @@ export interface SavedEventTitle {
   title_cn: string;
 }
 
+export const DISPLAY_TITLE_EDGE_WHITESPACE = '\u0009\u000a\u000b\u000c\u000d'
+  + '\u001c\u001d\u001e\u001f'
+  + '\u0020\u0085\u00a0\u1680'
+  + '\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a'
+  + '\u2028\u2029\u202f\u205f\u3000\ufeff';
+
+const TITLE_EDGE_WHITESPACE = new Set(DISPLAY_TITLE_EDGE_WHITESPACE);
+
+interface EventWithDisplayTitle {
+  id: string;
+  title_cn?: string;
+}
+
+export function normalizeDisplayTitle(value: string): string {
+  let start = 0;
+  let end = value.length;
+  while (start < end && TITLE_EDGE_WHITESPACE.has(value[start])) start += 1;
+  while (end > start && TITLE_EDGE_WHITESPACE.has(value[end - 1])) end -= 1;
+  return value.slice(start, end);
+}
+
+export function createEventTitleOverrides() {
+  // One entry per event saved during this mounted session; reads and polling never add entries.
+  const titles = new Map<string, string>();
+
+  function apply<T extends EventWithDisplayTitle>(event: T): T {
+    const titleCn = titles.get(event.id);
+    if (titleCn === undefined || event.title_cn === titleCn) return event;
+    return { ...event, title_cn: titleCn };
+  }
+
+  return {
+    remember(eventId: string, titleCn: string): void {
+      titles.set(eventId, titleCn);
+    },
+    apply,
+    applyAll<T extends EventWithDisplayTitle>(events: T[]): T[] {
+      return events.map(apply);
+    },
+    size(): number {
+      return titles.size;
+    },
+  };
+}
+
 export interface TitleRequestToken {
   eventId: string;
   sequence: number;
@@ -69,7 +114,7 @@ export function titleEditorReducer(
       return {
         ...state,
         input: action.value,
-        selectedTitle: state.suggestions.includes(action.value) ? action.value : null,
+        selectedTitle: null,
         error: '',
       };
     case 'select-suggestion':
@@ -82,7 +127,7 @@ export function titleEditorReducer(
       return {
         ...state,
         suggestions: action.suggestions,
-        selectedTitle: action.suggestions.includes(state.input) ? state.input : null,
+        selectedTitle: null,
       };
     case 'generate-failure':
       return { ...state, error: action.error };
@@ -110,7 +155,7 @@ function isSavedEventTitle(value: unknown, eventId: string): value is SavedEvent
 }
 
 export function titleValidationError(value: string): string {
-  const normalized = value.trim();
+  const normalized = normalizeDisplayTitle(value);
   if (!normalized) return '请输入标题';
   if (Array.from(normalized).length > 20) return '标题不能超过 20 个字符';
   return '';
@@ -144,7 +189,11 @@ export async function requestTitleSuggestions(
     ) {
       throw new Error('invalid suggestions');
     }
-    return data.titles;
+    const titles = data.titles.map(normalizeDisplayTitle);
+    if (titles.some((title) => titleValidationError(title)) || new Set(titles).size !== 3) {
+      throw new Error('invalid suggestions');
+    }
+    return titles;
   } catch (reason) {
     if (isAbortError(reason)) throw reason;
     throw new Error('AI 标题生成失败');
@@ -162,7 +211,7 @@ export async function saveDisplayTitle(
     response = await fetcher(`/api/events/${eventId}/title`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ display_title: value.trim() }),
+      body: JSON.stringify({ display_title: normalizeDisplayTitle(value) }),
       signal,
     });
   } catch (reason) {

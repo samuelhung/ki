@@ -9,6 +9,14 @@ import pytest
 from zhiji_backend import event_title_service
 from zhiji_backend.transcript_revision_service import TranscriptState
 
+EXPECTED_TITLE_EDGE_WHITESPACE = (
+    "\u0009\u000a\u000b\u000c\u000d"
+    "\u001c\u001d\u001e\u001f"
+    "\u0020\u0085\u00a0\u1680"
+    "\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a"
+    "\u2028\u2029\u202f\u205f\u3000\ufeff"
+)
+
 
 @contextmanager
 def _connect(database: Path):
@@ -52,6 +60,23 @@ def _transcript(content: str) -> TranscriptState:
 def test_normalize_display_title_strips_and_accepts_twenty_characters() -> None:
     assert event_title_service.normalize_display_title("  中文标题  ") == "中文标题"
     assert event_title_service.normalize_display_title("中" * 20) == "中" * 20
+
+
+def test_title_edge_whitespace_contract_is_explicit_and_complete() -> None:
+    assert event_title_service.DISPLAY_TITLE_EDGE_WHITESPACE == EXPECTED_TITLE_EDGE_WHITESPACE
+
+
+@pytest.mark.parametrize("edge", ["\u001c", "\u0085", "\ufeff", "\u00a0"])
+def test_normalize_display_title_uses_the_cross_runtime_edge_whitespace_contract(
+    edge: str,
+) -> None:
+    assert event_title_service.normalize_display_title(f"{edge}中文标题{edge}") == "中文标题"
+
+
+@pytest.mark.parametrize("edge", ["\u001c", "\u0085", "\ufeff", "\u00a0"])
+def test_normalize_display_title_rejects_contract_whitespace_only(edge: str) -> None:
+    with pytest.raises(event_title_service.InvalidDisplayTitleError):
+        event_title_service.normalize_display_title(edge)
 
 
 @pytest.mark.parametrize("value", ["", "   ", "中" * 21])
@@ -145,6 +170,14 @@ def test_suggest_display_titles_accepts_three_distinct_twenty_character_titles()
         get_transcript_fn=lambda event_id, **_kwargs: _transcript("可用转写"),
         ai_chat_fn=lambda **_kwargs: '{"titles":["' + '","'.join(titles) + '"]}',
     ) == titles
+
+
+def test_suggest_display_titles_normalizes_contract_whitespace_from_ai_candidates() -> None:
+    assert event_title_service.suggest_display_titles(
+        "event-1",
+        get_transcript_fn=lambda event_id, **_kwargs: _transcript("可用转写"),
+        ai_chat_fn=lambda **_kwargs: '{"titles":["\\u001c标题甲\\u001c","\\u0085标题乙\\u0085","\\ufeff标题丙\\ufeff"]}',
+    ) == ["标题甲", "标题乙", "标题丙"]
 
 
 def test_suggest_display_titles_rejects_empty_transcript() -> None:

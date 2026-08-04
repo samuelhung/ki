@@ -17,9 +17,23 @@ function jsonResponse(body, init = {}) {
   });
 }
 
+const EXPECTED_TITLE_EDGE_WHITESPACE = '\u0009\u000a\u000b\u000c\u000d'
+  + '\u001c\u001d\u001e\u001f'
+  + '\u0020\u0085\u00a0\u1680'
+  + '\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a'
+  + '\u2028\u2029\u202f\u205f\u3000\ufeff';
+
 test('title validation trims input and rejects empty titles', () => {
   assert.equal(titleValidationError('  \n  '), '请输入标题');
   assert.equal(titleValidationError('  正常标题  '), '');
+});
+
+test('title normalization uses the audited cross-runtime edge whitespace contract', () => {
+  assert.equal(titleRuntime.DISPLAY_TITLE_EDGE_WHITESPACE, EXPECTED_TITLE_EDGE_WHITESPACE);
+  for (const edge of ['\u001c', '\u0085', '\ufeff', '\u00a0']) {
+    assert.equal(titleRuntime.normalizeDisplayTitle(`${edge}中文标题${edge}`), '中文标题');
+    assert.equal(titleValidationError(edge), '请输入标题');
+  }
 });
 
 test('title validation counts Chinese characters by Unicode code point', () => {
@@ -46,6 +60,18 @@ test('title suggestions use the event endpoint, POST, caller signal, and exactly
   assert.equal(captured.input, '/api/events/event-1/title/suggestions');
   assert.equal(captured.init.method, 'POST');
   assert.equal(captured.init.signal, controller.signal);
+});
+
+test('title suggestions normalize every AI candidate with the title edge whitespace contract', async () => {
+  const suggestions = await requestTitleSuggestions(
+    'event-1',
+    new AbortController().signal,
+    async () => jsonResponse({
+      titles: ['\u001c标题一\u001c', '\u0085标题二\u0085', '\ufeff标题三\ufeff'],
+    }),
+  );
+
+  assert.deepEqual(suggestions, ['标题一', '标题二', '标题三']);
 });
 
 test('title suggestions expose stable errors for 400 and generic HTTP failures', async () => {
@@ -123,6 +149,21 @@ test('title save sends a trimmed JSON display title and returns authoritative ev
   assert.deepEqual(captured.init.headers, { 'Content-Type': 'application/json' });
   assert.equal(captured.init.signal, controller.signal);
   assert.equal(captured.init.body, JSON.stringify({ display_title: '客户端标题' }));
+});
+
+test('title save normalizes contract whitespace before sending', async () => {
+  let captured;
+  await saveDisplayTitle(
+    'event-1',
+    '\u001c\u0085\ufeff\u00a0客户端标题\u00a0\ufeff\u0085\u001c',
+    new AbortController().signal,
+    async (_input, init) => {
+      captured = init;
+      return jsonResponse({ id: 'event-1', title: 'Original', title_cn: '客户端标题' });
+    },
+  );
+
+  assert.equal(captured.body, JSON.stringify({ display_title: '客户端标题' }));
 });
 
 test('title save exposes a stable error for HTTP failures and bad JSON', async () => {
@@ -282,6 +323,20 @@ test('title editor reducer preserves edits and candidates across failures and re
   state = titleRuntime.titleEditorReducer(state, { type: 'save-failure', error: '保存失败' });
   assert.equal(state.input, '人工输入');
   assert.deepEqual(state.suggestions, ['新一', '新二', '新三']);
+});
+
+test('title editor only selects a suggestion after an explicit suggestion click', () => {
+  let state = titleRuntime.createTitleEditorState();
+  state = titleRuntime.titleEditorReducer(state, { type: 'start', input: '候选一' });
+  state = titleRuntime.titleEditorReducer(state, {
+    type: 'generate-success', suggestions: ['候选一', '候选二', '候选三'],
+  });
+  assert.equal(state.selectedTitle, null, 'generation must clear selection even when input matches');
+
+  state = titleRuntime.titleEditorReducer(state, { type: 'select-suggestion', value: '候选一' });
+  assert.equal(state.selectedTitle, '候选一');
+  state = titleRuntime.titleEditorReducer(state, { type: 'change-input', value: '候选一' });
+  assert.equal(state.selectedTitle, null, 'manual input must clear selection even when text matches');
 });
 
 test('title editor reducer closes after a successful save', () => {

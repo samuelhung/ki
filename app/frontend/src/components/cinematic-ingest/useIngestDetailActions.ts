@@ -13,6 +13,7 @@ import {
   summaryRefreshIsComplete,
   transcriptSummaryIsStale,
 } from './eventSummaryPolling';
+import { createEventTitleOverrides } from './titleEditorRuntime';
 
 const API_BASE = '/api/events';
 
@@ -53,6 +54,7 @@ export function useIngestDetailActions({
   const linkedQuestionsRequestSeqRef = useRef(0);
   const chainAnalyzeRequestSeqRef = useRef(0);
   const syncHintsRequestSeqRef = useRef(0);
+  const titleOverridesRef = useRef(createEventTitleOverrides());
 
   const loadDetail = useCallback(async (eventId: string) => {
     const requestSeq = detailRequestSeqRef.current + 1;
@@ -67,8 +69,9 @@ export function useIngestDetailActions({
       if (!response.ok) throw new Error(ingestCopy.detail.loadError);
       const data: EventItem = await response.json();
       if (requestSeq !== detailRequestSeqRef.current) return;
-      setDetail(data);
-      setChainAnalysis(data.chain_analysis || '');
+      const authoritativeData = titleOverridesRef.current.apply(data);
+      setDetail(authoritativeData);
+      setChainAnalysis(authoritativeData.chain_analysis || '');
       setChainHints([]);
       const linked = (data.associated_questions || []).map((question) => ({
         question_id: question.id,
@@ -138,7 +141,7 @@ export function useIngestDetailActions({
         );
         if (requestSeq !== summarizeRequestSeqRef.current || activeEventId !== eventId) return;
         if (refreshed) {
-          setDetail(refreshed);
+          setDetail(titleOverridesRef.current.apply(refreshed));
           break;
         }
       }
@@ -289,8 +292,9 @@ export function useIngestDetailActions({
   }, []);
 
   const updateEventTitle = useCallback((eventId: string, titleCn: string) => {
+    titleOverridesRef.current.remember(eventId, titleCn);
     setDetail((current) => current?.id === eventId
-      ? { ...current, title_cn: titleCn }
+      ? titleOverridesRef.current.apply(current)
       : current);
   }, []);
 

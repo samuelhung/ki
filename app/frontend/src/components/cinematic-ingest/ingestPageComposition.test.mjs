@@ -5,6 +5,7 @@ import ts from 'typescript';
 import { getModalBackdropHandler } from '../modalLifecycle.ts';
 import {
   completeTitleSave,
+  createEventTitleOverrides,
   createTitleEditorState,
   titleEditorReducer,
 } from './titleEditorRuntime.ts';
@@ -492,9 +493,9 @@ test('title saves synchronize list and detail state locally before showing succe
   const eventsHook = readFileSync(hookUrl, 'utf8');
   const detailActions = readFileSync(detailActionsUrl, 'utf8');
 
-  assert.match(eventsHook, /const updateEventTitle = useCallback\(\(eventId: string, titleCn: string\) => \{\s*setEvents\(\(current\) => current\.map\(\(event\) => \(\s*event\.id === eventId \? \{ \.\.\.event, title_cn: titleCn \} : event\s*\)\)\);\s*\}, \[\]\);/);
+  assert.match(eventsHook, /const updateEventTitle = useCallback\(\(eventId: string, titleCn: string\) => \{\s*titleOverridesRef\.current\.remember\(eventId, titleCn\);\s*setEvents\(/);
   assert.match(eventsHook, /return \{[\s\S]*updateEventTitle,/);
-  assert.match(detailActions, /const updateEventTitle = useCallback\(\(eventId: string, titleCn: string\) => \{\s*setDetail\(\(current\) => current\?\.id === eventId\s*\? \{ \.\.\.current, title_cn: titleCn \}\s*: current\);\s*\}, \[\]\);/);
+  assert.match(detailActions, /const updateEventTitle = useCallback\(\(eventId: string, titleCn: string\) => \{\s*titleOverridesRef\.current\.remember\(eventId, titleCn\);\s*setDetail\(/);
   assert.match(detailActions, /return \{[\s\S]*updateEventTitle,/);
 
   const { synchronizeSavedTitle } = loadPureDeclarations(modules, ['synchronizeSavedTitle']);
@@ -523,6 +524,64 @@ test('title saves synchronize list and detail state locally before showing succe
   assert.match(page, /useTitleEditor\(\{\s*activeEventId,\s*onSaved: handleTitleSaved,\s*onSuccess: handleTitleSuccess,\s*\}\)/);
   assert.match(page, /if \(titleEditorEvent\) titleEditor\.start\(titleEditorEvent\);/);
   assert.match(page, /<TitleEditorDialog[\s\S]*open=\{titleEditor\.open\}[\s\S]*input=\{titleEditor\.input\}[\s\S]*suggestions=\{titleEditor\.suggestions\}[\s\S]*selectedTitle=\{titleEditor\.selectedTitle\}[\s\S]*generating=\{titleEditor\.generating\}[\s\S]*saving=\{titleEditor\.saving\}[\s\S]*error=\{titleEditor\.error\}[\s\S]*validationError=\{titleEditor\.validationError\}[\s\S]*onInputChange=\{titleEditor\.changeInput\}[\s\S]*onSelectSuggestion=\{titleEditor\.selectSuggestion\}[\s\S]*onGenerate=\{titleEditor\.generate\}[\s\S]*onSave=\{titleEditor\.save\}[\s\S]*onClose=\{titleEditor\.close\}/);
+});
+
+test('authoritative title overrides protect list and detail from delayed old GET snapshots', async () => {
+  const listOverrides = createEventTitleOverrides();
+  const detailOverrides = createEventTitleOverrides();
+  let events = [{ id: 'event-a', title: 'Original', title_cn: '旧标题' }];
+  let detail = { id: 'event-a', title: 'Original', title_cn: '旧标题' };
+  const delayedList = deferred();
+  const delayedDetail = deferred();
+  const hookModule = modules.find((module) => module.name === 'useIngestEvents.ts');
+  assert.ok(hookModule);
+  const coordinator = loadRequestCoordinatorFactory(hookModule)({
+    onCommit: (incoming) => { events = listOverrides.applyAll(incoming); },
+    onError: assert.fail,
+  });
+  const owner = coordinator.start();
+  const listRun = coordinator.run({ owner, request: () => delayedList.promise });
+  const detailRun = delayedDetail.promise.then((incoming) => {
+    detail = detailOverrides.apply(incoming);
+  });
+
+  completeTitleSave(
+    { id: 'event-a', title: 'Original', title_cn: '新标题' },
+    {
+      onSaved: (eventId, titleCn) => {
+        listOverrides.remember(eventId, titleCn);
+        detailOverrides.remember(eventId, titleCn);
+        events = listOverrides.applyAll(events);
+        detail = detailOverrides.apply(detail);
+      },
+      onSuccess: () => undefined,
+      onClose: () => undefined,
+    },
+  );
+  delayedList.resolve([{ id: 'event-a', title: 'Original', title_cn: '旧标题' }]);
+  delayedDetail.resolve({ id: 'event-a', title: 'Original', title_cn: '旧标题' });
+  await Promise.all([listRun, detailRun]);
+
+  assert.equal(events[0].title_cn, '新标题');
+  assert.equal(events[0].title, 'Original', 'the original title field must remain untouched');
+  assert.equal(detail.title_cn, '新标题');
+  assert.equal(detail.title, 'Original', 'the original title field must remain untouched');
+  assert.equal(listOverrides.size(), 1);
+  assert.equal(detailOverrides.size(), 1);
+});
+
+test('both ingest hooks apply title overrides at every event read commit', () => {
+  const eventsHook = readFileSync(hookUrl, 'utf8');
+  const detailActions = readFileSync(detailActionsUrl, 'utf8');
+
+  for (const source of [eventsHook, detailActions]) {
+    assert.match(source, /useRef\(createEventTitleOverrides\(\)\)/);
+    assert.match(source, /titleOverridesRef\.current\.remember\(eventId, titleCn\)/);
+  }
+  assert.match(eventsHook, /titleOverridesRef\.current\.applyAll\(\s*mergeEventPages\(current, items, append\),?\s*\)/);
+  assert.match(detailActions, /const authoritativeData = titleOverridesRef\.current\.apply\(data\)/);
+  assert.match(detailActions, /setDetail\(authoritativeData\)/);
+  assert.match(detailActions, /setDetail\(titleOverridesRef\.current\.apply\(refreshed\)\)/);
 });
 
 test('title editor never binds a stale detail title to the newly active event', () => {

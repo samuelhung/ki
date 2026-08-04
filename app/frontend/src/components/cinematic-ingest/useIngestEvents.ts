@@ -5,6 +5,7 @@ import { abortableDelay, RequestLifecycle } from '../ingest/requestLifecycle';
 import type { RequestOwner } from '../ingest/requestLifecycle';
 import { deleteEventRequest } from './deleteEventRequest';
 import { buildEventListPath, mergeEventPages } from './ingestUtils';
+import { createEventTitleOverrides } from './titleEditorRuntime';
 import { useDebouncedValue } from './useDebouncedValue';
 import type { EventItem, TopicKey } from './ingestTypes';
 
@@ -72,13 +73,16 @@ export function useIngestEvents({ initialSearch, onPollingSettled }: UseIngestEv
   const [activeEventId, setActiveEventId] = useState<string | null>(null);
   const debouncedSearch = useDebouncedValue(search, 250);
   const loadOffsetRef = useRef(0);
+  const titleOverridesRef = useRef(createEventTitleOverrides());
   const [eventRequestCoordinator] = useState(() => createRequestCoordinator<EventPageCommit>({
     onCommit: ({ data, append }) => {
       setEventsError('');
       const items = data && typeof data === 'object' && 'items' in data
         ? (data as { items?: EventItem[] }).items || []
         : Array.isArray(data) ? data : [];
-      setEvents((current) => mergeEventPages(current, items, append));
+      setEvents((current) => titleOverridesRef.current.applyAll(
+        mergeEventPages(current, items, append),
+      ));
       if (data && typeof data === 'object' && 'items' in data) {
         const nextTotal = (data as { total?: number }).total;
         setTotal(typeof nextTotal === 'number' ? nextTotal : items.length);
@@ -185,9 +189,8 @@ export function useIngestEvents({ initialSearch, onPollingSettled }: UseIngestEv
   }, []);
 
   const updateEventTitle = useCallback((eventId: string, titleCn: string) => {
-    setEvents((current) => current.map((event) => (
-      event.id === eventId ? { ...event, title_cn: titleCn } : event
-    )));
+    titleOverridesRef.current.remember(eventId, titleCn);
+    setEvents((current) => titleOverridesRef.current.applyAll(current));
   }, []);
 
   const openDetail = useCallback((eventId: string) => setActiveEventId(eventId), []);
