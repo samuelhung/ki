@@ -60,6 +60,8 @@ class BackendDeployConfig:
     python_executable: Path
     bind_host: str = "127.0.0.1"
     preserve_history: bool = False
+    application_root: Path | None = None
+    env_file: Path | None = None
 
     @property
     def release_id(self) -> str:
@@ -90,6 +92,14 @@ class BackendDeployConfig:
     @property
     def wheelhouse(self) -> Path:
         return self.wheel.parent / "wheelhouse"
+
+    @property
+    def packages_dir(self) -> Path:
+        return (self.application_root or self.zhiji_home) / "packages"
+
+    @property
+    def effective_env_file(self) -> Path:
+        return self.env_file or self.zhiji_home / ".env"
 
 
 class LaunchdServiceController:
@@ -169,7 +179,7 @@ def _validate_remote_bind_environment(config: BackendDeployConfig) -> None:
     if _is_loopback_bind(config.bind_host):
         return
 
-    env_file = config.zhiji_home / ".env"
+    env_file = config.effective_env_file
     try:
         descriptor = os.open(env_file, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except FileNotFoundError as exc:
@@ -214,16 +224,32 @@ def _validate_config(config: BackendDeployConfig) -> None:
         "launchd plist path": config.launchd_plist,
         "Python path": config.python_executable,
     }
+    if config.application_root is not None:
+        paths["application root path"] = config.application_root
+    if config.env_file is not None:
+        paths["environment file path"] = config.env_file
     if any(not path.is_absolute() for path in paths.values()):
         raise BackendDeployError("all deployment paths must be absolute")
     expected = {
-        "runtime path": config.zhiji_home / "runtime",
-        "database path": config.zhiji_home / "data" / "intelligence.sqlite",
-        "backups path": config.zhiji_home / "backups",
-        "launchd plist path": (
-            config.user_home / "Library" / "LaunchAgents" / f"{config.launchd_label}.plist"
+        "runtime path": (
+            config.application_root
+            if config.application_root is not None
+            else config.zhiji_home / "runtime"
         ),
+        "database path": config.zhiji_home / "data" / "intelligence.sqlite",
     }
+    if config.application_root is None:
+        expected.update(
+            {
+                "backups path": config.zhiji_home / "backups",
+                "launchd plist path": (
+                    config.user_home
+                    / "Library"
+                    / "LaunchAgents"
+                    / f"{config.launchd_label}.plist"
+                ),
+            }
+        )
     for label, expected_path in expected.items():
         if paths[label] != expected_path:
             raise BackendDeployError(f"{label} is outside the configured deployment path")
@@ -238,7 +264,7 @@ def _validate_config(config: BackendDeployConfig) -> None:
         raise BackendDeployError("Python path must resolve to an executable regular file") from exc
     if not resolved_python.is_file() or not os.access(resolved_python, os.X_OK):
         raise BackendDeployError("Python path must resolve to an executable regular file")
-    packages = config.zhiji_home / "packages"
+    packages = config.packages_dir
     artifact_parent = config.wheel.parent
     if config.checksums != artifact_parent / "SHA256SUMS":
         raise BackendDeployError("wheel and checksums must share one artifact directory")
@@ -261,10 +287,15 @@ def _validate_config(config: BackendDeployConfig) -> None:
         "runtime directory": config.runtime_root,
         "versions directory": config.versions_dir,
         "data directory": config.zhiji_home / "data",
-        "packages directory": config.zhiji_home / "packages",
-        "launchd parent directory": config.user_home / "Library",
-        "launchd directory": config.user_home / "Library" / "LaunchAgents",
+        "packages directory": config.packages_dir,
     }
+    if config.application_root is None:
+        managed_directories.update(
+            {
+                "launchd parent directory": config.user_home / "Library",
+                "launchd directory": config.user_home / "Library" / "LaunchAgents",
+            }
+        )
     for label, path in managed_directories.items():
         if path.is_symlink():
             raise BackendDeployError(f"{label} must not be a symbolic link")
