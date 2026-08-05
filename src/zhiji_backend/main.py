@@ -32,7 +32,8 @@ FastAPI, HTTPException, JSONResponse, Path = (
 CORSMiddleware = _cors.CORSMiddleware
 if "FRONTEND_DIST" not in globals():
     FRONTEND_DIST = _paths.FRONTEND_DIST
-INGEST_ROOT, LOG_DIR, RELEASES_DIR, ZHIJI_HOME = (
+ENV_PATH, INGEST_ROOT, LOG_DIR, RELEASES_DIR, ZHIJI_HOME = (
+    _paths.ENV_PATH,
     _paths.INGEST_ROOT,
     _paths.LOG_DIR,
     _paths.RELEASES_DIR,
@@ -113,8 +114,12 @@ def _rollback_runtime_resources(resources: runtime_bootstrap.RuntimeResources) -
 
 def _prepare_runtime() -> runtime_bootstrap.RuntimeResources:
     ensure_data_dirs()
-    env_path = ZHIJI_HOME / ".env"
-    if not env_path.exists() and not env_path.is_symlink():
+    env_path = ENV_PATH
+    if (
+        not os.getenv("KI_ENV_FILE", "").strip()
+        and not env_path.exists()
+        and not env_path.is_symlink()
+    ):
         env_path = Path(__file__).resolve().parents[2] / ".env"
     environment_mutations = runtime_bootstrap.prepare_environment(
         os.environ,

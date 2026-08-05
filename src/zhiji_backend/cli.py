@@ -181,6 +181,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         BRAINSTORM_DIR,
         CONFIG_PATH,
         DATA_DIR,
+        ENV_PATH,
         INGEST_ROOT,
         LOG_DIR,
         STUDY_DATA_DIR,
@@ -198,7 +199,7 @@ def cmd_init(args: argparse.Namespace) -> None:
     print(f"  学习: {STUDY_DATA_DIR}")
 
     # 创建默认 .env 模板（如果不存在）
-    env_path = ZHIJI_HOME / ".env"
+    env_path = ENV_PATH
     if not env_path.exists():
         env_path.write_text(
             "# 知几配置文件 — 在此设置 API Key\n"
@@ -236,7 +237,9 @@ def cmd_serve(args: argparse.Namespace) -> None:
         home = Path(os.environ["ZHIJI_HOME"]).expanduser()
 
     os.environ["ZHIJI_HOME"] = str(home)
-    env_path = home / ".env"
+    from zhiji_backend.paths import resolve_env_path
+
+    env_path = resolve_env_path(home)
     from zhiji_backend.credential_store import load_hardened_env
 
     load_hardened_env(env_path, override=True)

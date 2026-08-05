@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import os
+import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -961,3 +962,22 @@ def test_serve_parser_defaults_to_loopback(monkeypatch):
     cli_main()
 
     assert captured["host"] == "127.0.0.1"
+
+
+def test_relative_explicit_env_file_is_rejected(tmp_path):
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
+    env["ZHIJI_HOME"] = str(tmp_path)
+    env["KI_ENV_FILE"] = "relative.env"
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import zhiji_backend.paths"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "KI_ENV_FILE must be absolute" in result.stderr

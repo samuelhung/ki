@@ -22,8 +22,20 @@ def _get_zhiji_home() -> Path:
     return Path.home() / ".zhiji"
 
 
+def resolve_env_path(home: Path) -> Path:
+    """Return the configured credential file without following its final symlink."""
+    configured = os.getenv("KI_ENV_FILE", "").strip()
+    if not configured:
+        return home / ".env"
+    path = Path(configured).expanduser()
+    if not path.is_absolute():
+        raise RuntimeError("KI_ENV_FILE must be absolute")
+    return Path(os.path.abspath(path))
+
+
 # ---- 数据目录（用户数据） ----
 ZHIJI_HOME = _get_zhiji_home()
+ENV_PATH = resolve_env_path(ZHIJI_HOME)
 DATA_DIR = ZHIJI_HOME / "data"
 STUDY_DATA_DIR = DATA_DIR / "study"
 INGEST_ROOT = DATA_DIR / "ingest"

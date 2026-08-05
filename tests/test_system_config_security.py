@@ -1231,3 +1231,37 @@ def test_main_and_cli_do_not_load_dotenv_before_hardening():
     assert "load_dotenv(" not in cli_source
     assert "load_hardened_env(" in main_source
     assert "load_hardened_env(" in cli_source
+
+
+def test_explicit_env_file_is_authoritative(tmp_path):
+    home = tmp_path / "home"
+    env_file = tmp_path / "etc" / "zhiji.env"
+    env_file.parent.mkdir(parents=True)
+    env_file.write_text("KI_API_TOKEN=external-token\n", encoding="utf-8")
+    env_file.chmod(0o600)
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(paths._PACKAGE_DIR.parent)
+    env["ZHIJI_HOME"] = str(home)
+    env["KI_ENV_FILE"] = str(env_file)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from zhiji_backend import credential_store, paths; "
+                "credential_store.set_api_key('new-ai-secret'); "
+                "print(paths.ENV_PATH); print(credential_store.ENV_PATH)"
+            ),
+        ],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().splitlines() == [str(env_file.resolve())] * 2
+    assert "AI_API_KEY=new-ai-secret" in env_file.read_text(encoding="utf-8")
+    assert not (home / ".env").exists()
