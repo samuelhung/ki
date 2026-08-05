@@ -749,7 +749,7 @@
 }
 
 .legacy-ingest-root.is-shell-embedded.cinematic-ingest .ki-ingest-detail-pane .ingest-detail-reader {
-  width: 100% !important;
+  width: auto !important;
   min-width: 0 !important;
   overflow: hidden !important;
   opacity: 1 !important;

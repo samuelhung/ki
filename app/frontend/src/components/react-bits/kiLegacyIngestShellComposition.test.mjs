@@ -203,11 +203,11 @@ test('formal ingest composes a split list orbit and reusable detail workspace', 
   assert.match(shellCss, /\.ki-ingest-detail-pane \.ingest-detail-reader\s*\{[^}]*position:\s*relative !important/s);
   assert.match(
     shellCss,
-    /\.legacy-ingest-root\.is-shell-embedded\.cinematic-ingest \.ki-ingest-detail-pane \.ingest-detail-reader\s*\{[^}]*width:\s*100%\s*!important[^}]*min-width:\s*0\s*!important/s,
+    /\.legacy-ingest-root\.is-shell-embedded\.cinematic-ingest \.ki-ingest-detail-pane \.ingest-detail-reader\s*\{[^}]*width:\s*auto\s*!important[^}]*min-width:\s*0\s*!important/s,
   );
-  assert.match(
+  assert.doesNotMatch(
     shellCss,
-    /\.ki-ingest-detail-pane \.ingest-detail-reader\s*\{[^}]*box-sizing:\s*border-box\s*!important/s,
+    /\.legacy-ingest-root\.is-shell-embedded\.cinematic-ingest \.ki-ingest-detail-pane \.ingest-detail-reader\s*\{[^}]*width:\s*100%\s*!important/s,
   );
   assert.match(
     shellCss,
