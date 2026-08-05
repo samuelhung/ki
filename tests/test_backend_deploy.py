@@ -254,6 +254,42 @@ def test_deploy_installs_immutable_version_and_atomically_switches_current(tmp_p
     ]
 
 
+def test_deploy_uses_injected_service_preparer(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    prepared: list[BackendDeployConfig] = []
+
+    deploy_backend(
+        config,
+        service=FakeService(),
+        installer=_install,
+        prepare_service=prepared.append,
+        smoke_check=lambda: None,
+    )
+
+    assert prepared == [config]
+    assert not config.launchd_plist.exists()
+
+
+def test_service_prepare_failure_happens_before_stop(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    service = FakeService()
+
+    def fail_prepare(_config: BackendDeployConfig) -> None:
+        raise RuntimeError("unit invalid")
+
+    with pytest.raises(RuntimeError, match="unit invalid"):
+        deploy_backend(
+            config,
+            service=service,
+            installer=_install,
+            prepare_service=fail_prepare,
+            smoke_check=lambda: None,
+        )
+
+    assert service.events == []
+    assert not config.current_link.exists()
+
+
 def test_failed_smoke_restores_database_and_previous_version(tmp_path: Path) -> None:
     config = _config(tmp_path)
     old = config.versions_dir / "1.9.0+89"

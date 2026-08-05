@@ -640,6 +640,7 @@ def deploy_backend(
     smoke_check: Callable[[], None],
     rollback_smoke_check: Callable[[], None] | None = None,
     installer: Callable[[Path, BackendDeployConfig], None] = _default_installer,
+    prepare_service: Callable[[BackendDeployConfig], None] = write_launchd_plist,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> Path:
     _validate_config(config)
@@ -653,6 +654,7 @@ def deploy_backend(
                 smoke_check if rollback_smoke_check is None else rollback_smoke_check
             ),
             installer=installer,
+            prepare_service=prepare_service,
             now=now,
         )
 
@@ -664,12 +666,13 @@ def _deploy_backend_locked(
     smoke_check: Callable[[], None],
     rollback_smoke_check: Callable[[], None],
     installer: Callable[[Path, BackendDeployConfig], None],
+    prepare_service: Callable[[BackendDeployConfig], None],
     now: Callable[[], datetime],
 ) -> Path:
     previous = _current_target(config)
     target = _prepare_version(config, installer)
     try:
-        write_launchd_plist(config)
+        prepare_service(config)
     except Exception:
         shutil.rmtree(target, ignore_errors=True)
         raise
