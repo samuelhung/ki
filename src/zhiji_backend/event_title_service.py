@@ -17,6 +17,7 @@ DISPLAY_TITLE_EDGE_WHITESPACE = (
     "\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a"
     "\u2028\u2029\u202f\u205f\u3000\ufeff"
 )
+EVENT_TITLE_MODEL = "deepseek-v4-flash"
 
 
 class InvalidDisplayTitleError(ValueError):
@@ -68,7 +69,7 @@ def _suggestion_prompt(transcript: str) -> str:
 {transcript}
 
 规则：
-1. 只返回 JSON 对象，格式必须是 {{"titles":[...]}}，不得包含任何其他文字。
+1. 只返回 json 对象，格式必须是 {{"titles":[...]}}，不得包含任何其他文字。
 2. titles 必须恰好包含 3 个互不重复的中文候选。
 3. 每个候选去除首尾空白后必须为 1 到 20 个字符。
 """
@@ -118,6 +119,7 @@ def suggest_display_titles(
         response_format={"type": "json_object"},
         module="event_title",
         task="suggestions",
+        model=EVENT_TITLE_MODEL,
         thinking=False,
     )
     return _parse_suggestions(response)

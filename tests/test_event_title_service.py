@@ -130,6 +130,7 @@ def test_suggest_display_titles_sends_active_transcript_and_required_ai_options(
 
     assert result == ["标题甲", "标题乙", "标题丙"]
     assert "当前人工修正转写" in calls[0]["messages"][0]["content"]
+    assert "json" in calls[0]["messages"][0]["content"]
     assert calls[0] == {
         "messages": calls[0]["messages"],
         "temperature": 0.2,
@@ -137,6 +138,7 @@ def test_suggest_display_titles_sends_active_transcript_and_required_ai_options(
         "response_format": {"type": "json_object"},
         "module": "event_title",
         "task": "suggestions",
+        "model": "deepseek-v4-flash",
         "thinking": False,
     }
 
