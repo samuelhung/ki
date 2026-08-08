@@ -111,7 +111,7 @@ def test_pinned_toolchain_installs_ffmpeg_package_under_python_312(
 
     commands = [event[1] for event in runner.events if event[0] == "run"]
     bootstrap_pip = next(command for command in commands if "pip" in command)
-    assert "uv==0.8.13" in bootstrap_pip
+    assert "uv==0.11.32" in bootstrap_pip
     assert "imageio-ffmpeg==0.6.0" not in bootstrap_pip
     ffmpeg_install = next(command for command in commands if "imageio-ffmpeg==0.6.0" in command)
     assert "--python" in ffmpeg_install

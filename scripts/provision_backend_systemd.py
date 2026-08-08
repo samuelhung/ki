@@ -18,7 +18,7 @@ from typing import Protocol
 SERVICE_USER = "zhiji"
 SERVICE_GROUP = "zhiji"
 PYTHON_VERSION = "3.12.13"
-UV_VERSION = "0.8.13"
+UV_VERSION = "0.11.32"
 IMAGEIO_FFMPEG_VERSION = "0.6.0"
 
 
