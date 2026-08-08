@@ -188,6 +188,20 @@ def test_cleanup_migration_is_registered_on_import():
     }
 
 
+def test_precreated_pristine_sqlite_bootstraps_without_backup_marker(tmp_path):
+    db_path = tmp_path / "intelligence.sqlite"
+    with sqlite3.connect(db_path) as connection:
+        assert connection.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+
+    ensure_migrations(db_path)
+
+    with sqlite3.connect(db_path) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM _migrations WHERE name = ?",
+            ("20260719_remove_retired_features",),
+        ).fetchone()[0] == 1
+
+
 def test_register_rejects_duplicate_migration_names(monkeypatch):
     def migration(_conn: sqlite3.Connection) -> None:
         pass

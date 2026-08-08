@@ -83,7 +83,6 @@ def _begin_immediate_with_retry(conn: sqlite3.Connection) -> None:
 def ensure_migrations(db_path: Path) -> None:
     """Apply any pending migrations to the database."""
     requested_db_path = Path(db_path).expanduser().absolute()
-    database_existed = requested_db_path.exists()
     db_path = requested_db_path.resolve(strict=False)
     config_path = db_path.parent / "system_config.json"
     conn = sqlite3.connect(str(db_path))
@@ -121,8 +120,8 @@ def ensure_migrations(db_path: Path) -> None:
                         continue
                     bootstrap_new_database = (
                         name == DESTRUCTIVE_CLEANUP_MIGRATION
-                        and not database_existed
                         and not config_path.exists()
+                        and _database_is_pristine(conn)
                     )
                     if name == DESTRUCTIVE_CLEANUP_MIGRATION and not bootstrap_new_database:
                         from .database_backup import validate_backup_prerequisite
@@ -183,6 +182,19 @@ def _table_exists(conn: sqlite3.Connection, table_name: str) -> bool:
             (table_name,),
         ).fetchone()
         is not None
+    )
+
+
+def _database_is_pristine(conn: sqlite3.Connection) -> bool:
+    return (
+        conn.execute(
+            """SELECT 1 FROM sqlite_master
+               WHERE type = 'table'
+                 AND name NOT LIKE 'sqlite_%'
+                 AND name != '_migrations'
+               LIMIT 1"""
+        ).fetchone()
+        is None
     )
 
 
