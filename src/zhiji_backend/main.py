@@ -115,11 +115,7 @@ def _rollback_runtime_resources(resources: runtime_bootstrap.RuntimeResources) -
 def _prepare_runtime() -> runtime_bootstrap.RuntimeResources:
     ensure_data_dirs()
     env_path = ENV_PATH
-    if (
-        not os.getenv("KI_ENV_FILE", "").strip()
-        and not env_path.exists()
-        and not env_path.is_symlink()
-    ):
+    if not os.getenv("KI_ENV_FILE", "").strip() and not env_path.exists() and not env_path.is_symlink():
         env_path = Path(__file__).resolve().parents[2] / ".env"
     environment_mutations = runtime_bootstrap.prepare_environment(
         os.environ,

@@ -108,6 +108,46 @@ ZHIJI_SKIP_RELEASE_CHECK=1 ./scripts/check.sh
 
 ## 本机开发与远端部署
 
+### server-prod 原生正式环境
+
+新的正式环境目标为 Ubuntu 主机 `server-prod`（`10.8.0.45`），采用版本化
+wheel + systemd 的原生部署，明确不使用 Docker。程序、版本和工具链位于
+系统盘 `/srv/apps/zhiji`，数据库和业务数据位于挂载盘
+`/data/apps/zhiji`，部署备份位于 `/data/backups/zhiji`。新环境从空数据库
+开始，不复制旧内容、媒体、日志、版本目录或部署备份。
+
+首次初始化前先执行只读预览，确认目标、目录、systemd、sudoers 和仅允许
+`10.8.0.0/24`、`192.168.100.0/24` 访问 `9120` 的 UFW 规则：
+
+```bash
+./scripts/provision-production --dry-run
+./scripts/provision-production
+```
+
+真实初始化要求输入完整确认文本 `server-prod 10.8.0.45`。命令创建非 root
+用户 `zhiji`、项目专用 Python 3.12.13 和 FFmpeg、空 SQLite、systemd 单元及
+固定网络规则；只迁移批准的 AI、火山引擎和 TOS 配置名称，不在参数、输出或
+日志中显示值。新的 API token 只写入本机
+`~/.config/zhiji/server-prod-token`，权限为 `0600`。
+
+初始化完成后，唯一的日常正式发布入口为：
+
+```bash
+./scripts/deploy-production
+```
+
+命令只接受已经推送且与 `origin/main` 完全一致的干净来源，构建内嵌 Web UI
+的 wheel，上传到 `/srv/apps/zhiji/packages/<Git SHA>` 的隐藏暂存目录，校验后
+原子提升，提前构建 Linux wheelhouse，再进行数据库备份、`current` 切换、
+systemd 启动、健康检查和 35 秒稳定观察。正常代码发布预计 3–5 分钟；首次
+准备依赖时允许延长到 10 分钟。切换前失败不会停止服务；切换后失败会恢复
+数据库备份、旧 `current` 和旧服务。
+
+正式访问地址为 `http://10.8.0.45:9120`，同一局域网设备使用
+`http://192.168.100.163:9120`。迁移验收完成前，下面的 Intel Mac
+`10.8.0.105` 仍是当前正式环境；新环境通过真实抖音采集、转写、AI 标题和媒体
+播放验收后，旧服务退役必须单独确认，不能由部署命令自动执行。
+
 当前 KI 正式服务部署在远端 MacBook Pro：
 
 - 本机开发机：MacBook Air M4，`10.8.0.21`
@@ -123,7 +163,7 @@ ZHIJI_SKIP_RELEASE_CHECK=1 ./scripts/check.sh
 
 ### 后端与 Web 独立部署
 
-本节只发布 Python wheel 及其中内嵌的 Web 静态文件，不执行 Sparkle、DMG、Git tag、GitHub Release 或 Appcast，也不替代下方桌面版本与 tag 契约。所有命令从已合并、干净且与 `origin/main` 一致的 `main` 执行；远端 `ZHIJI_HOME=/Users/mrh/Documents/KI`，访问地址为 `http://10.8.0.105:9120`。
+以下是旧 Intel Mac 的历史兼容流程。它只发布 Python wheel 及其中内嵌的 Web 静态文件，不执行 Sparkle、DMG、Git tag、GitHub Release 或 Appcast，也不替代下方桌面版本与 tag 契约。所有命令从已合并、干净且与 `origin/main` 一致的 `main` 执行；远端 `ZHIJI_HOME=/Users/mrh/Documents/KI`，访问地址为 `http://10.8.0.105:9120`。
 
 远端 `.env` 必须是 `0600` 非符号链接普通文件，并保留精确的 `KI_ALLOWED_HOSTS=10.8.0.105,127.0.0.1,localhost`。本地 `app/frontend/.env.local` 同样必须是 `0600` 非符号链接普通文件且受 Git 忽略。仅在两侧均未配置 token 的首次配置中运行以下版本化入口；已有任一 token 时脚本拒绝隐式轮换。轮换必须作为单独维护操作协调服务重启、认证验证和失败恢复，不得在本部署流程中顺带执行。脚本在内存生成 token，通过 SSH stdin 更新远端，不接受 token 参数，也不输出 token、指纹或 env 内容：
 

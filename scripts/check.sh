@@ -1464,6 +1464,25 @@ PYTHONPATH=src "${PYTHON_BIN[@]}" -m compileall -q src/zhiji_backend
 echo "== Python lint =="
 "${PYTHON_BIN[@]}" -m ruff check src tests scripts
 
+echo "== Native production deployment tests =="
+PYTHONPATH=. "${PYTHON_BIN[@]}" -m pytest \
+  tests/test_backend_deploy.py \
+  tests/test_systemd_backend_deploy.py \
+  tests/test_provision_backend_systemd.py \
+  tests/test_production_target.py \
+  tests/test_production_orchestration.py \
+  tests/test_release_entrypoints.py -q
+
+echo "== Native production entrypoints =="
+sh -n scripts/provision-production
+sh -n scripts/deploy-production
+
+echo "== Operational secret assignment scan =="
+if rg -n '^[[:space:]]*(export[[:space:]]+)?(KI_API_TOKEN|AI_API_KEY|VOLC_API_KEY|TOS_SK)=[^<{$[:space:]]' scripts README.md; then
+  echo "FAIL: possible secret assignment found in an operational file" >&2
+  exit 1
+fi
+
 echo "== Structure baseline =="
 "${PYTHON_BIN[@]}" scripts/check_structure_baseline.py
 

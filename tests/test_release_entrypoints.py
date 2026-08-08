@@ -147,6 +147,17 @@ def test_frontend_remote_token_file_is_ignored() -> None:
     assert "app/frontend/.env*.local" in ignored_paths
 
 
+def test_readme_documents_native_server_prod_commands() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "./scripts/provision-production" in readme
+    assert "./scripts/deploy-production" in readme
+    assert "http://10.8.0.45:9120" in readme
+    assert "http://192.168.100.163:9120" in readme
+    assert "Docker" in readme and "不使用" in readme
+    assert "空数据库" in readme
+
+
 def test_backend_deployment_tools_support_documented_direct_cli_entrypoints() -> None:
     for script in (
         "scripts/provision_remote_access.py",
