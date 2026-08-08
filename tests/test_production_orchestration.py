@@ -8,11 +8,12 @@ from pathlib import Path
 import pytest
 
 from scripts.deploy_production import (
+    SubprocessDeployRunner,
     deploy_production,
     next_release_tag,
     remote_artifact_paths,
 )
-from scripts.production_target import ProductionDeployError
+from scripts.production_target import TARGET, ProductionDeployError
 from scripts.provision_production import provision_production
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -213,11 +214,11 @@ def test_provision_shell_entrypoint_supports_help() -> None:
 
 
 def test_deploy_runs_verified_pipeline_in_order() -> None:
-    runner = FakeDeployRunner(remote_versions=["2.0.0+110", "2.0.0+111"])
+    runner = FakeDeployRunner(remote_versions=["2.0.0+115", "2.0.0+116"])
 
     result = deploy_production(runner=runner, clock=FakeClock())
 
-    assert result.tag == "v2.0.0+112"
+    assert result.tag == "v2.0.0+117"
     assert result.duration_seconds == 214
     assert runner.events == [
         "verify-origin-main",
@@ -243,8 +244,27 @@ def test_bad_checksum_never_stops_service() -> None:
     assert "atomic-systemd-deploy" not in runner.events
 
 
-def test_existing_release_number_is_never_reused() -> None:
-    assert next_release_tag("2.0.0", ["2.0.0+112"]) == "v2.0.0+113"
+def test_empty_new_server_continues_after_previous_production_build() -> None:
+    assert next_release_tag("2.0.0", []) == "v2.0.0+115"
+
+
+def test_existing_release_number_above_migration_floor_is_never_reused() -> None:
+    assert next_release_tag("2.0.0", ["2.0.0+115"]) == "v2.0.0+116"
+
+
+def test_release_number_floor_is_locked_to_migration_target() -> None:
+    assert TARGET.previous_production_build == 114
+
+
+def test_postflight_reads_service_pid_without_ungranted_sudo() -> None:
+    runner = SubprocessDeployRunner()
+    commands: list[str] = []
+    runner._ssh = lambda command, *, stage: commands.append(command)  # type: ignore[method-assign]
+
+    runner.postflight("v2.0.0+115")
+
+    assert "sudo -n /usr/bin/systemctl show" not in commands[0]
+    assert "/usr/bin/systemctl show -p MainPID --value zhiji.service" in commands[0]
 
 
 def test_remote_artifacts_are_uploaded_to_hidden_stage_before_promotion() -> None:

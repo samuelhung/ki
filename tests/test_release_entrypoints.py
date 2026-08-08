@@ -158,6 +158,14 @@ def test_readme_documents_native_server_prod_commands() -> None:
     assert "空数据库" in readme
 
 
+def test_production_deploy_entrypoint_bootstraps_pinned_frontend_toolchain() -> None:
+    source = (ROOT / "scripts" / "deploy-production").read_text(encoding="utf-8")
+
+    assert "node@22.17.0" in source
+    assert "npm@10.9.2" in source
+    assert "npm exec" in source
+
+
 def test_backend_deployment_tools_support_documented_direct_cli_entrypoints() -> None:
     for script in (
         "scripts/provision_remote_access.py",

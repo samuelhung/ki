@@ -42,6 +42,7 @@ def test_production_target_is_fixed() -> None:
     assert TARGET.overlay_ip == "10.8.0.45"
     assert TARGET.lan_ip == "192.168.100.163"
     assert TARGET.port == 9120
+    assert TARGET.previous_production_build == 114
 
 
 def test_source_gate_requires_pushed_origin_main() -> None:

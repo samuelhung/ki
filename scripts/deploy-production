@@ -2,4 +2,20 @@
 set -eu
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
+
+if [ "${1:-}" != "--help" ]; then
+  NODE_VERSION=$(node --version 2>/dev/null || true)
+  NPM_VERSION=$(npm --version 2>/dev/null || true)
+  if [ "$NODE_VERSION" != "v22.17.0" ] || [ "$NPM_VERSION" != "10.9.2" ]; then
+    if ! command -v npm >/dev/null 2>&1; then
+      echo "production deployment failed: npm is required to bootstrap Node 22.17.0" >&2
+      exit 2
+    fi
+    export npm_config_loglevel=error
+    export npm_config_update_notifier=false
+    exec npm exec --yes --package=node@22.17.0 --package=npm@10.9.2 -- \
+      "$ROOT/.venv/bin/python" "$ROOT/scripts/deploy_production.py" "$@"
+  fi
+fi
+
 exec "$ROOT/.venv/bin/python" "$ROOT/scripts/deploy_production.py" "$@"

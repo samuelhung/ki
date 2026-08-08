@@ -22,6 +22,7 @@ class ProductionTarget:
     overlay_ip: str = "10.8.0.45"
     lan_ip: str = "192.168.100.163"
     port: int = 9120
+    previous_production_build: int = 114
     application_root: PurePosixPath = PurePosixPath("/srv/apps/zhiji")
     data_root: PurePosixPath = PurePosixPath("/data/apps/zhiji")
     backups_root: PurePosixPath = PurePosixPath("/data/backups/zhiji")

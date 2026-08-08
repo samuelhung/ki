@@ -107,7 +107,7 @@ def _project_version(root: Path = ROOT) -> str:
 
 
 def next_release_tag(version: str, remote_versions: list[str]) -> str:
-    highest = 0
+    highest = TARGET.previous_production_build
     for candidate in remote_versions:
         match = _RELEASE_PATTERN.fullmatch(candidate.strip())
         if match and match.group("version") == version:
@@ -341,7 +341,7 @@ find /srv/apps/zhiji/versions -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/
             f"grep -F {tag_arg} /srv/apps/zhiji/current/release.json >/dev/null; "
             "/srv/apps/zhiji/current/venv/bin/python -c "
             "'import sqlite3; assert sqlite3.connect(\"/data/apps/zhiji/data/intelligence.sqlite\").execute(\"PRAGMA quick_check\").fetchone()[0] == \"ok\"'; "
-            "test \"$(sudo -n /usr/bin/systemctl show -p MainPID --value zhiji.service)\" -gt 0; "
+            "test \"$(/usr/bin/systemctl show -p MainPID --value zhiji.service)\" -gt 0; "
             "ss -H -ltn 'sport = :9120' | grep -q .; "
             "curl -fsS http://127.0.0.1:9120/api/health >/dev/null"
         )

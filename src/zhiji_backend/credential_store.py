@@ -15,6 +15,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from .paths import ENV_PATH
+
 _ENV_KEY = "AI_API_KEY"
 _BASE_URL_KEY = "AI_BASE_URL"
 _write_lock = threading.RLock()
