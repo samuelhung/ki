@@ -343,7 +343,7 @@ def test_platform_public_exports_and_signatures_are_stable() -> None:
             assert callable(exported), f"{module.__name__}.{name} is not callable"
             assert str(inspect.signature(exported)) == signature
 
-    assert config_manager.DEFAULT_AI_MODEL == "deepseek-v4-pro-max"
+    assert config_manager.DEFAULT_AI_MODEL == "deepseek-v4-pro"
     assert config_manager.DEFAULT_AI_BASE_URL == "http://10.8.0.13:3000/v1"
     assert main.PUBLIC_INGEST_ARTIFACTS == frozenset(
         {"videos", "audio", "documents", "transcripts", "summaries"}

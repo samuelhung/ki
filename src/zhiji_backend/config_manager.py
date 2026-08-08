@@ -20,8 +20,9 @@ from .paths import CONFIG_PATH
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_AI_MODEL = "deepseek-v4-pro-max"
+DEFAULT_AI_MODEL = "deepseek-v4-pro"
 DEFAULT_AI_BASE_URL = "http://10.8.0.13:3000/v1"
+_RETIRED_AI_MODELS = {"deepseek-v4-pro-max": DEFAULT_AI_MODEL}
 
 _config: dict[str, Any] = {}
 _config_lock = threading.RLock()
@@ -315,6 +316,12 @@ def _normalize_persisted_config(raw: dict) -> tuple[dict, bool]:
     normalized.pop("briefing", None)
     normalized.pop("digest_briefing", None)
     normalized.pop("knowledge_graph", None)
+
+    general = normalized.get("general")
+    if isinstance(general, dict) and general.get("model") in _RETIRED_AI_MODELS:
+        clean_general = dict(general)
+        clean_general["model"] = _RETIRED_AI_MODELS[clean_general["model"]]
+        normalized["general"] = clean_general
 
     return normalized, normalized != raw
 

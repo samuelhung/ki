@@ -26,6 +26,38 @@ def test_defaults_exclude_retired_modules():
     assert "knowledge_graph" not in defaults
 
 
+def test_defaults_use_current_pro_model():
+    defaults = config_manager._defaults()
+
+    assert config_manager.DEFAULT_AI_MODEL == "deepseek-v4-pro"
+    assert defaults["general"]["model"] == "deepseek-v4-pro"
+
+
+def test_load_config_migrates_retired_pro_max_model(tmp_path, monkeypatch):
+    config_path = tmp_path / "system_config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "general": {
+                    "model": "deepseek-v4-pro-max",
+                    "default_temperature": 0.17,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = _load_from(config_path, monkeypatch)
+
+    assert loaded["general"]["model"] == "deepseek-v4-pro"
+    assert loaded["general"]["default_temperature"] == 0.17
+    persisted = json.loads(config_path.read_text(encoding="utf-8"))
+    assert persisted["general"] == {
+        "model": "deepseek-v4-pro",
+        "default_temperature": 0.17,
+    }
+
+
 def test_load_config_discards_retired_modules_without_losing_overrides(tmp_path, monkeypatch):
     config_path = tmp_path / "system_config.json"
     config_path.write_text(
