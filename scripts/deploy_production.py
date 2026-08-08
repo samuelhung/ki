@@ -205,6 +205,7 @@ find /srv/apps/zhiji/versions -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>/
         self._stage = Path(tempfile.mkdtemp(prefix=f"zhiji-production-{source_sha[:12]}-"))
         environment = os.environ.copy()
         environment["UV_CACHE_DIR"] = "/private/tmp/zhiji-server-prod-deploy-uv-cache"
+        environment["npm_config_cache"] = "/private/tmp/zhiji-server-prod-deploy-npm-cache"
         _run_checked(
             [
                 str(self._root / ".venv/bin/python"),

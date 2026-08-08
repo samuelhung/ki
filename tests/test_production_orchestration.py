@@ -275,6 +275,15 @@ def test_postflight_reads_service_pid_without_ungranted_sudo() -> None:
     assert "/usr/bin/systemctl show -p MainPID --value zhiji.service" in commands[0]
 
 
+def test_production_wheel_build_uses_task_specific_npm_cache() -> None:
+    source = (ROOT / "scripts/deploy_production.py").read_text(encoding="utf-8")
+
+    assert (
+        'environment["npm_config_cache"] = '
+        '"/private/tmp/zhiji-server-prod-deploy-npm-cache"'
+    ) in source
+
+
 def test_remote_artifacts_are_uploaded_to_hidden_stage_before_promotion() -> None:
     source_sha = "a" * 40
 
