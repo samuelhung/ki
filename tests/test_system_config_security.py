@@ -9,6 +9,7 @@ import stat
 import subprocess
 import sys
 import threading
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -1231,6 +1232,26 @@ def test_main_and_cli_do_not_load_dotenv_before_hardening():
     assert "load_dotenv(" not in cli_source
     assert "load_hardened_env(" in main_source
     assert "load_hardened_env(" in cli_source
+
+
+def test_secure_env_load_does_not_rechmod_read_only_destination(tmp_path, monkeypatch):
+    env_path = tmp_path / "zhiji.env"
+    env_path.write_text("AI_API_KEY=server-secret\n", encoding="utf-8")
+    env_path.chmod(0o600)
+    loaded: list[tuple[Path, bool]] = []
+    monkeypatch.setattr(
+        credential_store.os,
+        "chmod",
+        lambda *_args: (_ for _ in ()).throw(OSError("read-only file system")),
+    )
+    monkeypatch.setattr(
+        credential_store,
+        "load_dotenv",
+        lambda path, *, override: loaded.append((path, override)) or True,
+    )
+
+    assert credential_store.load_hardened_env(env_path, override=True) is True
+    assert loaded == [(env_path, True)]
 
 
 def test_explicit_env_file_is_authoritative(tmp_path):

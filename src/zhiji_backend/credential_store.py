@@ -138,7 +138,8 @@ def load_hardened_env(path: Path = ENV_PATH, *, override: bool = True) -> bool:
             return False
         if not stat.S_ISREG(mode):
             raise OSError(f"refusing to load non-regular env file: {path}")
-        os.chmod(path, 0o600)
+        if stat.S_IMODE(mode) != 0o600:
+            os.chmod(path, 0o600)
         return bool(load_dotenv(path, override=override))
 
 
