@@ -86,8 +86,8 @@ test "$(hostname -s)" = server
 test "$(uname -m)" = x86_64
 test -d /srv
 test -d /data
-ip -o addr show | grep -F '10.8.0.45/' >/dev/null
-ip -o addr show | grep -F '192.168.100.163/' >/dev/null
+test -n "$(ip -o -4 addr show to 10.8.0.45)"
+test -n "$(ip -o -4 addr show to 192.168.100.163)"
 if ss -H -ltn 'sport = :9120' | grep -q .; then exit 12; fi
 """
         _run_checked(

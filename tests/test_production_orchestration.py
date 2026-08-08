@@ -213,6 +213,14 @@ def test_provision_shell_entrypoint_supports_help() -> None:
     assert "--dry-run" in result.stdout
 
 
+def test_provision_identity_preflight_accepts_point_to_point_overlay_address() -> None:
+    source = (ROOT / "scripts/provision_production.py").read_text(encoding="utf-8")
+
+    assert "ip -o -4 addr show to 10.8.0.45" in source
+    assert "ip -o -4 addr show to 192.168.100.163" in source
+    assert "grep -F '10.8.0.45/'" not in source
+
+
 def test_deploy_runs_verified_pipeline_in_order() -> None:
     runner = FakeDeployRunner(remote_versions=["2.0.0+115", "2.0.0+116"])
 
