@@ -11,12 +11,22 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from scripts.deploy_backend import (
-    BackendDeployConfig,
-    BackendDeployError,
-    default_smoke_check,
-    deploy_backend,
-)
+try:
+    from scripts.deploy_backend import (
+        BackendDeployConfig,
+        BackendDeployError,
+        default_smoke_check,
+        deploy_backend,
+    )
+except ModuleNotFoundError as exc:
+    if exc.name not in {"scripts", "scripts.deploy_backend"}:
+        raise
+    from deploy_backend import (  # type: ignore[no-redef]
+        BackendDeployConfig,
+        BackendDeployError,
+        default_smoke_check,
+        deploy_backend,
+    )
 
 APPLICATION_ROOT = Path("/srv/apps/zhiji")
 DATA_ROOT = Path("/data/apps/zhiji")

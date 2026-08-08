@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
@@ -8,9 +10,12 @@ from scripts.production_target import (
     TARGET,
     ProductionDeployError,
     ProductionSummary,
+    SubprocessGitState,
     render_summary,
     verify_source,
 )
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @dataclass
@@ -76,3 +81,19 @@ def test_summary_never_contains_secret_values() -> None:
     assert "duration=3m34s" in text
     assert "token" not in text.lower()
     assert "api_key" not in text.lower()
+
+
+def test_subprocess_git_state_uses_configured_repository(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    monkeypatch.chdir(tmp_path)
+
+    assert SubprocessGitState(cwd=ROOT).rev_parse("HEAD") == expected

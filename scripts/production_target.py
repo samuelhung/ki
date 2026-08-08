@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 import subprocess
 from dataclasses import dataclass
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Protocol
 
 
@@ -38,10 +38,14 @@ class GitState(Protocol):
     def status_porcelain(self) -> str: ...
 
 
+@dataclass(frozen=True)
 class SubprocessGitState:
+    cwd: Path | None = None
+
     def _read(self, *arguments: str) -> str:
         result = subprocess.run(
             ["git", *arguments],
+            cwd=self.cwd,
             check=True,
             capture_output=True,
             text=True,

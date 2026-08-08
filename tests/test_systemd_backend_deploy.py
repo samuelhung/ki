@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -108,3 +111,25 @@ def test_systemd_preparer_accepts_expected_unit(tmp_path: Path) -> None:
     )
 
     validate_systemd_service(config, enforce_production_paths=False)
+
+
+def test_flat_staged_systemd_deployer_supports_direct_cli(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    for name in ("deploy_backend.py", "deploy_backend_systemd.py"):
+        shutil.copy2(root / "scripts" / name, stage / name)
+    environment = os.environ.copy()
+    environment.pop("PYTHONPATH", None)
+
+    result = subprocess.run(
+        [sys.executable, str(stage / "deploy_backend_systemd.py"), "--help"],
+        cwd=tmp_path,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "--wheel" in result.stdout
