@@ -144,7 +144,6 @@ class PinnedToolchainInstaller:
                 "install",
                 "--disable-pip-version-check",
                 f"uv=={UV_VERSION}",
-                f"imageio-ffmpeg=={IMAGEIO_FFMPEG_VERSION}",
             ]
         )
         managed = config.toolchains_root / "python-managed"
@@ -165,9 +164,32 @@ class PinnedToolchainInstaller:
             raise ProvisionError("managed Python 3.12.13 executable is missing or ambiguous")
         _replace_symlink(config.python_executable, python_candidates[0])
 
+        ffmpeg_environment = config.toolchains_root / "ffmpeg-python"
+        ffmpeg_python = ffmpeg_environment / "bin/python"
+        runner.run(
+            [
+                str(bootstrap / "bin/uv"),
+                "venv",
+                "--clear",
+                "--python",
+                str(python_candidates[0]),
+                str(ffmpeg_environment),
+            ]
+        )
+        runner.run(
+            [
+                str(bootstrap / "bin/uv"),
+                "pip",
+                "install",
+                "--python",
+                str(ffmpeg_python),
+                f"imageio-ffmpeg=={IMAGEIO_FFMPEG_VERSION}",
+            ]
+        )
+
         result = subprocess.run(
             [
-                str(bootstrap_python),
+                str(ffmpeg_python),
                 "-c",
                 "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())",
             ],

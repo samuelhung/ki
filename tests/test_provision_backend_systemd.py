@@ -3,9 +3,13 @@ from __future__ import annotations
 import hashlib
 import sqlite3
 import stat
+import subprocess
 from pathlib import Path
 
+import pytest
+
 from scripts.provision_backend_systemd import (
+    PinnedToolchainInstaller,
     ProvisionConfig,
     provision,
     render_ufw_commands,
@@ -43,6 +47,27 @@ class FakeToolchains:
         runner.events.append(("install-toolchains", config.toolchains_root))
 
 
+class ToolchainCommandRunner(FakeRootRunner):
+    def run(self, command: list[str]) -> None:
+        super().run(command)
+        if command[:4] == ["/usr/bin/python3", "-m", "venv", command[-1]]:
+            python = Path(command[-1]) / "bin/python"
+            python.parent.mkdir(parents=True, exist_ok=True)
+            python.write_text("python", encoding="utf-8")
+            python.chmod(0o755)
+        if "python" in command and "install" in command and "--install-dir" in command:
+            install_dir = Path(command[command.index("--install-dir") + 1])
+            python = install_dir / "cpython-3.12.13-linux-x86_64-gnu/bin/python3.12"
+            python.parent.mkdir(parents=True, exist_ok=True)
+            python.write_text("python", encoding="utf-8")
+            python.chmod(0o755)
+        if "venv" in command and "--python" in command:
+            python = Path(command[-1]) / "bin/python"
+            python.parent.mkdir(parents=True, exist_ok=True)
+            python.write_text("python", encoding="utf-8")
+            python.chmod(0o755)
+
+
 def _config_under(tmp_path: Path) -> ProvisionConfig:
     return ProvisionConfig(
         application_root=tmp_path / "srv/apps/zhiji",
@@ -63,6 +88,35 @@ def _tree_digest(root: Path) -> str:
             digest.update(path.read_bytes())
             digest.update(stat.S_IMODE(path.stat().st_mode).to_bytes(2, "big"))
     return digest.hexdigest()
+
+
+def test_pinned_toolchain_installs_ffmpeg_package_under_python_312(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config_under(tmp_path)
+    runner = ToolchainCommandRunner()
+    ffmpeg = tmp_path / "downloaded-ffmpeg"
+    ffmpeg.write_text("ffmpeg", encoding="utf-8")
+    ffmpeg.chmod(0o755)
+    direct_commands: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs):
+        direct_commands.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout=f"{ffmpeg}\n")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    PinnedToolchainInstaller().install(config, runner)
+
+    commands = [event[1] for event in runner.events if event[0] == "run"]
+    bootstrap_pip = next(command for command in commands if "pip" in command)
+    assert "uv==0.8.13" in bootstrap_pip
+    assert "imageio-ffmpeg==0.6.0" not in bootstrap_pip
+    ffmpeg_install = next(command for command in commands if "imageio-ffmpeg==0.6.0" in command)
+    assert "--python" in ffmpeg_install
+    assert "ffmpeg-python/bin/python" in ffmpeg_install[ffmpeg_install.index("--python") + 1]
+    assert "ffmpeg-python/bin/python" in direct_commands[0][0]
 
 
 def test_provision_plan_separates_program_data_and_secrets(tmp_path: Path) -> None:
