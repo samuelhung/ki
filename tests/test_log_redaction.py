@@ -804,6 +804,27 @@ def test_secure_log_handler_keeps_active_log_chmod_failure_fatal(tmp_path, monke
         SecureTimedRotatingFileHandler(current, when="midnight", backupCount=30)
 
 
+def test_secure_log_handler_falls_back_when_nofollow_chmod_is_unavailable(
+    tmp_path, monkeypatch
+):
+    current = tmp_path / "ki.log"
+    current.write_text("current", encoding="utf-8")
+    current.chmod(0o666)
+    original_chmod = Path.chmod
+
+    def unsupported_nofollow(self, mode, *, follow_symlinks=True):
+        if follow_symlinks is False:
+            raise NotImplementedError("chmod: follow_symlinks unavailable")
+        return original_chmod(self, mode, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(Path, "chmod", unsupported_nofollow)
+
+    handler = SecureTimedRotatingFileHandler(current, when="midnight", backupCount=30)
+    handler.close()
+
+    assert stat.S_IMODE(current.stat().st_mode) == 0o600
+
+
 def test_secure_log_handler_rejects_symlink_target(tmp_path):
     target = tmp_path / "outside.log"
     target.write_text("do not touch", encoding="utf-8")

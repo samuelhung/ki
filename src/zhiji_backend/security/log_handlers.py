@@ -50,6 +50,23 @@ def _rotation_candidates(
             match = ext_match.search(path.name, match.start() + 1)
 
 
+def _chmod_no_follow(path: Path, mode: int) -> None:
+    try:
+        path.chmod(mode, follow_symlinks=False)
+        return
+    except NotImplementedError:
+        if not hasattr(os, "O_NOFOLLOW"):
+            raise
+
+    descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise OSError(f"refusing non-regular log target: {path.name}")
+        os.fchmod(descriptor, mode)
+    finally:
+        os.close(descriptor)
+
+
 def _harden_existing_logs(
     log_path: Path,
     *,
@@ -64,7 +81,7 @@ def _harden_existing_logs(
             continue
         if stat.S_ISREG(mode):
             try:
-                path.chmod(0o600, follow_symlinks=False)
+                _chmod_no_follow(path, 0o600)
             except OSError as exc:
                 if path == log_path:
                     raise
@@ -137,7 +154,7 @@ class SecureTimedRotatingFileHandler(logging.handlers.TimedRotatingFileHandler):
         super().rotate(source, dest)
         if not _reject_symlink(dest_path):
             return
-        dest_path.chmod(0o600, follow_symlinks=False)
+        _chmod_no_follow(dest_path, 0o600)
 
     def doRollover(self) -> None:  # noqa: N802 - logging API name
         super().doRollover()
