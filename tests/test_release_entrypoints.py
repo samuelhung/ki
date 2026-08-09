@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -31,14 +33,26 @@ README_PRIVATE_RUNTIME_PATTERN = re.compile(
     r"\b10\.\d{1,3}\.\d{1,3}\.\d{1,3}\b|"
     r"\b172\.(?:1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}\b|"
     r"\b192\.168\.\d{1,3}\.\d{1,3}\b|"
+    r"\b100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}\b|"
+    r"\b[fF][cCdD][0-9A-Fa-f]{0,2}:|"
     r"\bzhiji-prod\b|\bserver-prod\b|"
-    r"(?:^|[\s`(])/(?:Users|home|srv|data|opt|var|etc|root|mnt|Volumes|private|usr|tmp)/|"
+    r"(?:^|[\s`'\"(\[=:])/(?:Users|home|srv|data|opt|var|etc|root|mnt|Volumes|private|usr|tmp)/|"
     r"launchd|backend\.main:app|v1\.3\.9|当前后端/Web 生产部署|"
     r"server-prod-token|deploy-\d{8}-\d{6}\.sqlite|"
     r"(?<![A-Za-z0-9])v?\d+\.\d+\.\d+\+\d+(?![A-Za-z0-9])|"
     r"app/scripts/(?:dev|start)\.sh|docs/ARCHITECTURE\.md",
     flags=re.MULTILINE,
 )
+
+
+def readme_section(readme: str, heading: str) -> str:
+    section = re.search(
+        rf"^## {re.escape(heading)}\n(?P<body>.*?)(?=^## |\Z)",
+        readme,
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    assert section is not None, heading
+    return section.group("body")
 
 
 def test_conflicting_release_and_install_entrypoints_are_hard_disabled() -> None:
@@ -64,13 +78,79 @@ def test_readme_documents_product_workflow_and_private_runtime_boundary() -> Non
     headings = re.findall(r"^## (.+)$", readme, flags=re.MULTILINE)
     assert headings == list(EXPECTED_README_HEADINGS)
 
+    core_capabilities = readme_section(readme, "核心能力")
     for required in (
+        "抖音分享",
+        "文件",
+        "信息源",
+        "处理队列",
+        "转写",
+        "人工修正",
+        "AI 语义分段",
+        "标题",
+        "摘要",
+        "分类",
+        "专题系列",
+        "产业链",
+        "头脑风暴",
+        "多轮追问",
+        "概念沉淀",
+        "任务管理",
+        "AI 辅助判断",
+        "学习资料",
+        "逐课解读",
+        "错题复盘",
+        "系统健康",
+        "配置",
+        "日志",
+        "数据库",
+        "API 文档",
+    ):
+        assert required in core_capabilities
+
+    system_shape = readme_section(readme, "系统形态")
+    for required in (
+        "Flutter macOS WebView",
+        "React + Vite + Tailwind",
+        "FastAPI",
+        "SQLite + 文件系统",
+        "生产 wheel",
+        "Web 与 API 共用同一个后端端口",
+    ):
+        assert required in system_shape
+
+    quick_start = readme_section(readme, "快速开始")
+    python_version = (ROOT / ".python-version").read_text(encoding="utf-8").strip()
+    project_version = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+    frontend_package = json.loads((ROOT / "app/frontend/package.json").read_text(encoding="utf-8"))
+    node_version = frontend_package["engines"]["node"]
+    npm_version = frontend_package["packageManager"].removeprefix("npm@")
+    workflow = (ROOT / ".github/workflows/zhiji-check.yml").read_text(encoding="utf-8")
+    uv_versions = set(
+        re.findall(
+            r"uses: astral-sh/setup-uv@.*?^\s+version: '([^']+)'$",
+            workflow,
+            flags=re.MULTILINE | re.DOTALL,
+        )
+    )
+    assert len(uv_versions) == 1
+    uv_version = uv_versions.pop()
+    for required in (
+        f"Python {python_version}",
+        f"uv {uv_version}",
+        f"Node {node_version}",
+        f"npm {npm_version}",
         "uv sync --frozen --group dev",
         "uv run --frozen zhiji init",
         "uv run --frozen zhiji serve",
         "cd app/frontend",
         "npm ci",
         "npm run dev",
+    ):
+        assert required in quick_start
+
+    development = readme_section(readme, "开发与验证")
+    for required in (
         "ZHIJI_SKIP_RELEASE_CHECK=1 ./scripts/check.sh",
         "PYTHONPATH=src uv run --frozen python -m pytest -q",
         "npm run test:cinematic-scene",
@@ -78,18 +158,10 @@ def test_readme_documents_product_workflow_and_private_runtime_boundary() -> Non
         "npm run test:media-transport",
         "npm run typecheck",
         "npm run build",
-        "KI_REMOTE_API_TOKEN",
-        "启动本地后端不会自动改写该目标",
     ):
-        assert required in readme
+        assert required in development
 
-    production_section = re.search(
-        r"^## 生产部署\n(?P<body>.*?)(?=^## |\Z)",
-        readme,
-        flags=re.MULTILINE | re.DOTALL,
-    )
-    assert production_section is not None
-    production_body = production_section.group("body")
+    production_body = readme_section(readme, "生产部署")
     assert re.search(
         r"切换阶段或 smoke check 失败时.*?尝试恢复数据库和 `current`.*?"
         r"存在上一版本时.*?尝试重启旧服务.*?恢复不完整.*?明确报错",
@@ -101,6 +173,24 @@ def test_readme_documents_product_workflow_and_private_runtime_boundary() -> Non
         production_body,
         flags=re.DOTALL,
     )
+    for command in (
+        "./scripts/provision-production --dry-run",
+        "./scripts/provision-production",
+        "./scripts/deploy-production",
+    ):
+        assert command in production_body
+
+    release = readme_section(readme, "版本与发布")
+    assert f"`{project_version}`" in release
+    for source in (
+        "pyproject.toml",
+        "src/zhiji_backend/__init__.py",
+        "app/frontend/src/constants.ts",
+        "app/frontend/vite.config.ts",
+        "desktop/pubspec.yaml",
+        "desktop/changelog.json",
+    ):
+        assert source in release
 
     api_token_row = re.search(r"^\| `KI_API_TOKEN` \|.*$", readme, flags=re.MULTILINE)
     assert api_token_row is not None
@@ -142,10 +232,11 @@ def test_frontend_remote_token_file_is_ignored() -> None:
 
 def test_readme_documents_native_production_commands_without_environment_snapshot() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    production_body = readme_section(readme, "生产部署")
 
     provision_commands = re.findall(
         r"^\./scripts/provision-production(?: --dry-run)?$",
-        readme,
+        production_body,
         flags=re.MULTILINE,
     )
     assert provision_commands == [
@@ -153,7 +244,7 @@ def test_readme_documents_native_production_commands_without_environment_snapsho
         "./scripts/provision-production",
     ]
     assert re.findall(
-        r"^\./scripts/deploy-production$", readme, flags=re.MULTILINE
+        r"^\./scripts/deploy-production$", production_body, flags=re.MULTILINE
     ) == ["./scripts/deploy-production"]
 
     for required in (
@@ -166,7 +257,7 @@ def test_readme_documents_native_production_commands_without_environment_snapsho
         "并非通用安装器",
         "来源工作树干净、提交已推送，且与 `origin/main` 完全一致",
     ):
-        assert required in readme
+        assert required in production_body
 
 
 @pytest.mark.parametrize(
@@ -180,16 +271,30 @@ def test_readme_documents_native_production_commands_without_environment_snapsho
         ("/home/zhiji/app", True),
         ("/srv/apps/zhiji", True),
         ("/data/backups/zhiji", True),
+        ("PATH=/data/apps/zhiji", True),
+        ("'/opt/zhiji/app", True),
+        ('"/var/zhiji/app', True),
+        ("`/private/zhiji/app", True),
+        ("(/etc/zhiji/env", True),
+        ("[/root/.config/zhiji", True),
+        ("source:/mnt/zhiji/data", True),
         ("/etc/zhiji/env", True),
+        ("--root=/etc/zhiji/env", True),
         ("/root/.config/zhiji", True),
         ("/mnt/zhiji/data", True),
         ("/Volumes/zhiji/data", True),
+        ("100.64.0.1", True),
+        ("100.127.255.254", True),
+        ("fd12:3456:789a::1", True),
         ("2.1.0+123", True),
         ("v2.0.0+90", True),
         ("server-prod-token", True),
         ("deploy-20260809-120000.sqlite", True),
         ("https://example.com/data/file", False),
         ("https://example.com/Users/guide", False),
+        ("127.0.0.1", False),
+        ("203.0.113.10", False),
+        ("2001:db8::1", False),
         ("产品版本 2.0.0", False),
         ("格式 X.Y.Z+N", False),
         ("desktop/changelog.json", False),
