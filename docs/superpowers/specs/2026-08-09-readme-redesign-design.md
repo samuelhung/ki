@@ -93,7 +93,7 @@ The following material is removed:
 - long manual release transcripts that duplicate executable scripts;
 - stale remote QA URLs and commands.
 
-Git history, `desktop/changelog.json`, maintained architecture documentation, and executable scripts remain the sources for historical and operational detail.
+Git history and `desktop/changelog.json` remain the sources for historical detail. Current source files, lock metadata, and executable scripts remain the sources for architecture and operational behavior; the rewrite must not link stale documentation as authoritative.
 
 ## Verification And Acceptance Criteria
 
