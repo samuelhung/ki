@@ -146,6 +146,11 @@ def test_readme_documents_product_workflow_and_private_runtime_boundary() -> Non
         "cd app/frontend",
         "npm ci",
         "npm run dev",
+        "启动本地后端不会自动改写该目标",
+        "执行涉及业务数据的前端操作前，必须先核对代理配置",
+        "~/.zhiji",
+        "127.0.0.1:9120",
+        "127.0.0.1:5173",
     ):
         assert required in quick_start
 
