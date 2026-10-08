@@ -16,7 +16,7 @@ dependencies:
   # 窗口管理 (macOS)
   window_manager: ^0.5.2
   # 打开外部链接 (JS Bridge 用)
-  url_launcher: ^6.3.1
+  url_launcher: ^6.3.3
 
 dev_dependencies:
   flutter_test:
